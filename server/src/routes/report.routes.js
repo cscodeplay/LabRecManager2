@@ -77,7 +77,7 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
         },
         _avg: { percentage: true }
     });
-    const avgScore = Math.round(avgScoreResult._avg?.percentage || 0);
+    const avgScore = Math.round(avgScoreResult._avg?.percentage ? parseFloat(avgScoreResult._avg.percentage) : 0);
 
     // Get grade distribution
     const grades = await prisma.grade.findMany({
@@ -127,7 +127,7 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
 
         topPerformers = topPerformersRaw.map(p => ({
             ...studentMap[p.studentId],
-            avgScore: p._avg?.percentage || 0,
+            avgScore: p._avg?.percentage ? parseFloat(p._avg.percentage) : 0,
             gradedCount: p._count?.id || 0
         })).filter(p => p.firstName);
     } catch (error) {
@@ -211,7 +211,7 @@ router.get('/export', authenticate, authorize('admin', 'instructor', 'principal'
             g.latePenaltyMarks || 0,
             g.finalMarks,
             g.maxMarks,
-            g.percentage?.toFixed(1) || 0,
+            g.percentage ? parseFloat(g.percentage).toFixed(1) : 0,
             g.gradeLetter,
             new Date(g.gradedAt).toLocaleDateString()
         ]);
@@ -259,7 +259,7 @@ router.get('/student-progress/:studentId', authenticate, asyncHandler(async (req
 
     const gradedSubs = submissions.filter(s => s.grade);
     if (gradedSubs.length > 0) {
-        stats.avgScore = gradedSubs.reduce((sum, s) => sum + (s.grade.percentage || 0), 0) / gradedSubs.length;
+        stats.avgScore = gradedSubs.reduce((sum, s) => sum + (s.grade.percentage ? parseFloat(s.grade.percentage) : 0), 0) / gradedSubs.length;
     }
 
     res.json({ success: true, data: { submissions, stats } });
@@ -349,7 +349,7 @@ router.get('/assignment-analytics/:id', authenticate, asyncHandler(async (req, r
         onTimeCount: onTime.length,
         lateCount: submissions.length - onTime.length,
         avgScore: graded.length > 0
-            ? graded.reduce((sum, s) => sum + (s.grade.percentage || 0), 0) / graded.length
+            ? graded.reduce((sum, s) => sum + (s.grade.percentage ? parseFloat(s.grade.percentage) : 0), 0) / graded.length
             : 0
     };
 
