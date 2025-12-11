@@ -126,11 +126,11 @@ export default function SubmissionDetailPage() {
                         </h1>
                         <p className="text-sm text-slate-500">
                             {submission.student?.firstName} {submission.student?.lastName}
-                            {submission.student?.admissionNumber && ` (${submission.student.admissionNumber})`}
+                            {(submission.student?.studentId || submission.student?.admissionNumber) && ` (${submission.student.studentId || submission.student.admissionNumber})`}
                         </p>
                     </div>
                     <span className={`badge ${submission.status === 'graded' ? 'badge-success' :
-                            submission.status === 'needs_revision' ? 'badge-danger' : 'badge-primary'
+                        submission.status === 'needs_revision' ? 'badge-danger' : 'badge-primary'
                         }`}>
                         {submission.status.replace('_', ' ')}
                     </span>

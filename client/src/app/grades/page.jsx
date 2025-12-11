@@ -336,15 +336,15 @@ export default function GradesPage() {
                                                             <tbody>
                                                                 {revision.scalesSummary.map((scale, idx) => (
                                                                     <tr key={idx} className={`border-t border-slate-100 ${scale.action === 'created' ? 'bg-green-50' :
-                                                                            scale.action === 'updated' ? 'bg-blue-50' :
-                                                                                scale.action === 'deleted' ? 'bg-red-50' :
-                                                                                    'bg-white'
+                                                                        scale.action === 'updated' ? 'bg-blue-50' :
+                                                                            scale.action === 'deleted' ? 'bg-red-50' :
+                                                                                'bg-white'
                                                                         }`}>
                                                                         <td className="px-3 py-2">
                                                                             <span className={`px-2 py-0.5 rounded text-[10px] font-medium uppercase ${scale.action === 'created' ? 'bg-green-200 text-green-700' :
-                                                                                    scale.action === 'updated' ? 'bg-blue-200 text-blue-700' :
-                                                                                        scale.action === 'deleted' ? 'bg-red-200 text-red-700' :
-                                                                                            'bg-slate-200 text-slate-600'
+                                                                                scale.action === 'updated' ? 'bg-blue-200 text-blue-700' :
+                                                                                    scale.action === 'deleted' ? 'bg-red-200 text-red-700' :
+                                                                                        'bg-slate-200 text-slate-600'
                                                                                 }`}>
                                                                                 {scale.action}
                                                                             </span>
@@ -451,8 +451,8 @@ export default function GradesPage() {
                                         {user?.role !== 'student' && grade.submission?.student && (
                                             <p className="text-sm text-slate-600">
                                                 Student: {grade.submission.student.firstName} {grade.submission.student.lastName}
-                                                {grade.submission.student.admissionNumber && (
-                                                    <span className="text-slate-400"> ({grade.submission.student.admissionNumber})</span>
+                                                {(grade.submission.student.studentId || grade.submission.student.admissionNumber) && (
+                                                    <span className="text-slate-400"> ({grade.submission.student.studentId || grade.submission.student.admissionNumber})</span>
                                                 )}
                                             </p>
                                         )}

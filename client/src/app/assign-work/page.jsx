@@ -291,8 +291,8 @@ export default function AssignWorkPage() {
                             type="button"
                             onClick={() => loadTargets('class')}
                             className={`p-4 rounded-xl border-2 text-center transition ${targetType === 'class'
-                                    ? 'border-primary-500 bg-primary-50'
-                                    : 'border-slate-200 hover:border-slate-300'
+                                ? 'border-primary-500 bg-primary-50'
+                                : 'border-slate-200 hover:border-slate-300'
                                 }`}
                         >
                             <Users className={`w-8 h-8 mx-auto mb-2 ${targetType === 'class' ? 'text-primary-600' : 'text-slate-500'}`} />
@@ -303,8 +303,8 @@ export default function AssignWorkPage() {
                             type="button"
                             onClick={() => loadTargets('group')}
                             className={`p-4 rounded-xl border-2 text-center transition ${targetType === 'group'
-                                    ? 'border-primary-500 bg-primary-50'
-                                    : 'border-slate-200 hover:border-slate-300'
+                                ? 'border-primary-500 bg-primary-50'
+                                : 'border-slate-200 hover:border-slate-300'
                                 }`}
                         >
                             <UsersRound className={`w-8 h-8 mx-auto mb-2 ${targetType === 'group' ? 'text-primary-600' : 'text-slate-500'}`} />
@@ -315,8 +315,8 @@ export default function AssignWorkPage() {
                             type="button"
                             onClick={() => loadTargets('student')}
                             className={`p-4 rounded-xl border-2 text-center transition ${targetType === 'student'
-                                    ? 'border-primary-500 bg-primary-50'
-                                    : 'border-slate-200 hover:border-slate-300'
+                                ? 'border-primary-500 bg-primary-50'
+                                : 'border-slate-200 hover:border-slate-300'
                                 }`}
                         >
                             <User className={`w-8 h-8 mx-auto mb-2 ${targetType === 'student' ? 'text-primary-600' : 'text-slate-500'}`} />
@@ -377,8 +377,8 @@ export default function AssignWorkPage() {
                                     <label
                                         key={c.id}
                                         className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition text-sm ${selectedClassFilters.includes(c.id)
-                                                ? 'bg-primary-100 border border-primary-300'
-                                                : 'bg-white border border-slate-200 hover:bg-slate-100'
+                                            ? 'bg-primary-100 border border-primary-300'
+                                            : 'bg-white border border-slate-200 hover:bg-slate-100'
                                             }`}
                                     >
                                         <input
@@ -455,8 +455,8 @@ export default function AssignWorkPage() {
                                 <label
                                     key={item.id}
                                     className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${selectedTargets.includes(item.id)
-                                            ? 'bg-primary-50 border-2 border-primary-200'
-                                            : 'bg-slate-50 border-2 border-transparent hover:bg-slate-100'
+                                        ? 'bg-primary-50 border-2 border-primary-200'
+                                        : 'bg-slate-50 border-2 border-transparent hover:bg-slate-100'
                                         }`}
                                 >
                                     <input
@@ -502,7 +502,7 @@ export default function AssignWorkPage() {
                                                 <p className="font-medium">{item.firstName} {item.lastName}</p>
                                                 <p className="text-xs text-slate-500">
                                                     {item.className && <span className="text-primary-600">{item.className} • </span>}
-                                                    {item.admissionNumber || item.email}
+                                                    {item.studentId || item.admissionNumber || item.email}
                                                 </p>
                                             </div>
                                         </>

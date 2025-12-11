@@ -59,6 +59,7 @@ export default function CreateGroupPage() {
     const filteredStudents = students.filter(s =>
         s.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.studentId?.includes(searchQuery) ||
         s.admissionNumber?.includes(searchQuery)
     );
 
@@ -227,14 +228,14 @@ export default function CreateGroupPage() {
                                         key={student.id}
                                         onClick={() => toggleStudent(student.id)}
                                         className={`p-3 rounded-lg border-2 cursor-pointer transition ${isSelected
-                                                ? 'border-primary-500 bg-primary-50'
-                                                : 'border-slate-200 hover:border-slate-300 bg-white'
+                                            ? 'border-primary-500 bg-primary-50'
+                                            : 'border-slate-200 hover:border-slate-300 bg-white'
                                             }`}
                                     >
                                         <div className="flex items-center gap-3">
                                             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${isSelected
-                                                    ? 'bg-primary-500 text-white'
-                                                    : 'bg-slate-200 text-slate-600'
+                                                ? 'bg-primary-500 text-white'
+                                                : 'bg-slate-200 text-slate-600'
                                                 }`}>
                                                 {isSelected ? <Check className="w-4 h-4" /> : student.firstName?.[0]}
                                             </div>
@@ -242,7 +243,7 @@ export default function CreateGroupPage() {
                                                 <p className="font-medium text-slate-900 truncate">
                                                     {student.firstName} {student.lastName}
                                                 </p>
-                                                <p className="text-xs text-slate-500">{student.admissionNumber}</p>
+                                                <p className="text-xs text-slate-500">{student.studentId || student.admissionNumber}</p>
                                             </div>
                                             {isSelected && (
                                                 <button
@@ -252,8 +253,8 @@ export default function CreateGroupPage() {
                                                         setLeaderId(leaderId === student.id ? '' : student.id);
                                                     }}
                                                     className={`px-2 py-1 text-xs rounded ${leaderId === student.id
-                                                            ? 'bg-amber-500 text-white'
-                                                            : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                                                        ? 'bg-amber-500 text-white'
+                                                        : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
                                                         }`}
                                                 >
                                                     {leaderId === student.id ? '★ Leader' : 'Set Leader'}

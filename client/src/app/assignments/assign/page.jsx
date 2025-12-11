@@ -160,6 +160,7 @@ function AssignWorkContent() {
     const filteredStudents = students.filter(s =>
         s.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.studentId?.includes(searchQuery) ||
         s.admissionNumber?.includes(searchQuery)
     );
 
@@ -525,7 +526,7 @@ function AssignWorkContent() {
                                                             <p className="font-medium text-slate-900 text-sm truncate">
                                                                 {student.firstName} {student.lastName}
                                                             </p>
-                                                            <p className="text-xs text-slate-500">{student.admissionNumber}</p>
+                                                            <p className="text-xs text-slate-500">{student.studentId || student.admissionNumber}</p>
                                                         </div>
                                                     </div>
                                                 </div>

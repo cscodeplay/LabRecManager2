@@ -175,9 +175,9 @@ export default function SubmissionsPage() {
                                                 <p className="text-sm text-slate-600 flex items-center gap-1 mt-1">
                                                     <User className="w-4 h-4" />
                                                     {submission.student.firstName} {submission.student.lastName}
-                                                    {submission.student.admissionNumber && (
+                                                    {(submission.student.studentId || submission.student.admissionNumber) && (
                                                         <span className="text-slate-400">
-                                                            ({submission.student.admissionNumber})
+                                                            ({submission.student.studentId || submission.student.admissionNumber})
                                                         </span>
                                                     )}
                                                 </p>

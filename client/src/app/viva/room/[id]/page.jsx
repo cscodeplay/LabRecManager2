@@ -1751,7 +1751,7 @@ export default function VivaRoomPage() {
                                                         {p.user?.firstName} {p.user?.lastName}
                                                     </p>
                                                     <p className="text-xs text-slate-400">
-                                                        {p.user?.admissionNumber || p.user?.email}
+                                                        {p.user?.studentId || p.user?.admissionNumber || p.user?.email}
                                                     </p>
                                                 </div>
                                             </div>

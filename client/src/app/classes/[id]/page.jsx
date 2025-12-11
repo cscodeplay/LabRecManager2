@@ -50,6 +50,7 @@ export default function ClassDetailPage() {
     const filteredStudents = students.filter(s =>
         s.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.studentId?.includes(searchQuery) ||
         s.admissionNumber?.includes(searchQuery) ||
         s.email?.toLowerCase().includes(searchQuery.toLowerCase())
     );
@@ -139,8 +140,8 @@ export default function ClassDetailPage() {
                     <button
                         onClick={() => setActiveTab('students')}
                         className={`px-4 py-2 rounded-lg font-medium transition ${activeTab === 'students'
-                                ? 'bg-primary-500 text-white'
-                                : 'bg-white text-slate-600 hover:bg-slate-100'
+                            ? 'bg-primary-500 text-white'
+                            : 'bg-white text-slate-600 hover:bg-slate-100'
                             }`}
                     >
                         <Users className="w-4 h-4 inline mr-2" />
@@ -149,8 +150,8 @@ export default function ClassDetailPage() {
                     <button
                         onClick={() => setActiveTab('groups')}
                         className={`px-4 py-2 rounded-lg font-medium transition ${activeTab === 'groups'
-                                ? 'bg-primary-500 text-white'
-                                : 'bg-white text-slate-600 hover:bg-slate-100'
+                            ? 'bg-primary-500 text-white'
+                            : 'bg-white text-slate-600 hover:bg-slate-100'
                             }`}
                     >
                         <UsersRound className="w-4 h-4 inline mr-2" />
@@ -167,7 +168,7 @@ export default function ClassDetailPage() {
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                                 <input
                                     type="text"
-                                    placeholder="Search by name, admission number, or email..."
+                                    placeholder="Search by name, student ID, or email..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     className="input pl-10"
@@ -191,7 +192,7 @@ export default function ClassDetailPage() {
                                         <tr>
                                             <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Roll</th>
                                             <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Student</th>
-                                            <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Admission No.</th>
+                                            <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Student ID</th>
                                             <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Email</th>
                                             <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Contact</th>
                                         </tr>
@@ -221,7 +222,7 @@ export default function ClassDetailPage() {
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded font-mono text-sm">
-                                                        {student.admissionNumber || '-'}
+                                                        {student.studentId || student.admissionNumber || '-'}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-600">

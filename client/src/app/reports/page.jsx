@@ -267,7 +267,7 @@ export default function ReportsPage() {
                                             <p className="font-medium text-slate-900 truncate">
                                                 {s.firstName} {s.lastName}
                                             </p>
-                                            <p className="text-xs text-slate-500">{s.admissionNumber || s.email}</p>
+                                            <p className="text-xs text-slate-500">{s.studentId || s.admissionNumber || s.email}</p>
                                         </div>
                                         <div className="text-right">
                                             <p className="font-bold text-primary-600">{(typeof s.avgScore === 'number' ? s.avgScore.toFixed(1) : '0')}%</p>

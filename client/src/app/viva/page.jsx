@@ -451,7 +451,7 @@ export default function VivaPage() {
                                                     {selectedStudent.firstName} {selectedStudent.lastName}
                                                 </p>
                                                 <p className="text-sm text-slate-500">
-                                                    {selectedStudent.admissionNumber || selectedStudent.email}
+                                                    {selectedStudent.studentId || selectedStudent.admissionNumber || selectedStudent.email}
                                                 </p>
                                             </div>
                                         </div>
@@ -470,7 +470,7 @@ export default function VivaPage() {
                                                 type="text"
                                                 value={searchQuery}
                                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                                placeholder="Search by name, email, or admission number..."
+                                                placeholder="Search by name, email, or student ID..."
                                                 className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
                                             />
                                         </div>
@@ -502,7 +502,7 @@ export default function VivaPage() {
                                                                 {student.firstName} {student.lastName}
                                                             </p>
                                                             <p className="text-xs text-slate-500">
-                                                                {student.admissionNumber || student.email}
+                                                                {student.studentId || student.admissionNumber || student.email}
                                                                 {student.classEnrollments?.[0]?.class && (
                                                                     <span className="ml-2">
                                                                         • {student.classEnrollments[0].class.name}
