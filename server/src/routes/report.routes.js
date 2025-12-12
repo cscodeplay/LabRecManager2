@@ -10,7 +10,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
  * @access  Private (Admin, Instructor, Principal)
  */
 router.get('/analytics', authenticate, authorize('admin', 'instructor', 'principal'), asyncHandler(async (req, res) => {
-    const { dateRange = 'month' } = req.query;
+    const { dateRange = 'month', classId } = req.query;
     const schoolId = req.user.schoolId;
 
     // Calculate date filter
@@ -33,34 +33,75 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
             dateFilter = {};
     }
 
-    // Get total students
+    // Build class filter for students if classId is provided
+    let studentFilter = { schoolId, role: 'student', isActive: true };
+    let studentIds = null;
+
+    if (classId) {
+        // Get students enrolled in the specified class
+        const enrollments = await prisma.classEnrollment.findMany({
+            where: { classId, status: 'active' },
+            select: { studentId: true }
+        });
+        studentIds = enrollments.map(e => e.studentId);
+        studentFilter = { ...studentFilter, id: { in: studentIds } };
+    }
+
+    // Get total students (filtered by class if classId provided)
     const totalStudents = await prisma.user.count({
-        where: { schoolId, role: 'student', isActive: true }
+        where: studentFilter
     });
+
+    // Build assignment filter - include class-specific assignments if classId provided
+    let assignmentFilter = {
+        schoolId,
+        status: 'published',
+        ...(dateRange !== 'all' && { createdAt: dateFilter })
+    };
+
+    if (classId) {
+        // Get assignment IDs targeted to this class
+        const classAssignmentTargets = await prisma.assignmentTarget.findMany({
+            where: { targetType: 'class', targetClassId: classId },
+            select: { assignmentId: true }
+        });
+        const classAssignmentIds = classAssignmentTargets.map(t => t.assignmentId);
+        assignmentFilter = { ...assignmentFilter, id: { in: classAssignmentIds } };
+    }
 
     // Get total assignments (published)
     const totalAssignments = await prisma.assignment.count({
-        where: {
-            schoolId,
-            status: 'published',
-            ...(dateRange !== 'all' && { createdAt: dateFilter })
-        }
+        where: assignmentFilter
     });
+
+    // Build submission filter
+    let submissionFilter = {
+        assignment: { schoolId },
+        ...(dateRange !== 'all' && { submittedAt: dateFilter })
+    };
+
+    if (studentIds) {
+        submissionFilter = { ...submissionFilter, studentId: { in: studentIds } };
+    }
 
     // Get submissions
     const totalSubmissions = await prisma.submission.count({
-        where: {
-            assignment: { schoolId },
-            ...(dateRange !== 'all' && { submittedAt: dateFilter })
-        }
+        where: submissionFilter
     });
+
+    // Build grade filter
+    let gradeFilter = {
+        submission: { assignment: { schoolId } },
+        ...(dateRange !== 'all' && { gradedAt: dateFilter })
+    };
+
+    if (studentIds) {
+        gradeFilter = { ...gradeFilter, studentId: { in: studentIds } };
+    }
 
     // Get graded submissions
     const gradedSubmissions = await prisma.grade.count({
-        where: {
-            submission: { assignment: { schoolId } },
-            ...(dateRange !== 'all' && { gradedAt: dateFilter })
-        }
+        where: gradeFilter
     });
 
     // Calculate submission rate
@@ -69,22 +110,21 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
         ? Math.round((totalSubmissions / expectedSubmissions) * 100)
         : 0;
 
-    // Get average score
-    const avgScoreResult = await prisma.grade.aggregate({
-        where: {
-            submission: { assignment: { schoolId } },
-            ...(dateRange !== 'all' && { gradedAt: dateFilter })
-        },
-        _avg: { percentage: true }
+    // Get score aggregations (avg, min, max)
+    const scoreAggregation = await prisma.grade.aggregate({
+        where: gradeFilter,
+        _avg: { percentage: true },
+        _min: { percentage: true },
+        _max: { percentage: true }
     });
-    const avgScore = Math.round(avgScoreResult._avg?.percentage ? parseFloat(avgScoreResult._avg.percentage) : 0);
+
+    const avgScore = Math.round(scoreAggregation._avg?.percentage ? parseFloat(scoreAggregation._avg.percentage) : 0);
+    const minScore = Math.round(scoreAggregation._min?.percentage ? parseFloat(scoreAggregation._min.percentage) : 0);
+    const maxScore = Math.round(scoreAggregation._max?.percentage ? parseFloat(scoreAggregation._max.percentage) : 0);
 
     // Get grade distribution
     const grades = await prisma.grade.findMany({
-        where: {
-            submission: { assignment: { schoolId } },
-            ...(dateRange !== 'all' && { gradedAt: dateFilter })
-        },
+        where: gradeFilter,
         select: { gradeLetter: true }
     });
 
@@ -102,13 +142,19 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
     // Get top performers - using raw query for better aggregation
     let topPerformers = [];
     try {
+        let topPerformersFilter = {
+            submission: { assignment: { schoolId } },
+            isPublished: true,
+            percentage: { not: null }
+        };
+
+        if (studentIds) {
+            topPerformersFilter = { ...topPerformersFilter, studentId: { in: studentIds } };
+        }
+
         const topPerformersRaw = await prisma.grade.groupBy({
             by: ['studentId'],
-            where: {
-                submission: { assignment: { schoolId } },
-                isPublished: true,
-                percentage: { not: null }
-            },
+            where: topPerformersFilter,
             _avg: { percentage: true },
             _count: { id: true },
             orderBy: { _avg: { percentage: 'desc' } },
@@ -116,10 +162,10 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
         });
 
         // Get student details for top performers
-        const studentIds = topPerformersRaw.map(p => p.studentId);
+        const performerStudentIds = topPerformersRaw.map(p => p.studentId);
         const students = await prisma.user.findMany({
-            where: { id: { in: studentIds } },
-            select: { id: true, firstName: true, lastName: true, admissionNumber: true, email: true }
+            where: { id: { in: performerStudentIds } },
+            select: { id: true, firstName: true, lastName: true, studentId: true, admissionNumber: true, email: true }
         });
 
         const studentMap = {};
@@ -144,6 +190,8 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
             gradedSubmissions,
             submissionRate,
             avgScore,
+            minScore,
+            maxScore,
             gradeDistribution,
             topPerformers
         }

@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { TrendingUp, Users, FileText, Award, Download, BarChart3, Calendar, CheckCircle, Info, X } from 'lucide-react';
+import { TrendingUp, Users, FileText, Award, Download, BarChart3, Calendar, CheckCircle, Info, X, ArrowUpRight, ArrowDownRight, Filter } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import api from '@/lib/api';
+import api, { classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 
@@ -26,13 +26,17 @@ export default function ReportsPage() {
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
     const [loading, setLoading] = useState(true);
     const [dateRange, setDateRange] = useState('month');
+    const [selectedClassId, setSelectedClassId] = useState('');
+    const [classes, setClasses] = useState([]);
     const [stats, setStats] = useState({
         totalStudents: 0,
         totalAssignments: 0,
         totalSubmissions: 0,
         gradedSubmissions: 0,
         submissionRate: 0,
-        avgScore: 0
+        avgScore: 0,
+        minScore: 0,
+        maxScore: 0
     });
     const [gradeDistribution, setGradeDistribution] = useState([]);
     const [topPerformers, setTopPerformers] = useState([]);
@@ -46,15 +50,33 @@ export default function ReportsPage() {
             router.push('/dashboard');
             return;
         }
+        loadClasses();
         loadReportData();
-    }, [isAuthenticated, user, dateRange, _hasHydrated]);
+    }, [isAuthenticated, user, _hasHydrated]);
+
+    useEffect(() => {
+        if (_hasHydrated && isAuthenticated) {
+            loadReportData();
+        }
+    }, [dateRange, selectedClassId]);
+
+    const loadClasses = async () => {
+        try {
+            const res = await classesAPI.getAll();
+            setClasses(res.data.data?.classes || []);
+        } catch (error) {
+            console.error('Failed to load classes:', error);
+        }
+    };
 
     const loadReportData = async () => {
         setLoading(true);
         try {
-            const res = await api.get('/reports/analytics', {
-                params: { dateRange }
-            });
+            const params = { dateRange };
+            if (selectedClassId) {
+                params.classId = selectedClassId;
+            }
+            const res = await api.get('/reports/analytics', { params });
             const data = res.data.data;
 
             setStats({
@@ -63,7 +85,9 @@ export default function ReportsPage() {
                 totalSubmissions: data.totalSubmissions || 0,
                 gradedSubmissions: data.gradedSubmissions || 0,
                 submissionRate: data.submissionRate || 0,
-                avgScore: data.avgScore || 0
+                avgScore: data.avgScore || 0,
+                minScore: data.minScore || 0,
+                maxScore: data.maxScore || 0
             });
             setGradeDistribution(data.gradeDistribution || []);
             setTopPerformers(data.topPerformers || []);
@@ -127,6 +151,21 @@ export default function ReportsPage() {
     return (
         <div className="min-h-screen bg-slate-50">
             <PageHeader title="Reports & Analytics" titleHindi="रिपोर्ट और विश्लेषण">
+                <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-slate-400" />
+                    <select
+                        value={selectedClassId}
+                        onChange={(e) => setSelectedClassId(e.target.value)}
+                        className="input py-2 text-sm w-44"
+                    >
+                        <option value="">All Classes</option>
+                        {classes.map((cls) => (
+                            <option key={cls.id} value={cls.id}>
+                                {cls.name} (Grade {cls.gradeLevel})
+                            </option>
+                        ))}
+                    </select>
+                </div>
                 <select
                     value={dateRange}
                     onChange={(e) => setDateRange(e.target.value)}
@@ -195,6 +234,45 @@ export default function ReportsPage() {
                                 <p className="text-sm text-slate-500">Avg Score</p>
                                 <p className="text-2xl font-bold text-slate-900">{stats.avgScore}%</p>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Score Statistics - Min/Max/Avg */}
+                <div className="card p-6 mb-6">
+                    <h3 className="font-semibold text-slate-900 flex items-center gap-2 mb-4">
+                        <TrendingUp className="w-5 h-5 text-primary-500" />
+                        Score Statistics
+                        {selectedClassId && classes.find(c => c.id === selectedClassId) && (
+                            <span className="text-sm font-normal text-slate-500 ml-2">
+                                — {classes.find(c => c.id === selectedClassId)?.name}
+                            </span>
+                        )}
+                    </h3>
+                    <div className="grid grid-cols-3 gap-4">
+                        <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl p-5 border border-red-200">
+                            <div className="flex items-center gap-2 mb-2">
+                                <ArrowDownRight className="w-5 h-5 text-red-500" />
+                                <span className="text-sm font-medium text-red-700">Minimum Score</span>
+                            </div>
+                            <p className="text-3xl font-bold text-red-600">{stats.minScore}%</p>
+                            <p className="text-xs text-red-500 mt-1">Lowest graded result</p>
+                        </div>
+                        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-5 border border-blue-200">
+                            <div className="flex items-center gap-2 mb-2">
+                                <BarChart3 className="w-5 h-5 text-blue-500" />
+                                <span className="text-sm font-medium text-blue-700">Average Score</span>
+                            </div>
+                            <p className="text-3xl font-bold text-blue-600">{stats.avgScore}%</p>
+                            <p className="text-xs text-blue-500 mt-1">Mean of all grades</p>
+                        </div>
+                        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-5 border border-emerald-200">
+                            <div className="flex items-center gap-2 mb-2">
+                                <ArrowUpRight className="w-5 h-5 text-emerald-500" />
+                                <span className="text-sm font-medium text-emerald-700">Maximum Score</span>
+                            </div>
+                            <p className="text-3xl font-bold text-emerald-600">{stats.maxScore}%</p>
+                            <p className="text-xs text-emerald-500 mt-1">Highest graded result</p>
                         </div>
                     </div>
                 </div>
