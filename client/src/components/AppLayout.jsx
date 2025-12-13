@@ -6,6 +6,7 @@ import { Menu, Search } from 'lucide-react';
 import Sidebar from './Sidebar';
 import NotificationBell from './NotificationBell';
 import ProfileDropdown from './ProfileDropdown';
+import SessionSelector, { ReadOnlyBanner } from './SessionSelector';
 import { DatabaseStatusBadge } from './DatabaseStatus';
 import { useAuthStore } from '@/lib/store';
 
@@ -95,14 +96,18 @@ export default function AppLayout({ children }) {
                             </div>
                         </div>
 
-                        {/* Right side - Status, Notifications, Profile */}
+                        {/* Right side - Session, Status, Notifications, Profile */}
                         <div className="flex items-center gap-2">
+                            <SessionSelector />
                             <DatabaseStatusBadge />
                             <NotificationBell />
                             <ProfileDropdown />
                         </div>
                     </div>
                 </header>
+
+                {/* Read-Only Mode Banner */}
+                <ReadOnlyBanner />
 
                 {/* Page Content */}
                 <main className="min-h-[calc(100vh-4rem)]">
@@ -112,3 +117,4 @@ export default function AppLayout({ children }) {
         </div>
     );
 }
+

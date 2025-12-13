@@ -10,6 +10,12 @@ export const useAuthStore = create(
             isAuthenticated: false,
             _hasHydrated: false,
 
+            // Academic Session State
+            selectedSessionId: null,
+            selectedSession: null,
+            availableSessions: [],
+            isReadOnlyMode: false,
+
             setHasHydrated: (state) => set({ _hasHydrated: state }),
 
             setAuth: (user, accessToken, refreshToken) => set({
@@ -24,6 +30,10 @@ export const useAuthStore = create(
                 accessToken: null,
                 refreshToken: null,
                 isAuthenticated: false,
+                selectedSessionId: null,
+                selectedSession: null,
+                availableSessions: [],
+                isReadOnlyMode: false,
             }),
 
             updateUser: (userData) => set((state) => ({
@@ -31,6 +41,18 @@ export const useAuthStore = create(
             })),
 
             getAccessToken: () => get().accessToken,
+
+            // Session Management
+            setAvailableSessions: (sessions) => set({ availableSessions: sessions }),
+
+            setSession: (session) => set({
+                selectedSessionId: session?.id || null,
+                selectedSession: session || null,
+                isReadOnlyMode: session ? !session.isCurrent : false,
+            }),
+
+            getSelectedSessionId: () => get().selectedSessionId,
+            getIsReadOnlyMode: () => get().isReadOnlyMode,
         }),
         {
             name: 'auth-storage',
@@ -39,6 +61,8 @@ export const useAuthStore = create(
                 accessToken: state.accessToken,
                 refreshToken: state.refreshToken,
                 isAuthenticated: state.isAuthenticated,
+                selectedSessionId: state.selectedSessionId,
+                selectedSession: state.selectedSession,
             }),
             onRehydrateStorage: () => (state) => {
                 state?.setHasHydrated(true);

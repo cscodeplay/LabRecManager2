@@ -6,11 +6,15 @@ const api = axios.create({
     headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor to add auth token
+// Request interceptor to add auth token and session header
 api.interceptors.request.use((config) => {
-    const token = useAuthStore.getState().accessToken;
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+    const { accessToken, selectedSessionId } = useAuthStore.getState();
+    if (accessToken) {
+        config.headers.Authorization = `Bearer ${accessToken}`;
+    }
+    // Include selected academic session for session-scoped data
+    if (selectedSessionId) {
+        config.headers['X-Academic-Session'] = selectedSessionId;
     }
     return config;
 });
