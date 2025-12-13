@@ -23,8 +23,23 @@ export default function CreateClassPage() {
         stream: '',
         academicYearId: '',
         classTeacherId: '',
-        maxStudents: 60
+        maxStudents: 50
     });
+
+    // Helper to get current academic year label (April to March cycle)
+    const getCurrentAcademicYearLabel = () => {
+        const now = new Date();
+        const month = now.getMonth() + 1; // 1-12
+        const year = now.getFullYear();
+
+        if (month >= 4) {
+            // April to December: current year to next year
+            return `${year}-${year + 1}`;
+        } else {
+            // January to March: previous year to current year
+            return `${year - 1}-${year}`;
+        }
+    };
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -47,11 +62,15 @@ export default function CreateClassPage() {
                 api.get('/users?role=instructor&limit=100')
             ]);
 
-            setAcademicYears(yearsRes.data.data.academicYears || []);
+            const years = yearsRes.data.data.academicYears || [];
+            setAcademicYears(years);
             setInstructors(usersRes.data.data.users || []);
 
-            // Set default academic year to current
-            const currentYear = yearsRes.data.data.academicYears?.find(y => y.isCurrent);
+            // Auto-select academic year based on current date
+            const currentLabel = getCurrentAcademicYearLabel();
+            const matchingYear = years.find(y => y.yearLabel === currentLabel || y.yearLabel === currentLabel.replace('-', '-20'));
+            const currentYear = matchingYear || years.find(y => y.isCurrent);
+
             if (currentYear) {
                 setFormData(prev => ({ ...prev, academicYearId: currentYear.id }));
             }
@@ -92,10 +111,12 @@ export default function CreateClassPage() {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    // Generate class name suggestion
+    // Generate class name (auto-generated from grade, section, stream)
     const generateClassName = () => {
         const grade = formData.gradeLevel;
-        const section = formData.section || 'A';
+        if (!grade) return '';
+
+        const section = formData.section;
         const stream = formData.stream;
 
         let name = `Class ${grade}`;
@@ -105,10 +126,11 @@ export default function CreateClassPage() {
         return name;
     };
 
+    // Always update class name when grade/section/stream changes
     useEffect(() => {
-        if (formData.gradeLevel && !formData.name) {
-            const suggestedName = generateClassName();
-            setFormData(prev => ({ ...prev, name: suggestedName }));
+        if (formData.gradeLevel) {
+            const generatedName = generateClassName();
+            setFormData(prev => ({ ...prev, name: generatedName }));
         }
     }, [formData.gradeLevel, formData.section, formData.stream]);
 
@@ -175,16 +197,15 @@ export default function CreateClassPage() {
 
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                                    Class Name <span className="text-red-500">*</span>
+                                    Class Name <span className="text-slate-400 text-xs">(auto-generated)</span>
                                 </label>
                                 <input
                                     type="text"
                                     name="name"
                                     value={formData.name}
-                                    onChange={handleChange}
-                                    className="input"
-                                    placeholder="e.g., Class 10-A"
-                                    required
+                                    readOnly
+                                    className="input bg-slate-100 cursor-not-allowed"
+                                    placeholder="Select grade level to generate"
                                 />
                             </div>
 
@@ -236,7 +257,7 @@ export default function CreateClassPage() {
                         </div>
                     </div>
 
-                    {/* Academic Year & Teacher */}
+                    {/* Academic Year & Instructor */}
                     <div className="card p-6">
                         <div className="flex items-center gap-3 mb-6">
                             <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
@@ -244,7 +265,7 @@ export default function CreateClassPage() {
                             </div>
                             <div>
                                 <h2 className="font-semibold text-slate-900">Assignment Details</h2>
-                                <p className="text-sm text-slate-500">Academic year and class teacher</p>
+                                <p className="text-sm text-slate-500">Academic year and instructor</p>
                             </div>
                         </div>
 
@@ -271,7 +292,7 @@ export default function CreateClassPage() {
 
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                                    Class Teacher
+                                    Instructor
                                 </label>
                                 <select
                                     name="classTeacherId"
@@ -279,7 +300,7 @@ export default function CreateClassPage() {
                                     onChange={handleChange}
                                     className="input"
                                 >
-                                    <option value="">Select Teacher (Optional)</option>
+                                    <option value="">Select Instructor (Optional)</option>
                                     {instructors.map(instructor => (
                                         <option key={instructor.id} value={instructor.id}>
                                             {instructor.firstName} {instructor.lastName}
