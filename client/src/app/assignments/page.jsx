@@ -15,7 +15,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 
 export default function AssignmentsPage() {
     const router = useRouter();
-    const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [assignments, setAssignments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -32,9 +32,10 @@ export default function AssignmentsPage() {
             return;
         }
         loadAssignments();
-    }, [isAuthenticated, _hasHydrated]);
+    }, [isAuthenticated, _hasHydrated, selectedSessionId, statusFilter]);
 
     const loadAssignments = async () => {
+        setLoading(true);
         try {
             const res = await assignmentsAPI.getAll({ status: statusFilter !== 'all' ? statusFilter : undefined });
             setAssignments(res.data.data.assignments || []);

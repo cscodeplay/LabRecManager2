@@ -273,7 +273,10 @@ export default function SettingsPage() {
         { id: 'notifications', icon: Bell, label: 'Notifications' },
         { id: 'appearance', icon: Palette, label: 'Appearance' },
         { id: 'security', icon: Shield, label: 'Security' },
-        ...(isAdmin ? [{ id: 'grading', icon: GraduationCap, label: 'Grading' }] : [])
+        ...(isAdmin ? [
+            { id: 'grading', icon: GraduationCap, label: 'Grading' },
+            { id: 'database', icon: SettingsIcon, label: 'SQL Console' }
+        ] : [])
     ];
 
     if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div></div>;
@@ -1012,6 +1015,22 @@ export default function SettingsPage() {
                                         </div>
                                     )}
                                 </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'database' && isAdmin && (
+                            <div className="card p-6">
+                                <h2 className="text-lg font-semibold text-slate-900 mb-4">SQL Console</h2>
+                                <p className="text-slate-600 mb-6">
+                                    Execute raw SQL queries directly on the database. Use with caution!
+                                </p>
+                                <a
+                                    href="/admin/sql-console"
+                                    className="btn btn-primary inline-flex items-center gap-2"
+                                >
+                                    <SettingsIcon className="w-4 h-4" />
+                                    Open SQL Console
+                                </a>
                             </div>
                         )}
                     </div>

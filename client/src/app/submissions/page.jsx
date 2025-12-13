@@ -13,7 +13,7 @@ import toast from 'react-hot-toast';
 
 export default function SubmissionsPage() {
     const router = useRouter();
-    const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [submissions, setSubmissions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [statusFilter, setStatusFilter] = useState('all');
@@ -25,7 +25,7 @@ export default function SubmissionsPage() {
             return;
         }
         loadSubmissions();
-    }, [isAuthenticated, statusFilter, _hasHydrated]);
+    }, [isAuthenticated, statusFilter, _hasHydrated, selectedSessionId]);
 
     const loadSubmissions = async () => {
         try {

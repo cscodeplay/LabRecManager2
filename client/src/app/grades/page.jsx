@@ -11,7 +11,7 @@ import PageHeader from '@/components/PageHeader';
 
 export default function GradesPage() {
     const router = useRouter();
-    const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [grades, setGrades] = useState([]);
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState({ avg: 0, total: 0, passed: 0 });
@@ -39,7 +39,7 @@ export default function GradesPage() {
         }
         loadGrades();
         loadGradeScales();
-    }, [isAuthenticated, _hasHydrated]);
+    }, [isAuthenticated, _hasHydrated, selectedSessionId]);
 
     const loadGradeScales = async () => {
         try {

@@ -12,7 +12,7 @@ import { dashboardAPI } from '@/lib/api';
 
 export default function DashboardPage() {
     const router = useRouter();
-    const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [stats, setStats] = useState({});
     const [deadlines, setDeadlines] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -24,9 +24,10 @@ export default function DashboardPage() {
             return;
         }
         loadDashboardData();
-    }, [isAuthenticated, _hasHydrated]);
+    }, [isAuthenticated, _hasHydrated, selectedSessionId]);
 
     const loadDashboardData = async () => {
+        setLoading(true);
         try {
             const [statsRes, deadlinesRes] = await Promise.all([
                 dashboardAPI.getStats(),

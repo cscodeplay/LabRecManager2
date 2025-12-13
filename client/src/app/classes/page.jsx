@@ -3,14 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Users, GraduationCap, Search, Plus, Eye, UserPlus } from 'lucide-react';
+import { Users, GraduationCap, Search, Plus, Eye, UserPlus, Calendar } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import axios from 'axios';
+import api from '@/lib/api';
 import toast from 'react-hot-toast';
 
 export default function ClassesPage() {
     const router = useRouter();
-    const { user, isAuthenticated, accessToken, _hasHydrated } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId, selectedSession } = useAuthStore();
     const [classes, setClasses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -22,13 +22,12 @@ export default function ClassesPage() {
             return;
         }
         loadClasses();
-    }, [isAuthenticated, _hasHydrated]);
+    }, [isAuthenticated, _hasHydrated, selectedSessionId]);
 
     const loadClasses = async () => {
+        setLoading(true);
         try {
-            const res = await axios.get('/api/classes', {
-                headers: { Authorization: `Bearer ${accessToken}` }
-            });
+            const res = await api.get('/classes');
             setClasses(res.data.data.classes || []);
         } catch (error) {
             toast.error('Failed to load classes');
