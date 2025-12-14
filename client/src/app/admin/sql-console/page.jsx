@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Database, Play, Trash2, Download, AlertTriangle, CheckCircle, Key, Terminal, Table2 } from 'lucide-react';
+import { Database, Play, Trash2, Download, AlertTriangle, CheckCircle, Key, Terminal, Table2, Sparkles } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -19,6 +19,10 @@ export default function SQLConsolePage() {
     const [error, setError] = useState(null);
     const [queryHistory, setQueryHistory] = useState([]);
     const [useCustomConnection, setUseCustomConnection] = useState(false);
+
+    // AI Query Generation
+    const [naturalLanguageQuery, setNaturalLanguageQuery] = useState('');
+    const [isGenerating, setIsGenerating] = useState(false);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -94,6 +98,33 @@ export default function SQLConsolePage() {
         a.click();
     };
 
+    const generateAIQuery = async () => {
+        if (!naturalLanguageQuery.trim()) {
+            toast.error('Please describe what you want to query');
+            return;
+        }
+
+        setIsGenerating(true);
+        setError(null);
+
+        try {
+            const response = await api.post('/admin/sql/generate', {
+                prompt: naturalLanguageQuery
+            });
+
+            if (response.data.success) {
+                setSqlQuery(response.data.data.sql);
+                toast.success('SQL query generated! Review and execute.');
+            }
+        } catch (err) {
+            const errorMessage = err.response?.data?.message || 'Failed to generate query';
+            toast.error(errorMessage);
+            setError(errorMessage);
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
     const loadFromHistory = (query) => {
         setSqlQuery(query);
     };
@@ -164,6 +195,50 @@ export default function SQLConsolePage() {
                             </div>
                         )}
                     </div>
+                </div>
+
+                {/* AI Query Generation */}
+                <div className="card p-6 border-2 border-dashed border-violet-200 bg-gradient-to-r from-violet-50 to-purple-50">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center">
+                            <Sparkles className="w-5 h-5 text-violet-600" />
+                        </div>
+                        <div>
+                            <h2 className="font-semibold text-slate-900">AI Query Generator</h2>
+                            <p className="text-sm text-slate-500">Describe what data you want in plain English</p>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                        <input
+                            type="text"
+                            value={naturalLanguageQuery}
+                            onChange={(e) => setNaturalLanguageQuery(e.target.value)}
+                            placeholder="e.g., Show all students who submitted assignments late this month"
+                            className="input flex-1"
+                            onKeyDown={(e) => e.key === 'Enter' && generateAIQuery()}
+                        />
+                        <button
+                            onClick={generateAIQuery}
+                            disabled={isGenerating || !naturalLanguageQuery.trim()}
+                            className="btn bg-gradient-to-r from-violet-500 to-purple-500 text-white hover:from-violet-600 hover:to-purple-600 flex items-center gap-2"
+                        >
+                            {isGenerating ? (
+                                <>
+                                    <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span>
+                                    Generating...
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles className="w-4 h-4" />
+                                    Generate SQL
+                                </>
+                            )}
+                        </button>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">
+                        💡 Tips: "List top 10 students by grade" • "Count submissions per class" • "Show teachers with most students"
+                    </p>
                 </div>
 
                 {/* SQL Query Editor */}

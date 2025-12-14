@@ -529,5 +529,53 @@ router.post('/sql/execute', authenticate, authorize('admin'), asyncHandler(async
     }
 }));
 
+/**
+ * @route   POST /api/admin/sql/generate
+ * @desc    Generate SQL from natural language using AI
+ * @access  Private (Admin only)
+ */
+router.post('/sql/generate', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
+    const { prompt } = req.body;
+
+    if (!prompt || typeof prompt !== 'string' || prompt.trim().length < 5) {
+        return res.status(400).json({
+            success: false,
+            message: 'Please provide a natural language query (at least 5 characters)'
+        });
+    }
+
+    try {
+        const geminiService = require('../services/gemini.service');
+        const generatedSQL = await geminiService.generateSQL(prompt.trim());
+
+        // Log AI usage
+        await prisma.activityLog.create({
+            data: {
+                userId: req.user.id,
+                action: 'AI_SQL_GENERATE',
+                entityType: 'sql_console',
+                entityId: null,
+                details: { prompt: prompt.substring(0, 200), generatedLength: generatedSQL.length },
+                ipAddress: req.ip
+            }
+        });
+
+        res.json({
+            success: true,
+            data: {
+                sql: generatedSQL,
+                prompt: prompt
+            }
+        });
+
+    } catch (error) {
+        console.error('[SQL CONSOLE] AI generation error:', error.message);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to generate SQL'
+        });
+    }
+}));
+
 module.exports = router;
 
