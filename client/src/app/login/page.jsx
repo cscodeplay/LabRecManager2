@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
+import axios from 'axios';
 import { Eye, EyeOff, GraduationCap, LogIn, Calendar } from 'lucide-react';
 import { authAPI } from '@/lib/api';
-import api from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import DatabaseStatus from '@/components/DatabaseStatus';
 
@@ -31,8 +31,10 @@ export default function LoginPage() {
 
     const loadAcademicYears = async () => {
         try {
-            const res = await api.get('/schools/academic-years');
-            const years = res.data.data.academicYears || [];
+            // Use axios directly (not api module) since this is a public endpoint and user is not logged in yet
+            const res = await axios.get('/api/schools/academic-years');
+            console.log('Academic years response:', res.data);
+            const years = res.data.data?.academicYears || [];
             setAcademicYears(years);
             // Default to current year
             const currentYear = years.find(y => y.isCurrent);
@@ -42,7 +44,7 @@ export default function LoginPage() {
                 setSelectedYear(years[0].id);
             }
         } catch (error) {
-            console.log('Could not load academic years');
+            console.error('Could not load academic years:', error.response?.data || error.message);
         } finally {
             setLoadingYears(false);
         }
