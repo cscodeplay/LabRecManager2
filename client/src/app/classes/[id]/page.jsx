@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Users, GraduationCap, ArrowLeft, UserPlus, UsersRound, Plus, Search, Mail, Phone } from 'lucide-react';
+import { Users, GraduationCap, ArrowLeft, UserPlus, UsersRound, Plus, Search, Mail, Phone, Calendar, Lock } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -109,6 +109,16 @@ export default function ClassDetailPage() {
                                         <UsersRound className="w-4 h-4" />
                                         {groups.length} Groups
                                     </span>
+                                    {classData.academicYear && (
+                                        <span className={`flex items-center gap-1 px-2 py-1 rounded-full font-medium ${classData.academicYear.isCurrent
+                                                ? 'bg-emerald-100 text-emerald-700'
+                                                : 'bg-amber-100 text-amber-700'
+                                            }`}>
+                                            <Calendar className="w-3 h-3" />
+                                            {classData.academicYear.yearLabel}
+                                            {!classData.academicYear.isCurrent && <Lock className="w-3 h-3" />}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         </div>

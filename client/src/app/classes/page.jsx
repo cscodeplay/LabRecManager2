@@ -3,14 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Users, GraduationCap, Search, Plus, Eye, UserPlus, Calendar } from 'lucide-react';
+import { Users, GraduationCap, Search, Plus, Eye, UserPlus, Calendar, Lock } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 
 export default function ClassesPage() {
     const router = useRouter();
-    const { user, isAuthenticated, _hasHydrated, selectedSessionId, selectedSession } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId, selectedSession, isReadOnlyMode } = useAuthStore();
     const [classes, setClasses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -71,6 +71,44 @@ export default function ClassesPage() {
             </header>
 
             <main className="max-w-7xl mx-auto px-4 py-6">
+                {/* Session Indicator */}
+                {selectedSession && (
+                    <div className={`rounded-xl p-4 mb-6 flex items-center justify-between ${isReadOnlyMode
+                            ? 'bg-amber-50 border border-amber-200'
+                            : 'bg-gradient-to-r from-primary-50 to-primary-100 border border-primary-200'
+                        }`}>
+                        <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isReadOnlyMode ? 'bg-amber-100' : 'bg-primary-100'
+                                }`}>
+                                <Calendar className={`w-5 h-5 ${isReadOnlyMode ? 'text-amber-600' : 'text-primary-600'}`} />
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-slate-900">
+                                        {selectedSession.yearLabel}
+                                    </span>
+                                    {selectedSession.isCurrent ? (
+                                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full font-medium">
+                                            Current Session
+                                        </span>
+                                    ) : (
+                                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium flex items-center gap-1">
+                                            <Lock className="w-3 h-3" />
+                                            Historical
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-sm text-slate-500">
+                                    {new Date(selectedSession.startDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })} - {new Date(selectedSession.endDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                                </p>
+                            </div>
+                        </div>
+                        <p className="text-sm text-slate-500">
+                            Use the session selector in header to change
+                        </p>
+                    </div>
+                )}
+
                 {/* Search */}
                 <div className="card p-4 mb-6">
                     <div className="relative">

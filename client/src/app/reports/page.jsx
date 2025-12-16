@@ -23,7 +23,7 @@ const GRADE_SCALE = [
 
 export default function ReportsPage() {
     const router = useRouter();
-    const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [loading, setLoading] = useState(true);
     const [dateRange, setDateRange] = useState('month');
     const [selectedClassId, setSelectedClassId] = useState('');
@@ -52,7 +52,7 @@ export default function ReportsPage() {
         }
         loadClasses();
         loadReportData();
-    }, [isAuthenticated, user, _hasHydrated]);
+    }, [isAuthenticated, user, _hasHydrated, selectedSessionId]);
 
     useEffect(() => {
         if (_hasHydrated && isAuthenticated) {

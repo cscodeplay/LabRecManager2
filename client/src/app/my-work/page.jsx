@@ -14,7 +14,7 @@ import PageHeader from '@/components/PageHeader';
 
 export default function MyAssignedWorkPage() {
     const router = useRouter();
-    const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [assignments, setAssignments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -28,7 +28,7 @@ export default function MyAssignedWorkPage() {
             return;
         }
         loadAssignedWork();
-    }, [isAuthenticated, _hasHydrated]);
+    }, [isAuthenticated, _hasHydrated, selectedSessionId]);
 
     const loadAssignedWork = async () => {
         try {

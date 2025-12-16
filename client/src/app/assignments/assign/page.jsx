@@ -15,7 +15,7 @@ function AssignWorkContent() {
     const preselectedClassId = searchParams.get('classId');
     const assignmentSearchRef = useRef(null);
 
-    const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
@@ -50,7 +50,7 @@ function AssignWorkContent() {
             return;
         }
         loadInitialData();
-    }, [isAuthenticated, _hasHydrated]);
+    }, [isAuthenticated, _hasHydrated, selectedSessionId]);
 
     useEffect(() => {
         if (selectedClass) {

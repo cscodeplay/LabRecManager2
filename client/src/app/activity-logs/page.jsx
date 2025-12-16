@@ -14,7 +14,7 @@ import PageHeader from '@/components/PageHeader';
 
 export default function ActivityLogsPage() {
     const router = useRouter();
-    const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -36,7 +36,7 @@ export default function ActivityLogsPage() {
             return;
         }
         loadLogs();
-    }, [isAuthenticated, _hasHydrated, page, typeFilter]);
+    }, [isAuthenticated, _hasHydrated, page, typeFilter, selectedSessionId]);
 
     const loadLogs = async () => {
         setLoading(true);
