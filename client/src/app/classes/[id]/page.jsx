@@ -12,13 +12,27 @@ import PageHeader from '@/components/PageHeader';
 export default function ClassDetailPage() {
     const router = useRouter();
     const params = useParams();
-    const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [classData, setClassData] = useState(null);
     const [students, setStudents] = useState([]);
     const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('students');
+    const [initialSessionId, setInitialSessionId] = useState(null);
+
+    // Track initial session and redirect if session changes
+    useEffect(() => {
+        if (!_hasHydrated || !selectedSessionId) return;
+
+        if (initialSessionId === null) {
+            // First load - store the initial session
+            setInitialSessionId(selectedSessionId);
+        } else if (initialSessionId !== selectedSessionId) {
+            // Session changed - redirect to classes list
+            router.push('/classes');
+        }
+    }, [selectedSessionId, initialSessionId, _hasHydrated, router]);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -111,8 +125,8 @@ export default function ClassDetailPage() {
                                     </span>
                                     {classData.academicYear && (
                                         <span className={`flex items-center gap-1 px-2 py-1 rounded-full font-medium ${classData.academicYear.isCurrent
-                                                ? 'bg-emerald-100 text-emerald-700'
-                                                : 'bg-amber-100 text-amber-700'
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : 'bg-amber-100 text-amber-700'
                                             }`}>
                                             <Calendar className="w-3 h-3" />
                                             {classData.academicYear.yearLabel}
