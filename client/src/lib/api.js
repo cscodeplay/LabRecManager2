@@ -265,6 +265,7 @@ export const adminAPI = {
     bulkAssignStudents: (studentIds, classId) => api.post('/admin/students/bulk-assign', {
         studentIds, classId
     }),
+    generatePin: (userId) => api.post(`/pin/${userId}/generate-pin`),
 };
 
 export default api;

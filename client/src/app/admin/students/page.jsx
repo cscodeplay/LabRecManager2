@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     Upload, Download, FileText, Users, UserPlus, FileSpreadsheet,
-    CheckCircle, XCircle, AlertCircle, RefreshCw, School, UserCheck, Calendar, Lock
+    CheckCircle, XCircle, AlertCircle, RefreshCw, School, UserCheck, Calendar, Lock, KeyRound, Copy
 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuthStore } from '@/lib/store';
@@ -34,6 +34,11 @@ export default function AdminStudentsPage() {
     // Assign state
     const [showAssignDialog, setShowAssignDialog] = useState(false);
     const [assigning, setAssigning] = useState(false);
+
+    // PIN generation state
+    const [showPinModal, setShowPinModal] = useState(false);
+    const [pinData, setPinData] = useState(null);
+    const [generatingPin, setGeneratingPin] = useState(null);
 
     const isAdmin = user?.role === 'admin' || user?.role === 'principal';
 
@@ -181,6 +186,28 @@ export default function AdminStudentsPage() {
         }
     };
 
+    const handleGeneratePin = async (student) => {
+        setGeneratingPin(student.id);
+        try {
+            const res = await adminAPI.generatePin(student.id);
+            if (res.data.success) {
+                setPinData({ ...res.data.data, email: student.email });
+                setShowPinModal(true);
+            } else {
+                toast.error(res.data.message || 'Failed to generate PIN');
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to generate PIN');
+        } finally {
+            setGeneratingPin(null);
+        }
+    };
+
+    const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+        toast.success('Copied to clipboard');
+    };
+
     // Filter students by class
     const filteredStudents = filterClass
         ? students.filter(s => s.classEnrollments?.some(e => e.classId === filterClass))
@@ -202,8 +229,8 @@ export default function AdminStudentsPage() {
                 {/* Session Indicator */}
                 {selectedSession && (
                     <div className={`rounded-xl p-4 mb-6 flex items-center justify-between ${isReadOnlyMode
-                            ? 'bg-amber-50 border border-amber-200'
-                            : 'bg-gradient-to-r from-primary-50 to-primary-100 border border-primary-200'
+                        ? 'bg-amber-50 border border-amber-200'
+                        : 'bg-gradient-to-r from-primary-50 to-primary-100 border border-primary-200'
                         }`}>
                         <div className="flex items-center gap-3">
                             <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isReadOnlyMode ? 'bg-amber-100' : 'bg-primary-100'
@@ -426,6 +453,7 @@ export default function AdminStudentsPage() {
                                     <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Email</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Class</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Status</th>
+                                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -473,6 +501,16 @@ export default function AdminStudentsPage() {
                                                         }`}>
                                                         {student.isActive ? 'Active' : 'Inactive'}
                                                     </span>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <button
+                                                        onClick={() => handleGeneratePin(student)}
+                                                        disabled={generatingPin === student.id}
+                                                        className="px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 flex items-center gap-1"
+                                                    >
+                                                        <KeyRound className="w-3 h-3" />
+                                                        {generatingPin === student.id ? 'Generating...' : 'PIN'}
+                                                    </button>
                                                 </td>
                                             </tr>
                                         );
@@ -579,6 +617,62 @@ export default function AdminStudentsPage() {
                                 className="btn btn-primary flex-1"
                             >
                                 {assigning ? 'Assigning...' : 'Assign'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* PIN Generated Modal */}
+            {showPinModal && pinData && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full">
+                        <div className="p-6 border-b border-slate-200">
+                            <h3 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
+                                <KeyRound className="w-5 h-5 text-amber-500" />
+                                Login PIN Generated
+                            </h3>
+                        </div>
+                        <div className="p-6">
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                                <p className="text-sm text-amber-700 mb-2">Student: <strong>{pinData.studentName}</strong></p>
+                                <p className="text-sm text-amber-700">Email: <strong>{pinData.email}</strong></p>
+                            </div>
+
+                            <div className="text-center mb-4">
+                                <p className="text-sm text-slate-500 mb-2">6-Digit PIN</p>
+                                <div className="flex items-center justify-center gap-2">
+                                    <span className="text-4xl font-mono font-bold text-slate-900 tracking-widest bg-slate-100 px-6 py-3 rounded-xl">
+                                        {pinData.pin}
+                                    </span>
+                                    <button
+                                        onClick={() => copyToClipboard(pinData.pin)}
+                                        className="p-2 hover:bg-slate-100 rounded-lg"
+                                    >
+                                        <Copy className="w-5 h-5 text-slate-500" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
+                                <p className="font-medium mb-1">Instructions:</p>
+                                <ol className="list-decimal list-inside space-y-1">
+                                    <li>Share this PIN with the student physically</li>
+                                    <li>Student goes to login page → "First time? Use PIN"</li>
+                                    <li>Enter email + PIN → Set password</li>
+                                </ol>
+                            </div>
+
+                            <p className="text-xs text-slate-500 mt-3 text-center">
+                                PIN expires: {new Date(pinData.expiresAt).toLocaleString()}
+                            </p>
+                        </div>
+                        <div className="p-4 border-t border-slate-200">
+                            <button
+                                onClick={() => { setShowPinModal(false); setPinData(null); }}
+                                className="btn btn-primary w-full"
+                            >
+                                Done
                             </button>
                         </div>
                     </div>

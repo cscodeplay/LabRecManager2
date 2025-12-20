@@ -300,8 +300,22 @@ router.post('/', authenticate, authorize('admin', 'principal', 'instructor'), [
     }
 
     // Create profile extras for students (avatar, device test, notifications)
+    let generatedPin = null;
     if (role === 'student') {
         await createStudentProfileExtras(user.id, firstName, lastName, req.user.schoolId, req.user.id);
+
+        // Auto-generate login PIN for students
+        const { generatePin } = require('../utils/profileHelper');
+        generatedPin = generatePin();
+        const pinSalt = await bcrypt.genSalt(10);
+        const hashedPin = await bcrypt.hash(generatedPin, pinSalt);
+        const pinExpiresAt = new Date();
+        pinExpiresAt.setHours(pinExpiresAt.getHours() + 48); // 48 hour expiry for new students
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { resetPin: hashedPin, pinExpiresAt }
+        });
     }
 
     // Log the action
@@ -321,7 +335,10 @@ router.post('/', authenticate, authorize('admin', 'principal', 'instructor'), [
         success: true,
         message: 'User created successfully',
         messageHindi: 'उपयोगकर्ता सफलतापूर्वक बनाया गया',
-        data: { user }
+        data: {
+            user,
+            ...(generatedPin && { loginPin: generatedPin, pinExpiresIn: '48 hours' })
+        }
     });
 }));
 
