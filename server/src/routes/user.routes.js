@@ -42,10 +42,9 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
         };
     }
 
-    // Session-based filtering: for students, filter by enrollments in classes of the selected academic year
-    if (sessionId && (role === 'student' || !role)) {
-        // If filtering students or all users, add session-based class enrollment filter
-        where.OR = where.OR || [];
+    // Session-based filtering: only apply to students with role filter
+    if (sessionId && role === 'student') {
+        // Filter students by enrollments in classes of the selected academic year
         where.classEnrollments = {
             some: {
                 status: 'active',

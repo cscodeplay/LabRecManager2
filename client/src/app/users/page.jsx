@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Users, Search, Plus, Book, BarChart3, Mail } from 'lucide-react';
+import { Users, Search, Plus, Book, BarChart3, Mail, KeyRound, ToggleLeft, ToggleRight, Trash2, Copy, X } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import api from '@/lib/api';
+import api, { adminAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 export default function UsersPage() {
@@ -15,6 +15,11 @@ export default function UsersPage() {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [roleFilter, setRoleFilter] = useState('all');
+
+    // PIN modal state
+    const [showPinModal, setShowPinModal] = useState(false);
+    const [pinData, setPinData] = useState(null);
+    const [generatingPin, setGeneratingPin] = useState(null);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -58,6 +63,54 @@ export default function UsersPage() {
             accountant: 'bg-pink-100 text-pink-700'
         };
         return styles[role] || 'bg-slate-100 text-slate-700';
+    };
+
+    // Generate PIN handler
+    const handleGeneratePin = async (u) => {
+        if (u.role !== 'student') {
+            toast.error('PIN can only be generated for students');
+            return;
+        }
+        setGeneratingPin(u.id);
+        try {
+            const res = await adminAPI.generatePin(u.id);
+            if (res.data.success) {
+                setPinData({ ...res.data.data, email: u.email, studentName: `${u.firstName} ${u.lastName}` });
+                setShowPinModal(true);
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to generate PIN');
+        } finally {
+            setGeneratingPin(null);
+        }
+    };
+
+    // Toggle active status
+    const handleToggleActive = async (u) => {
+        try {
+            await api.put(`/users/${u.id}`, { isActive: !u.isActive });
+            toast.success(u.isActive ? 'User deactivated' : 'User activated');
+            loadUsers();
+        } catch (error) {
+            toast.error('Failed to update user status');
+        }
+    };
+
+    // Delete user
+    const handleDeleteUser = async (u) => {
+        if (!confirm(`Are you sure you want to delete ${u.firstName} ${u.lastName}?`)) return;
+        try {
+            await api.delete(`/users/${u.id}`);
+            toast.success('User deleted');
+            loadUsers();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to delete user');
+        }
+    };
+
+    const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+        toast.success('Copied to clipboard');
     };
 
     if (loading) {
@@ -151,6 +204,7 @@ export default function UsersPage() {
                                 <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Role</th>
                                 <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">ID</th>
                                 <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Status</th>
+                                <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -186,6 +240,34 @@ export default function UsersPage() {
                                             {u.isActive ? 'Active' : 'Inactive'}
                                         </span>
                                     </td>
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-1">
+                                            {u.role === 'student' && (
+                                                <button
+                                                    onClick={() => handleGeneratePin(u)}
+                                                    disabled={generatingPin === u.id}
+                                                    className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
+                                                    title="Generate PIN"
+                                                >
+                                                    <KeyRound className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={() => handleToggleActive(u)}
+                                                className={`p-1.5 rounded ${u.isActive ? 'text-slate-500 hover:bg-slate-50' : 'text-emerald-600 hover:bg-emerald-50'}`}
+                                                title={u.isActive ? 'Deactivate' : 'Activate'}
+                                            >
+                                                {u.isActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteUser(u)}
+                                                className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                                                title="Delete user"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -197,6 +279,62 @@ export default function UsersPage() {
                     )}
                 </div>
             </main>
+
+            {/* PIN Modal */}
+            {showPinModal && pinData && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full">
+                        <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                            <h3 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
+                                <KeyRound className="w-5 h-5 text-amber-500" />
+                                Login PIN Generated
+                            </h3>
+                            <button onClick={() => { setShowPinModal(false); setPinData(null); }} className="text-slate-400 hover:text-slate-600">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                                <p className="text-sm text-amber-700 mb-1">Student: <strong>{pinData.studentName}</strong></p>
+                                <p className="text-sm text-amber-700">Email: <strong>{pinData.email}</strong></p>
+                            </div>
+
+                            <div className="text-center mb-4">
+                                <p className="text-sm text-slate-500 mb-2">6-Digit PIN</p>
+                                <div className="flex items-center justify-center gap-2">
+                                    <span className="text-4xl font-mono font-bold text-slate-900 tracking-widest bg-slate-100 px-6 py-3 rounded-xl">
+                                        {pinData.pin}
+                                    </span>
+                                    <button onClick={() => copyToClipboard(pinData.pin)} className="p-2 hover:bg-slate-100 rounded-lg">
+                                        <Copy className="w-5 h-5 text-slate-500" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
+                                <p className="font-medium mb-1">Instructions:</p>
+                                <ol className="list-decimal list-inside space-y-1">
+                                    <li>Share PIN with student</li>
+                                    <li>Login page → "First time? Use PIN"</li>
+                                    <li>Enter email + PIN → Set password</li>
+                                </ol>
+                            </div>
+
+                            <p className="text-xs text-slate-500 mt-3 text-center">
+                                PIN expires: {new Date(pinData.expiresAt).toLocaleString()}
+                            </p>
+                        </div>
+                        <div className="p-4 border-t border-slate-200">
+                            <button
+                                onClick={() => { setShowPinModal(false); setPinData(null); }}
+                                className="btn btn-primary w-full"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
