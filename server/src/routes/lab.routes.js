@@ -5,6 +5,27 @@ const prisma = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 
+// Item types with their specific spec fields
+const ITEM_TYPES = {
+    pc: { label: 'Computer', specFields: ['processor', 'ram', 'storage', 'os', 'monitor'] },
+    printer: { label: 'Printer', specFields: ['printType', 'paperSize', 'connectivity'] },
+    router: { label: 'WiFi Router', specFields: ['speed', 'frequency', 'ports'] },
+    speaker: { label: 'Speaker', specFields: ['power', 'channels'] },
+    projector: { label: 'Projector', specFields: ['resolution', 'lumens', 'connectivity'] },
+    chair: { label: 'Chair', specFields: ['material', 'color'] },
+    table: { label: 'Computer Table', specFields: ['material', 'dimensions', 'color'] },
+    other: { label: 'Other', specFields: [] }
+};
+
+/**
+ * @route   GET /api/labs/item-types
+ * @desc    Get available item types and their spec fields
+ * @access  Private
+ */
+router.get('/item-types', authenticate, asyncHandler(async (req, res) => {
+    res.json({ success: true, data: { itemTypes: ITEM_TYPES } });
+}));
+
 /**
  * @route   GET /api/labs
  * @desc    Get all labs for the school
@@ -16,7 +37,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         include: {
             subject: { select: { id: true, name: true } },
             incharge: { select: { id: true, firstName: true, lastName: true } },
-            _count: { select: { pcs: true } }
+            _count: { select: { items: true } }
         },
         orderBy: { name: 'asc' }
     });
@@ -29,7 +50,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
 /**
  * @route   GET /api/labs/:id
- * @desc    Get lab by ID with PCs
+ * @desc    Get lab by ID with all items
  * @access  Private
  */
 router.get('/:id', authenticate, asyncHandler(async (req, res) => {
@@ -38,7 +59,7 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
         include: {
             subject: { select: { id: true, name: true } },
             incharge: { select: { id: true, firstName: true, lastName: true } },
-            pcs: { orderBy: { pcNumber: 'asc' } }
+            items: { orderBy: [{ itemType: 'asc' }, { itemNumber: 'asc' }] }
         }
     });
 
@@ -144,16 +165,20 @@ router.delete('/:id', authenticate, authorize('admin', 'principal'), asyncHandle
     });
 }));
 
-// ==================== LAB PCs ====================
+// ==================== LAB ITEMS (Inventory) ====================
 
 /**
- * @route   GET /api/labs/:labId/pcs
- * @desc    Get all PCs in a lab
+ * @route   GET /api/labs/:labId/items
+ * @desc    Get all items in a lab (optionally filter by type)
  * @access  Private
  */
-router.get('/:labId/pcs', authenticate, asyncHandler(async (req, res) => {
-    const pcs = await prisma.labPC.findMany({
-        where: { labId: req.params.labId, schoolId: req.user.schoolId },
+router.get('/:labId/items', authenticate, asyncHandler(async (req, res) => {
+    const { type } = req.query;
+    const where = { labId: req.params.labId, schoolId: req.user.schoolId };
+    if (type) where.itemType = type;
+
+    const items = await prisma.labItem.findMany({
+        where,
         include: {
             assignedGroups: {
                 include: {
@@ -161,50 +186,50 @@ router.get('/:labId/pcs', authenticate, asyncHandler(async (req, res) => {
                 }
             }
         },
-        orderBy: { pcNumber: 'asc' }
+        orderBy: [{ itemType: 'asc' }, { itemNumber: 'asc' }]
     });
 
     res.json({
         success: true,
-        data: { pcs }
+        data: { items }
     });
 }));
 
 /**
- * @route   GET /api/labs/pcs/all
- * @desc    Get all PCs across all labs (for assignment dropdown)
+ * @route   GET /api/labs/items/pcs
+ * @desc    Get all PCs across all labs (for group assignment dropdown)
  * @access  Private
  */
-router.get('/pcs/all', authenticate, asyncHandler(async (req, res) => {
-    const pcs = await prisma.labPC.findMany({
-        where: { schoolId: req.user.schoolId, status: 'active' },
+router.get('/items/pcs', authenticate, asyncHandler(async (req, res) => {
+    const items = await prisma.labItem.findMany({
+        where: { schoolId: req.user.schoolId, itemType: 'pc', status: 'active' },
         include: {
             lab: { select: { id: true, name: true, roomNumber: true } },
             assignedGroups: { select: { id: true, name: true } }
         },
-        orderBy: [{ lab: { name: 'asc' } }, { pcNumber: 'asc' }]
+        orderBy: [{ lab: { name: 'asc' } }, { itemNumber: 'asc' }]
     });
 
     res.json({
         success: true,
-        data: { pcs }
+        data: { items }
     });
 }));
 
 /**
- * @route   POST /api/labs/:labId/pcs
- * @desc    Add a PC to a lab
+ * @route   POST /api/labs/:labId/items
+ * @desc    Add an item to a lab
  * @access  Private (Admin)
  */
-router.post('/:labId/pcs', authenticate, authorize('admin', 'principal', 'lab_assistant'), [
-    body('pcNumber').trim().notEmpty().withMessage('PC number is required')
+router.post('/:labId/items', authenticate, authorize('admin', 'principal', 'lab_assistant'), [
+    body('itemType').trim().notEmpty().withMessage('Item type is required'),
+    body('itemNumber').trim().notEmpty().withMessage('Item number is required')
 ], asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    // Verify lab exists
     const lab = await prisma.lab.findFirst({
         where: { id: req.params.labId, schoolId: req.user.schoolId }
     });
@@ -212,85 +237,100 @@ router.post('/:labId/pcs', authenticate, authorize('admin', 'principal', 'lab_as
         return res.status(404).json({ success: false, message: 'Lab not found' });
     }
 
-    const { pcNumber, brand, modelNo, serialNo, ram, storage, processor, os, status, notes } = req.body;
+    const { itemType, itemNumber, brand, modelNo, serialNo, quantity, specs, status, notes, purchaseDate, warrantyEnd } = req.body;
 
-    const pc = await prisma.labPC.create({
+    const item = await prisma.labItem.create({
         data: {
             labId: req.params.labId,
             schoolId: req.user.schoolId,
-            pcNumber,
+            itemType,
+            itemNumber,
             brand,
             modelNo,
             serialNo,
-            ram,
-            storage,
-            processor,
-            os,
+            quantity: quantity || 1,
+            specs: specs || {},
             status: status || 'active',
-            notes
+            notes,
+            purchaseDate: purchaseDate ? new Date(purchaseDate) : null,
+            warrantyEnd: warrantyEnd ? new Date(warrantyEnd) : null
         }
     });
 
     res.status(201).json({
         success: true,
-        message: 'PC added successfully',
-        data: { pc }
+        message: `${ITEM_TYPES[itemType]?.label || 'Item'} added successfully`,
+        data: { item }
     });
 }));
 
 /**
- * @route   PUT /api/labs/:labId/pcs/:pcId
- * @desc    Update a PC
+ * @route   PUT /api/labs/:labId/items/:itemId
+ * @desc    Update an item
  * @access  Private (Admin)
  */
-router.put('/:labId/pcs/:pcId', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
-    const pc = await prisma.labPC.findFirst({
-        where: { id: req.params.pcId, labId: req.params.labId, schoolId: req.user.schoolId }
+router.put('/:labId/items/:itemId', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const item = await prisma.labItem.findFirst({
+        where: { id: req.params.itemId, labId: req.params.labId, schoolId: req.user.schoolId }
     });
 
-    if (!pc) {
-        return res.status(404).json({ success: false, message: 'PC not found' });
+    if (!item) {
+        return res.status(404).json({ success: false, message: 'Item not found' });
     }
 
-    const { pcNumber, brand, modelNo, serialNo, ram, storage, processor, os, status, notes } = req.body;
+    const { itemType, itemNumber, brand, modelNo, serialNo, quantity, specs, status, notes, purchaseDate, warrantyEnd } = req.body;
 
-    const updated = await prisma.labPC.update({
-        where: { id: req.params.pcId },
-        data: { pcNumber, brand, modelNo, serialNo, ram, storage, processor, os, status, notes }
+    const updated = await prisma.labItem.update({
+        where: { id: req.params.itemId },
+        data: {
+            itemType,
+            itemNumber,
+            brand,
+            modelNo,
+            serialNo,
+            quantity,
+            specs,
+            status,
+            notes,
+            purchaseDate: purchaseDate ? new Date(purchaseDate) : null,
+            warrantyEnd: warrantyEnd ? new Date(warrantyEnd) : null
+        }
     });
 
     res.json({
         success: true,
-        message: 'PC updated successfully',
-        data: { pc: updated }
+        message: 'Item updated successfully',
+        data: { item: updated }
     });
 }));
 
 /**
- * @route   DELETE /api/labs/:labId/pcs/:pcId
- * @desc    Delete a PC
+ * @route   DELETE /api/labs/:labId/items/:itemId
+ * @desc    Delete an item
  * @access  Private (Admin)
  */
-router.delete('/:labId/pcs/:pcId', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
-    const pc = await prisma.labPC.findFirst({
-        where: { id: req.params.pcId, labId: req.params.labId, schoolId: req.user.schoolId }
+router.delete('/:labId/items/:itemId', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const item = await prisma.labItem.findFirst({
+        where: { id: req.params.itemId, labId: req.params.labId, schoolId: req.user.schoolId }
     });
 
-    if (!pc) {
-        return res.status(404).json({ success: false, message: 'PC not found' });
+    if (!item) {
+        return res.status(404).json({ success: false, message: 'Item not found' });
     }
 
-    // Unassign from any groups first
-    await prisma.studentGroup.updateMany({
-        where: { assignedPcId: req.params.pcId },
-        data: { assignedPcId: null }
-    });
+    // Unassign from any groups first (only for PCs)
+    if (item.itemType === 'pc') {
+        await prisma.studentGroup.updateMany({
+            where: { assignedPcId: req.params.itemId },
+            data: { assignedPcId: null }
+        });
+    }
 
-    await prisma.labPC.delete({ where: { id: req.params.pcId } });
+    await prisma.labItem.delete({ where: { id: req.params.itemId } });
 
     res.json({
         success: true,
-        message: 'PC deleted successfully'
+        message: 'Item deleted successfully'
     });
 }));
 
@@ -311,7 +351,6 @@ router.put('/groups/:groupId/assign-pc', authenticate, authorize('admin', 'princ
         return res.status(404).json({ success: false, message: 'Group not found' });
     }
 
-    // If pcId is null, unassign
     if (!pcId) {
         await prisma.studentGroup.update({
             where: { id: req.params.groupId },
@@ -320,16 +359,14 @@ router.put('/groups/:groupId/assign-pc', authenticate, authorize('admin', 'princ
         return res.json({ success: true, message: 'PC unassigned from group' });
     }
 
-    // Verify PC exists
-    const pc = await prisma.labPC.findFirst({
-        where: { id: pcId, schoolId: req.user.schoolId }
+    const pc = await prisma.labItem.findFirst({
+        where: { id: pcId, schoolId: req.user.schoolId, itemType: 'pc' }
     });
 
     if (!pc) {
         return res.status(404).json({ success: false, message: 'PC not found' });
     }
 
-    // Assign PC
     const updated = await prisma.studentGroup.update({
         where: { id: req.params.groupId },
         data: { assignedPcId: pcId },
@@ -340,7 +377,7 @@ router.put('/groups/:groupId/assign-pc', authenticate, authorize('admin', 'princ
 
     res.json({
         success: true,
-        message: `PC ${pc.pcNumber} assigned to ${group.name}`,
+        message: `PC ${pc.itemNumber} assigned to ${group.name}`,
         data: { group: updated }
     });
 }));

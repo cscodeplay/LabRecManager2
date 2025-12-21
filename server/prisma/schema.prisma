@@ -42,7 +42,7 @@ model School {
   notificationTemplates NotificationTemplate[]
   assignments      Assignment[]
   gradeScales      GradeScale[]
-  labPcs           LabPC[]
+  labItems         LabItem[]
 
   @@map("schools")
 }
@@ -309,7 +309,7 @@ model StudentGroup {
   // Relations
   class       Class              @relation(fields: [classId], references: [id])
   createdBy   User               @relation(fields: [createdById], references: [id])
-  assignedPc  LabPC?             @relation(fields: [assignedPcId], references: [id])
+  assignedPc  LabItem?           @relation(fields: [assignedPcId], references: [id])
   members     GroupMember[]
   targets     AssignmentTarget[]
   submissions Submission[]
@@ -399,25 +399,26 @@ model Lab {
   assignments   Assignment[]
   materialUsage LabMaterialUsage[]
   attendance    LabAttendance[]
-  pcs           LabPC[]
+  items         LabItem[]
 
   @@map("labs")
 }
 
-model LabPC {
+model LabItem {
   id          String   @id @default(uuid())
   labId       String   @map("lab_id")
   schoolId    String   @map("school_id")
-  pcNumber    String   @map("pc_number")  // e.g., "CL2-PC-001"
+  itemType    String   @map("item_type")  // pc, printer, router, speaker, chair, table, projector, other
+  itemNumber  String   @map("item_number")  // e.g., "CL2-PC-001", "CL2-PTR-001"
   brand       String?
   modelNo     String?  @map("model_no")
   serialNo    String?  @map("serial_no")
-  ram         String?  // e.g., "16GB DDR4"
-  storage     String?  // e.g., "512GB SSD"
-  processor   String?  // e.g., "Intel i5-10400"
-  os          String?  // e.g., "Windows 11"
+  quantity    Int      @default(1)  // For items like chairs/tables
+  specs       Json?    // Type-specific fields: {ram, storage, processor, os} for PC, {paperSize, dpi} for printer, etc.
   status      String   @default("active") // active, maintenance, retired
   notes       String?
+  purchaseDate DateTime? @map("purchase_date")
+  warrantyEnd  DateTime? @map("warranty_end")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -426,8 +427,8 @@ model LabPC {
   school          School         @relation(fields: [schoolId], references: [id])
   assignedGroups  StudentGroup[]
 
-  @@unique([labId, pcNumber])
-  @@map("lab_pcs")
+  @@unique([labId, itemNumber])
+  @@map("lab_items")
 }
 
 // ==================== ASSIGNMENTS ====================
