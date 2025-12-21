@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const prisma = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { uploadSingle } = require('../middleware/upload');
 
 // Item types with their specific spec fields
 const ITEM_TYPES = {
@@ -24,6 +25,88 @@ const ITEM_TYPES = {
  */
 router.get('/item-types', authenticate, asyncHandler(async (req, res) => {
     res.json({ success: true, data: { itemTypes: ITEM_TYPES } });
+}));
+
+/**
+ * @route   POST /api/labs/upload-image
+ * @desc    Upload an image for inventory item
+ * @access  Private (Admin)
+ */
+router.post('/upload-image', authenticate, authorize('admin', 'principal', 'lab_assistant'), uploadSingle, asyncHandler(async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ success: false, message: 'No image file provided' });
+    }
+
+    // Return the URL path to the uploaded image
+    const imageUrl = `/${req.file.path.replace(/\\/g, '/')}`;
+
+    res.json({
+        success: true,
+        message: 'Image uploaded successfully',
+        data: { imageUrl }
+    });
+}));
+
+/**
+ * @route   GET /api/labs/inventory-reports
+ * @desc    Get inventory reports with alerts
+ * @access  Private (Admin/Principal)
+ */
+router.get('/inventory-reports', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const schoolId = req.user.schoolId;
+
+    // Get all items
+    const items = await prisma.labItem.findMany({
+        where: { schoolId },
+        include: { lab: { select: { name: true } } }
+    });
+
+    // Stats by type
+    const statsByType = {};
+    const statsByStatus = { active: 0, maintenance: 0, retired: 0 };
+    items.forEach(item => {
+        statsByType[item.itemType] = (statsByType[item.itemType] || 0) + 1;
+        statsByStatus[item.status] = (statsByStatus[item.status] || 0) + 1;
+    });
+
+    // Maintenance alerts (items in maintenance)
+    const maintenanceAlerts = items.filter(i => i.status === 'maintenance');
+
+    // Warranty expiration alerts (next 30, 60, 90 days)
+    const now = new Date();
+    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const in60Days = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+    const in90Days = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+    const warrantyAlerts = {
+        expiredOrExpiring30: items.filter(i => i.warrantyEnd && new Date(i.warrantyEnd) <= in30Days),
+        expiring60: items.filter(i => i.warrantyEnd && new Date(i.warrantyEnd) > in30Days && new Date(i.warrantyEnd) <= in60Days),
+        expiring90: items.filter(i => i.warrantyEnd && new Date(i.warrantyEnd) > in60Days && new Date(i.warrantyEnd) <= in90Days)
+    };
+
+    // Low stock alerts (types with < 3 items)
+    const lowStockAlerts = Object.entries(statsByType)
+        .filter(([type, count]) => count < 3)
+        .map(([type, count]) => ({ type, count, label: ITEM_TYPES[type]?.label || type }));
+
+    // Get labs summary
+    const labs = await prisma.lab.findMany({
+        where: { schoolId },
+        select: { id: true, name: true, roomNumber: true, _count: { select: { items: true } } }
+    });
+
+    res.json({
+        success: true,
+        data: {
+            totalItems: items.length,
+            statsByType,
+            statsByStatus,
+            maintenanceAlerts,
+            warrantyAlerts,
+            lowStockAlerts,
+            labs
+        }
+    });
 }));
 
 /**

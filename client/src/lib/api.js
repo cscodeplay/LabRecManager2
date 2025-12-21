@@ -194,6 +194,16 @@ export const labsAPI = {
     createItem: (labId, data) => api.post(`/labs/${labId}/items`, data),
     updateItem: (labId, itemId, data) => api.put(`/labs/${labId}/items/${itemId}`, data),
     deleteItem: (labId, itemId) => api.delete(`/labs/${labId}/items/${itemId}`),
+    // Reports
+    getInventoryReports: () => api.get('/labs/inventory-reports'),
+    // Image upload
+    uploadImage: (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return api.post('/labs/upload-image', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+    },
     // Group assignment
     assignPcToGroup: (groupId, pcId) => api.put(`/labs/groups/${groupId}/assign-pc`, { pcId }),
 };

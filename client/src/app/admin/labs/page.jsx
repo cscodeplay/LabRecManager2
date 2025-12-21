@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Monitor, Plus, Edit2, Trash2, X, Search, ArrowLeft, Building, Printer, Wifi, Speaker, Armchair, Table, Projector, Package } from 'lucide-react';
+import { Monitor, Plus, Edit2, Trash2, X, Search, ArrowLeft, Building, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, BarChart3 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { labsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -117,9 +117,14 @@ export default function LabsPage() {
                             <h1 className="text-xl font-semibold text-slate-900">Labs Management</h1>
                         </div>
                     </div>
-                    <button onClick={() => { setEditingLab(null); setFormData({ name: '', nameHindi: '', roomNumber: '', capacity: 30 }); setShowModal(true); }} className="btn btn-primary">
-                        <Plus className="w-4 h-4" /> Add Lab
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <Link href="/admin/labs/inventory-reports" className="btn btn-secondary">
+                            <BarChart3 className="w-4 h-4" /> Reports
+                        </Link>
+                        <button onClick={() => { setEditingLab(null); setFormData({ name: '', nameHindi: '', roomNumber: '', capacity: 30 }); setShowModal(true); }} className="btn btn-primary">
+                            <Plus className="w-4 h-4" /> Add Lab
+                        </button>
+                    </div>
                 </div>
             </header>
 

@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Monitor, Plus, Edit2, Trash2, X, ArrowLeft, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, PlusCircle, Eye, Download, Upload, FileSpreadsheet, Calendar, Shield, Image } from 'lucide-react';
+import { Monitor, Plus, Edit2, Trash2, X, ArrowLeft, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, PlusCircle, Eye, Download, Upload, FileSpreadsheet, Calendar, Shield, Image, Search, QrCode, CheckSquare, Square } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { labsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -40,6 +40,9 @@ export default function LabInventoryPage() {
     const [showModal, setShowModal] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [viewingItem, setViewingItem] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedItems, setSelectedItems] = useState(new Set());
+    const [qrItem, setQrItem] = useState(null);
     const [formData, setFormData] = useState({
         itemType: 'pc', itemNumber: '', brand: '', modelNo: '', serialNo: '',
         specs: {}, status: 'active', notes: '', imageUrl: '', purchaseDate: '', warrantyEnd: ''
@@ -198,7 +201,54 @@ export default function LabInventoryPage() {
 
     const getIcon = (type) => ITEM_TYPES[type]?.icon || Package;
 
-    const filteredItems = filterType === 'all' ? items : items.filter(i => i.itemType === filterType);
+    // Search and filter logic
+    const filteredItems = useMemo(() => {
+        let result = filterType === 'all' ? items : items.filter(i => i.itemType === filterType);
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            result = result.filter(i =>
+                i.itemNumber?.toLowerCase().includes(q) ||
+                i.brand?.toLowerCase().includes(q) ||
+                i.modelNo?.toLowerCase().includes(q) ||
+                i.serialNo?.toLowerCase().includes(q)
+            );
+        }
+        return result;
+    }, [items, filterType, searchQuery]);
+
+    // Bulk selection handlers
+    const toggleSelectItem = (id) => {
+        const newSet = new Set(selectedItems);
+        if (newSet.has(id)) { newSet.delete(id); } else { newSet.add(id); }
+        setSelectedItems(newSet);
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedItems.size === filteredItems.length) {
+            setSelectedItems(new Set());
+        } else {
+            setSelectedItems(new Set(filteredItems.map(i => i.id)));
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedItems.size === 0) return;
+        if (!confirm(`Delete ${selectedItems.size} selected items? This cannot be undone.`)) return;
+        try {
+            let successCount = 0;
+            for (const id of selectedItems) {
+                try {
+                    await labsAPI.deleteItem(params.id, id);
+                    successCount++;
+                } catch { }
+            }
+            toast.success(`Deleted ${successCount} items`);
+            setSelectedItems(new Set());
+            loadData();
+        } catch (error) {
+            toast.error('Failed to delete items');
+        }
+    };
 
     // Download CSV Template with sample data
     const downloadTemplate = () => {
@@ -352,6 +402,27 @@ export default function LabInventoryPage() {
                     </div>
                 </div>
 
+                {/* Search Bar + Bulk Actions */}
+                <div className="card p-4 mb-4">
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                            <input
+                                type="text"
+                                placeholder="Search by item number, brand, model, or serial..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="input pl-10"
+                            />
+                        </div>
+                        {selectedItems.size > 0 && (
+                            <button onClick={handleBulkDelete} className="btn bg-red-500 hover:bg-red-600 text-white">
+                                <Trash2 className="w-4 h-4" /> Delete {selectedItems.size} Selected
+                            </button>
+                        )}
+                    </div>
+                </div>
+
                 {/* Filter Tabs */}
                 <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
                     <button onClick={() => setFilterType('all')} className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${filterType === 'all' ? 'bg-primary-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'}`}>
@@ -382,6 +453,13 @@ export default function LabInventoryPage() {
                         <table className="w-full">
                             <thead className="bg-slate-50 border-b border-slate-100">
                                 <tr>
+                                    <th className="w-10 px-4 py-3">
+                                        <button onClick={toggleSelectAll} className="text-slate-400 hover:text-slate-600">
+                                            {selectedItems.size === filteredItems.length && filteredItems.length > 0 ?
+                                                <CheckSquare className="w-5 h-5 text-primary-500" /> :
+                                                <Square className="w-5 h-5" />}
+                                        </button>
+                                    </th>
                                     <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Item</th>
                                     <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Brand/Model</th>
                                     <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Serial</th>
@@ -394,13 +472,24 @@ export default function LabInventoryPage() {
                                 {filteredItems.map((item) => {
                                     const Icon = getIcon(item.itemType);
                                     const typeInfo = ITEM_TYPES[item.itemType] || ITEM_TYPES.other;
+                                    const isSelected = selectedItems.has(item.id);
                                     return (
-                                        <tr key={item.id} className="hover:bg-slate-50">
+                                        <tr key={item.id} className={`hover:bg-slate-50 ${isSelected ? 'bg-primary-50' : ''}`}>
                                             <td className="px-4 py-3">
-                                                <div className="flex items-center gap-2">
-                                                    <div className={`w-8 h-8 rounded-lg bg-${typeInfo.color}-100 flex items-center justify-center`}>
-                                                        <Icon className={`w-4 h-4 text-${typeInfo.color}-600`} />
-                                                    </div>
+                                                <button onClick={() => toggleSelectItem(item.id)} className="text-slate-400 hover:text-slate-600">
+                                                    {isSelected ? <CheckSquare className="w-5 h-5 text-primary-500" /> : <Square className="w-5 h-5" />}
+                                                </button>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="flex items-center gap-3">
+                                                    {/* Thumbnail or Icon */}
+                                                    {item.imageUrl ? (
+                                                        <img src={item.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200" />
+                                                    ) : (
+                                                        <div className={`w-10 h-10 rounded-lg bg-${typeInfo.color}-100 flex items-center justify-center`}>
+                                                            <Icon className={`w-5 h-5 text-${typeInfo.color}-600`} />
+                                                        </div>
+                                                    )}
                                                     <div>
                                                         <span className="font-medium text-slate-900">{item.itemNumber}</span>
                                                         <p className="text-xs text-slate-500">{typeInfo.label}</p>
@@ -411,14 +500,14 @@ export default function LabInventoryPage() {
                                                 <p className="text-slate-900">{item.brand || '-'}</p>
                                                 <p className="text-xs text-slate-500">{item.modelNo || ''}</p>
                                             </td>
-                                            <td className="px-4 py-3 text-slate-600 text-sm">{item.serialNo || '-'}</td>
+                                            <td className="px-4 py-3 text-slate-600 text-sm font-mono">{item.serialNo || '-'}</td>
                                             <td className="px-4 py-3">
                                                 <div className="flex flex-wrap gap-1 max-w-xs">
-                                                    {item.specs && Object.entries(item.specs).slice(0, 4).map(([k, v]) => v && (
+                                                    {item.specs && Object.entries(item.specs).slice(0, 3).map(([k, v]) => v && (
                                                         <span key={k} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded" title={k}>{v}</span>
                                                     ))}
-                                                    {item.specs && Object.keys(item.specs).length > 4 && (
-                                                        <span className="px-2 py-0.5 bg-slate-200 text-slate-500 text-xs rounded">+{Object.keys(item.specs).length - 4}</span>
+                                                    {item.specs && Object.keys(item.specs).length > 3 && (
+                                                        <span className="px-2 py-0.5 bg-slate-200 text-slate-500 text-xs rounded">+{Object.keys(item.specs).length - 3}</span>
                                                     )}
                                                 </div>
                                             </td>
@@ -429,6 +518,9 @@ export default function LabInventoryPage() {
                                                 <div className="flex gap-1">
                                                     <button onClick={() => setViewingItem(item)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded" title="View Details">
                                                         <Eye className="w-4 h-4" />
+                                                    </button>
+                                                    <button onClick={() => setQrItem(item)} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded" title="QR Code">
+                                                        <QrCode className="w-4 h-4" />
                                                     </button>
                                                     <button onClick={() => handleEdit(item)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit">
                                                         <Edit2 className="w-4 h-4" />
@@ -575,28 +667,80 @@ export default function LabInventoryPage() {
                                 <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="input" rows={2} />
                             </div>
 
-                            {/* Image URL */}
+                            {/* Image Upload */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                                    <Image className="w-4 h-4 inline mr-1" /> Image URL
+                                    <Image className="w-4 h-4 inline mr-1" /> Item Image
                                 </label>
-                                <input
-                                    type="url"
-                                    value={formData.imageUrl}
-                                    onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                                    className="input"
-                                    placeholder="https://example.com/image.jpg"
-                                />
-                                {formData.imageUrl && (
-                                    <div className="mt-2 relative">
-                                        <img
-                                            src={formData.imageUrl}
-                                            alt="Item preview"
-                                            className="w-full h-32 object-cover rounded-lg border border-slate-200"
-                                            onError={(e) => { e.target.style.display = 'none'; }}
-                                        />
-                                    </div>
-                                )}
+                                {/* Drag & Drop Zone */}
+                                <div
+                                    className={`border-2 border-dashed rounded-xl p-4 text-center transition-colors ${formData.imageUrl ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300 hover:border-primary-400 hover:bg-primary-50'
+                                        }`}
+                                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-primary-500', 'bg-primary-100'); }}
+                                    onDragLeave={(e) => { e.currentTarget.classList.remove('border-primary-500', 'bg-primary-100'); }}
+                                    onDrop={async (e) => {
+                                        e.preventDefault();
+                                        e.currentTarget.classList.remove('border-primary-500', 'bg-primary-100');
+                                        const file = e.dataTransfer.files[0];
+                                        if (file && file.type.startsWith('image/')) {
+                                            try {
+                                                toast.loading('Uploading image...', { id: 'img-upload' });
+                                                const res = await labsAPI.uploadImage(file);
+                                                setFormData(prev => ({ ...prev, imageUrl: res.data.data.imageUrl }));
+                                                toast.success('Image uploaded', { id: 'img-upload' });
+                                            } catch (err) {
+                                                toast.error('Failed to upload image', { id: 'img-upload' });
+                                            }
+                                        }
+                                    }}
+                                >
+                                    {formData.imageUrl ? (
+                                        <div className="relative">
+                                            <img src={formData.imageUrl} alt="Preview" className="w-full h-32 object-cover rounded-lg" />
+                                            <button
+                                                type="button"
+                                                onClick={() => setFormData(prev => ({ ...prev, imageUrl: '' }))}
+                                                className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <label className="cursor-pointer">
+                                            <Upload className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                                            <p className="text-sm text-slate-600">Drag & drop image or click to upload</p>
+                                            <p className="text-xs text-slate-400 mt-1">PNG, JPG up to 10MB</p>
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                className="hidden"
+                                                onChange={async (e) => {
+                                                    const file = e.target.files[0];
+                                                    if (file) {
+                                                        try {
+                                                            toast.loading('Uploading image...', { id: 'img-upload' });
+                                                            const res = await labsAPI.uploadImage(file);
+                                                            setFormData(prev => ({ ...prev, imageUrl: res.data.data.imageUrl }));
+                                                            toast.success('Image uploaded', { id: 'img-upload' });
+                                                        } catch (err) {
+                                                            toast.error('Failed to upload image', { id: 'img-upload' });
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </label>
+                                    )}
+                                </div>
+                                {/* URL fallback */}
+                                <div className="mt-2">
+                                    <input
+                                        type="url"
+                                        value={formData.imageUrl}
+                                        onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                                        className="input text-sm"
+                                        placeholder="Or paste image URL..."
+                                    />
+                                </div>
                             </div>
 
                             <div className="flex gap-3 pt-4">
@@ -721,6 +865,55 @@ export default function LabInventoryPage() {
                     </div>
                 );
             })()}
+
+            {/* QR Code Modal */}
+            {qrItem && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl max-w-sm w-full">
+                        <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                            <h3 className="text-xl font-semibold text-slate-900">QR Code</h3>
+                            <button onClick={() => setQrItem(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-6 text-center">
+                            <div className="bg-white p-4 rounded-xl inline-block mb-4 border border-slate-200">
+                                <img
+                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(JSON.stringify({
+                                        id: qrItem.id,
+                                        lab: lab?.name,
+                                        item: qrItem.itemNumber,
+                                        type: qrItem.itemType,
+                                        serial: qrItem.serialNo || 'N/A',
+                                        brand: qrItem.brand || 'N/A',
+                                        model: qrItem.modelNo || 'N/A'
+                                    }))}`}
+                                    alt="QR Code"
+                                    className="w-48 h-48"
+                                />
+                            </div>
+                            <div className="mb-4">
+                                <p className="font-semibold text-slate-900">{qrItem.itemNumber}</p>
+                                <p className="text-sm text-slate-500">{lab?.name}</p>
+                                {qrItem.serialNo && <p className="text-xs text-slate-400 font-mono mt-1">{qrItem.serialNo}</p>}
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={() => setQrItem(null)} className="btn btn-secondary flex-1">Close</button>
+                                <a
+                                    href={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&format=png&data=${encodeURIComponent(JSON.stringify({
+                                        id: qrItem.id,
+                                        lab: lab?.name,
+                                        item: qrItem.itemNumber,
+                                        serial: qrItem.serialNo || 'N/A'
+                                    }))}`}
+                                    download={`QR-${qrItem.itemNumber}.png`}
+                                    className="btn btn-primary flex-1"
+                                >
+                                    <Download className="w-4 h-4" /> Download
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

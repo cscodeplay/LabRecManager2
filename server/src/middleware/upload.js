@@ -11,7 +11,8 @@ const createUploadDirs = () => {
         'uploads/submissions',
         'uploads/profiles',
         'uploads/viva-recordings',
-        'uploads/reports'
+        'uploads/reports',
+        'uploads/inventory'
     ];
 
     dirs.forEach(dir => {
@@ -37,6 +38,8 @@ const storage = multer.diskStorage({
             uploadPath += 'profiles/';
         } else if (req.baseUrl.includes('viva')) {
             uploadPath += 'viva-recordings/';
+        } else if (req.baseUrl.includes('labs')) {
+            uploadPath += 'inventory/';
         } else {
             uploadPath += 'misc/';
         }
