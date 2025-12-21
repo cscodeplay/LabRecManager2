@@ -105,8 +105,8 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                             <Beaker className="w-6 h-6" />
                         </div>
                         <div>
-                            <h1 className="font-bold text-slate-900 dark:text-slate-100 text-lg leading-none">Lab Record</h1>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">प्रयोगशाला रिकॉर्ड</p>
+                            <h1 className="font-bold text-slate-900 dark:text-slate-100 text-lg leading-none">ULRMS</h1>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Unified Lab Records</p>
                         </div>
                     </Link>
                 )}

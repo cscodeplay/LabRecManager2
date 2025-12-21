@@ -6,8 +6,8 @@ import { Providers } from '@/components/Providers';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata = {
-    title: 'Lab Record Manager | प्रयोगशाला रिकॉर्ड प्रबंधक',
-    description: 'Comprehensive lab management system for Indian schools with multi-language support',
+    title: 'ULRMS | यूनिफाइड लैब रिकॉर्ड प्रबंधन प्रणाली',
+    description: 'Unified Lab Record Management System for Indian schools with multi-language support',
     keywords: 'lab, school, assignments, grading, viva, India, education',
 };
 

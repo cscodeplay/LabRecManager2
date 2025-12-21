@@ -58,8 +58,8 @@ export default function LoginPage() {
 
     const text = {
         en: {
-            title: 'Lab Record Manager',
-            subtitle: 'School Lab Management System',
+            title: 'ULRMS',
+            subtitle: 'Unified Lab Record Management System',
             email: 'Email Address',
             password: 'Password',
             login: 'Sign In',
@@ -74,8 +74,8 @@ export default function LoginPage() {
             confirmPassword: 'Confirm Password',
         },
         hi: {
-            title: 'प्रयोगशाला रिकॉर्ड प्रबंधक',
-            subtitle: 'स्कूल लैब प्रबंधन प्रणाली',
+            title: 'यूएलआरएमएस',
+            subtitle: 'यूनिफाइड लैब रिकॉर्ड प्रबंधन प्रणाली',
             email: 'ईमेल पता',
             password: 'पासवर्ड',
             login: 'साइन इन करें',
