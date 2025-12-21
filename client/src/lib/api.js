@@ -204,6 +204,9 @@ export const labsAPI = {
             headers: { 'Content-Type': 'multipart/form-data' }
         });
     },
+    // Import history
+    getImportHistory: () => api.get('/labs/import-history'),
+    saveImportHistory: (labId, data) => api.post(`/labs/${labId}/import-history`, data),
     // Group assignment
     assignPcToGroup: (groupId, pcId) => api.put(`/labs/groups/${groupId}/assign-pc`, { pcId }),
 };

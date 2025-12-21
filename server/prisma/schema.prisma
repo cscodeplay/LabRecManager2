@@ -177,6 +177,7 @@ model User {
   notifications      Notification[]
   vivaParticipations VivaParticipant[]
   deviceTests        DeviceTest[]
+  importHistory      ImportHistory[]
 
   @@map("users")
 }
@@ -400,6 +401,7 @@ model Lab {
   materialUsage LabMaterialUsage[]
   attendance    LabAttendance[]
   items         LabItem[]
+  importHistory ImportHistory[]
 
   @@map("labs")
 }
@@ -429,6 +431,27 @@ model LabItem {
 
   @@unique([labId, itemNumber])
   @@map("lab_items")
+}
+
+// Import history for tracking CSV uploads
+model ImportHistory {
+  id            String   @id @default(uuid())
+  schoolId      String   @map("school_id")
+  labId         String   @map("lab_id")
+  uploadedById  String   @map("uploaded_by")
+  fileName      String   @map("file_name")
+  fileSize      Int?     @map("file_size")
+  itemsImported Int      @map("items_imported")
+  itemsFailed   Int      @default(0) @map("items_failed")
+  status        String   @default("completed") // completed, partial, failed
+  errors        Json?    // Array of error messages
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  lab        Lab  @relation(fields: [labId], references: [id], onDelete: Cascade)
+  uploadedBy User @relation(fields: [uploadedById], references: [id])
+
+  @@map("import_history")
 }
 
 // ==================== ASSIGNMENTS ====================

@@ -332,11 +332,12 @@ export default function LabInventoryPage() {
                 return;
             }
             let successCount = 0, errorCount = 0;
+            const errorMessages = [];
             for (let i = 1; i < lines.length; i++) {
                 const values = lines[i].match(/("[^"]*"|[^,]+)/g)?.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"').trim()) || [];
                 const row = {};
                 headers.forEach((h, idx) => { row[h] = values[idx] || ''; });
-                if (!row.itemType || !row.itemNumber) { errorCount++; continue; }
+                if (!row.itemType || !row.itemNumber) { errorCount++; errorMessages.push(`Row ${i + 1}: Missing itemType or itemNumber`); continue; }
                 try {
                     let specs = {};
                     if (row.specs) { try { specs = JSON.parse(row.specs); } catch { } }
@@ -353,8 +354,22 @@ export default function LabInventoryPage() {
                         specs
                     });
                     successCount++;
-                } catch { errorCount++; }
+                } catch (err) {
+                    errorCount++;
+                    errorMessages.push(`Row ${i + 1}: ${err.response?.data?.message || 'Failed'}`);
+                }
             }
+            // Save import history
+            try {
+                await labsAPI.saveImportHistory(params.id, {
+                    fileName: file.name,
+                    fileSize: file.size,
+                    itemsImported: successCount,
+                    itemsFailed: errorCount,
+                    status: errorCount === 0 ? 'completed' : successCount === 0 ? 'failed' : 'partial',
+                    errors: errorMessages.length > 0 ? errorMessages.slice(0, 10) : null
+                });
+            } catch { }
             toast.success(`Imported ${successCount} items${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
             loadData();
         } catch (err) { toast.error('Failed to parse CSV file'); }

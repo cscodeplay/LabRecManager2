@@ -48,6 +48,58 @@ router.post('/upload-image', authenticate, authorize('admin', 'principal', 'lab_
 }));
 
 /**
+ * @route   GET /api/labs/import-history
+ * @desc    Get import history for all labs
+ * @access  Private (Admin)
+ */
+router.get('/import-history', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const history = await prisma.importHistory.findMany({
+        where: { schoolId: req.user.schoolId },
+        include: {
+            lab: { select: { id: true, name: true } },
+            uploadedBy: { select: { id: true, firstName: true, lastName: true } }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100
+    });
+
+    res.json({
+        success: true,
+        data: { history }
+    });
+}));
+
+/**
+ * @route   POST /api/labs/:labId/import-history
+ * @desc    Save import history record
+ * @access  Private (Admin)
+ */
+router.post('/:labId/import-history', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const { labId } = req.params;
+    const { fileName, fileSize, itemsImported, itemsFailed, status, errors } = req.body;
+
+    const record = await prisma.importHistory.create({
+        data: {
+            schoolId: req.user.schoolId,
+            labId,
+            uploadedById: req.user.id,
+            fileName,
+            fileSize,
+            itemsImported,
+            itemsFailed: itemsFailed || 0,
+            status: status || 'completed',
+            errors: errors || null
+        }
+    });
+
+    res.status(201).json({
+        success: true,
+        message: 'Import history saved',
+        data: { record }
+    });
+}));
+
+/**
  * @route   GET /api/labs/inventory-reports
  * @desc    Get inventory reports with alerts
  * @access  Private (Admin/Principal)
