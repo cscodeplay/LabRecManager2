@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Monitor, Plus, Edit2, Trash2, X, ArrowLeft, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, PlusCircle, Eye, Download, Upload, FileSpreadsheet, Calendar, Shield, Image, Search, QrCode, CheckSquare, Square, Wrench, AlertTriangle, RefreshCw, History } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import { labsAPI } from '@/lib/api';
+import { labsAPI, filesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
@@ -802,44 +802,89 @@ export default function LabInventoryPage() {
                                 <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="input" rows={2} />
                             </div>
 
-                            {/* Image URL */}
+                            {/* Image Upload */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                                    <Image className="w-4 h-4 inline mr-1" /> Image URL
+                                    <Image className="w-4 h-4 inline mr-1" /> Item Image
                                 </label>
-                                <input
-                                    type="text"
-                                    value={formData.imageUrl}
-                                    onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                                    className="input"
-                                    placeholder="https://i.imgur.com/example.jpg"
-                                />
-                                <p className="text-xs text-slate-400 mt-1">
-                                    Use Imgur, ImgBB, or any direct image URL
-                                    <button type="button" onClick={() => setFormData({ ...formData, imageUrl: 'https://images.unsplash.com/photo-1587831990711-23ca6441447b?w=300' })} className="ml-2 text-primary-500 hover:underline">
-                                        Try demo image
-                                    </button>
-                                </p>
-                                {formData.imageUrl && (
-                                    <div className="mt-2 relative">
-                                        <img
-                                            src={formData.imageUrl}
-                                            alt="Item preview"
-                                            className="w-full h-32 object-cover rounded-lg border border-slate-200"
-                                            onError={(e) => {
-                                                e.target.onerror = null;
-                                                e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect fill="%23f1f5f9" width="100" height="100"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%2394a3b8" font-size="12">Image Error</text></svg>';
-                                            }}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setFormData({ ...formData, imageUrl: '' })}
-                                            className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                )}
+
+                                {/* Drag & Drop Zone */}
+                                <div
+                                    className={`border-2 border-dashed rounded-xl p-4 text-center transition-colors cursor-pointer ${formData.imageUrl
+                                            ? 'border-emerald-300 bg-emerald-50'
+                                            : 'border-slate-300 hover:border-primary-400 hover:bg-primary-50'
+                                        }`}
+                                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-primary-500', 'bg-primary-100'); }}
+                                    onDragLeave={(e) => { e.currentTarget.classList.remove('border-primary-500', 'bg-primary-100'); }}
+                                    onDrop={async (e) => {
+                                        e.preventDefault();
+                                        e.currentTarget.classList.remove('border-primary-500', 'bg-primary-100');
+                                        const file = e.dataTransfer.files[0];
+                                        if (file && file.type.startsWith('image/')) {
+                                            try {
+                                                toast.loading('Uploading to Google Drive...', { id: 'img-upload' });
+                                                const res = await filesAPI.upload(file);
+                                                setFormData(prev => ({ ...prev, imageUrl: res.data.data.url }));
+                                                toast.success('Image uploaded!', { id: 'img-upload' });
+                                            } catch (err) {
+                                                toast.error(err.response?.data?.message || 'Upload failed', { id: 'img-upload' });
+                                            }
+                                        }
+                                    }}
+                                >
+                                    {formData.imageUrl ? (
+                                        <div className="relative">
+                                            <img
+                                                src={formData.imageUrl}
+                                                alt="Preview"
+                                                className="w-full h-32 object-cover rounded-lg"
+                                                onError={(e) => { e.target.onerror = null; e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect fill="%23f1f5f9" width="100" height="100"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%2394a3b8" font-size="12">Image Error</text></svg>'; }}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setFormData(prev => ({ ...prev, imageUrl: '' }))}
+                                                className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <label className="cursor-pointer block">
+                                            <Upload className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                                            <p className="text-sm text-slate-600">Drag & drop or click to upload</p>
+                                            <p className="text-xs text-slate-400 mt-1">Uploads to Google Drive</p>
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                className="hidden"
+                                                onChange={async (e) => {
+                                                    const file = e.target.files[0];
+                                                    if (file) {
+                                                        try {
+                                                            toast.loading('Uploading to Google Drive...', { id: 'img-upload' });
+                                                            const res = await filesAPI.upload(file);
+                                                            setFormData(prev => ({ ...prev, imageUrl: res.data.data.url }));
+                                                            toast.success('Image uploaded!', { id: 'img-upload' });
+                                                        } catch (err) {
+                                                            toast.error(err.response?.data?.message || 'Upload failed', { id: 'img-upload' });
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </label>
+                                    )}
+                                </div>
+
+                                {/* URL Fallback */}
+                                <div className="mt-2">
+                                    <input
+                                        type="text"
+                                        value={formData.imageUrl}
+                                        onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                                        className="input text-sm"
+                                        placeholder="Or paste image URL directly..."
+                                    />
+                                </div>
                             </div>
 
                             <div className="flex gap-3 pt-4">

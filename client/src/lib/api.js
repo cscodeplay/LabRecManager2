@@ -61,6 +61,19 @@ export const authAPI = {
     updateProfile: (data) => api.put('/auth/profile', data),
 };
 
+// Files API - Google Drive uploads
+export const filesAPI = {
+    getStatus: () => api.get('/files/status'),
+    upload: (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return api.post('/files/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+    },
+    delete: (fileId) => api.delete(`/files/${fileId}`),
+};
+
 // Devices API - for camera, mic, speaker testing
 export const devicesAPI = {
     getTestStatus: () => api.get('/devices/test-status'),
