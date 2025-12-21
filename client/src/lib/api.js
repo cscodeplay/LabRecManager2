@@ -172,6 +172,7 @@ export const classesAPI = {
     create: (data) => api.post('/classes', data),
     enroll: (id, data) => api.post(`/classes/${id}/enroll`, data),
     createGroup: (id, data) => api.post(`/classes/${id}/groups`, data),
+    autoGenerateGroups: (id) => api.post(`/classes/${id}/groups/auto-generate`),
 };
 
 // Users API

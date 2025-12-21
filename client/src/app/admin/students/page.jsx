@@ -84,6 +84,7 @@ export default function AdminStudentsPage() {
             const res = await adminAPI.importStudents(file);
             setImportResult(res.data.data);
             setShowImportDialog(true);
+            toast.success(`Import complete: ${res.data.data.imported} students imported`);
             if (res.data.data.imported > 0) {
                 loadData();
             }

@@ -307,4 +307,92 @@ router.get('/:id/groups', authenticate, asyncHandler(async (req, res) => {
     });
 }));
 
+/**
+ * @route   POST /api/classes/:id/groups/auto-generate
+ * @desc    Auto-generate groups with 2-3 students each
+ * @access  Private (Admin, Instructor)
+ */
+router.post('/:id/groups/auto-generate', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const classId = req.params.id;
+
+    // Get all enrolled students
+    const enrollments = await prisma.classEnrollment.findMany({
+        where: { classId, status: 'active' },
+        include: {
+            student: { select: { id: true, firstName: true, lastName: true } }
+        }
+    });
+
+    if (enrollments.length < 2) {
+        return res.status(400).json({
+            success: false,
+            message: 'Need at least 2 students to create groups'
+        });
+    }
+
+    // Shuffle students randomly
+    const students = enrollments.map(e => e.student);
+    for (let i = students.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [students[i], students[j]] = [students[j], students[i]];
+    }
+
+    // Create groups of 2-3 students
+    const groupsToCreate = [];
+    let groupNum = 1;
+    let i = 0;
+
+    while (i < students.length) {
+        const remaining = students.length - i;
+        let groupSize;
+
+        if (remaining <= 3) {
+            groupSize = remaining; // Take all remaining
+        } else if (remaining === 4) {
+            groupSize = 2; // Split into 2 + 2
+        } else {
+            groupSize = 3; // Take 3
+        }
+
+        groupsToCreate.push({
+            name: `Group ${groupNum}`,
+            members: students.slice(i, i + groupSize)
+        });
+
+        i += groupSize;
+        groupNum++;
+    }
+
+    // Create groups in database
+    const createdGroups = [];
+    for (const groupData of groupsToCreate) {
+        const group = await prisma.studentGroup.create({
+            data: {
+                classId,
+                name: groupData.name,
+                createdById: req.user.id,
+                members: {
+                    create: groupData.members.map((student, idx) => ({
+                        studentId: student.id,
+                        role: idx === 0 ? 'leader' : 'member'
+                    }))
+                }
+            },
+            include: {
+                members: {
+                    include: { student: { select: { id: true, firstName: true, lastName: true } } }
+                }
+            }
+        });
+        createdGroups.push(group);
+    }
+
+    res.status(201).json({
+        success: true,
+        message: `Created ${createdGroups.length} groups with ${students.length} students`,
+        messageHindi: `${createdGroups.length} समूह बनाए गए, ${students.length} छात्रों के साथ`,
+        data: { groups: createdGroups }
+    });
+}));
+
 module.exports = router;

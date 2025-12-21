@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Users, GraduationCap, ArrowLeft, UserPlus, UsersRound, Plus, Search, Mail, Phone, Calendar, Lock } from 'lucide-react';
+import { Users, GraduationCap, ArrowLeft, UserPlus, UsersRound, Plus, Search, Mail, Phone, Calendar, Lock, ChevronLeft, ChevronRight, Shuffle } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -20,6 +20,11 @@ export default function ClassDetailPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('students');
     const [initialSessionId, setInitialSessionId] = useState(null);
+
+    // Pagination
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [autoGrouping, setAutoGrouping] = useState(false);
 
     // Track initial session and redirect if session changes
     useEffect(() => {
@@ -71,6 +76,36 @@ export default function ClassDetailPage() {
 
     const isAdmin = user?.role === 'admin' || user?.role === 'principal';
     const isInstructor = user?.role === 'instructor' || user?.role === 'lab_assistant';
+
+    // Pagination calculations
+    const totalPages = Math.ceil(filteredStudents.length / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const paginatedStudents = filteredStudents.slice(startIndex, startIndex + itemsPerPage);
+
+    // Reset to page 1 when search changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery]);
+
+    // Auto-generate groups handler
+    const handleAutoGenerateGroups = async () => {
+        if (students.length < 2) {
+            toast.error('Need at least 2 students to create groups');
+            return;
+        }
+
+        setAutoGrouping(true);
+        try {
+            const res = await classesAPI.autoGenerateGroups(params.id);
+            toast.success(res.data.message || 'Groups created successfully!');
+            loadClassData();
+            setActiveTab('groups');
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to create groups');
+        } finally {
+            setAutoGrouping(false);
+        }
+    };
 
     if (loading) {
         return (
@@ -146,6 +181,14 @@ export default function ClassDetailPage() {
                                         <UsersRound className="w-4 h-4" />
                                         Create Group
                                     </Link>
+                                    <button
+                                        onClick={handleAutoGenerateGroups}
+                                        disabled={autoGrouping || students.length < 2}
+                                        className="btn btn-secondary"
+                                    >
+                                        <Shuffle className="w-4 h-4" />
+                                        {autoGrouping ? 'Creating...' : 'Auto Groups'}
+                                    </button>
                                     <Link
                                         href={`/assignments/assign?classId=${params.id}`}
                                         className="btn btn-primary"
@@ -222,10 +265,10 @@ export default function ClassDetailPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {filteredStudents.map((student, index) => (
+                                        {paginatedStudents.map((student, index) => (
                                             <tr key={student.id} className="hover:bg-slate-50 transition">
                                                 <td className="px-6 py-4 font-medium text-slate-900">
-                                                    {student.rollNumber || index + 1}
+                                                    {student.rollNumber || startIndex + index + 1}
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-3">
@@ -267,6 +310,59 @@ export default function ClassDetailPage() {
                                         ))}
                                     </tbody>
                                 </table>
+
+                                {/* Pagination Controls */}
+                                {totalPages > 1 && (
+                                    <div className="flex items-center justify-between p-4 border-t border-slate-200">
+                                        <div className="flex items-center gap-2 text-sm text-slate-600">
+                                            <span>Showing {startIndex + 1}-{Math.min(startIndex + itemsPerPage, filteredStudents.length)} of {filteredStudents.length}</span>
+                                            <select
+                                                value={itemsPerPage}
+                                                onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                                                className="input py-1 px-2 text-sm w-20"
+                                            >
+                                                <option value={5}>5</option>
+                                                <option value={10}>10</option>
+                                                <option value={20}>20</option>
+                                                <option value={50}>50</option>
+                                            </select>
+                                            <span>per page</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => setCurrentPage(1)}
+                                                disabled={currentPage === 1}
+                                                className="px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50"
+                                            >
+                                                First
+                                            </button>
+                                            <button
+                                                onClick={() => setCurrentPage(p => p - 1)}
+                                                disabled={currentPage === 1}
+                                                className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"
+                                            >
+                                                <ChevronLeft className="w-5 h-5" />
+                                            </button>
+                                            <span className="px-3 py-1 bg-primary-50 text-primary-700 rounded font-medium">
+                                                {currentPage} / {totalPages}
+                                            </span>
+                                            <button
+                                                onClick={() => setCurrentPage(p => p + 1)}
+                                                disabled={currentPage === totalPages}
+                                                className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"
+                                            >
+                                                <ChevronRight className="w-5 h-5" />
+                                            </button>
+                                            <button
+                                                onClick={() => setCurrentPage(totalPages)}
+                                                disabled={currentPage === totalPages}
+                                                className="px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50"
+                                            >
+                                                Last
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </>
