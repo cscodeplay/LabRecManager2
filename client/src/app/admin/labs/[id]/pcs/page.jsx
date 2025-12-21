@@ -811,8 +811,8 @@ export default function LabInventoryPage() {
                                 {/* Drag & Drop Zone */}
                                 <div
                                     className={`border-2 border-dashed rounded-xl p-4 text-center transition-colors cursor-pointer ${formData.imageUrl
-                                            ? 'border-emerald-300 bg-emerald-50'
-                                            : 'border-slate-300 hover:border-primary-400 hover:bg-primary-50'
+                                        ? 'border-emerald-300 bg-emerald-50'
+                                        : 'border-slate-300 hover:border-primary-400 hover:bg-primary-50'
                                         }`}
                                     onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-primary-500', 'bg-primary-100'); }}
                                     onDragLeave={(e) => { e.currentTarget.classList.remove('border-primary-500', 'bg-primary-100'); }}
@@ -822,7 +822,7 @@ export default function LabInventoryPage() {
                                         const file = e.dataTransfer.files[0];
                                         if (file && file.type.startsWith('image/')) {
                                             try {
-                                                toast.loading('Uploading to Google Drive...', { id: 'img-upload' });
+                                                toast.loading('Uploading...', { id: 'img-upload' });
                                                 const res = await filesAPI.upload(file);
                                                 setFormData(prev => ({ ...prev, imageUrl: res.data.data.url }));
                                                 toast.success('Image uploaded!', { id: 'img-upload' });
@@ -852,7 +852,7 @@ export default function LabInventoryPage() {
                                         <label className="cursor-pointer block">
                                             <Upload className="w-8 h-8 mx-auto mb-2 text-slate-400" />
                                             <p className="text-sm text-slate-600">Drag & drop or click to upload</p>
-                                            <p className="text-xs text-slate-400 mt-1">Uploads to Google Drive</p>
+                                            <p className="text-xs text-slate-400 mt-1">Images & PDFs supported</p>
                                             <input
                                                 type="file"
                                                 accept="image/*"
@@ -861,7 +861,7 @@ export default function LabInventoryPage() {
                                                     const file = e.target.files[0];
                                                     if (file) {
                                                         try {
-                                                            toast.loading('Uploading to Google Drive...', { id: 'img-upload' });
+                                                            toast.loading('Uploading...', { id: 'img-upload' });
                                                             const res = await filesAPI.upload(file);
                                                             setFormData(prev => ({ ...prev, imageUrl: res.data.data.url }));
                                                             toast.success('Image uploaded!', { id: 'img-upload' });
