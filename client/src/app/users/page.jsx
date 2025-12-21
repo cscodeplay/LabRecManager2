@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Users, Search, Plus, Book, BarChart3, Mail, KeyRound, ToggleLeft, ToggleRight, Trash2, Copy, X } from 'lucide-react';
+import { Users, Search, Plus, Book, BarChart3, Mail, KeyRound, ToggleLeft, ToggleRight, Trash2, Copy, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api, { adminAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -15,6 +15,12 @@ export default function UsersPage() {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [roleFilter, setRoleFilter] = useState('all');
+
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(20);
+    const [totalUsers, setTotalUsers] = useState(0);
+    const [totalPages, setTotalPages] = useState(1);
 
     // PIN modal state
     const [showPinModal, setShowPinModal] = useState(false);
@@ -32,20 +38,31 @@ export default function UsersPage() {
             return;
         }
         loadUsers();
-    }, [isAuthenticated, _hasHydrated, roleFilter, selectedSessionId]);
+    }, [isAuthenticated, _hasHydrated, roleFilter, selectedSessionId, currentPage, itemsPerPage]);
 
     const loadUsers = async () => {
         setLoading(true);
         try {
-            const params = roleFilter !== 'all' ? { role: roleFilter } : {};
+            const params = {
+                page: currentPage,
+                limit: itemsPerPage,
+                ...(roleFilter !== 'all' && { role: roleFilter })
+            };
             const res = await api.get('/users', { params });
             setUsers(res.data.data.users || []);
+            setTotalUsers(res.data.data.pagination?.total || 0);
+            setTotalPages(res.data.data.pagination?.pages || 1);
         } catch (error) {
             toast.error('Failed to load users');
         } finally {
             setLoading(false);
         }
     };
+
+    // Reset to page 1 when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [roleFilter, searchQuery]);
 
     const filteredUsers = users.filter(u =>
         u.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -275,6 +292,59 @@ export default function UsersPage() {
                     {filteredUsers.length === 0 && (
                         <div className="p-12 text-center text-slate-500">
                             No users found matching your criteria
+                        </div>
+                    )}
+
+                    {/* Pagination Controls */}
+                    {totalPages > 0 && (
+                        <div className="flex items-center justify-between p-4 border-t border-slate-200">
+                            <div className="flex items-center gap-2 text-sm text-slate-600">
+                                <span>Showing {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, totalUsers)} of {totalUsers}</span>
+                                <select
+                                    value={itemsPerPage}
+                                    onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                                    className="input py-1 px-2 text-sm w-20"
+                                >
+                                    <option value={10}>10</option>
+                                    <option value={20}>20</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                </select>
+                                <span>per page</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => setCurrentPage(1)}
+                                    disabled={currentPage === 1}
+                                    className="px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50 text-sm"
+                                >
+                                    First
+                                </button>
+                                <button
+                                    onClick={() => setCurrentPage(p => p - 1)}
+                                    disabled={currentPage === 1}
+                                    className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"
+                                >
+                                    <ChevronLeft className="w-5 h-5" />
+                                </button>
+                                <span className="px-3 py-1 bg-primary-50 text-primary-700 rounded font-medium text-sm">
+                                    {currentPage} / {totalPages}
+                                </span>
+                                <button
+                                    onClick={() => setCurrentPage(p => p + 1)}
+                                    disabled={currentPage === totalPages}
+                                    className="p-1 rounded hover:bg-slate-100 disabled:opacity-50"
+                                >
+                                    <ChevronRight className="w-5 h-5" />
+                                </button>
+                                <button
+                                    onClick={() => setCurrentPage(totalPages)}
+                                    disabled={currentPage === totalPages}
+                                    className="px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50 text-sm"
+                                >
+                                    Last
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
