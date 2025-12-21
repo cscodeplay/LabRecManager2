@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Monitor, Plus, Edit2, Trash2, X, ArrowLeft, Printer, Wifi, Speaker, Armchair, Table, Projector, Package } from 'lucide-react';
+import { Monitor, Plus, Edit2, Trash2, X, ArrowLeft, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, PlusCircle } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { labsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -44,6 +44,10 @@ export default function LabInventoryPage() {
         quantity: 1, specs: {}, status: 'active', notes: '', purchaseDate: '', warrantyEnd: ''
     });
 
+    // Custom fields state
+    const [customFields, setCustomFields] = useState([]);
+    const [newFieldName, setNewFieldName] = useState('');
+
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!isAuthenticated) { router.push('/login'); return; }
@@ -69,6 +73,24 @@ export default function LabInventoryPage() {
         }
     };
 
+    // Get custom fields used by other items of the same type (for suggestions)
+    const suggestedCustomFields = useMemo(() => {
+        const defaultFields = ITEM_TYPES[formData.itemType]?.specFields || [];
+        const customFieldsFromItems = new Set();
+
+        items.filter(i => i.itemType === formData.itemType).forEach(item => {
+            if (item.specs) {
+                Object.keys(item.specs).forEach(key => {
+                    if (!defaultFields.includes(key) && !customFieldsFromItems.has(key)) {
+                        customFieldsFromItems.add(key);
+                    }
+                });
+            }
+        });
+
+        return Array.from(customFieldsFromItems).filter(f => !customFields.includes(f));
+    }, [items, formData.itemType, customFields]);
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
@@ -89,6 +111,9 @@ export default function LabInventoryPage() {
 
     const handleEdit = (item) => {
         setEditingItem(item);
+        const defaultFields = ITEM_TYPES[item.itemType]?.specFields || [];
+        const existingCustomFields = item.specs ? Object.keys(item.specs).filter(k => !defaultFields.includes(k)) : [];
+        setCustomFields(existingCustomFields);
         setFormData({
             itemType: item.itemType,
             itemNumber: item.itemNumber,
@@ -119,6 +144,8 @@ export default function LabInventoryPage() {
     const closeModal = () => {
         setShowModal(false);
         setEditingItem(null);
+        setCustomFields([]);
+        setNewFieldName('');
         setFormData({
             itemType: 'pc', itemNumber: '', brand: '', modelNo: '', serialNo: '',
             quantity: 1, specs: {}, status: 'active', notes: '', purchaseDate: '', warrantyEnd: ''
@@ -129,15 +156,45 @@ export default function LabInventoryPage() {
         setFormData(prev => ({ ...prev, specs: { ...prev.specs, [key]: value } }));
     };
 
+    const addCustomField = (fieldName) => {
+        const name = fieldName || newFieldName.trim();
+        if (!name) return;
+        if (customFields.includes(name) || ITEM_TYPES[formData.itemType]?.specFields?.includes(name)) {
+            toast.error('Field already exists');
+            return;
+        }
+        setCustomFields([...customFields, name]);
+        setNewFieldName('');
+    };
+
+    const removeCustomField = (fieldName) => {
+        setCustomFields(customFields.filter(f => f !== fieldName));
+        const newSpecs = { ...formData.specs };
+        delete newSpecs[fieldName];
+        setFormData(prev => ({ ...prev, specs: newSpecs }));
+    };
+
+    const handleTypeChange = (newType) => {
+        // When changing type, load custom fields from existing items of that type
+        const defaultFields = ITEM_TYPES[newType]?.specFields || [];
+        const customFromItems = new Set();
+        items.filter(i => i.itemType === newType).forEach(item => {
+            if (item.specs) {
+                Object.keys(item.specs).forEach(key => {
+                    if (!defaultFields.includes(key)) customFromItems.add(key);
+                });
+            }
+        });
+        setCustomFields(Array.from(customFromItems));
+        setFormData(prev => ({ ...prev, itemType: newType, specs: {} }));
+    };
+
     const getStatusBadge = (status) => {
         const styles = { active: 'bg-emerald-100 text-emerald-700', maintenance: 'bg-amber-100 text-amber-700', retired: 'bg-slate-100 text-slate-500' };
         return styles[status] || styles.active;
     };
 
-    const getIcon = (type) => {
-        const Icon = ITEM_TYPES[type]?.icon || Package;
-        return Icon;
-    };
+    const getIcon = (type) => ITEM_TYPES[type]?.icon || Package;
 
     const filteredItems = filterType === 'all' ? items : items.filter(i => i.itemType === filterType);
 
@@ -162,7 +219,7 @@ export default function LabInventoryPage() {
                             {lab?.roomNumber && <p className="text-sm text-slate-500">Room: {lab.roomNumber}</p>}
                         </div>
                     </div>
-                    <button onClick={() => { setEditingItem(null); setShowModal(true); }} className="btn btn-primary">
+                    <button onClick={() => { setEditingItem(null); setCustomFields([]); setShowModal(true); }} className="btn btn-primary">
                         <Plus className="w-4 h-4" /> Add Item
                     </button>
                 </div>
@@ -231,15 +288,16 @@ export default function LabInventoryPage() {
                                             <td className="px-4 py-3 text-slate-700">{item.quantity}</td>
                                             <td className="px-4 py-3">
                                                 <div className="flex flex-wrap gap-1 max-w-xs">
-                                                    {item.specs && Object.entries(item.specs).slice(0, 3).map(([k, v]) => v && (
-                                                        <span key={k} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded">{v}</span>
+                                                    {item.specs && Object.entries(item.specs).slice(0, 4).map(([k, v]) => v && (
+                                                        <span key={k} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded" title={k}>{v}</span>
                                                     ))}
+                                                    {item.specs && Object.keys(item.specs).length > 4 && (
+                                                        <span className="px-2 py-0.5 bg-slate-200 text-slate-500 text-xs rounded">+{Object.keys(item.specs).length - 4}</span>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(item.status)}`}>
-                                                    {item.status}
-                                                </span>
+                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(item.status)}`}>{item.status}</span>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex gap-1">
@@ -265,12 +323,8 @@ export default function LabInventoryPage() {
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
                         <div className="p-6 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white">
-                            <h3 className="text-xl font-semibold text-slate-900">
-                                {editingItem ? 'Edit Item' : 'Add Item'}
-                            </h3>
-                            <button onClick={closeModal} className="text-slate-400 hover:text-slate-600">
-                                <X className="w-5 h-5" />
-                            </button>
+                            <h3 className="text-xl font-semibold text-slate-900">{editingItem ? 'Edit Item' : 'Add Item'}</h3>
+                            <button onClick={closeModal} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
                         </div>
                         <form onSubmit={handleSubmit} className="p-6 space-y-4">
                             {/* Item Type */}
@@ -278,12 +332,8 @@ export default function LabInventoryPage() {
                                 <label className="block text-sm font-medium text-slate-700 mb-2">Item Type *</label>
                                 <div className="grid grid-cols-4 gap-2">
                                     {Object.entries(ITEM_TYPES).map(([key, { label, icon: Icon }]) => (
-                                        <button
-                                            key={key}
-                                            type="button"
-                                            onClick={() => setFormData(prev => ({ ...prev, itemType: key, specs: {} }))}
-                                            className={`p-2 rounded-lg border text-center ${formData.itemType === key ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-slate-200 hover:bg-slate-50'}`}
-                                        >
+                                        <button key={key} type="button" onClick={() => handleTypeChange(key)}
+                                            className={`p-2 rounded-lg border text-center ${formData.itemType === key ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-slate-200 hover:bg-slate-50'}`}>
                                             <Icon className="w-5 h-5 mx-auto mb-1" />
                                             <span className="text-xs">{label}</span>
                                         </button>
@@ -314,10 +364,10 @@ export default function LabInventoryPage() {
                                 </div>
                             </div>
 
-                            {/* Dynamic Spec Fields based on itemType */}
+                            {/* Default Spec Fields */}
                             {ITEM_TYPES[formData.itemType]?.specFields?.length > 0 && (
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-2">Specifications</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">Default Specifications</label>
                                     <div className="grid grid-cols-2 gap-3">
                                         {ITEM_TYPES[formData.itemType].specFields.map(field => (
                                             <div key={field}>
@@ -328,6 +378,52 @@ export default function LabInventoryPage() {
                                     </div>
                                 </div>
                             )}
+
+                            {/* Custom Fields */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Custom Parameters</label>
+
+                                {/* Suggestions from existing items */}
+                                {suggestedCustomFields.length > 0 && (
+                                    <div className="mb-3">
+                                        <p className="text-xs text-slate-500 mb-1">Used in other {ITEM_TYPES[formData.itemType]?.label}s:</p>
+                                        <div className="flex flex-wrap gap-1">
+                                            {suggestedCustomFields.map(field => (
+                                                <button key={field} type="button" onClick={() => addCustomField(field)}
+                                                    className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100 flex items-center gap-1">
+                                                    <Plus className="w-3 h-3" /> {field}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Current custom fields */}
+                                {customFields.length > 0 && (
+                                    <div className="grid grid-cols-2 gap-3 mb-3">
+                                        {customFields.map(field => (
+                                            <div key={field} className="relative">
+                                                <label className="block text-xs text-slate-500 mb-1 flex items-center justify-between">
+                                                    {field}
+                                                    <button type="button" onClick={() => removeCustomField(field)} className="text-red-400 hover:text-red-600">
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </label>
+                                                <input type="text" value={formData.specs[field] || ''} onChange={(e) => updateSpec(field, e.target.value)} className="input text-sm" placeholder={field} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Add new custom field */}
+                                <div className="flex gap-2">
+                                    <input type="text" value={newFieldName} onChange={(e) => setNewFieldName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomField())}
+                                        className="input text-sm flex-1" placeholder="New parameter name..." />
+                                    <button type="button" onClick={() => addCustomField()} className="btn btn-secondary text-sm px-3">
+                                        <PlusCircle className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
