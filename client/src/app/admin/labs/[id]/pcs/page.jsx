@@ -354,7 +354,33 @@ export default function LabInventoryPage() {
                     toast.loading(`Importing... ${i}/${totalItems}`, { id: toastId });
                 }
 
-                const values = lines[i].match(/("[^"]*"|[^,]+)/g)?.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"').trim()) || [];
+                // Proper CSV parsing that handles empty values and quoted fields
+                const parseCSVLine = (line) => {
+                    const result = [];
+                    let current = '';
+                    let inQuotes = false;
+
+                    for (let j = 0; j < line.length; j++) {
+                        const char = line[j];
+                        if (char === '"') {
+                            if (inQuotes && line[j + 1] === '"') {
+                                current += '"';
+                                j++; // Skip next quote
+                            } else {
+                                inQuotes = !inQuotes;
+                            }
+                        } else if (char === ',' && !inQuotes) {
+                            result.push(current.trim());
+                            current = '';
+                        } else {
+                            current += char;
+                        }
+                    }
+                    result.push(current.trim());
+                    return result;
+                };
+
+                const values = parseCSVLine(lines[i]);
                 const row = {};
                 headers.forEach((h, idx) => { row[h] = values[idx] || ''; });
 
