@@ -321,23 +321,49 @@ export default function LabInventoryPage() {
     const handleImport = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
+
+        const toastId = toast.loading(`Importing ${file.name}...`);
+        console.log('Starting import:', file.name);
+
         try {
             const text = await file.text();
             const lines = text.split('\n').filter(l => l.trim());
-            if (lines.length < 2) { toast.error('CSV file is empty or invalid'); return; }
-            const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
-            const requiredHeaders = ['itemType', 'itemNumber'];
-            if (!requiredHeaders.every(h => headers.includes(h))) {
-                toast.error('Missing required columns: itemType, itemNumber');
+            console.log('Lines found:', lines.length);
+
+            if (lines.length < 2) {
+                toast.error('CSV file is empty or invalid', { id: toastId });
                 return;
             }
+
+            const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+            console.log('Headers:', headers);
+
+            const requiredHeaders = ['itemType', 'itemNumber'];
+            if (!requiredHeaders.every(h => headers.includes(h))) {
+                toast.error('Missing required columns: itemType, itemNumber', { id: toastId });
+                return;
+            }
+
             let successCount = 0, errorCount = 0;
             const errorMessages = [];
+            const totalItems = lines.length - 1;
+
             for (let i = 1; i < lines.length; i++) {
+                // Update progress every 5 items
+                if (i % 5 === 0) {
+                    toast.loading(`Importing... ${i}/${totalItems}`, { id: toastId });
+                }
+
                 const values = lines[i].match(/("[^"]*"|[^,]+)/g)?.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"').trim()) || [];
                 const row = {};
                 headers.forEach((h, idx) => { row[h] = values[idx] || ''; });
-                if (!row.itemType || !row.itemNumber) { errorCount++; errorMessages.push(`Row ${i + 1}: Missing itemType or itemNumber`); continue; }
+
+                if (!row.itemType || !row.itemNumber) {
+                    errorCount++;
+                    errorMessages.push(`Row ${i + 1}: Missing itemType or itemNumber`);
+                    continue;
+                }
+
                 try {
                     let specs = {};
                     if (row.specs) { try { specs = JSON.parse(row.specs); } catch { } }
@@ -354,11 +380,15 @@ export default function LabInventoryPage() {
                         specs
                     });
                     successCount++;
+                    console.log(`Imported: ${row.itemNumber}`);
                 } catch (err) {
                     errorCount++;
-                    errorMessages.push(`Row ${i + 1}: ${err.response?.data?.message || 'Failed'}`);
+                    const errMsg = err.response?.data?.message || 'Failed';
+                    errorMessages.push(`Row ${i + 1}: ${errMsg}`);
+                    console.error(`Failed: ${row.itemNumber}`, errMsg);
                 }
             }
+
             // Save import history
             try {
                 await labsAPI.saveImportHistory(params.id, {
@@ -369,10 +399,20 @@ export default function LabInventoryPage() {
                     status: errorCount === 0 ? 'completed' : successCount === 0 ? 'failed' : 'partial',
                     errors: errorMessages.length > 0 ? errorMessages.slice(0, 10) : null
                 });
-            } catch { }
-            toast.success(`Imported ${successCount} items${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
+            } catch (err) {
+                console.error('Failed to save history:', err);
+            }
+
+            if (successCount > 0) {
+                toast.success(`Imported ${successCount} items${errorCount > 0 ? `, ${errorCount} failed` : ''}`, { id: toastId });
+            } else {
+                toast.error(`Import failed. ${errorCount} errors.`, { id: toastId });
+            }
             loadData();
-        } catch (err) { toast.error('Failed to parse CSV file'); }
+        } catch (err) {
+            console.error('Parse error:', err);
+            toast.error('Failed to parse CSV file', { id: toastId });
+        }
         e.target.value = '';
     };
 
