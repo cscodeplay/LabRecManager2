@@ -395,4 +395,146 @@ router.post('/:id/groups/auto-generate', authenticate, authorize('admin', 'princ
     });
 }));
 
+/**
+ * @route   DELETE /api/classes/:classId/groups/:groupId
+ * @desc    Delete a group
+ * @access  Private (Admin, Instructor)
+ */
+router.delete('/:classId/groups/:groupId', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const { classId, groupId } = req.params;
+
+    // Verify group exists and belongs to class
+    const group = await prisma.studentGroup.findFirst({
+        where: { id: groupId, classId }
+    });
+
+    if (!group) {
+        return res.status(404).json({ success: false, message: 'Group not found' });
+    }
+
+    // Delete group members first, then group
+    await prisma.groupMember.deleteMany({ where: { groupId } });
+    await prisma.studentGroup.delete({ where: { id: groupId } });
+
+    res.json({
+        success: true,
+        message: 'Group deleted successfully',
+        messageHindi: 'समूह सफलतापूर्वक हटाया गया'
+    });
+}));
+
+/**
+ * @route   DELETE /api/classes/:classId/groups/:groupId/members/:studentId
+ * @desc    Remove a student from a group
+ * @access  Private (Admin, Instructor)
+ */
+router.delete('/:classId/groups/:groupId/members/:studentId', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const { groupId, studentId } = req.params;
+
+    const member = await prisma.groupMember.findFirst({
+        where: { groupId, studentId }
+    });
+
+    if (!member) {
+        return res.status(404).json({ success: false, message: 'Member not found in group' });
+    }
+
+    await prisma.groupMember.delete({ where: { id: member.id } });
+
+    res.json({
+        success: true,
+        message: 'Student removed from group',
+        messageHindi: 'छात्र समूह से हटाया गया'
+    });
+}));
+
+/**
+ * @route   POST /api/classes/:classId/groups/:groupId/members
+ * @desc    Add a student to a group
+ * @access  Private (Admin, Instructor)
+ */
+router.post('/:classId/groups/:groupId/members', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), [
+    body('studentId').isUUID().withMessage('Valid student ID required')
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { classId, groupId } = req.params;
+    const { studentId, role } = req.body;
+
+    // Verify group exists
+    const group = await prisma.studentGroup.findFirst({ where: { id: groupId, classId } });
+    if (!group) {
+        return res.status(404).json({ success: false, message: 'Group not found' });
+    }
+
+    // Check if student is already in group
+    const existing = await prisma.groupMember.findFirst({ where: { groupId, studentId } });
+    if (existing) {
+        return res.status(400).json({ success: false, message: 'Student already in this group' });
+    }
+
+    // Check if student is enrolled in class
+    const enrollment = await prisma.classEnrollment.findFirst({
+        where: { classId, studentId, status: 'active' }
+    });
+    if (!enrollment) {
+        return res.status(400).json({ success: false, message: 'Student not enrolled in this class' });
+    }
+
+    const member = await prisma.groupMember.create({
+        data: {
+            groupId,
+            studentId,
+            role: role || 'member'
+        },
+        include: {
+            student: { select: { id: true, firstName: true, lastName: true } }
+        }
+    });
+
+    res.status(201).json({
+        success: true,
+        message: 'Student added to group',
+        messageHindi: 'छात्र समूह में जोड़ा गया',
+        data: { member }
+    });
+}));
+
+/**
+ * @route   GET /api/classes/:classId/ungrouped-students
+ * @desc    Get students not in any group
+ * @access  Private
+ */
+router.get('/:classId/ungrouped-students', authenticate, asyncHandler(async (req, res) => {
+    const { classId } = req.params;
+
+    // Get all students in class
+    const enrollments = await prisma.classEnrollment.findMany({
+        where: { classId, status: 'active' },
+        include: { student: { select: { id: true, firstName: true, lastName: true, email: true } } }
+    });
+
+    // Get all students already in groups for this class
+    const groupedStudentIds = await prisma.groupMember.findMany({
+        where: {
+            group: { classId }
+        },
+        select: { studentId: true }
+    });
+
+    const groupedIds = new Set(groupedStudentIds.map(g => g.studentId));
+
+    const ungroupedStudents = enrollments
+        .filter(e => !groupedIds.has(e.studentId))
+        .map(e => e.student);
+
+    res.json({
+        success: true,
+        data: { students: ungroupedStudents }
+    });
+}));
+
 module.exports = router;

@@ -27,7 +27,7 @@ export default function UsersPage() {
             return;
         }
         loadUsers();
-    }, [isAuthenticated, roleFilter, selectedSessionId]);
+    }, [isAuthenticated, _hasHydrated, roleFilter, selectedSessionId]);
 
     const loadUsers = async () => {
         setLoading(true);

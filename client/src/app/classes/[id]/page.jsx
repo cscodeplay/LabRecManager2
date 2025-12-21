@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Users, GraduationCap, ArrowLeft, UserPlus, UsersRound, Plus, Search, Mail, Phone, Calendar, Lock, ChevronLeft, ChevronRight, Shuffle } from 'lucide-react';
+import { Users, GraduationCap, ArrowLeft, UserPlus, UsersRound, Plus, Search, Mail, Phone, Calendar, Lock, ChevronLeft, ChevronRight, Shuffle, Trash2, UserMinus, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -25,6 +25,12 @@ export default function ClassDetailPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [autoGrouping, setAutoGrouping] = useState(false);
+
+    // Group management state
+    const [expandedGroupId, setExpandedGroupId] = useState(null);
+    const [ungroupedStudents, setUngroupedStudents] = useState([]);
+    const [addingToGroup, setAddingToGroup] = useState(null);
+    const [selectedStudentToAdd, setSelectedStudentToAdd] = useState('');
 
     // Track initial session and redirect if session changes
     useEffect(() => {
@@ -104,6 +110,54 @@ export default function ClassDetailPage() {
             toast.error(error.response?.data?.message || 'Failed to create groups');
         } finally {
             setAutoGrouping(false);
+        }
+    };
+
+    // Delete group handler
+    const handleDeleteGroup = async (groupId) => {
+        if (!confirm('Are you sure you want to delete this group?')) return;
+        try {
+            await classesAPI.deleteGroup(params.id, groupId);
+            toast.success('Group deleted');
+            loadClassData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to delete group');
+        }
+    };
+
+    // Remove member from group
+    const handleRemoveMember = async (groupId, studentId) => {
+        try {
+            await classesAPI.removeGroupMember(params.id, groupId, studentId);
+            toast.success('Student removed from group');
+            loadClassData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to remove student');
+        }
+    };
+
+    // Load ungrouped students when expanding a group for adding
+    const handleShowAddMember = async (groupId) => {
+        setAddingToGroup(groupId);
+        try {
+            const res = await classesAPI.getUngroupedStudents(params.id);
+            setUngroupedStudents(res.data.data.students || []);
+        } catch (error) {
+            toast.error('Failed to load available students');
+        }
+    };
+
+    // Add member to group
+    const handleAddMember = async (groupId) => {
+        if (!selectedStudentToAdd) return;
+        try {
+            await classesAPI.addGroupMember(params.id, groupId, selectedStudentToAdd);
+            toast.success('Student added to group');
+            setAddingToGroup(null);
+            setSelectedStudentToAdd('');
+            loadClassData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to add student');
         }
     };
 
@@ -396,32 +450,110 @@ export default function ClassDetailPage() {
                                             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white">
                                                 <UsersRound className="w-6 h-6" />
                                             </div>
-                                            <span className="text-sm text-slate-500">
-                                                {group.members?.length || 0} members
-                                            </span>
-                                        </div>
-                                        <h3 className="text-lg font-semibold text-slate-900 mb-1">{group.name}</h3>
-                                        {group.nameHindi && (
-                                            <p className="text-sm text-slate-600 mb-3">{group.nameHindi}</p>
-                                        )}
-                                        {group.description && (
-                                            <p className="text-sm text-slate-500 mb-4">{group.description}</p>
-                                        )}
-                                        <div className="flex flex-wrap gap-2">
-                                            {group.members?.slice(0, 5).map((member) => (
-                                                <span
-                                                    key={member.student.id}
-                                                    className="px-2 py-1 bg-slate-100 text-slate-700 text-xs rounded-full"
-                                                >
-                                                    {member.student.firstName} {member.student.lastName?.[0]}.
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm text-slate-500">
+                                                    {group.members?.length || 0} members
                                                 </span>
-                                            ))}
-                                            {group.members?.length > 5 && (
-                                                <span className="px-2 py-1 bg-slate-100 text-slate-500 text-xs rounded-full">
-                                                    +{group.members.length - 5} more
-                                                </span>
-                                            )}
+                                                {(isAdmin || isInstructor) && (
+                                                    <button
+                                                        onClick={() => handleDeleteGroup(group.id)}
+                                                        className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                                        title="Delete group"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
+
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h3 className="text-lg font-semibold text-slate-900">{group.name}</h3>
+                                            <button
+                                                onClick={() => setExpandedGroupId(expandedGroupId === group.id ? null : group.id)}
+                                                className="p-1 text-slate-400 hover:text-slate-600"
+                                            >
+                                                {expandedGroupId === group.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                            </button>
+                                        </div>
+
+                                        {/* Collapsed view - member chips */}
+                                        {expandedGroupId !== group.id && (
+                                            <div className="flex flex-wrap gap-2">
+                                                {group.members?.slice(0, 4).map((member) => (
+                                                    <span key={member.student.id} className="px-2 py-1 bg-slate-100 text-slate-700 text-xs rounded-full">
+                                                        {member.student.firstName} {member.student.lastName?.[0]}.
+                                                    </span>
+                                                ))}
+                                                {group.members?.length > 4 && (
+                                                    <span className="px-2 py-1 bg-slate-100 text-slate-500 text-xs rounded-full">
+                                                        +{group.members.length - 4}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Expanded view - member list with remove buttons */}
+                                        {expandedGroupId === group.id && (
+                                            <div className="space-y-2">
+                                                {group.members?.map((member) => (
+                                                    <div key={member.student.id} className="flex items-center justify-between py-1 px-2 bg-slate-50 rounded">
+                                                        <span className="text-sm text-slate-700">
+                                                            {member.student.firstName} {member.student.lastName}
+                                                            {member.role === 'leader' && <span className="ml-1 text-xs text-amber-600">(Leader)</span>}
+                                                        </span>
+                                                        {(isAdmin || isInstructor) && (
+                                                            <button
+                                                                onClick={() => handleRemoveMember(group.id, member.student.id)}
+                                                                className="p-1 text-red-400 hover:text-red-600"
+                                                                title="Remove from group"
+                                                            >
+                                                                <UserMinus className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))}
+
+                                                {/* Add member section */}
+                                                {(isAdmin || isInstructor) && (
+                                                    <div className="mt-3 pt-3 border-t border-slate-200">
+                                                        {addingToGroup === group.id ? (
+                                                            <div className="flex gap-2">
+                                                                <select
+                                                                    value={selectedStudentToAdd}
+                                                                    onChange={(e) => setSelectedStudentToAdd(e.target.value)}
+                                                                    className="input text-sm flex-1"
+                                                                >
+                                                                    <option value="">Select student...</option>
+                                                                    {ungroupedStudents.map(s => (
+                                                                        <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
+                                                                    ))}
+                                                                </select>
+                                                                <button
+                                                                    onClick={() => handleAddMember(group.id)}
+                                                                    className="btn btn-primary text-xs py-1 px-2"
+                                                                    disabled={!selectedStudentToAdd}
+                                                                >
+                                                                    Add
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => { setAddingToGroup(null); setSelectedStudentToAdd(''); }}
+                                                                    className="p-1 text-slate-400 hover:text-slate-600"
+                                                                >
+                                                                    <X className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleShowAddMember(group.id)}
+                                                                className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                                                            >
+                                                                <UserPlus className="w-4 h-4" /> Add Student
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
