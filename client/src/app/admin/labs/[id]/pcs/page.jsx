@@ -389,7 +389,7 @@ export default function LabInventoryPage() {
                 }
             }
 
-            // Save import history
+            // Save import history (but don't fail if import_history table doesn't exist)
             try {
                 await labsAPI.saveImportHistory(params.id, {
                     fileName: file.name,
@@ -404,14 +404,34 @@ export default function LabInventoryPage() {
             }
 
             if (successCount > 0) {
-                toast.success(`Imported ${successCount} items${errorCount > 0 ? `, ${errorCount} failed` : ''}`, { id: toastId });
+                toast.success(`Imported ${successCount} items${errorCount > 0 ? `, ${errorCount} failed` : ''}`, { id: toastId, duration: 5000 });
             } else {
-                toast.error(`Import failed. ${errorCount} errors.`, { id: toastId });
+                // Show detailed error message
+                const errorDetail = errorMessages.slice(0, 3).join('\n');
+                toast.error(
+                    <div>
+                        <p className="font-semibold">Import failed. {errorCount} errors.</p>
+                        <p className="text-xs mt-1 opacity-80">{errorDetail}</p>
+                    </div>,
+                    { id: toastId, duration: 10000 }
+                );
             }
+
+            // Also show errors in console for debugging
+            if (errorMessages.length > 0) {
+                console.error('Import errors:', errorMessages);
+            }
+
             loadData();
         } catch (err) {
             console.error('Parse error:', err);
-            toast.error('Failed to parse CSV file', { id: toastId });
+            toast.error(
+                <div>
+                    <p className="font-semibold">Failed to parse CSV file</p>
+                    <p className="text-xs mt-1 opacity-80">{err.message || 'Unknown error'}</p>
+                </div>,
+                { id: toastId, duration: 10000 }
+            );
         }
         e.target.value = '';
     };
