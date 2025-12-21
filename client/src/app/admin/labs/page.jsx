@@ -7,6 +7,7 @@ import { Monitor, Plus, Edit2, Trash2, X, Search, ArrowLeft, Building, Printer, 
 import { useAuthStore } from '@/lib/store';
 import { labsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 const ITEM_TYPE_ICONS = {
     pc: { icon: Monitor, color: 'blue' },
@@ -30,6 +31,10 @@ export default function LabsPage() {
     const [showModal, setShowModal] = useState(false);
     const [editingLab, setEditingLab] = useState(null);
     const [formData, setFormData] = useState({ name: '', nameHindi: '', roomNumber: '', capacity: 30 });
+
+    // Delete confirmation state
+    const [deleteDialog, setDeleteDialog] = useState({ open: false, lab: null });
+    const [deleteLoading, setDeleteLoading] = useState(false);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -80,14 +85,22 @@ export default function LabsPage() {
         setShowModal(true);
     };
 
-    const handleDelete = async (lab) => {
-        if (!confirm(`Delete lab "${lab.name}"? This will also delete all PCs in this lab.`)) return;
+    const handleDelete = (lab) => {
+        setDeleteDialog({ open: true, lab });
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteDialog.lab) return;
+        setDeleteLoading(true);
         try {
-            await labsAPI.delete(lab.id);
+            await labsAPI.delete(deleteDialog.lab.id);
             toast.success('Lab deleted');
             loadLabs();
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to delete');
+        } finally {
+            setDeleteLoading(false);
+            setDeleteDialog({ open: false, lab: null });
         }
     };
 
@@ -274,6 +287,18 @@ export default function LabsPage() {
                     </div>
                 </div>
             )}
+
+            {/* Delete Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={deleteDialog.open}
+                onClose={() => setDeleteDialog({ open: false, lab: null })}
+                onConfirm={confirmDelete}
+                title="Delete Lab"
+                message={`Are you sure you want to delete "${deleteDialog.lab?.name}"? This will also delete all items in this lab. This action cannot be undone.`}
+                confirmText="Delete Lab"
+                type="danger"
+                loading={deleteLoading}
+            />
         </div>
     );
 }

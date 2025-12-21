@@ -7,6 +7,7 @@ import { Monitor, Plus, Edit2, Trash2, X, ArrowLeft, Printer, Wifi, Speaker, Arm
 import { useAuthStore } from '@/lib/store';
 import { labsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 const ITEM_TYPES = {
     pc: { label: 'Computer', icon: Monitor, color: 'blue', specFields: ['processor', 'ram', 'storage', 'os', 'monitor'] },
@@ -48,6 +49,10 @@ export default function LabInventoryPage() {
         specs: {}, status: 'active', notes: '', imageUrl: '', purchaseDate: '', warrantyEnd: ''
     });
     const fileInputRef = useRef(null);
+
+    // Delete confirmation state
+    const [deleteDialog, setDeleteDialog] = useState({ open: false, item: null, type: 'single' });
+    const [deleteLoading, setDeleteLoading] = useState(false);
 
     // Custom fields state
     const [customFields, setCustomFields] = useState([]);
@@ -135,14 +140,42 @@ export default function LabInventoryPage() {
         setShowModal(true);
     };
 
-    const handleDelete = async (item) => {
-        if (!confirm(`Delete ${ITEM_TYPES[item.itemType]?.label} "${item.itemNumber}"?`)) return;
-        try {
-            await labsAPI.deleteItem(params.id, item.id);
-            toast.success('Item deleted');
-            loadData();
-        } catch (error) {
-            toast.error(error.response?.data?.message || 'Failed to delete');
+    const handleDelete = (item) => {
+        setDeleteDialog({ open: true, item, type: 'single' });
+    };
+
+    const confirmDelete = async () => {
+        if (deleteDialog.type === 'single' && deleteDialog.item) {
+            setDeleteLoading(true);
+            try {
+                await labsAPI.deleteItem(params.id, deleteDialog.item.id);
+                toast.success('Item deleted');
+                loadData();
+            } catch (error) {
+                toast.error(error.response?.data?.message || 'Failed to delete');
+            } finally {
+                setDeleteLoading(false);
+                setDeleteDialog({ open: false, item: null, type: 'single' });
+            }
+        } else if (deleteDialog.type === 'bulk') {
+            setDeleteLoading(true);
+            try {
+                let successCount = 0;
+                for (const id of selectedItems) {
+                    try {
+                        await labsAPI.deleteItem(params.id, id);
+                        successCount++;
+                    } catch { }
+                }
+                toast.success(`Deleted ${successCount} items`);
+                setSelectedItems(new Set());
+                loadData();
+            } catch (error) {
+                toast.error('Failed to delete items');
+            } finally {
+                setDeleteLoading(false);
+                setDeleteDialog({ open: false, item: null, type: 'single' });
+            }
         }
     };
 
@@ -231,23 +264,9 @@ export default function LabInventoryPage() {
         }
     };
 
-    const handleBulkDelete = async () => {
+    const handleBulkDelete = () => {
         if (selectedItems.size === 0) return;
-        if (!confirm(`Delete ${selectedItems.size} selected items? This cannot be undone.`)) return;
-        try {
-            let successCount = 0;
-            for (const id of selectedItems) {
-                try {
-                    await labsAPI.deleteItem(params.id, id);
-                    successCount++;
-                } catch { }
-            }
-            toast.success(`Deleted ${successCount} items`);
-            setSelectedItems(new Set());
-            loadData();
-        } catch (error) {
-            toast.error('Failed to delete items');
-        }
+        setDeleteDialog({ open: true, item: null, type: 'bulk' });
     };
 
     // Download CSV Template with sample data
@@ -914,6 +933,20 @@ export default function LabInventoryPage() {
                     </div>
                 </div>
             )}
+
+            {/* Delete Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={deleteDialog.open}
+                onClose={() => setDeleteDialog({ open: false, item: null, type: 'single' })}
+                onConfirm={confirmDelete}
+                title={deleteDialog.type === 'bulk' ? 'Delete Selected Items' : 'Delete Item'}
+                message={deleteDialog.type === 'bulk'
+                    ? `Are you sure you want to delete ${selectedItems.size} selected items? This action cannot be undone.`
+                    : `Are you sure you want to delete "${deleteDialog.item?.itemNumber}"? This action cannot be undone.`}
+                confirmText={deleteDialog.type === 'bulk' ? `Delete ${selectedItems.size} Items` : 'Delete'}
+                type="danger"
+                loading={deleteLoading}
+            />
         </div>
     );
 }
