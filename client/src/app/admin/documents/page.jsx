@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, Grid3X3, List, Calendar } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { documentsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -42,6 +42,9 @@ export default function DocumentsPage() {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
 
     // Upload modal state
     const [showUpload, setShowUpload] = useState(false);
@@ -89,7 +92,7 @@ export default function DocumentsPage() {
         if (_hasHydrated && isAuthenticated) {
             loadDocuments();
         }
-    }, [searchQuery, categoryFilter]);
+    }, [searchQuery, categoryFilter, dateFrom, dateTo]);
 
     const handleFileSelect = (e) => {
         const file = e.target.files[0];
@@ -164,6 +167,17 @@ export default function DocumentsPage() {
 
     const formatDate = (date) => new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+    // Filter documents by date range
+    const filteredDocuments = documents.filter(doc => {
+        if (dateFrom && new Date(doc.createdAt) < new Date(dateFrom)) return false;
+        if (dateTo) {
+            const toDate = new Date(dateTo);
+            toDate.setHours(23, 59, 59, 999);
+            if (new Date(doc.createdAt) > toDate) return false;
+        }
+        return true;
+    });
+
     return (
         <div className="p-6 max-w-7xl mx-auto">
             {/* Header */}
@@ -178,34 +192,72 @@ export default function DocumentsPage() {
             </div>
 
             {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-3 mb-6">
-                <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                    <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="input pl-10 w-full"
-                        placeholder="Search documents..."
-                    />
+            <div className="flex flex-col gap-3 mb-6">
+                <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="input pl-10 w-full"
+                            placeholder="Search documents..."
+                        />
+                    </div>
+                    <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="input w-full sm:w-48">
+                        {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
                 </div>
-                <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="input w-full sm:w-48">
-                    {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                </select>
+
+                {/* Date Filter & View Toggle */}
+                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                    <div className="flex flex-wrap gap-2 items-center">
+                        <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4 text-slate-400" />
+                            <span className="text-sm text-slate-500">From:</span>
+                            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="input py-1.5 text-sm" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-slate-500">To:</span>
+                            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="input py-1.5 text-sm" />
+                        </div>
+                        {(dateFrom || dateTo) && (
+                            <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="text-sm text-red-500 hover:underline">Clear</button>
+                        )}
+                    </div>
+
+                    {/* View Toggle */}
+                    <div className="flex bg-slate-100 rounded-lg p-1">
+                        <button
+                            onClick={() => setViewMode('grid')}
+                            className={`p-2 rounded ${viewMode === 'grid' ? 'bg-white shadow-sm' : 'text-slate-500'}`}
+                            title="Grid View"
+                        >
+                            <Grid3X3 className="w-4 h-4" />
+                        </button>
+                        <button
+                            onClick={() => setViewMode('list')}
+                            className={`p-2 rounded ${viewMode === 'list' ? 'bg-white shadow-sm' : 'text-slate-500'}`}
+                            title="List View"
+                        >
+                            <List className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
             </div>
 
             {/* Documents Grid */}
             {loading ? (
                 <div className="text-center py-12 text-slate-500">Loading...</div>
-            ) : documents.length === 0 ? (
+            ) : filteredDocuments.length === 0 ? (
                 <div className="text-center py-12">
                     <FileText className="w-12 h-12 mx-auto text-slate-300 mb-3" />
                     <p className="text-slate-500">No documents found</p>
                     <button onClick={() => setShowUpload(true)} className="btn btn-primary mt-4">Upload your first document</button>
                 </div>
-            ) : (
+            ) : viewMode === 'grid' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {documents.map(doc => (
+                    {filteredDocuments.map(doc => (
                         <div key={doc.id} className="card p-4 hover:shadow-lg transition-shadow">
                             <div className="flex items-start gap-3">
                                 <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-2xl flex-shrink-0">
@@ -246,6 +298,59 @@ export default function DocumentsPage() {
                             </div>
                         </div>
                     ))}
+                </div>
+            ) : (
+                /* List View */
+                <div className="card overflow-hidden">
+                    <table className="w-full">
+                        <thead className="bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th className="text-left p-3 text-sm font-semibold text-slate-700">Name</th>
+                                <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden md:table-cell">Type</th>
+                                <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden md:table-cell">Size</th>
+                                <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden lg:table-cell">Category</th>
+                                <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden lg:table-cell">Uploaded</th>
+                                <th className="text-left p-3 text-sm font-semibold text-slate-700">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredDocuments.map(doc => (
+                                <tr key={doc.id} className="border-b border-slate-100 hover:bg-slate-50">
+                                    <td className="p-3">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-xl">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                            <div>
+                                                <p className="font-medium text-slate-900">{doc.name}</p>
+                                                {doc.description && <p className="text-xs text-slate-500 truncate max-w-xs">{doc.description}</p>}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td className="p-3 text-sm text-slate-600 hidden md:table-cell">{doc.fileType.toUpperCase()}</td>
+                                    <td className="p-3 text-sm text-slate-600 hidden md:table-cell">{doc.fileSizeFormatted}</td>
+                                    <td className="p-3 hidden lg:table-cell">
+                                        {doc.category && <span className="px-2 py-0.5 text-xs rounded-full bg-primary-100 text-primary-700 capitalize">{doc.category}</span>}
+                                    </td>
+                                    <td className="p-3 text-sm text-slate-500 hidden lg:table-cell">{formatDate(doc.createdAt)}</td>
+                                    <td className="p-3">
+                                        <div className="flex gap-1">
+                                            <button onClick={() => setViewingDoc(doc)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded" title="View">
+                                                <Eye className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => handleEdit(doc)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit">
+                                                <Edit2 className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => handleShare(doc)} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded" title="Share">
+                                                <Share2 className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => setDeleteDialog({ open: true, doc })} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             )}
 
