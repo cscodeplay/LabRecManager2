@@ -71,8 +71,12 @@ export default function ViewDocumentPage() {
             {/* Preview */}
             <div className="max-w-4xl mx-auto p-4">
                 <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                    {doc.fileType === 'pdf' ? (
-                        <iframe src={doc.url} className="w-full h-[80vh] border-0" />
+                    {['pdf', 'doc', 'docx', 'xls', 'xlsx'].includes(doc.fileType) ? (
+                        <iframe
+                            src={`https://docs.google.com/viewer?url=${encodeURIComponent(doc.url)}&embedded=true`}
+                            className="w-full h-[80vh] border-0"
+                            title="Document Preview"
+                        />
                     ) : (
                         <div className="flex flex-col items-center justify-center py-20 text-slate-500">
                             <span className="text-8xl mb-6">{FILE_ICONS[doc.fileType]}</span>

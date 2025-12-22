@@ -326,7 +326,17 @@ export default function DocumentsPage() {
                         </div>
                         <div className="flex-1 overflow-auto bg-slate-100 p-4">
                             {viewingDoc.fileType === 'pdf' ? (
-                                <iframe src={viewingDoc.url} className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white" />
+                                <iframe
+                                    src={`https://docs.google.com/viewer?url=${encodeURIComponent(viewingDoc.url)}&embedded=true`}
+                                    className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
+                                    title="PDF Preview"
+                                />
+                            ) : ['doc', 'docx', 'xls', 'xlsx'].includes(viewingDoc.fileType) ? (
+                                <iframe
+                                    src={`https://docs.google.com/viewer?url=${encodeURIComponent(viewingDoc.url)}&embedded=true`}
+                                    className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
+                                    title="Document Preview"
+                                />
                             ) : (
                                 <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-slate-500">
                                     <span className="text-6xl mb-4">{FILE_ICONS[viewingDoc.fileType]}</span>
