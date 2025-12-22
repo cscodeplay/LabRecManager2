@@ -30,6 +30,7 @@ const academicYearRoutes = require('./routes/academicYear.routes');
 const pinRoutes = require('./routes/pin.routes');
 const labRoutes = require('./routes/lab.routes');
 const fileRoutes = require('./routes/file.routes');
+const documentRoutes = require('./routes/document.routes');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -87,6 +88,7 @@ app.use('/api/academic-years', academicYearRoutes);
 app.use('/api/pin', pinRoutes);
 app.use('/api/labs', labRoutes);
 app.use('/api/files', fileRoutes);
+app.use('/api/documents', documentRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

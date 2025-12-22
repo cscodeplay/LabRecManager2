@@ -61,7 +61,7 @@ export const authAPI = {
     updateProfile: (data) => api.put('/auth/profile', data),
 };
 
-// Files API - Google Drive uploads
+// Files API - Cloudinary uploads
 export const filesAPI = {
     getStatus: () => api.get('/files/status'),
     upload: (file) => {
@@ -72,6 +72,26 @@ export const filesAPI = {
         });
     },
     delete: (fileId) => api.delete(`/files/${fileId}`),
+};
+
+// Documents API - PDF, DOCX, XLS management
+export const documentsAPI = {
+    getAll: (params) => api.get('/documents', { params }),
+    getById: (id) => api.get(`/documents/${id}`),
+    upload: (file, data) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        if (data.name) formData.append('name', data.name);
+        if (data.description) formData.append('description', data.description);
+        if (data.category) formData.append('category', data.category);
+        if (data.isPublic) formData.append('isPublic', data.isPublic);
+        return api.post('/documents', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+    },
+    update: (id, data) => api.put(`/documents/${id}`, data),
+    delete: (id) => api.delete(`/documents/${id}`),
+    getPublic: (id) => api.get(`/documents/${id}/public`),
 };
 
 // Devices API - for camera, mic, speaker testing

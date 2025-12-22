@@ -43,6 +43,7 @@ model School {
   assignments      Assignment[]
   gradeScales      GradeScale[]
   labItems         LabItem[]
+  documents        Document[]
 
   @@map("schools")
 }
@@ -179,6 +180,7 @@ model User {
   deviceTests        DeviceTest[]
   importHistory      ImportHistory[]
   maintenanceRecords ItemMaintenanceHistory[] @relation("MaintenanceRecordedBy")
+  documents          Document[] @relation("DocumentUploadedBy")
 
   @@map("users")
 }
@@ -474,6 +476,31 @@ model ItemMaintenanceHistory {
   recordedBy User    @relation("MaintenanceRecordedBy", fields: [recordedById], references: [id])
 
   @@map("item_maintenance_history")
+}
+
+// Document storage for PDFs, DOCX, XLS files
+model Document {
+  id           String   @id @default(uuid())
+  schoolId     String   @map("school_id")
+  uploadedById String   @map("uploaded_by")
+  name         String   // Editable display name
+  description  String?  // Optional description
+  fileName     String   @map("file_name") // Original file name
+  fileType     String   @map("file_type") // pdf, docx, xlsx, etc.
+  mimeType     String   @map("mime_type")
+  fileSize     Int      @map("file_size") // Size in bytes
+  cloudinaryId String   @map("cloudinary_id") // Cloudinary public_id
+  url          String   // Cloudinary secure URL
+  isPublic     Boolean  @default(false) @map("is_public")
+  category     String?  // manual, agreement, report, etc.
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  school     School @relation(fields: [schoolId], references: [id])
+  uploadedBy User   @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+
+  @@map("documents")
 }
 
 // ==================== ASSIGNMENTS ====================

@@ -39,3 +39,29 @@ CREATE TABLE IF NOT EXISTS item_maintenance_history (
 
 CREATE INDEX IF NOT EXISTS idx_maintenance_item_id ON item_maintenance_history(item_id);
 CREATE INDEX IF NOT EXISTS idx_maintenance_created_at ON item_maintenance_history(created_at DESC);
+
+-- =====================================================
+-- Documents Table (for PDFs, DOCX, XLS storage)
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    school_id UUID NOT NULL REFERENCES schools(id),
+    uploaded_by UUID NOT NULL REFERENCES users(id),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    file_name VARCHAR(255) NOT NULL,
+    file_type VARCHAR(50) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    file_size INTEGER NOT NULL,
+    cloudinary_id VARCHAR(255) NOT NULL,
+    url TEXT NOT NULL,
+    is_public BOOLEAN DEFAULT FALSE,
+    category VARCHAR(100),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_documents_school_id ON documents(school_id);
+CREATE INDEX IF NOT EXISTS idx_documents_uploaded_by ON documents(uploaded_by);
+CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at DESC);
