@@ -96,21 +96,35 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     res.json({
         success: true,
         data: {
-            documents: documents.map(d => ({
-                ...d,
-                fileSizeFormatted: formatSize(d.fileSize),
-                shareCount: d.shares?.length || 0,
-                shareInfo: d.shares?.map(s => ({
-                    id: s.id,
-                    type: s.targetType,
-                    targetName: s.targetType === 'class'
-                        ? (s.targetClass?.name || `Grade ${s.targetClass?.gradeLevel}-${s.targetClass?.section}`)
-                        : s.targetType === 'group'
-                            ? s.targetGroup?.name
-                            : `${s.targetUser?.firstName} ${s.targetUser?.lastName}`,
-                    sharedAt: s.sharedAt
-                })) || []
-            }))
+            documents: documents.map(d => {
+                // Deduplicate shares by type + target ID
+                const uniqueSharesMap = new Map();
+                d.shares?.forEach(s => {
+                    const targetId = s.targetClassId || s.targetGroupId || s.targetUserId;
+                    const key = `${s.targetType}-${targetId}`;
+                    if (!uniqueSharesMap.has(key)) {
+                        uniqueSharesMap.set(key, {
+                            id: s.id,
+                            type: s.targetType,
+                            targetId: targetId,
+                            targetName: s.targetType === 'class'
+                                ? (s.targetClass?.name || `Grade ${s.targetClass?.gradeLevel}-${s.targetClass?.section}`)
+                                : s.targetType === 'group'
+                                    ? s.targetGroup?.name
+                                    : `${s.targetUser?.firstName} ${s.targetUser?.lastName}`,
+                            sharedAt: s.sharedAt
+                        });
+                    }
+                });
+                const uniqueShares = Array.from(uniqueSharesMap.values());
+
+                return {
+                    ...d,
+                    fileSizeFormatted: formatSize(d.fileSize),
+                    shareCount: uniqueShares.length,
+                    shareInfo: uniqueShares
+                };
+            })
         }
     });
 }));

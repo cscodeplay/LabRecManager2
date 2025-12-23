@@ -135,12 +135,16 @@ export default function DocumentsPage() {
 
             // Load all groups from all classes
             const allGroups = [];
+            const seenGroupIds = new Set();
             for (const cls of classes) {
                 try {
                     const groupRes = await classesAPI.getGroups(cls.id);
                     const groups = groupRes.data.data.groups || [];
                     groups.forEach(g => {
-                        allGroups.push({ ...g, className: cls.name || `Grade ${cls.gradeLevel}-${cls.section}` });
+                        if (!seenGroupIds.has(g.id)) {
+                            seenGroupIds.add(g.id);
+                            allGroups.push({ ...g, className: cls.name || `Grade ${cls.gradeLevel}-${cls.section}` });
+                        }
                     });
                 } catch (e) { /* ignore if no groups */ }
             }
