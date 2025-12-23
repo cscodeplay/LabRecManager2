@@ -331,7 +331,7 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
                     notifications.push({
                         userId: e.studentId,
                         title: 'Document Shared with You',
-                        body: `"${doc.name}" has been shared with your class.`,
+                        message: `"${doc.name}" has been shared with your class.`,
                         status: 'pending'
                     });
                 }
@@ -349,7 +349,7 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
                     notifications.push({
                         userId: m.studentId,
                         title: 'Document Shared with You',
-                        body: `"${doc.name}" has been shared with your group.`,
+                        message: `"${doc.name}" has been shared with your group.`,
                         status: 'pending'
                     });
                 }
@@ -360,7 +360,7 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
             notifications.push({
                 userId: target.id,
                 title: 'Document Shared with You',
-                body: `"${doc.name}" has been shared with you by ${req.user.firstName} ${req.user.lastName}.`,
+                message: `"${doc.name}" has been shared with you by ${req.user.firstName} ${req.user.lastName}.`,
                 status: 'pending'
             });
         } else if (target.type === 'student') {
@@ -369,7 +369,7 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
             notifications.push({
                 userId: target.id,
                 title: 'Document Shared with You',
-                body: `"${doc.name}" has been shared with you by ${req.user.firstName} ${req.user.lastName}.`,
+                message: `"${doc.name}" has been shared with you by ${req.user.firstName} ${req.user.lastName}.`,
                 status: 'pending'
             });
         }
