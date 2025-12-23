@@ -521,46 +521,81 @@ router.post('/', authenticate, authorize('instructor', 'lab_assistant', 'admin',
  * @access  Private (Owner or Admin)
  */
 router.put('/:id', authenticate, authorize('instructor', 'lab_assistant', 'admin', 'principal'), asyncHandler(async (req, res) => {
-    const assignment = await prisma.assignment.findUnique({
-        where: { id: req.params.id }
-    });
+    console.log('[PUT /assignments/:id] id:', req.params.id);
+    console.log('[PUT /assignments/:id] body keys:', Object.keys(req.body));
 
-    if (!assignment) {
-        return res.status(404).json({
-            success: false,
-            message: 'Assignment not found'
+    try {
+        const assignment = await prisma.assignment.findUnique({
+            where: { id: req.params.id }
         });
-    }
 
-    // Check ownership (unless admin)
-    if (req.user.role !== 'admin' && req.user.role !== 'principal' && assignment.createdById !== req.user.id) {
-        return res.status(403).json({
-            success: false,
-            message: 'Not authorized to update this assignment'
-        });
-    }
-
-    const updatedAssignment = await prisma.assignment.update({
-        where: { id: req.params.id },
-        data: {
-            ...req.body,
-            publishDate: req.body.publishDate ? new Date(req.body.publishDate) : undefined,
-            dueDate: req.body.dueDate ? new Date(req.body.dueDate) : undefined,
-            updatedAt: new Date()
-        },
-        include: {
-            subject: true,
-            lab: true,
-            files: true
+        if (!assignment) {
+            return res.status(404).json({
+                success: false,
+                message: 'Assignment not found'
+            });
         }
-    });
 
-    res.json({
-        success: true,
-        message: 'Assignment updated successfully',
-        messageHindi: 'असाइनमेंट सफलतापूर्वक अपडेट किया गया',
-        data: { assignment: updatedAssignment }
-    });
+        // Check ownership (unless admin)
+        if (req.user.role !== 'admin' && req.user.role !== 'principal' && assignment.createdById !== req.user.id) {
+            return res.status(403).json({
+                success: false,
+                message: 'Not authorized to update this assignment'
+            });
+        }
+
+        // Filter out undefined values and handle dates
+        const updateData = {};
+        const allowedFields = [
+            'title', 'titleHindi', 'description', 'descriptionHindi',
+            'experimentNumber', 'assignmentType', 'subjectId', 'labId',
+            'aim', 'aimHindi', 'theory', 'theoryHindi', 'procedure', 'procedureHindi',
+            'expectedOutput', 'referenceCode', 'programmingLanguage',
+            'maxMarks', 'passingMarks', 'vivaMarks', 'practicalMarks', 'outputMarks',
+            'lateSubmissionAllowed', 'latePenaltyPercent', 'status'
+        ];
+
+        for (const field of allowedFields) {
+            if (req.body[field] !== undefined) {
+                updateData[field] = req.body[field];
+            }
+        }
+
+        // Handle date fields specially
+        if (req.body.publishDate) {
+            updateData.publishDate = new Date(req.body.publishDate);
+        }
+        if (req.body.dueDate) {
+            updateData.dueDate = new Date(req.body.dueDate);
+        }
+        updateData.updatedAt = new Date();
+
+        console.log('[PUT /assignments/:id] updateData keys:', Object.keys(updateData));
+
+        const updatedAssignment = await prisma.assignment.update({
+            where: { id: req.params.id },
+            data: updateData,
+            include: {
+                subject: true,
+                lab: true,
+                files: true
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Assignment updated successfully',
+            messageHindi: 'असाइनमेंट सफलतापूर्वक अपडेट किया गया',
+            data: { assignment: updatedAssignment }
+        });
+    } catch (error) {
+        console.error('[PUT /assignments/:id] ERROR:', error.message);
+        console.error('[PUT /assignments/:id] STACK:', error.stack);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update assignment: ' + error.message
+        });
+    }
 }));
 
 /**
