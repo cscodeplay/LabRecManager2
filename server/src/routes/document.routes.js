@@ -134,7 +134,13 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
  * @desc    Get a single document
  * @access  Private
  */
-router.get('/:id', authenticate, asyncHandler(async (req, res) => {
+router.get('/:id', authenticate, asyncHandler(async (req, res, next) => {
+    // UUID validation - if not a valid UUID, skip to next route (e.g., /shared)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(req.params.id)) {
+        return next();
+    }
+
     const doc = await prisma.document.findFirst({
         where: { id: req.params.id, schoolId: req.user.schoolId },
         include: {
@@ -443,84 +449,95 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
  * @access  Private
  */
 router.get('/shared', authenticate, asyncHandler(async (req, res) => {
-    const userId = req.user.id;
-    const userRole = req.user.role;
-    const schoolId = req.user.schoolId;
+    try {
+        const userId = req.user.id;
+        const userRole = req.user.role;
+        const schoolId = req.user.schoolId;
 
-    // Build query conditions based on user role
-    const orConditions = [];
+        console.log('[GET /documents/shared] userId:', userId, 'role:', userRole);
 
-    // If user is a student, check class and group shares
-    if (userRole === 'student') {
-        // Get student's class IDs
-        const enrollments = await prisma.classEnrollment.findMany({
-            where: { studentId: userId, status: 'active' },
-            select: { classId: true }
-        });
-        const classIds = enrollments.map(e => e.classId);
+        // Build query conditions based on user role
+        const orConditions = [];
 
-        // Get student's group IDs
-        const groupMembers = await prisma.groupMember.findMany({
-            where: { studentId: userId },
-            select: { groupId: true }
-        });
-        const groupIds = groupMembers.map(g => g.groupId);
+        // If user is a student, check class and group shares
+        if (userRole === 'student') {
+            // Get student's class IDs
+            const enrollments = await prisma.classEnrollment.findMany({
+                where: { studentId: userId, status: 'active' },
+                select: { classId: true }
+            });
+            const classIds = enrollments.map(e => e.classId);
+            console.log('[GET /documents/shared] Student classIds:', classIds);
 
-        if (classIds.length > 0) {
-            orConditions.push({ targetType: 'class', targetClassId: { in: classIds } });
+            // Get student's group IDs
+            const groupMembers = await prisma.groupMember.findMany({
+                where: { studentId: userId },
+                select: { groupId: true }
+            });
+            const groupIds = groupMembers.map(g => g.groupId);
+            console.log('[GET /documents/shared] Student groupIds:', groupIds);
+
+            if (classIds.length > 0) {
+                orConditions.push({ targetType: 'class', targetClassId: { in: classIds } });
+            }
+            if (groupIds.length > 0) {
+                orConditions.push({ targetType: 'group', targetGroupId: { in: groupIds } });
+            }
         }
-        if (groupIds.length > 0) {
-            orConditions.push({ targetType: 'group', targetGroupId: { in: groupIds } });
-        }
-    }
 
-    // Direct user shares (for instructors/admins)
-    orConditions.push({ targetUserId: userId });
+        // Direct user shares (for all users including students)
+        orConditions.push({ targetUserId: userId });
 
-    if (orConditions.length === 0) {
-        return res.json({
-            success: true,
-            data: { documents: [] }
-        });
-    }
+        console.log('[GET /documents/shared] orConditions count:', orConditions.length);
 
-    const shares = await prisma.documentShare.findMany({
-        where: {
-            OR: orConditions,
-            document: { schoolId }
-        },
-        include: {
-            document: {
-                include: {
-                    uploadedBy: { select: { id: true, firstName: true, lastName: true } }
-                }
+        // Even with just direct shares, we should query
+        const shares = await prisma.documentShare.findMany({
+            where: {
+                OR: orConditions,
+                document: { schoolId }
             },
-            sharedBy: { select: { id: true, firstName: true, lastName: true } },
-            targetClass: { select: { id: true, name: true } },
-            targetGroup: { select: { id: true, name: true } }
-        },
-        orderBy: { sharedAt: 'desc' }
-    });
+            include: {
+                document: {
+                    include: {
+                        uploadedBy: { select: { id: true, firstName: true, lastName: true } }
+                    }
+                },
+                sharedBy: { select: { id: true, firstName: true, lastName: true } },
+                targetClass: { select: { id: true, name: true } },
+                targetGroup: { select: { id: true, name: true } }
+            },
+            orderBy: { sharedAt: 'desc' }
+        });
 
-    // Format the response
-    const documents = shares.map(share => ({
-        shareId: share.id,
-        sharedAt: share.sharedAt,
-        message: share.message,
-        sharedBy: share.sharedBy,
-        targetType: share.targetType,
-        targetClass: share.targetClass,
-        targetGroup: share.targetGroup,
-        document: {
-            ...share.document,
-            fileSizeFormatted: formatSize(share.document.fileSize)
-        }
-    }));
+        console.log('[GET /documents/shared] Found', shares.length, 'shares');
 
-    res.json({
-        success: true,
-        data: { documents }
-    });
+        // Format the response
+        const documents = shares.map(share => ({
+            shareId: share.id,
+            sharedAt: share.sharedAt,
+            message: share.message,
+            sharedBy: share.sharedBy,
+            targetType: share.targetType,
+            targetClass: share.targetClass,
+            targetGroup: share.targetGroup,
+            document: {
+                ...share.document,
+                fileSizeFormatted: formatSize(share.document.fileSize)
+            }
+        }));
+
+        res.json({
+            success: true,
+            data: { documents }
+        });
+    } catch (error) {
+        console.error('[GET /documents/shared] ERROR:', error.message);
+        console.error('[GET /documents/shared] STACK:', error.stack);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to load shared documents: ' + error.message
+        });
+    }
 }));
 
 /**
