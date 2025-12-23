@@ -14,11 +14,11 @@ const { createStudentProfileExtras, createBulkProfileExtras } = require('../util
  * @access  Private (Admin, Principal)
  */
 router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
-    const { page = 1, limit = 20, role, search, isActive, classId } = req.query;
+    const { page = 1, limit = 20, role, search, isActive, classId, all } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Get academic session from header
-    const sessionId = req.headers['x-academic-session'];
+    // Get academic session from header (skip if 'all' is passed for sharing across sessions)
+    const sessionId = all === 'true' ? null : req.headers['x-academic-session'];
 
     let where = { schoolId: req.user.schoolId };
 
@@ -42,7 +42,7 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
         };
     }
 
-    // Session-based filtering: only apply to students with role filter
+    // Session-based filtering: only apply to students with role filter (skip if 'all')
     if (sessionId && role === 'student') {
         // Filter students by enrollments in classes of the selected academic year
         where.classEnrollments = {

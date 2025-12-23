@@ -128,8 +128,8 @@ export default function DocumentsPage() {
 
     const loadShareOptions = async () => {
         try {
-            // Load classes
-            const classRes = await classesAPI.getAll();
+            // Load ALL classes (all: true bypasses session filter)
+            const classRes = await api.get('/classes', { params: { all: true } });
             const classes = classRes.data.data.classes || [];
             setAvailableClasses(classes);
 
@@ -138,7 +138,7 @@ export default function DocumentsPage() {
             const seenGroupIds = new Set();
             for (const cls of classes) {
                 try {
-                    const groupRes = await classesAPI.getGroups(cls.id);
+                    const groupRes = await api.get(`/classes/${cls.id}/groups`);
                     const groups = groupRes.data.data.groups || [];
                     groups.forEach(g => {
                         if (!seenGroupIds.has(g.id)) {
@@ -150,10 +150,10 @@ export default function DocumentsPage() {
             }
             setAvailableGroups(allGroups);
 
-            // Load instructors and admins
-            const userRes = await api.get('/users', { params: { role: 'instructor', limit: 200 } });
-            const adminRes = await api.get('/users', { params: { role: 'admin', limit: 50 } });
-            const principalRes = await api.get('/users', { params: { role: 'principal', limit: 10 } });
+            // Load ALL instructors and admins (all: true bypasses session filter)
+            const userRes = await api.get('/users', { params: { role: 'instructor', limit: 500, all: true } });
+            const adminRes = await api.get('/users', { params: { role: 'admin', limit: 100, all: true } });
+            const principalRes = await api.get('/users', { params: { role: 'principal', limit: 20, all: true } });
             const allInstructors = [
                 ...(userRes.data.data.users || []),
                 ...(adminRes.data.data.users || []),
@@ -161,8 +161,8 @@ export default function DocumentsPage() {
             ];
             setAvailableInstructors(allInstructors);
 
-            // Load students with high limit
-            const studentRes = await api.get('/users', { params: { role: 'student', limit: 500 } });
+            // Load ALL students (high limit, all: true bypasses session filter)
+            const studentRes = await api.get('/users', { params: { role: 'student', limit: 1000, all: true } });
             setAvailableStudents(studentRes.data.data.users || []);
         } catch (err) {
             console.error('Failed to load share options:', err);
