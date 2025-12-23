@@ -510,7 +510,7 @@ export default function ClassDetailPage() {
                                                     <Monitor className="w-4 h-4 text-blue-500" />
                                                     {group.assignedPc ? (
                                                         <span className="text-sm font-medium text-slate-700">
-                                                            {group.assignedPc.pcNumber}
+                                                            {group.assignedPc.itemNumber}
                                                             <span className="text-xs text-slate-500 ml-1">({group.assignedPc.lab?.name})</span>
                                                         </span>
                                                     ) : (
@@ -529,7 +529,7 @@ export default function ClassDetailPage() {
                                                                 <option value="">-- Unassign --</option>
                                                                 {allPCs.map(pc => (
                                                                     <option key={pc.id} value={pc.id}>
-                                                                        {pc.pcNumber} ({pc.lab?.name})
+                                                                        {pc.itemNumber} ({pc.lab?.name})
                                                                     </option>
                                                                 ))}
                                                             </select>
