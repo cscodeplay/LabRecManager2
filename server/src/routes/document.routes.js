@@ -300,7 +300,16 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
     const shares = [];
     const notifications = [];
 
+    // Valid target types
+    const VALID_TYPES = ['class', 'group', 'instructor', 'admin', 'student'];
+
     for (const target of targets) {
+        // Validate target type
+        if (!VALID_TYPES.includes(target.type)) {
+            console.error('Invalid target type:', target.type);
+            return res.status(400).json({ success: false, message: `Invalid target type: ${target.type}` });
+        }
+
         let shareData = {
             documentId: doc.id,
             sharedById: req.user.id,
@@ -369,6 +378,7 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
     }
 
     // Create all shares
+    console.log('Creating shares:', JSON.stringify(shares, null, 2));
     try {
         const createdShares = await prisma.documentShare.createMany({
             data: shares
@@ -391,8 +401,9 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
         console.error('Share data:', JSON.stringify(shares, null, 2));
         return res.status(500).json({
             success: false,
-            message: 'Failed to share document. Check if target type is supported.',
-            error: dbError.message
+            message: dbError.message || 'Failed to share document',
+            error: dbError.code || 'UNKNOWN',
+            details: dbError.meta || null
         });
     }
 }));
