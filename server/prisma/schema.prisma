@@ -236,6 +236,7 @@ model Class {
   labAttendance  LabAttendance[]
   groups         StudentGroup[]
 
+  @@unique([schoolId, name], name: "unique_class_name_per_school")
   @@index([academicYearId])
   @@index([schoolId, academicYearId])
   @@index([schoolId], map: "idx_classes_school")
@@ -275,6 +276,7 @@ model StudentGroup {
   createdBy      User               @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   submissions    Submission[]
 
+  @@unique([classId, name], name: "unique_group_name_per_class")
   @@map("student_groups")
 }
 
