@@ -170,10 +170,25 @@ export default function AssignmentsPage() {
                                             {assignment.description}
                                         </p>
                                         <div className="flex flex-wrap gap-4 text-sm text-slate-500">
-                                            <span className="flex items-center gap-1">
-                                                <Calendar className="w-4 h-4" />
-                                                Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : 'No deadline'}
-                                            </span>
+                                            {/* Show scheduled publish or published date instead of due date */}
+                                            {assignment.status === 'draft' && assignment.publishDate && (
+                                                <span className="flex items-center gap-1 text-amber-600">
+                                                    <Clock className="w-4 h-4" />
+                                                    Scheduled: {new Date(assignment.publishDate).toLocaleString()}
+                                                </span>
+                                            )}
+                                            {assignment.status === 'published' && (
+                                                <span className="flex items-center gap-1 text-emerald-600">
+                                                    <CheckCircle className="w-4 h-4" />
+                                                    Published: {assignment.publishDate ? new Date(assignment.publishDate).toLocaleDateString() : 'Now'}
+                                                </span>
+                                            )}
+                                            {!assignment.publishDate && assignment.status === 'draft' && (
+                                                <span className="flex items-center gap-1">
+                                                    <Calendar className="w-4 h-4" />
+                                                    Created: {new Date(assignment.createdAt).toLocaleDateString()}
+                                                </span>
+                                            )}
                                             <span className="flex items-center gap-1">
                                                 <CheckCircle className="w-4 h-4" />
                                                 Max Marks: {assignment.maxMarks}

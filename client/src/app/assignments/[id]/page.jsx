@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
     ArrowLeft, Calendar, FileText, Clock, CheckCircle,
-    Users, Award, Code, Upload, Eye, Trash2, UsersRound, User, Download, X
+    Users, Award, Code, Upload, Eye, Trash2, UsersRound, User, Download, X, Edit2
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { assignmentsAPI } from '@/lib/api';
@@ -112,6 +112,13 @@ export default function AssignmentDetailPage() {
                         </div>
                         <h1 className="text-xl font-semibold text-slate-900 mt-1">{assignment.title}</h1>
                     </div>
+                    {/* Action buttons for instructors */}
+                    {isInstructor && (
+                        <Link href={`/assignments/create?edit=${assignment.id}`} className="btn btn-secondary">
+                            <Edit2 className="w-4 h-4" />
+                            Edit
+                        </Link>
+                    )}
                     {user?.role === 'student' && assignment.status === 'published' && (
                         <Link href={`/assignments/${assignment.id}/submit`} className="btn btn-primary">
                             <Upload className="w-4 h-4" />

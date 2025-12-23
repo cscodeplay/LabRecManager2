@@ -569,33 +569,43 @@ router.put('/:id', authenticate, authorize('instructor', 'lab_assistant', 'admin
  * @access  Private (Owner or Admin)
  */
 router.post('/:id/publish', authenticate, authorize('instructor', 'lab_assistant', 'admin', 'principal'), asyncHandler(async (req, res) => {
-    const assignment = await prisma.assignment.findUnique({
-        where: { id: req.params.id }
-    });
+    console.log('[POST /assignments/:id/publish] id:', req.params.id);
 
-    if (!assignment) {
-        return res.status(404).json({
+    try {
+        const assignment = await prisma.assignment.findUnique({
+            where: { id: req.params.id }
+        });
+
+        if (!assignment) {
+            return res.status(404).json({
+                success: false,
+                message: 'Assignment not found'
+            });
+        }
+
+        const updatedAssignment = await prisma.assignment.update({
+            where: { id: req.params.id },
+            data: {
+                status: 'published',
+                publishDate: new Date()
+            }
+        });
+
+        // TODO: Send notifications to assigned students
+
+        res.json({
+            success: true,
+            message: 'Assignment published successfully',
+            messageHindi: 'असाइनमेंट सफलतापूर्वक प्रकाशित किया गया',
+            data: { assignment: updatedAssignment }
+        });
+    } catch (error) {
+        console.error('[POST /assignments/:id/publish] ERROR:', error.message);
+        res.status(500).json({
             success: false,
-            message: 'Assignment not found'
+            message: 'Failed to publish: ' + error.message
         });
     }
-
-    const updatedAssignment = await prisma.assignment.update({
-        where: { id: req.params.id },
-        data: {
-            status: 'published',
-            publishDate: new Date()
-        }
-    });
-
-    // TODO: Send notifications to assigned students
-
-    res.json({
-        success: true,
-        message: 'Assignment published successfully',
-        messageHindi: 'असाइनमेंट सफलतापूर्वक प्रकाशित किया गया',
-        data: { assignment: updatedAssignment }
-    });
 }));
 
 /**

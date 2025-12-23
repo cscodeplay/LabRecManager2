@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { ArrowLeft, Save, Upload, Zap, Calendar, FileText, X } from 'lucide-react';
@@ -21,6 +21,9 @@ export default function CreateAssignmentPage() {
     const [classes, setClasses] = useState([]);
     const [pdfFile, setPdfFile] = useState(null);
     const [uploadingPdf, setUploadingPdf] = useState(false);
+    const [editId, setEditId] = useState(null);
+    const [isEditMode, setIsEditMode] = useState(false);
+    const searchParams = useSearchParams();
 
     const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm({
         defaultValues: {
@@ -43,7 +46,15 @@ export default function CreateAssignmentPage() {
             return;
         }
         loadFormData();
-    }, [isAuthenticated, _hasHydrated]);
+
+        // Check for edit mode
+        const editParam = searchParams.get('edit');
+        if (editParam) {
+            setEditId(editParam);
+            setIsEditMode(true);
+            loadExistingAssignment(editParam);
+        }
+    }, [isAuthenticated, _hasHydrated, searchParams]);
 
     const loadFormData = async () => {
         try {
@@ -58,6 +69,37 @@ export default function CreateAssignmentPage() {
         }
     };
 
+    const loadExistingAssignment = async (id) => {
+        try {
+            const res = await assignmentsAPI.getById(id);
+            const a = res.data.data.assignment;
+            // Populate form with existing data
+            setValue('title', a.title || '');
+            setValue('titleHindi', a.titleHindi || '');
+            setValue('description', a.description || '');
+            setValue('experimentNumber', a.experimentNumber || '');
+            setValue('assignmentType', a.assignmentType || 'program');
+            setValue('subjectId', a.subjectId || '');
+            setValue('aim', a.aim || '');
+            setValue('theory', a.theory || '');
+            setValue('procedure', a.procedure || '');
+            setValue('expectedOutput', a.expectedOutput || '');
+            setValue('referenceCode', a.referenceCode || '');
+            setValue('maxMarks', a.maxMarks || 100);
+            setValue('passingMarks', a.passingMarks || 35);
+            setValue('vivaMarks', a.vivaMarks || 20);
+            setValue('practicalMarks', a.practicalMarks || 60);
+            setValue('outputMarks', a.outputMarks || 20);
+            setValue('programmingLanguage', a.programmingLanguage || '');
+            if (a.publishDate) {
+                setValue('publishDate', new Date(a.publishDate).toISOString().slice(0, 16));
+            }
+        } catch (error) {
+            toast.error('Failed to load assignment for editing');
+            router.push('/assignments');
+        }
+    };
+
     const onSubmit = async (data) => {
         setLoading(true);
         try {
@@ -68,8 +110,23 @@ export default function CreateAssignmentPage() {
                 status: publishNow ? 'published' : 'draft'
             };
 
-            const response = await assignmentsAPI.create(submitData);
-            const assignmentId = response.data.data.assignment.id;
+            let assignmentId;
+
+            if (isEditMode && editId) {
+                // Update existing assignment
+                await assignmentsAPI.update(editId, submitData);
+                assignmentId = editId;
+                toast.success('Assignment updated successfully!');
+            } else {
+                // Create new assignment
+                const response = await assignmentsAPI.create(submitData);
+                assignmentId = response.data.data.assignment.id;
+                if (publishNow) {
+                    toast.success('Assignment created and published!');
+                } else {
+                    toast.success('Assignment created as draft!');
+                }
+            }
 
             // Upload PDF if selected
             if (pdfFile) {
@@ -78,19 +135,14 @@ export default function CreateAssignmentPage() {
                     await assignmentsAPI.uploadPdf(assignmentId, pdfFile);
                 } catch (pdfError) {
                     console.error('Failed to upload PDF:', pdfError);
-                    toast.error('Assignment created but PDF upload failed');
+                    toast.error('Assignment saved but PDF upload failed');
                 }
                 setUploadingPdf(false);
             }
 
-            if (publishNow) {
-                toast.success('Assignment created and published!');
-            } else {
-                toast.success('Assignment created as draft!');
-            }
             router.push(`/assignments/${assignmentId}`);
         } catch (error) {
-            toast.error(error.response?.data?.message || 'Failed to create assignment');
+            toast.error(error.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'create'} assignment`);
         } finally {
             setLoading(false);
         }
