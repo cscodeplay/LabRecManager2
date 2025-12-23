@@ -46,6 +46,7 @@ const navItems = {
         { href: '/assignments', label: 'Assignments', labelHindi: 'असाइनमेंट', icon: BookOpen },
         { href: '/assigned-work', label: 'Assigned Work', labelHindi: 'सौंपा गया कार्य', icon: ListChecks },
         { href: '/submissions', label: 'Review', labelHindi: 'समीक्षा', icon: ClipboardList },
+        { href: '/documents', label: 'Shared Docs', labelHindi: 'साझा दस्तावेज़', icon: FolderOpen },
         { href: '/grades', label: 'Grades', labelHindi: 'ग्रेड', icon: Award },
         { href: '/viva', label: 'Viva', labelHindi: 'मौखिक', icon: Video },
         { href: '/activity-logs', label: 'Activity Logs', labelHindi: 'गतिविधि लॉग', icon: Activity },
@@ -59,6 +60,7 @@ const navItems = {
         { href: '/assignments', label: 'Assignments', labelHindi: 'असाइनमेंट', icon: BookOpen },
         { href: '/assigned-work', label: 'Assigned Work', labelHindi: 'सौंपा गया कार्य', icon: ListChecks },
         { href: '/submissions', label: 'Submissions', labelHindi: 'प्रस्तुतियाँ', icon: FileText },
+        { href: '/documents', label: 'Shared Docs', labelHindi: 'साझा दस्तावेज़', icon: FolderOpen },
         { href: '/settings', label: 'Settings', labelHindi: 'सेटिंग्स', icon: Settings },
     ],
     student: [
@@ -66,6 +68,7 @@ const navItems = {
         { href: '/my-work', label: 'Assigned Work', labelHindi: 'सौंपा गया कार्य', icon: ClipboardCheck },
         { href: '/assignments', label: 'All Assignments', labelHindi: 'सभी असाइनमेंट', icon: BookOpen },
         { href: '/submissions', label: 'My Submissions', labelHindi: 'मेरी प्रस्तुतियाँ', icon: FileText },
+        { href: '/documents', label: 'Shared Docs', labelHindi: 'साझा दस्तावेज़', icon: FolderOpen },
         { href: '/grades', label: 'My Grades', labelHindi: 'मेरे ग्रेड', icon: Award },
         { href: '/viva', label: 'Viva', labelHindi: 'मौखिक', icon: Video },
         { href: '/settings', label: 'Settings', labelHindi: 'सेटिंग्स', icon: Settings },
