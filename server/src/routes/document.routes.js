@@ -330,7 +330,7 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
                 if (!notifications.find(n => n.userId === e.studentId)) {
                     notifications.push({
                         userId: e.studentId,
-                        subject: 'Document Shared with You',
+                        title: 'Document Shared with You',
                         body: `"${doc.name}" has been shared with your class.`,
                         status: 'pending'
                     });
@@ -348,7 +348,7 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
                 if (!notifications.find(n => n.userId === m.studentId)) {
                     notifications.push({
                         userId: m.studentId,
-                        subject: 'Document Shared with You',
+                        title: 'Document Shared with You',
                         body: `"${doc.name}" has been shared with your group.`,
                         status: 'pending'
                     });
@@ -359,7 +359,7 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
 
             notifications.push({
                 userId: target.id,
-                subject: 'Document Shared with You',
+                title: 'Document Shared with You',
                 body: `"${doc.name}" has been shared with you by ${req.user.firstName} ${req.user.lastName}.`,
                 status: 'pending'
             });
@@ -368,7 +368,7 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
 
             notifications.push({
                 userId: target.id,
-                subject: 'Document Shared with You',
+                title: 'Document Shared with You',
                 body: `"${doc.name}" has been shared with you by ${req.user.firstName} ${req.user.lastName}.`,
                 status: 'pending'
             });
