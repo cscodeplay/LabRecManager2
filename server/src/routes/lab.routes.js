@@ -225,19 +225,31 @@ router.get('/inventory-reports', authenticate, authorize('admin', 'principal', '
  * @note    This route must be defined BEFORE /:id to avoid matching "items" as an id
  */
 router.get('/items/pcs', authenticate, asyncHandler(async (req, res) => {
-    const items = await prisma.labItem.findMany({
-        where: { schoolId: req.user.schoolId, itemType: 'pc', status: 'active' },
-        include: {
-            lab: { select: { id: true, name: true, roomNumber: true } },
-            assignedGroups: { select: { id: true, name: true } }
-        },
-        orderBy: [{ lab: { name: 'asc' } }, { itemNumber: 'asc' }]
-    });
+    console.log('[GET /labs/items/pcs] User schoolId:', req.user.schoolId);
 
-    res.json({
-        success: true,
-        data: { pcs: items }
-    });
+    try {
+        const items = await prisma.labItem.findMany({
+            where: {
+                schoolId: req.user.schoolId,
+                itemType: 'pc',
+                status: 'active'
+            },
+            include: {
+                lab: { select: { id: true, name: true, roomNumber: true } }
+            },
+            orderBy: [{ lab: { name: 'asc' } }, { itemNumber: 'asc' }]
+        });
+
+        console.log('[GET /labs/items/pcs] Found PCs:', items.length);
+
+        res.json({
+            success: true,
+            data: { pcs: items }
+        });
+    } catch (error) {
+        console.error('[GET /labs/items/pcs] ERROR:', error.message);
+        throw error;
+    }
 }));
 
 /**
@@ -672,46 +684,57 @@ router.get('/shift-requests', authenticate, authorize('admin', 'principal', 'lab
     const { status, labId } = req.query;
     const schoolId = req.user.schoolId;
 
-    let where = {};
+    console.log('[GET /labs/shift-requests] User schoolId:', schoolId, 'status:', status, 'labId:', labId);
 
-    // Filter by status
-    if (status) {
-        where.status = status;
+    try {
+        let where = {};
+
+        // Filter by status
+        if (status) {
+            where.status = status;
+        }
+
+        // Filter by lab (either from or to)
+        if (labId) {
+            where.OR = [{ fromLabId: labId }, { toLabId: labId }];
+        }
+
+        // Get labs belonging to the school for filtering
+        const schoolLabs = await prisma.lab.findMany({
+            where: { schoolId },
+            select: { id: true }
+        });
+        const labIds = schoolLabs.map(l => l.id);
+
+        console.log('[GET /labs/shift-requests] Found', labIds.length, 'labs for school');
+
+        // Only show requests for labs in this school
+        if (!labId && labIds.length > 0) {
+            where.fromLabId = { in: labIds };
+        }
+
+        const shiftRequests = await prisma.equipmentShiftRequest.findMany({
+            where,
+            include: {
+                item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true } },
+                fromLab: { select: { id: true, name: true, roomNumber: true } },
+                toLab: { select: { id: true, name: true, roomNumber: true } },
+                requestedBy: { select: { id: true, firstName: true, lastName: true } },
+                approvedBy: { select: { id: true, firstName: true, lastName: true } }
+            },
+            orderBy: { requestedAt: 'desc' }
+        });
+
+        console.log('[GET /labs/shift-requests] Found', shiftRequests.length, 'shift requests');
+
+        res.json({
+            success: true,
+            data: { shiftRequests }
+        });
+    } catch (error) {
+        console.error('[GET /labs/shift-requests] ERROR:', error.message);
+        throw error;
     }
-
-    // Filter by lab (either from or to)
-    if (labId) {
-        where.OR = [{ fromLabId: labId }, { toLabId: labId }];
-    }
-
-    // Get labs belonging to the school for filtering
-    const schoolLabs = await prisma.lab.findMany({
-        where: { schoolId },
-        select: { id: true }
-    });
-    const labIds = schoolLabs.map(l => l.id);
-
-    // Only show requests for labs in this school
-    if (!labId) {
-        where.fromLabId = { in: labIds };
-    }
-
-    const shiftRequests = await prisma.equipmentShiftRequest.findMany({
-        where,
-        include: {
-            item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true } },
-            fromLab: { select: { id: true, name: true, roomNumber: true } },
-            toLab: { select: { id: true, name: true, roomNumber: true } },
-            requestedBy: { select: { id: true, firstName: true, lastName: true } },
-            approvedBy: { select: { id: true, firstName: true, lastName: true } }
-        },
-        orderBy: { requestedAt: 'desc' }
-    });
-
-    res.json({
-        success: true,
-        data: { shiftRequests }
-    });
 }));
 
 /**
