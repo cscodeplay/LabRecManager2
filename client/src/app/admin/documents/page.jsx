@@ -150,10 +150,10 @@ export default function DocumentsPage() {
             }
             setAvailableGroups(allGroups);
 
-            // Load ALL instructors and admins (all: true bypasses session filter)
-            const userRes = await api.get('/users', { params: { role: 'instructor', limit: 500, all: true } });
-            const adminRes = await api.get('/users', { params: { role: 'admin', limit: 100, all: true } });
-            const principalRes = await api.get('/users', { params: { role: 'principal', limit: 20, all: true } });
+            // Load instructors and admins (no session filtering on users without classId)
+            const userRes = await api.get('/users', { params: { role: 'instructor', limit: 500 } });
+            const adminRes = await api.get('/users', { params: { role: 'admin', limit: 100 } });
+            const principalRes = await api.get('/users', { params: { role: 'principal', limit: 20 } });
             const allInstructors = [
                 ...(userRes.data.data.users || []),
                 ...(adminRes.data.data.users || []),
@@ -161,8 +161,8 @@ export default function DocumentsPage() {
             ];
             setAvailableInstructors(allInstructors);
 
-            // Load ALL students (high limit, all: true bypasses session filter)
-            const studentRes = await api.get('/users', { params: { role: 'student', limit: 1000, all: true } });
+            // Load all students (no session filtering on users without classId)
+            const studentRes = await api.get('/users', { params: { role: 'student', limit: 1000 } });
             setAvailableStudents(studentRes.data.data.users || []);
         } catch (err) {
             console.error('Failed to load share options:', err);

@@ -42,11 +42,14 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
         };
     }
 
-    // Session-based filtering: only apply to students with role filter (skip if 'all')
-    if (sessionId && role === 'student') {
-        // Filter students by enrollments in classes of the selected academic year
+    // Session-based filtering: only apply when explicitly requesting class-based filtering
+    // Skip session filtering if 'all' is passed, or if no classId is specified
+    // This allows the share modal to see ALL students regardless of enrollment
+    if (sessionId && role === 'student' && classId) {
+        // Only filter by session if BOTH sessionId AND classId are provided
         where.classEnrollments = {
             some: {
+                classId,
                 status: 'active',
                 class: {
                     academicYearId: sessionId
