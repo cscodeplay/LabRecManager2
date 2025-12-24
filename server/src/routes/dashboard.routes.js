@@ -362,4 +362,33 @@ router.get('/site-update', asyncHandler(async (req, res) => {
     });
 }));
 
+// Get all site updates - for admin site updates page
+router.get('/site-updates', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const updates = await prisma.siteUpdate.findMany({
+        orderBy: { updatedAt: 'desc' }
+    });
+
+    res.json({ success: true, data: { updates } });
+}));
+
+// Add a new site update
+router.post('/site-updates', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { version, description, changes, updatedBy } = req.body;
+
+    if (!version || !description) {
+        return res.status(400).json({ success: false, message: 'Version and description are required' });
+    }
+
+    const update = await prisma.siteUpdate.create({
+        data: {
+            version,
+            description,
+            changes,
+            updatedBy: updatedBy || `${req.user.firstName} ${req.user.lastName}`
+        }
+    });
+
+    res.status(201).json({ success: true, data: update, message: 'Site update logged' });
+}));
+
 module.exports = router;

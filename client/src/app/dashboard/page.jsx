@@ -84,7 +84,7 @@ export default function DashboardPage() {
                         <p className="text-white/80 mt-1">Here's what's happening with your lab activities.</p>
                     </div>
                     {(user?.role === 'admin' || user?.role === 'principal') && siteUpdate && (
-                        <div className="text-right text-xs text-white/70">
+                        <Link href="/admin/site-updates" className="text-right text-xs text-white/70 hover:text-white transition">
                             <p>Last Updated</p>
                             <p className="font-mono">
                                 {new Date(siteUpdate.updatedAt).toLocaleString('en-IN', {
@@ -92,8 +92,8 @@ export default function DashboardPage() {
                                     hour: '2-digit', minute: '2-digit'
                                 })}
                             </p>
-                            <p className="font-mono opacity-80">v{siteUpdate.version}</p>
-                        </div>
+                            <p className="font-mono opacity-80">v{siteUpdate.version} →</p>
+                        </Link>
                     )}
                 </div>
             </div>

@@ -287,6 +287,8 @@ export const dashboardAPI = {
     getHealth: () => api.get('/dashboard/health'),
     getCalendar: (month, year) => api.get('/dashboard/calendar', { params: { month, year } }),
     getSiteUpdate: () => api.get('/dashboard/site-update'),
+    getAllSiteUpdates: () => api.get('/dashboard/site-updates'),
+    addSiteUpdate: (data) => api.post('/dashboard/site-updates', data),
 };
 
 // Reports API
