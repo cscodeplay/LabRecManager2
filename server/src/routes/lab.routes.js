@@ -396,46 +396,76 @@ router.put('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(a
  * @access  Private (Admin)
  */
 router.put('/:id/status', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    console.log('[Lab Status Update] Request body:', JSON.stringify(req.body));
+    console.log('[Lab Status Update] Lab ID:', req.params.id);
+
     const lab = await prisma.lab.findFirst({
         where: { id: req.params.id, schoolId: req.user.schoolId }
     });
 
     if (!lab) {
+        console.log('[Lab Status Update] Lab not found');
         return res.status(404).json({ success: false, message: 'Lab not found' });
     }
+
+    console.log('[Lab Status Update] Found lab:', lab.name);
 
     const { status, maintenanceReason, maintenanceEndDate } = req.body;
 
     // Validate status
     const validStatuses = ['active', 'maintenance', 'closed'];
     if (!validStatuses.includes(status)) {
+        console.log('[Lab Status Update] Invalid status:', status);
         return res.status(400).json({
             success: false,
             message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
         });
     }
 
-    const updated = await prisma.lab.update({
-        where: { id: req.params.id },
-        data: {
-            status,
-            maintenanceReason: status === 'maintenance' ? maintenanceReason : null,
-            maintenanceStartDate: status === 'maintenance' ? new Date() : null,
-            maintenanceEndDate: status === 'maintenance' && maintenanceEndDate ? new Date(maintenanceEndDate) : null
-        },
-        include: {
-            subject: { select: { id: true, name: true } },
-            incharge: { select: { id: true, firstName: true, lastName: true } }
-        }
-    });
+    try {
+        const updateData = {
+            status
+        };
 
-    res.json({
-        success: true,
-        message: status === 'maintenance'
-            ? `Lab set to maintenance mode: ${maintenanceReason || 'No reason provided'}`
-            : `Lab status updated to ${status}`,
-        data: { lab: updated }
-    });
+        // Only set maintenance fields if going into maintenance
+        if (status === 'maintenance') {
+            updateData.maintenanceReason = maintenanceReason || null;
+            updateData.maintenanceStartDate = new Date();
+            if (maintenanceEndDate) {
+                updateData.maintenanceEndDate = new Date(maintenanceEndDate);
+            }
+        } else {
+            // Clear maintenance fields when going active
+            updateData.maintenanceReason = null;
+            updateData.maintenanceStartDate = null;
+            updateData.maintenanceEndDate = null;
+        }
+
+        console.log('[Lab Status Update] Update data:', JSON.stringify(updateData));
+
+        const updated = await prisma.lab.update({
+            where: { id: req.params.id },
+            data: updateData,
+            include: {
+                subject: { select: { id: true, name: true } },
+                incharge: { select: { id: true, firstName: true, lastName: true } }
+            }
+        });
+
+        console.log('[Lab Status Update] Success! New status:', updated.status);
+
+        res.json({
+            success: true,
+            message: status === 'maintenance'
+                ? `Lab set to maintenance mode: ${maintenanceReason || 'No reason provided'}`
+                : `Lab status updated to ${status}`,
+            data: { lab: updated }
+        });
+    } catch (error) {
+        console.error('[Lab Status Update] ERROR:', error.message);
+        console.error('[Lab Status Update] Full error:', error);
+        throw error;
+    }
 }));
 
 /**
