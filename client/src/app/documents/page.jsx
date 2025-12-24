@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, Download, Eye, Clock, User, Share2, Inbox, ExternalLink } from 'lucide-react';
+import { FileText, Download, Eye, Clock, User, Share2, Inbox, ExternalLink, X } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { documentsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -30,6 +30,7 @@ export default function SharedDocumentsPage() {
     const [documents, setDocuments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [viewingDoc, setViewingDoc] = useState(null);
+    const [downloading, setDownloading] = useState(null);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -53,9 +54,10 @@ export default function SharedDocumentsPage() {
         }
     };
 
-    const getIcon = (doc) => {
-        const ext = doc.document?.fileName?.split('.').pop()?.toLowerCase();
-        return FILE_ICONS[ext] || FILE_ICONS.file;
+    // Get icon based on fileType from document
+    const getIcon = (item) => {
+        const fileType = item.document?.fileType?.toLowerCase();
+        return FILE_ICONS[fileType] || FILE_ICONS.file;
     };
 
     const formatDate = (dateStr) => {
@@ -65,12 +67,43 @@ export default function SharedDocumentsPage() {
         });
     };
 
-    const handleDownload = async (doc) => {
-        try {
-            window.open(doc.document.url, '_blank');
-        } catch (err) {
-            toast.error('Failed to download');
+    // Download file - opens in new tab for viewing/saving
+    const handleDownload = async (item) => {
+        const doc = item.document;
+        if (!doc?.url) {
+            toast.error('Document URL not available');
+            return;
         }
+
+        setDownloading(item.shareId);
+        try {
+            // Open in new tab - browser will handle download/view based on file type
+            window.open(doc.url, '_blank');
+            toast.success('Opening document...');
+        } catch (err) {
+            console.error('Download error:', err);
+            toast.error('Failed to download');
+        } finally {
+            setDownloading(null);
+        }
+    };
+
+    // View/Preview document
+    const handleView = (item) => {
+        const doc = item.document;
+        if (!doc?.url) {
+            toast.error('Document URL not available');
+            return;
+        }
+        setViewingDoc(doc);
+    };
+
+    // Check if file type supports preview
+    const canPreview = (doc) => {
+        if (!doc) return false;
+        const type = doc.fileType?.toLowerCase();
+        const mime = doc.mimeType?.toLowerCase() || '';
+        return type === 'pdf' || mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(type);
     };
 
     if (!_hasHydrated) return null;
@@ -113,9 +146,9 @@ export default function SharedDocumentsPage() {
                                         <div className="flex items-center gap-3">
                                             <span className="text-2xl">{getIcon(item)}</span>
                                             <div>
-                                                <p className="font-medium text-slate-900">{item.document.name}</p>
+                                                <p className="font-medium text-slate-900">{item.document?.name || 'Untitled'}</p>
                                                 <p className="text-sm text-slate-500">
-                                                    {item.document.fileSizeFormatted || '-'}
+                                                    {item.document?.fileSizeFormatted || '-'} • {item.document?.fileType?.toUpperCase() || 'File'}
                                                 </p>
                                             </div>
                                         </div>
@@ -151,19 +184,26 @@ export default function SharedDocumentsPage() {
                                     </td>
                                     <td className="py-4 px-4 text-right">
                                         <div className="flex items-center gap-2 justify-end">
+                                            {/* View/Preview Button */}
                                             <button
-                                                onClick={() => setViewingDoc(item.document)}
+                                                onClick={() => handleView(item)}
                                                 className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
-                                                title="View"
+                                                title={canPreview(item.document) ? "Preview" : "View"}
                                             >
                                                 <Eye className="w-4 h-4" />
                                             </button>
+                                            {/* Download Button */}
                                             <button
                                                 onClick={() => handleDownload(item)}
-                                                className="p-2 rounded-lg bg-primary-100 hover:bg-primary-200 text-primary-600 transition"
+                                                disabled={downloading === item.shareId}
+                                                className="p-2 rounded-lg bg-primary-100 hover:bg-primary-200 text-primary-600 transition disabled:opacity-50"
                                                 title="Download"
                                             >
-                                                <Download className="w-4 h-4" />
+                                                {downloading === item.shareId ? (
+                                                    <div className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+                                                ) : (
+                                                    <Download className="w-4 h-4" />
+                                                )}
                                             </button>
                                         </div>
                                     </td>
@@ -177,59 +217,104 @@ export default function SharedDocumentsPage() {
             {/* Document Preview Modal */}
             {viewingDoc && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setViewingDoc(null)}>
-                    <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-                        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                    <div className="bg-white dark:bg-slate-900 rounded-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+                        {/* Modal Header */}
+                        <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-white dark:bg-slate-800">
                             <div className="flex items-center gap-3">
                                 <span className="text-2xl">{FILE_ICONS[viewingDoc.fileType?.toLowerCase()] || FILE_ICONS.file}</span>
                                 <div>
-                                    <h3 className="font-semibold text-slate-900">{viewingDoc.name}</h3>
-                                    <p className="text-sm text-slate-500">{viewingDoc.fileSizeFormatted}</p>
+                                    <h3 className="font-semibold text-slate-900 dark:text-white">{viewingDoc.name}</h3>
+                                    <p className="text-sm text-slate-500">{viewingDoc.fileSizeFormatted} • {viewingDoc.fileType?.toUpperCase()}</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
+                                {/* Open in New Tab */}
                                 <a
                                     href={viewingDoc.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="p-2 rounded-lg bg-primary-100 hover:bg-primary-200 text-primary-600 transition"
+                                    className="p-2 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-600 transition"
                                     title="Open in new tab"
                                 >
                                     <ExternalLink className="w-5 h-5" />
                                 </a>
+                                {/* Download */}
+                                <a
+                                    href={viewingDoc.url}
+                                    download={viewingDoc.fileName || viewingDoc.name}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-2 rounded-lg bg-primary-100 hover:bg-primary-200 text-primary-600 transition"
+                                    title="Download"
+                                >
+                                    <Download className="w-5 h-5" />
+                                </a>
+                                {/* Close */}
                                 <button
                                     onClick={() => setViewingDoc(null)}
                                     className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
+                                    title="Close"
                                 >
-                                    ✕
+                                    <X className="w-5 h-5" />
                                 </button>
                             </div>
                         </div>
-                        <div className="flex-1 overflow-auto p-4 bg-slate-50">
-                            {viewingDoc.mimeType?.startsWith('image/') ? (
-                                <img
-                                    src={viewingDoc.url}
-                                    alt={viewingDoc.name}
-                                    className="max-w-full mx-auto rounded-lg shadow-lg"
-                                />
-                            ) : viewingDoc.mimeType === 'application/pdf' ? (
-                                <iframe
-                                    src={viewingDoc.url}
-                                    className="w-full h-[70vh] rounded-lg"
-                                    title={viewingDoc.name}
-                                />
+
+                        {/* Modal Content */}
+                        <div className="flex-1 overflow-auto bg-slate-100 dark:bg-slate-950 min-h-[400px]">
+                            {/* Image Preview */}
+                            {viewingDoc.mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(viewingDoc.fileType?.toLowerCase()) ? (
+                                <div className="flex items-center justify-center p-4 min-h-[60vh]">
+                                    <img
+                                        src={viewingDoc.url}
+                                        alt={viewingDoc.name}
+                                        className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-lg"
+                                        onError={(e) => {
+                                            e.target.onerror = null;
+                                            e.target.src = '';
+                                            e.target.parentElement.innerHTML = '<p class="text-slate-500 p-8">Failed to load image</p>';
+                                        }}
+                                    />
+                                </div>
+                            ) : viewingDoc.fileType?.toLowerCase() === 'pdf' || viewingDoc.mimeType === 'application/pdf' ? (
+                                /* PDF Preview */
+                                <div className="w-full h-[75vh]">
+                                    <iframe
+                                        src={`${viewingDoc.url}#toolbar=1&navpanes=0&scrollbar=1`}
+                                        className="w-full h-full border-0"
+                                        title={viewingDoc.name}
+                                    />
+                                </div>
                             ) : (
-                                <div className="text-center py-12">
-                                    <FileText className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                                    <p className="text-slate-500 mb-4">Preview not available for this file type</p>
-                                    <a
-                                        href={viewingDoc.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="btn-primary"
-                                    >
-                                        <Download className="w-4 h-4 mr-2" />
-                                        Download File
-                                    </a>
+                                /* Unsupported file type - show download option */
+                                <div className="flex flex-col items-center justify-center py-16 px-4">
+                                    <FileText className="w-20 h-20 text-slate-300 mb-6" />
+                                    <h4 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                                        Preview not available
+                                    </h4>
+                                    <p className="text-slate-500 mb-6 text-center">
+                                        This file type ({viewingDoc.fileType?.toUpperCase() || 'Unknown'}) cannot be previewed directly.
+                                    </p>
+                                    <div className="flex gap-3">
+                                        <a
+                                            href={viewingDoc.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-2 px-6 py-3 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition font-medium"
+                                        >
+                                            <Download className="w-5 h-5" />
+                                            Download File
+                                        </a>
+                                        <a
+                                            href={viewingDoc.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-2 px-6 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition font-medium"
+                                        >
+                                            <ExternalLink className="w-5 h-5" />
+                                            Open in Browser
+                                        </a>
+                                    </div>
                                 </div>
                             )}
                         </div>
