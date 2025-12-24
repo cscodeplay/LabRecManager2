@@ -139,7 +139,9 @@ router.get('/my', authenticate, authorize('student'), asyncHandler(async (req, r
                         finalMarks: true,
                         maxMarks: true,
                         gradeLetter: true,
-                        isPublished: true
+                        isPublished: true,
+                        gradedAt: true,
+                        gradedBy: { select: { firstName: true, lastName: true } }
                     }
                 }
             }

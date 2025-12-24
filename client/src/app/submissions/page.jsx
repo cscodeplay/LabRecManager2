@@ -193,9 +193,21 @@ export default function SubmissionsPage() {
                                                 )}
                                             </p>
                                             {submission.grade && (
-                                                <p className="text-sm font-medium text-emerald-600 mt-1">
-                                                    Marks: {submission.grade.finalMarks} / {submission.grade.maxMarks}
-                                                </p>
+                                                <>
+                                                    <p className="text-sm font-medium text-emerald-600 mt-1">
+                                                        Marks: {submission.grade.finalMarks} / {submission.grade.maxMarks}
+                                                    </p>
+                                                    <p className="text-sm text-slate-500 mt-1">
+                                                        Graded: {submission.grade.gradedAt
+                                                            ? new Date(submission.grade.gradedAt).toLocaleString()
+                                                            : 'N/A'}
+                                                        {submission.grade.gradedBy && (
+                                                            <span className="ml-2 text-slate-400">
+                                                                by {submission.grade.gradedBy.firstName} {submission.grade.gradedBy.lastName}
+                                                            </span>
+                                                        )}
+                                                    </p>
+                                                </>
                                             )}
                                         </div>
                                     </div>
