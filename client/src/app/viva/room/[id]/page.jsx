@@ -14,6 +14,7 @@ import { vivaAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
+import WhiteboardShareModal from '@/components/WhiteboardShareModal';
 
 export default function VivaRoomPage() {
     const router = useRouter();
@@ -62,6 +63,12 @@ export default function VivaRoomPage() {
     const [showWhiteboard, setShowWhiteboard] = useState(false);
     const [whiteboardFullscreen, setWhiteboardFullscreen] = useState(false);
     const [savedWhiteboardImage, setSavedWhiteboardImage] = useState(null);
+
+    // Whiteboard sharing state
+    const [showShareModal, setShowShareModal] = useState(false);
+    const [isWhiteboardSharing, setIsWhiteboardSharing] = useState(false);
+    const [whiteboardShareTargets, setWhiteboardShareTargets] = useState([]);
+    const [whiteboardSessionId, setWhiteboardSessionId] = useState(null);
 
     // Grading state (for instructors)
     const [showGradingPanel, setShowGradingPanel] = useState(false);
@@ -1835,10 +1842,67 @@ export default function VivaRoomPage() {
                                 setSavedWhiteboardImage(imageData);
                                 toast.success('Whiteboard saved! It will be included when session ends.');
                             }}
+                            // Sharing props
+                            isInstructor={isInstructor}
+                            isSharing={isWhiteboardSharing}
+                            sharingTargets={whiteboardShareTargets}
+                            onShare={() => setShowShareModal(true)}
+                            onStopSharing={() => {
+                                setIsWhiteboardSharing(false);
+                                setWhiteboardShareTargets([]);
+                                if (socketRef.current && whiteboardSessionId) {
+                                    socketRef.current.emit('whiteboard:stop-share', {
+                                        sessionId: whiteboardSessionId
+                                    });
+                                }
+                                setWhiteboardSessionId(null);
+                                toast.success('Stopped sharing whiteboard');
+                            }}
+                            socket={socketRef.current}
+                            sessionId={whiteboardSessionId}
                         />
                     </div>
                 </div>
             )}
+
+            {/* Whiteboard Share Modal */}
+            <WhiteboardShareModal
+                isOpen={showShareModal}
+                onClose={() => setShowShareModal(false)}
+                isSharing={isWhiteboardSharing}
+                currentTargets={whiteboardShareTargets}
+                onStartSharing={(shareData) => {
+                    const newSessionId = `wb_${params.id}_${Date.now()}`;
+                    setWhiteboardSessionId(newSessionId);
+                    setIsWhiteboardSharing(true);
+                    setWhiteboardShareTargets(shareData.targetNames);
+                    setShowShareModal(false);
+
+                    // Emit start sharing event
+                    if (socketRef.current) {
+                        socketRef.current.emit('whiteboard:start-share', {
+                            sessionId: newSessionId,
+                            vivaSessionId: params.id,
+                            instructorId: user?.id,
+                            instructorName: `${user?.firstName} ${user?.lastName}`,
+                            ...shareData
+                        });
+                    }
+
+                    toast.success(`Sharing whiteboard with ${shareData.targetNames.join(', ')}`);
+                }}
+                onStopSharing={() => {
+                    setIsWhiteboardSharing(false);
+                    setWhiteboardShareTargets([]);
+                    if (socketRef.current && whiteboardSessionId) {
+                        socketRef.current.emit('whiteboard:stop-share', {
+                            sessionId: whiteboardSessionId
+                        });
+                    }
+                    setWhiteboardSessionId(null);
+                    toast.success('Stopped sharing whiteboard');
+                }}
+            />
         </div>
     );
 }

@@ -131,6 +131,113 @@ io.on('connection', (socket) => {
     socket.join(`user-${userId}`);
   });
 
+  // ===========================================
+  // WHITEBOARD SHARING EVENTS
+  // ===========================================
+
+  // Instructor starts sharing whiteboard
+  socket.on('whiteboard:start-share', (data) => {
+    const { sessionId, instructorId, instructorName, targetType, targets, classId } = data;
+
+    // Store session info on socket for later reference
+    socket.whiteboardSession = { sessionId, instructorId, instructorName };
+
+    // Join the whiteboard room
+    socket.join(`whiteboard-${sessionId}`);
+
+    console.log(`[Whiteboard] Instructor ${instructorName} started sharing session ${sessionId}`);
+
+    // Broadcast to targets based on type
+    if (targetType === 'class') {
+      // Notify all students in the class
+      io.to(`class-${classId}`).emit('whiteboard:shared-with-you', {
+        sessionId,
+        instructorName,
+        targetType: 'class'
+      });
+    } else if (targetType === 'group') {
+      // Notify students in selected groups
+      targets.forEach(groupId => {
+        io.to(`group-${groupId}`).emit('whiteboard:shared-with-you', {
+          sessionId,
+          instructorName,
+          targetType: 'group'
+        });
+      });
+    } else if (targetType === 'student') {
+      // Notify specific students
+      targets.forEach(studentId => {
+        io.to(`user-${studentId}`).emit('whiteboard:shared-with-you', {
+          sessionId,
+          instructorName,
+          targetType: 'student'
+        });
+      });
+    }
+  });
+
+  // Instructor stops sharing whiteboard
+  socket.on('whiteboard:stop-share', (data) => {
+    const { sessionId } = data;
+
+    console.log(`[Whiteboard] Session ${sessionId} stopped sharing`);
+
+    // Notify all viewers
+    io.to(`whiteboard-${sessionId}`).emit('whiteboard:ended', { sessionId });
+
+    // Leave the room
+    socket.leave(`whiteboard-${sessionId}`);
+    socket.whiteboardSession = null;
+  });
+
+  // Drawing event from instructor - broadcast to viewers
+  socket.on('whiteboard:draw', (data) => {
+    const { sessionId } = data;
+
+    // Broadcast to all viewers except sender
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:draw', data);
+  });
+
+  // Clear canvas event
+  socket.on('whiteboard:clear', (data) => {
+    const { sessionId } = data;
+
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:clear', data);
+  });
+
+  // Student requests current canvas state when joining
+  socket.on('whiteboard:request-state', (data) => {
+    const { sessionId } = data;
+
+    // Join the whiteboard viewing room
+    socket.join(`whiteboard-${sessionId}`);
+
+    // Request the instructor to send current canvas state
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:state-requested', {
+      sessionId,
+      requesterId: socket.id
+    });
+  });
+
+  // Instructor sends canvas state to new viewer
+  socket.on('whiteboard:send-state', (data) => {
+    const { sessionId, imageData, targetSocketId } = data;
+
+    io.to(targetSocketId).emit('whiteboard:canvas-state', {
+      sessionId,
+      imageData
+    });
+  });
+
+  // Join class/group rooms for whiteboard notifications
+  socket.on('join-class', (classId) => {
+    socket.join(`class-${classId}`);
+  });
+
+  socket.on('join-group', (groupId) => {
+    socket.join(`group-${groupId}`);
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
   });

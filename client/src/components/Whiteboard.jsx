@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import {
     Pencil, Eraser, Circle, Square, Minus, Type, Undo2, Redo2, Trash2, Download, Save,
-    Palette, ChevronDown, X, Maximize2, Minimize2
+    Palette, ChevronDown, X, Maximize2, Minimize2, Share2
 } from 'lucide-react';
 
 const COLORS = [
@@ -19,7 +19,15 @@ export default function Whiteboard({
     isFullscreen = false,
     onToggleFullscreen,
     width = 800,
-    height = 600
+    height = 600,
+    // Sharing props
+    onShare,
+    isSharing = false,
+    sharingTargets = [],
+    onStopSharing,
+    socket,
+    sessionId,
+    isInstructor = false
 }) {
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
@@ -154,6 +162,16 @@ export default function Whiteboard({
         };
     }, []);
 
+    // Emit draw event via socket when sharing
+    const emitDrawEvent = useCallback((eventData) => {
+        if (isSharing && socket && sessionId) {
+            socket.emit('whiteboard:draw', {
+                sessionId,
+                ...eventData
+            });
+        }
+    }, [isSharing, socket, sessionId]);
+
     // Start drawing
     const startDrawing = useCallback((e) => {
         e.preventDefault();
@@ -167,8 +185,18 @@ export default function Whiteboard({
             const ctx = canvas.getContext('2d');
             ctx.beginPath();
             ctx.moveTo(pos.x, pos.y);
+
+            // Emit start event
+            emitDrawEvent({
+                type: 'path',
+                isStart: true,
+                x: pos.x,
+                y: pos.y,
+                color: tool === 'eraser' ? '#ffffff' : color,
+                strokeWidth: tool === 'eraser' ? strokeWidth * 3 : strokeWidth
+            });
         }
-    }, [getPosition, tool]);
+    }, [getPosition, tool, color, strokeWidth, emitDrawEvent]);
 
     // Draw
     const draw = useCallback((e) => {
@@ -188,6 +216,16 @@ export default function Whiteboard({
             ctx.lineJoin = 'round';
             ctx.lineTo(pos.x, pos.y);
             ctx.stroke();
+
+            // Emit path event
+            emitDrawEvent({
+                type: 'path',
+                isStart: false,
+                x: pos.x,
+                y: pos.y,
+                color,
+                strokeWidth
+            });
         } else if (tool === 'eraser') {
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = strokeWidth * 3;
@@ -195,8 +233,18 @@ export default function Whiteboard({
             ctx.lineJoin = 'round';
             ctx.lineTo(pos.x, pos.y);
             ctx.stroke();
+
+            // Emit eraser event
+            emitDrawEvent({
+                type: 'path',
+                isStart: false,
+                x: pos.x,
+                y: pos.y,
+                color: '#ffffff',
+                strokeWidth: strokeWidth * 3
+            });
         }
-    }, [isDrawing, getPosition, tool, color, strokeWidth]);
+    }, [isDrawing, getPosition, tool, color, strokeWidth, emitDrawEvent]);
 
     // Stop drawing
     const stopDrawing = useCallback((e) => {
@@ -216,6 +264,17 @@ export default function Whiteboard({
             ctx.moveTo(startPos.x, startPos.y);
             ctx.lineTo(pos.x, pos.y);
             ctx.stroke();
+
+            // Emit line event
+            emitDrawEvent({
+                type: 'line',
+                startX: startPos.x,
+                startY: startPos.y,
+                endX: pos.x,
+                endY: pos.y,
+                color,
+                strokeWidth
+            });
         } else if (tool === 'rectangle') {
             ctx.strokeStyle = color;
             ctx.lineWidth = strokeWidth;
@@ -225,6 +284,17 @@ export default function Whiteboard({
                 pos.x - startPos.x,
                 pos.y - startPos.y
             );
+
+            // Emit rectangle event
+            emitDrawEvent({
+                type: 'rectangle',
+                x: startPos.x,
+                y: startPos.y,
+                width: pos.x - startPos.x,
+                height: pos.y - startPos.y,
+                color,
+                strokeWidth
+            });
         } else if (tool === 'circle') {
             ctx.strokeStyle = color;
             ctx.lineWidth = strokeWidth;
@@ -235,11 +305,22 @@ export default function Whiteboard({
             ctx.beginPath();
             ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
             ctx.stroke();
+
+            // Emit ellipse event
+            emitDrawEvent({
+                type: 'ellipse',
+                centerX,
+                centerY,
+                radiusX,
+                radiusY,
+                color,
+                strokeWidth
+            });
         }
 
         setIsDrawing(false);
         saveToHistory();
-    }, [isDrawing, getPosition, tool, color, strokeWidth, startPos, saveToHistory]);
+    }, [isDrawing, getPosition, tool, color, strokeWidth, startPos, saveToHistory, emitDrawEvent]);
 
     // Download as image
     const handleDownload = useCallback(() => {
@@ -301,6 +382,12 @@ export default function Whiteboard({
                 <h3 className="font-semibold text-slate-800 flex items-center gap-2">
                     <Pencil className="w-5 h-5 text-primary-500" />
                     Whiteboard
+                    {isSharing && (
+                        <span className="flex items-center gap-1 text-xs bg-red-500 text-white px-2 py-0.5 rounded-full ml-2">
+                            <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                            LIVE - {sharingTargets.join(', ')}
+                        </span>
+                    )}
                 </h3>
                 <div className="flex items-center gap-2">
                     {onToggleFullscreen && (
@@ -333,8 +420,8 @@ export default function Whiteboard({
                             key={t.id}
                             onClick={() => setTool(t.id)}
                             className={`p-2 rounded-md transition ${tool === t.id
-                                    ? 'bg-primary-500 text-white shadow'
-                                    : 'hover:bg-slate-200 text-slate-600'
+                                ? 'bg-primary-500 text-white shadow'
+                                : 'hover:bg-slate-200 text-slate-600'
                                 }`}
                             title={t.label}
                         >
@@ -447,8 +534,23 @@ export default function Whiteboard({
 
                 <div className="flex-1" />
 
-                {/* Download & Save */}
+                {/* Sharing, Download & Save */}
                 <div className="flex items-center gap-2">
+                    {/* Share Button (for instructors) */}
+                    {isInstructor && (
+                        <button
+                            onClick={isSharing ? onStopSharing : onShare}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition text-sm ${isSharing
+                                ? 'bg-red-500 hover:bg-red-600 text-white'
+                                : 'bg-amber-500 hover:bg-amber-600 text-white'
+                                }`}
+                            title={isSharing ? 'Stop Sharing' : 'Share with students'}
+                        >
+                            <Share2 className="w-4 h-4" />
+                            {isSharing ? 'Stop Sharing' : 'Share'}
+                        </button>
+                    )}
+
                     <button
                         onClick={handleDownload}
                         className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition text-sm"
