@@ -67,7 +67,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                         titleHindi: true,
                         experimentNumber: true,
                         maxMarks: true,
-                        dueDate: true
+                        due_date: true
                     }
                 },
                 student: {
@@ -131,7 +131,7 @@ router.get('/my', authenticate, authorize('student'), asyncHandler(async (req, r
                         titleHindi: true,
                         experimentNumber: true,
                         maxMarks: true,
-                        dueDate: true
+                        due_date: true
                     }
                 },
                 grade: {
