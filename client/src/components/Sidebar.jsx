@@ -14,7 +14,7 @@ const navItems = {
     admin: [
         { href: '/dashboard', label: 'Dashboard', labelHindi: 'डैशबोर्ड', icon: Home },
         { href: '/classes', label: 'Classes', labelHindi: 'कक्षाएं', icon: Users },
-        { href: '/admin/users', label: 'Manage Users', labelHindi: 'उपयोगकर्ता प्रबंधन', icon: UserPlus },
+        { href: '/users', label: 'Manage Users', labelHindi: 'उपयोगकर्ता प्रबंधन', icon: UserPlus },
         { href: '/admin/labs', label: 'Labs & PCs', labelHindi: 'लैब और पीसी', icon: Monitor },
         { href: '/assignments', label: 'Assignments', labelHindi: 'असाइनमेंट', icon: BookOpen },
         { href: '/assigned-work', label: 'Assigned Work', labelHindi: 'सौंपा गया कार्य', icon: ListChecks },
@@ -30,7 +30,7 @@ const navItems = {
     principal: [
         { href: '/dashboard', label: 'Dashboard', labelHindi: 'डैशबोर्ड', icon: Home },
         { href: '/classes', label: 'Classes', labelHindi: 'कक्षाएं', icon: Users },
-        { href: '/admin/users', label: 'Manage Users', labelHindi: 'उपयोगकर्ता प्रबंधन', icon: UserPlus },
+        { href: '/users', label: 'Manage Users', labelHindi: 'उपयोगकर्ता प्रबंधन', icon: UserPlus },
         { href: '/admin/documents', label: 'Documents', labelHindi: 'दस्तावेज़', icon: FolderOpen },
         { href: '/grades', label: 'Grades', labelHindi: 'ग्रेड', icon: Award },
         { href: '/activity-logs', label: 'Activity Logs', labelHindi: 'गतिविधि लॉग', icon: Activity },
