@@ -391,6 +391,54 @@ router.put('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(a
 }));
 
 /**
+ * @route   PUT /api/labs/:id/status
+ * @desc    Update lab status (active, maintenance, closed)
+ * @access  Private (Admin)
+ */
+router.put('/:id/status', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const lab = await prisma.lab.findFirst({
+        where: { id: req.params.id, schoolId: req.user.schoolId }
+    });
+
+    if (!lab) {
+        return res.status(404).json({ success: false, message: 'Lab not found' });
+    }
+
+    const { status, maintenanceReason, maintenanceEndDate } = req.body;
+
+    // Validate status
+    const validStatuses = ['active', 'maintenance', 'closed'];
+    if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+            success: false,
+            message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
+        });
+    }
+
+    const updated = await prisma.lab.update({
+        where: { id: req.params.id },
+        data: {
+            status,
+            maintenanceReason: status === 'maintenance' ? maintenanceReason : null,
+            maintenanceStartDate: status === 'maintenance' ? new Date() : null,
+            maintenanceEndDate: status === 'maintenance' && maintenanceEndDate ? new Date(maintenanceEndDate) : null
+        },
+        include: {
+            subject: { select: { id: true, name: true } },
+            incharge: { select: { id: true, firstName: true, lastName: true } }
+        }
+    });
+
+    res.json({
+        success: true,
+        message: status === 'maintenance'
+            ? `Lab set to maintenance mode: ${maintenanceReason || 'No reason provided'}`
+            : `Lab status updated to ${status}`,
+        data: { lab: updated }
+    });
+}));
+
+/**
  * @route   DELETE /api/labs/:id
  * @desc    Delete a lab
  * @access  Private (Admin)

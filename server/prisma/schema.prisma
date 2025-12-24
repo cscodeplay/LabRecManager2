@@ -336,16 +336,20 @@ model ClassSubject {
 }
 
 model Lab {
-  id                String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  schoolId          String                  @map("school_id") @db.Uuid
-  name              String                  @db.VarChar(100)
-  nameHindi         String?                 @map("name_hindi") @db.VarChar(100)
-  roomNumber        String?                 @map("room_number") @db.VarChar(20)
-  capacity          Int?                    @default(30)
-  subjectId         String?                 @map("subject_id") @db.Uuid
-  equipmentList     Json?                   @map("equipment_list")
-  inchargeId        String?                 @map("incharge_id") @db.Uuid
-  createdAt         DateTime?               @default(now()) @map("created_at") @db.Timestamp(6)
+  id                     String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId               String                  @map("school_id") @db.Uuid
+  name                   String                  @db.VarChar(100)
+  nameHindi              String?                 @map("name_hindi") @db.VarChar(100)
+  roomNumber             String?                 @map("room_number") @db.VarChar(20)
+  capacity               Int?                    @default(30)
+  subjectId              String?                 @map("subject_id") @db.Uuid
+  equipmentList          Json?                   @map("equipment_list")
+  inchargeId             String?                 @map("incharge_id") @db.Uuid
+  status                 String?                 @default("active") @db.VarChar(20)
+  maintenanceReason      String?                 @map("maintenance_reason")
+  maintenanceStartDate   DateTime?               @map("maintenance_start_date") @db.Timestamp(6)
+  maintenanceEndDate     DateTime?               @map("maintenance_end_date") @db.Timestamp(6)
+  createdAt              DateTime?               @default(now()) @map("created_at") @db.Timestamp(6)
   assignments       Assignment[]
   shiftHistoryFrom  EquipmentShiftHistory[] @relation("ShiftHistoryFromLab")
   shiftHistoryTo    EquipmentShiftHistory[] @relation("ShiftHistoryToLab")
