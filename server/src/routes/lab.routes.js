@@ -452,7 +452,26 @@ router.put('/:id/status', authenticate, authorize('admin', 'principal'), asyncHa
             }
         });
 
+        // Log maintenance history
+        const historyAction = status === 'maintenance' ? 'started' :
+            lab.status === 'maintenance' && status === 'active' ? 'ended' : 'changed';
+
+        await prisma.labMaintenanceHistory.create({
+            data: {
+                labId: lab.id,
+                action: historyAction,
+                reason: maintenanceReason || null,
+                previousStatus: lab.status || 'active',
+                newStatus: status,
+                startedAt: status === 'maintenance' ? new Date() : null,
+                endedAt: historyAction === 'ended' ? new Date() : null,
+                expectedEndDate: maintenanceEndDate ? new Date(maintenanceEndDate) : null,
+                performedById: req.user.id
+            }
+        });
+
         console.log('[Lab Status Update] Success! New status:', updated.status);
+        console.log('[Lab Status Update] History logged:', historyAction);
 
         res.json({
             success: true,
@@ -466,6 +485,23 @@ router.put('/:id/status', authenticate, authorize('admin', 'principal'), asyncHa
         console.error('[Lab Status Update] Full error:', error);
         throw error;
     }
+}));
+
+/**
+ * @route   GET /api/labs/:id/maintenance-history
+ * @desc    Get maintenance history for a lab
+ * @access  Private (Admin)
+ */
+router.get('/:id/maintenance-history', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const history = await prisma.labMaintenanceHistory.findMany({
+        where: { labId: req.params.id },
+        include: {
+            performedBy: { select: { id: true, firstName: true, lastName: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({ success: true, data: { history } });
 }));
 
 /**

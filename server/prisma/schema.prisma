@@ -152,6 +152,7 @@ model User {
   groupMemberships                               GroupMember[]
   importHistory                                  ImportHistory[]
   maintenanceRecords                             ItemMaintenanceHistory[] @relation("MaintenanceRecordedBy")
+  labMaintenancePerformed                        LabMaintenanceHistory[]  @relation("LabMaintenancePerformer")
   lab_attendance_lab_attendance_marked_byTousers LabAttendance[]          @relation("lab_attendance_marked_byTousers")
   labAttendanceAsStudent                         LabAttendance[]          @relation("AttendanceStudent")
   materialUsageRecorded                          LabMaterialUsage[]       @relation("MaterialUsageRecorded")
@@ -359,11 +360,31 @@ model Lab {
   attendance        LabAttendance[]
   items             LabItem[]
   lab_materials     lab_materials[]
+  maintenanceHistory LabMaintenanceHistory[]
   incharge          User?                   @relation(fields: [inchargeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   school            School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   subject           Subject?                @relation(fields: [subjectId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("labs")
+}
+
+model LabMaintenanceHistory {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  labId        String    @map("lab_id") @db.Uuid
+  action       String    @db.VarChar(20) // 'started', 'ended', 'extended'
+  reason       String?
+  previousStatus String?  @map("previous_status") @db.VarChar(20)
+  newStatus    String    @map("new_status") @db.VarChar(20)
+  startedAt    DateTime? @map("started_at") @db.Timestamp(6)
+  endedAt      DateTime? @map("ended_at") @db.Timestamp(6)
+  expectedEndDate DateTime? @map("expected_end_date") @db.Timestamp(6)
+  performedById String   @map("performed_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  lab          Lab       @relation(fields: [labId], references: [id], onDelete: Cascade)
+  performedBy  User      @relation("LabMaintenancePerformer", fields: [performedById], references: [id])
+  
+  @@map("lab_maintenance_history")
 }
 
 model LabItem {
