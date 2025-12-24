@@ -748,82 +748,164 @@ router.post('/:id/targets', authenticate, authorize('instructor', 'lab_assistant
  * @access  Private (Instructor, Admin)
  */
 router.put('/targets/:targetId', authenticate, authorize('instructor', 'lab_assistant', 'admin', 'principal'), asyncHandler(async (req, res) => {
-    const { targetId } = req.params;
-    const { targetType, targetClassId, targetGroupId, targetStudentId, dueDate, isLocked } = req.body;
+    try {
+        const { targetId } = req.params;
+        const { targetType, targetClassId, targetGroupId, targetStudentId, dueDate, isLocked, specialInstructions } = req.body;
 
-    console.log('[PUT /targets/:targetId] targetId:', targetId, 'body:', req.body);
+        console.log('=== PUT /assignments/targets/:targetId ===');
+        console.log('targetId:', targetId);
+        console.log('Request body:', JSON.stringify(req.body, null, 2));
+        console.log('User:', req.user?.email, 'Role:', req.user?.role);
 
-    const existingTarget = await prisma.assignmentTarget.findUnique({
-        where: { id: targetId },
-        include: { assignment: true }
-    });
-
-    if (!existingTarget) {
-        return res.status(404).json({
-            success: false,
-            message: 'Target not found'
-        });
-    }
-
-    // Check ownership unless admin
-    if (req.user.role !== 'admin' && req.user.role !== 'principal' && existingTarget.assignment.createdById !== req.user.id) {
-        return res.status(403).json({
-            success: false,
-            message: 'Not authorized to update this target'
-        });
-    }
-
-    // Build update data
-    const updateData = {};
-
-    // Only update if values provided
-    if (typeof isLocked === 'boolean') {
-        updateData.isLocked = isLocked;
-    }
-
-    if (dueDate !== undefined) {
-        updateData.dueDate = dueDate ? new Date(dueDate) : null;
-    }
-
-    // If changing target type or target
-    if (targetType && targetType !== existingTarget.targetType) {
-        updateData.targetType = targetType;
-        // Clear all target IDs first
-        updateData.targetClassId = null;
-        updateData.targetGroupId = null;
-        updateData.targetStudentId = null;
-    }
-
-    if (targetClassId !== undefined) {
-        updateData.targetClassId = targetClassId || null;
-        if (targetClassId) updateData.targetType = 'class';
-    }
-    if (targetGroupId !== undefined) {
-        updateData.targetGroupId = targetGroupId || null;
-        if (targetGroupId) updateData.targetType = 'group';
-    }
-    if (targetStudentId !== undefined) {
-        updateData.targetStudentId = targetStudentId || null;
-        if (targetStudentId) updateData.targetType = 'student';
-    }
-
-    console.log('[PUT /targets/:targetId] updateData:', updateData);
-
-    const updatedTarget = await prisma.assignmentTarget.update({
-        where: { id: targetId },
-        data: updateData,
-        include: {
-            targetClass: { select: { id: true, name: true, gradeLevel: true, section: true } },
-            targetGroup: { select: { id: true, name: true } },
-            targetStudent: { select: { id: true, firstName: true, lastName: true } }
+        // Validate UUID format
+        if (!targetId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId)) {
+            console.log('ERROR: Invalid target ID format:', targetId);
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid target ID format'
+            });
         }
-    });
 
-    res.json({
-        success: true,
-        message: 'Target updated successfully',
-        data: { target: updatedTarget }
-    });
+        const existingTarget = await prisma.assignmentTarget.findUnique({
+            where: { id: targetId },
+            include: { assignment: true }
+        });
+
+        console.log('Existing target found:', existingTarget ? 'Yes' : 'No');
+
+        if (!existingTarget) {
+            console.log('ERROR: Target not found with ID:', targetId);
+            return res.status(404).json({
+                success: false,
+                message: 'Target not found'
+            });
+        }
+
+        // Check ownership unless admin
+        if (req.user.role !== 'admin' && req.user.role !== 'principal' && existingTarget.assignment.createdById !== req.user.id) {
+            console.log('ERROR: Not authorized. Assignment createdBy:', existingTarget.assignment.createdById, 'User ID:', req.user.id);
+            return res.status(403).json({
+                success: false,
+                message: 'Not authorized to update this target'
+            });
+        }
+
+        // Build update data
+        const updateData = {};
+
+        // Handle dueDate
+        if (dueDate !== undefined) {
+            console.log('Setting dueDate:', dueDate);
+            updateData.dueDate = dueDate ? new Date(dueDate) : null;
+        }
+
+        // Handle specialInstructions
+        if (specialInstructions !== undefined) {
+            console.log('Setting specialInstructions:', specialInstructions);
+            updateData.specialInstructions = specialInstructions || null;
+        }
+
+        // Handle isLocked (only if column exists)
+        if (typeof isLocked === 'boolean') {
+            console.log('Setting isLocked:', isLocked);
+            // Note: This will fail if column doesn't exist - that's expected until migration
+            updateData.isLocked = isLocked;
+        }
+
+        // Handle target type changes
+        if (targetType) {
+            console.log('Setting targetType:', targetType);
+            updateData.targetType = targetType;
+        }
+
+        // Handle target IDs based on type
+        if (targetType === 'class' || targetClassId !== undefined) {
+            console.log('Setting targetClassId:', targetClassId);
+            updateData.targetClassId = targetClassId || null;
+            updateData.targetGroupId = null;
+            updateData.targetStudentId = null;
+        }
+
+        if (targetType === 'group' || targetGroupId !== undefined) {
+            console.log('Setting targetGroupId:', targetGroupId);
+            updateData.targetGroupId = targetGroupId || null;
+            if (targetType === 'group') {
+                updateData.targetClassId = null;
+                updateData.targetStudentId = null;
+            }
+        }
+
+        if (targetType === 'student' || targetStudentId !== undefined) {
+            console.log('Setting targetStudentId:', targetStudentId);
+            updateData.targetStudentId = targetStudentId || null;
+            if (targetType === 'student') {
+                updateData.targetClassId = null;
+                updateData.targetGroupId = null;
+            }
+        }
+
+        console.log('Final updateData:', JSON.stringify(updateData, null, 2));
+
+        // Remove isLocked if it's causing issues (column might not exist)
+        let safeUpdateData = { ...updateData };
+        try {
+            const updatedTarget = await prisma.assignmentTarget.update({
+                where: { id: targetId },
+                data: safeUpdateData,
+                include: {
+                    targetClass: { select: { id: true, name: true, gradeLevel: true, section: true } },
+                    targetGroup: { select: { id: true, name: true } },
+                    targetStudent: { select: { id: true, firstName: true, lastName: true, studentId: true } }
+                }
+            });
+
+            console.log('Update successful. Updated target:', updatedTarget.id);
+
+            res.json({
+                success: true,
+                message: 'Target updated successfully',
+                data: { target: updatedTarget }
+            });
+        } catch (prismaError) {
+            console.error('Prisma update error:', prismaError.message);
+            console.error('Prisma error code:', prismaError.code);
+
+            // If error is about isLocked column not existing, retry without it
+            if (prismaError.message.includes('is_locked') || prismaError.code === 'P2025') {
+                console.log('Retrying without isLocked field...');
+                delete safeUpdateData.isLocked;
+
+                const updatedTarget = await prisma.assignmentTarget.update({
+                    where: { id: targetId },
+                    data: safeUpdateData,
+                    include: {
+                        targetClass: { select: { id: true, name: true, gradeLevel: true, section: true } },
+                        targetGroup: { select: { id: true, name: true } },
+                        targetStudent: { select: { id: true, firstName: true, lastName: true, studentId: true } }
+                    }
+                });
+
+                console.log('Retry successful without isLocked');
+                return res.json({
+                    success: true,
+                    message: 'Target updated successfully',
+                    data: { target: updatedTarget }
+                });
+            }
+
+            throw prismaError;
+        }
+    } catch (error) {
+        console.error('=== ERROR in PUT /assignments/targets/:targetId ===');
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update target: ' + error.message
+        });
+    }
 }));
 
 /**

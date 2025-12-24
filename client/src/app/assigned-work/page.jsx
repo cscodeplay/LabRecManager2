@@ -342,8 +342,9 @@ export default function AssignedWorkPage() {
         students: assignedWork.filter(t => t.targetType === 'student').length
     };
 
-    // Filter students in edit modal
-    const filteredEditStudents = editClassStudents.filter(s =>
+    // Filter students in edit modal - use class students if available, else global students
+    const studentsToFilter = editClassStudents.length > 0 ? editClassStudents : students;
+    const filteredEditStudents = studentsToFilter.filter(s =>
         s.firstName?.toLowerCase().includes(editStudentSearch.toLowerCase()) ||
         s.lastName?.toLowerCase().includes(editStudentSearch.toLowerCase()) ||
         s.studentId?.toLowerCase().includes(editStudentSearch.toLowerCase()) ||
@@ -651,9 +652,24 @@ export default function AssignedWorkPage() {
 
                         {/* Content */}
                         <div className="flex-1 overflow-auto p-4 space-y-6">
-                            {/* Step 1: Select Class */}
+                            {/* Currently Assigned To - Info Box */}
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                <p className="text-sm text-amber-800 font-medium mb-1">Currently assigned to:</p>
+                                <div className="flex items-center gap-2">
+                                    {getTargetIcon(editModal.target.targetType)}
+                                    <span className="font-medium text-slate-900">{getTargetName(editModal.target)}</span>
+                                    {editModal.target.targetStudent?.studentId && (
+                                        <span className="text-slate-500">({editModal.target.targetStudent.studentId})</span>
+                                    )}
+                                    <span className="text-xs text-slate-500 capitalize px-2 py-0.5 bg-amber-100 rounded">
+                                        {editModal.target.targetType}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Step 1: Select Class (Optional for students) */}
                             <div>
-                                <label className="label">Select Class</label>
+                                <label className="label">Select Class {editForm.targetType === 'student' && <span className="text-slate-400">(optional for students)</span>}</label>
                                 <select
                                     value={editForm.classId}
                                     onChange={(e) => handleEditClassChange(e.target.value)}
