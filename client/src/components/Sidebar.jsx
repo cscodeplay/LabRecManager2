@@ -23,6 +23,7 @@ const navItems = {
         { href: '/grades', label: 'Grades', labelHindi: 'ग्रेड', icon: Award },
         { href: '/viva', label: 'Viva', labelHindi: 'मौखिक', icon: Video },
         { href: '/whiteboard', label: 'Whiteboard', labelHindi: 'व्हाइटबोर्ड', icon: Pencil },
+        { href: '/admin/whiteboards', label: 'Live Sessions', labelHindi: 'लाइव सत्र', icon: Video },
         { href: '/activity-logs', label: 'Activity Logs', labelHindi: 'गतिविधि लॉग', icon: Activity },
         { href: '/reports', label: 'Reports', labelHindi: 'रिपोर्ट', icon: BarChart3 },
         { href: '/settings', label: 'Settings', labelHindi: 'सेटिंग्स', icon: Settings },

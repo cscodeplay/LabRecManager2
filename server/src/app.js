@@ -31,6 +31,7 @@ const pinRoutes = require('./routes/pin.routes');
 const labRoutes = require('./routes/lab.routes');
 const fileRoutes = require('./routes/file.routes');
 const documentRoutes = require('./routes/document.routes');
+const whiteboardRoutes = require('./routes/whiteboard.routes');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -89,6 +90,7 @@ app.use('/api/pin', pinRoutes);
 app.use('/api/labs', labRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/whiteboard', whiteboardRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

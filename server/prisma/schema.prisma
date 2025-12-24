@@ -38,6 +38,7 @@ model School {
   reportTemplates       ReportTemplate[]
   subjects              Subject[]
   users                 User[]
+  whiteboardSessions    WhiteboardSession[]
 
   @@map("schools")
 }
@@ -165,6 +166,8 @@ model User {
   vivaQuestionsCreated                           VivaQuestion[]
   vivaSessionsAsExaminer                         VivaSession[]            @relation("VivaExaminer")
   vivaSessionsAsStudent                          VivaSession[]            @relation("VivaStudent")
+  whiteboardSessionsAsHost                       WhiteboardSession[]      @relation("WhiteboardHost")
+  whiteboardParticipations                       WhiteboardParticipant[]
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")
@@ -235,6 +238,7 @@ model Class {
   finalLabMarks  FinalLabMarks[]
   labAttendance  LabAttendance[]
   groups         StudentGroup[]
+  whiteboardSessions WhiteboardSession[]
 
   @@unique([schoolId, name], name: "unique_class_name_per_school")
   @@index([academicYearId])
@@ -275,6 +279,7 @@ model StudentGroup {
   class          Class              @relation(fields: [classId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   createdBy      User               @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   submissions    Submission[]
+  whiteboardSessions WhiteboardSession[]
 
   @@unique([classId, name], name: "unique_group_name_per_class")
   @@map("student_groups")
@@ -1070,6 +1075,70 @@ model lab_materials {
   created_at         DateTime?          @default(now()) @db.Timestamp(6)
   lab_material_usage LabMaterialUsage[]
   labs               Lab                @relation(fields: [lab_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model WhiteboardSession {
+  id            String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId      String                      @map("school_id") @db.Uuid
+  hostId        String                      @map("host_id") @db.Uuid
+  title         String?                     @db.VarChar(255)
+  status        WhiteboardSessionStatus     @default(active)
+  targetType    WhiteboardTargetType?       @map("target_type")
+  targetClassId String?                     @map("target_class_id") @db.Uuid
+  targetGroupId String?                     @map("target_group_id") @db.Uuid
+  startedAt     DateTime?                   @default(now()) @map("started_at") @db.Timestamp(6)
+  endedAt       DateTime?                   @map("ended_at") @db.Timestamp(6)
+  recordingUrl  String?                     @map("recording_url")
+  isRecording   Boolean?                    @default(false) @map("is_recording")
+  canvasData    String?                     @map("canvas_data")
+  createdAt     DateTime?                   @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  school        School                      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  host          User                        @relation("WhiteboardHost", fields: [hostId], references: [id], onDelete: Cascade)
+  targetClass   Class?                      @relation(fields: [targetClassId], references: [id], onDelete: SetNull)
+  targetGroup   StudentGroup?               @relation(fields: [targetGroupId], references: [id], onDelete: SetNull)
+  participants  WhiteboardParticipant[]
+  
+  @@index([schoolId], map: "idx_whiteboard_sessions_school")
+  @@index([hostId], map: "idx_whiteboard_sessions_host")
+  @@index([status], map: "idx_whiteboard_sessions_status")
+  @@map("whiteboard_sessions")
+}
+
+model WhiteboardParticipant {
+  id        String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String                    @map("session_id") @db.Uuid
+  userId    String                    @map("user_id") @db.Uuid
+  role      WhiteboardParticipantRole @default(viewer)
+  joinedAt  DateTime?                 @default(now()) @map("joined_at") @db.Timestamp(6)
+  leftAt    DateTime?                 @map("left_at") @db.Timestamp(6)
+  isActive  Boolean?                  @default(true) @map("is_active")
+  
+  session   WhiteboardSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user      User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([sessionId, userId], map: "unique_participant_per_session")
+  @@index([sessionId], map: "idx_whiteboard_participants_session")
+  @@index([userId], map: "idx_whiteboard_participants_user")
+  @@map("whiteboard_participants")
+}
+
+enum WhiteboardSessionStatus {
+  active
+  paused
+  ended
+}
+
+enum WhiteboardTargetType {
+  class
+  group
+  student
+}
+
+enum WhiteboardParticipantRole {
+  host
+  cohost
+  viewer
 }
 
 enum UserRole {
