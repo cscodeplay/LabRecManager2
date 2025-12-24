@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
     FileText, Upload, Award, Video, Users,
-    ChevronRight, TrendingUp, Clock, CheckCircle, BookOpen, Monitor
+    ChevronRight, TrendingUp, Clock, CheckCircle, BookOpen, Monitor, Pencil
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { dashboardAPI } from '@/lib/api';
@@ -182,6 +182,18 @@ export default function DashboardPage() {
                                 <div>
                                     <p className="font-semibold text-slate-900">Manage Classes</p>
                                     <p className="text-sm text-slate-500">View students</p>
+                                </div>
+                                <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
+                            </div>
+                        </Link>
+                        <Link href="/whiteboard" className="card p-4 hover:shadow-lg transition group">
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center group-hover:bg-amber-200 transition">
+                                    <Pencil className="w-6 h-6 text-amber-600" />
+                                </div>
+                                <div>
+                                    <p className="font-semibold text-slate-900">Whiteboard</p>
+                                    <p className="text-sm text-slate-500">Share with students</p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                             </div>
