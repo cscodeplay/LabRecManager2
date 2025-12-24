@@ -483,10 +483,13 @@ router.get('/shared', authenticate, asyncHandler(async (req, res) => {
             if (groupIds.length > 0) {
                 orConditions.push({ targetType: 'group', targetGroupId: { in: groupIds } });
             }
+            // Direct user shares for students
+            orConditions.push({ targetType: 'user', targetUserId: userId });
+        } else {
+            // For non-students (instructors, admins), show documents they shared OR were shared with them directly
+            orConditions.push({ targetType: 'user', targetUserId: userId });
+            orConditions.push({ sharedById: userId });
         }
-
-        // Direct user shares (for all users including students)
-        orConditions.push({ targetUserId: userId });
 
         console.log('[GET /documents/shared] orConditions count:', orConditions.length);
 
