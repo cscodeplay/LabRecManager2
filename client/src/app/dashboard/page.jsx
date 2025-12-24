@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { dashboardAPI } from '@/lib/api';
+import AssignmentCalendar from '@/components/AssignmentCalendar';
 
 export default function DashboardPage() {
     const router = useRouter();
@@ -307,6 +308,11 @@ export default function DashboardPage() {
                     )}
                 </div>
             </div>
+
+            {/* Assignment Calendar - for students */}
+            {user?.role === 'student' && (
+                <AssignmentCalendar />
+            )}
         </div>
     );
 }
