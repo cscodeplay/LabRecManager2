@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
     ListChecks, Search, Users, UsersRound, User, BookOpen, Calendar,
-    CheckCircle, ChevronRight, Filter, Eye, MoreVertical, Trash2, Edit2, Lock, Unlock, X, Save, FileText, Award, Code, Download
+    CheckCircle, ChevronRight, Filter, Eye, MoreVertical, Trash2, Edit2, Lock, Unlock, X, Save, FileText, Award, Code, Download, Check
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
@@ -34,8 +34,17 @@ export default function AssignedWorkPage() {
 
     // Edit modal state
     const [editModal, setEditModal] = useState({ open: false, target: null });
-    const [editForm, setEditForm] = useState({ assignmentId: '', targetType: '', targetId: '', dueDate: '' });
+    const [editForm, setEditForm] = useState({
+        classId: '',
+        targetType: 'class',
+        selectedTargets: [],
+        dueDate: '',
+        specialInstructions: ''
+    });
+    const [editStudentSearch, setEditStudentSearch] = useState('');
     const [editLoading, setEditLoading] = useState(false);
+    const [editClassStudents, setEditClassStudents] = useState([]);
+    const [editClassGroups, setEditClassGroups] = useState([]);
 
     // View modal state
     const [viewModal, setViewModal] = useState({ open: false, target: null });
@@ -108,7 +117,8 @@ export default function AssignedWorkPage() {
                             assignedAt: target.assignedAt,
                             assignedBy: target.assignedBy,
                             dueDate: target.dueDate,
-                            isLocked: target.isLocked || false
+                            isLocked: target.isLocked || false,
+                            specialInstructions: target.specialInstructions
                         });
                     });
                 }
@@ -176,31 +186,105 @@ export default function AssignedWorkPage() {
     };
 
     // Edit handlers
-    const handleEditClick = (target) => {
+    const handleEditClick = async (target) => {
+        // Initialize edit form with current values
+        const classId = target.targetClassId || '';
         setEditForm({
-            assignmentId: target.assignment.id,
+            classId: classId,
             targetType: target.targetType,
-            targetId: target.targetType === 'class' ? target.targetClassId :
-                target.targetType === 'group' ? target.targetGroupId : target.targetStudentId,
-            dueDate: target.dueDate ? new Date(target.dueDate).toISOString().slice(0, 16) : ''
+            selectedTargets: target.targetType === 'class' ? [] :
+                target.targetType === 'group' ? [target.targetGroupId] : [target.targetStudentId],
+            dueDate: target.dueDate ? new Date(target.dueDate).toISOString().slice(0, 16) : '',
+            specialInstructions: target.specialInstructions || ''
         });
+        setEditStudentSearch('');
         setEditModal({ open: true, target });
+
+        // Load class details for the edit form
+        if (classId) {
+            await loadEditClassDetails(classId);
+        }
+    };
+
+    const loadEditClassDetails = async (classId) => {
+        if (!classId) {
+            setEditClassStudents([]);
+            setEditClassGroups([]);
+            return;
+        }
+        try {
+            const [studentsRes, groupsRes] = await Promise.all([
+                api.get(`/classes/${classId}/students`),
+                api.get(`/classes/${classId}/groups`)
+            ]);
+            setEditClassStudents(studentsRes.data.data.students || []);
+            setEditClassGroups(groupsRes.data.data.groups || []);
+        } catch (error) {
+            console.error('Failed to load class details:', error);
+            setEditClassStudents([]);
+            setEditClassGroups([]);
+        }
+    };
+
+    const handleEditClassChange = async (classId) => {
+        setEditForm(prev => ({
+            ...prev,
+            classId,
+            selectedTargets: [],
+            targetType: 'class'
+        }));
+        await loadEditClassDetails(classId);
+    };
+
+    const toggleEditTarget = (id) => {
+        setEditForm(prev => ({
+            ...prev,
+            selectedTargets: prev.selectedTargets.includes(id)
+                ? prev.selectedTargets.filter(t => t !== id)
+                : [...prev.selectedTargets, id]
+        }));
     };
 
     const handleEditSave = async () => {
         if (!editModal.target) return;
+
+        // Validate
+        if (!editForm.classId && editForm.targetType !== 'student') {
+            toast.error('Please select a class');
+            return;
+        }
+
+        if (editForm.targetType !== 'class' && editForm.selectedTargets.length === 0) {
+            toast.error('Please select at least one target');
+            return;
+        }
+
         setEditLoading(true);
         try {
-            await api.put(`/assignments/targets/${editModal.target.id}`, {
+            const updateData = {
                 targetType: editForm.targetType,
-                targetClassId: editForm.targetType === 'class' ? editForm.targetId : null,
-                targetGroupId: editForm.targetType === 'group' ? editForm.targetId : null,
-                targetStudentId: editForm.targetType === 'student' ? editForm.targetId : null,
-                dueDate: editForm.dueDate || null
-            });
+                dueDate: editForm.dueDate || null,
+                specialInstructions: editForm.specialInstructions || null
+            };
+
+            if (editForm.targetType === 'class') {
+                updateData.targetClassId = editForm.classId;
+                updateData.targetGroupId = null;
+                updateData.targetStudentId = null;
+            } else if (editForm.targetType === 'group') {
+                updateData.targetClassId = null;
+                updateData.targetGroupId = editForm.selectedTargets[0];
+                updateData.targetStudentId = null;
+            } else if (editForm.targetType === 'student') {
+                updateData.targetClassId = null;
+                updateData.targetGroupId = null;
+                updateData.targetStudentId = editForm.selectedTargets[0];
+            }
+
+            await api.put(`/assignments/targets/${editModal.target.id}`, updateData);
             toast.success('Target updated successfully');
             setEditModal({ open: false, target: null });
-            loadData(); // Reload to refresh
+            loadData();
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to update target');
         } finally {
@@ -208,19 +292,9 @@ export default function AssignedWorkPage() {
         }
     };
 
-    // Lock/Unlock handlers
+    // Lock/Unlock handlers - temporarily disabled until DB migration
     const handleToggleLock = async (target) => {
-        try {
-            await api.put(`/assignments/targets/${target.id}`, {
-                isLocked: !target.isLocked
-            });
-            toast.success(target.isLocked ? 'Target unlocked' : 'Target locked');
-            setAssignedWork(prev => prev.map(t =>
-                t.id === target.id ? { ...t, isLocked: !t.isLocked } : t
-            ));
-        } catch (error) {
-            toast.error('Failed to update lock status');
-        }
+        toast.error('Lock feature requires database migration. Run: ALTER TABLE assignment_targets ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE;');
     };
 
     // View handlers
@@ -249,7 +323,7 @@ export default function AssignedWorkPage() {
         );
     }
 
-    // Group by assignment for better display
+    // Group by assignment
     const groupedByAssignment = {};
     filteredWork.forEach(item => {
         if (!groupedByAssignment[item.assignment.id]) {
@@ -267,6 +341,14 @@ export default function AssignedWorkPage() {
         groups: assignedWork.filter(t => t.targetType === 'group').length,
         students: assignedWork.filter(t => t.targetType === 'student').length
     };
+
+    // Filter students in edit modal
+    const filteredEditStudents = editClassStudents.filter(s =>
+        s.firstName?.toLowerCase().includes(editStudentSearch.toLowerCase()) ||
+        s.lastName?.toLowerCase().includes(editStudentSearch.toLowerCase()) ||
+        s.studentId?.toLowerCase().includes(editStudentSearch.toLowerCase()) ||
+        s.admissionNumber?.includes(editStudentSearch)
+    );
 
     if (loading) {
         return (
@@ -407,6 +489,9 @@ export default function AssignedWorkPage() {
                                                         <p className="font-medium text-slate-900">
                                                             {getTargetName(target)}
                                                         </p>
+                                                        {target.targetStudent?.studentId && (
+                                                            <span className="text-xs text-slate-500">({target.targetStudent.studentId})</span>
+                                                        )}
                                                         {target.isLocked && (
                                                             <Lock className="w-3.5 h-3.5 text-amber-500" title="Locked" />
                                                         )}
@@ -429,7 +514,6 @@ export default function AssignedWorkPage() {
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1">
-                                                {/* View Icon */}
                                                 <button
                                                     onClick={() => handleViewClick(target)}
                                                     className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition"
@@ -437,7 +521,6 @@ export default function AssignedWorkPage() {
                                                 >
                                                     <Eye className="w-4 h-4" />
                                                 </button>
-                                                {/* Edit Icon */}
                                                 <button
                                                     onClick={() => handleEditClick(target)}
                                                     className="p-2 text-slate-400 hover:text-primary-500 hover:bg-primary-50 rounded-lg transition"
@@ -445,18 +528,6 @@ export default function AssignedWorkPage() {
                                                 >
                                                     <Edit2 className="w-4 h-4" />
                                                 </button>
-                                                {/* Lock/Unlock Icon */}
-                                                <button
-                                                    onClick={() => handleToggleLock(target)}
-                                                    className={`p-2 rounded-lg transition ${target.isLocked
-                                                        ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50'
-                                                        : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50'
-                                                        }`}
-                                                    title={target.isLocked ? 'Unlock' : 'Lock'}
-                                                >
-                                                    {target.isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                                                </button>
-                                                {/* Delete Icon */}
                                                 <button
                                                     onClick={() => handleRemoveClick(target)}
                                                     className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
@@ -474,11 +545,10 @@ export default function AssignedWorkPage() {
                 )}
             </main>
 
-            {/* View Modal - Shows assignment + target details */}
+            {/* View Modal */}
             {viewModal.open && viewModal.target && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setViewModal({ open: false, target: null })}>
                     <div className="bg-white rounded-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-                        {/* Header */}
                         <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center">
@@ -498,23 +568,18 @@ export default function AssignedWorkPage() {
                                 <X className="w-5 h-5 text-slate-500" />
                             </button>
                         </div>
-
-                        {/* Content */}
                         <div className="flex-1 overflow-auto p-4 space-y-4">
-                            {/* Target Info */}
                             <div className="bg-slate-50 rounded-lg p-4">
                                 <h4 className="font-medium text-slate-700 mb-3">Assigned To</h4>
                                 <div className="flex items-center gap-3">
                                     {getTargetIcon(viewModal.target.targetType)}
                                     <div>
                                         <p className="font-medium text-slate-900">{getTargetName(viewModal.target)}</p>
+                                        {viewModal.target.targetStudent?.studentId && (
+                                            <p className="text-sm text-slate-500">ID: {viewModal.target.targetStudent.studentId}</p>
+                                        )}
                                         <p className="text-sm text-slate-500 capitalize">{viewModal.target.targetType}</p>
                                     </div>
-                                    {viewModal.target.isLocked && (
-                                        <span className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-xs">
-                                            <Lock className="w-3 h-3" /> Locked
-                                        </span>
-                                    )}
                                 </div>
                                 <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                                     {viewModal.target.dueDate && (
@@ -531,8 +596,6 @@ export default function AssignedWorkPage() {
                                     )}
                                 </div>
                             </div>
-
-                            {/* Assignment Details */}
                             <div className="grid md:grid-cols-3 gap-3">
                                 <div className="bg-emerald-50 rounded-lg p-3 text-center">
                                     <Award className="w-5 h-5 text-emerald-600 mx-auto mb-1" />
@@ -552,78 +615,18 @@ export default function AssignedWorkPage() {
                                     </div>
                                 )}
                             </div>
-
-                            {/* Description */}
                             {viewModal.target.assignment.description && (
                                 <div>
                                     <h4 className="font-medium text-slate-700 mb-2">Description</h4>
                                     <p className="text-slate-600 text-sm whitespace-pre-wrap">{viewModal.target.assignment.description}</p>
                                 </div>
                             )}
-
-                            {/* Aim */}
-                            {viewModal.target.assignment.aim && (
-                                <div>
-                                    <h4 className="font-medium text-slate-700 mb-2">Aim / Objective</h4>
-                                    <p className="text-slate-600 text-sm">{viewModal.target.assignment.aim}</p>
-                                </div>
-                            )}
-
-                            {/* PDF Attachment */}
-                            {viewModal.target.assignment.pdfAttachmentUrl && (
-                                <div className="bg-red-50 rounded-lg p-4">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <FileText className="w-6 h-6 text-red-600" />
-                                            <div>
-                                                <p className="font-medium text-slate-900">{viewModal.target.assignment.pdfAttachmentName || 'PDF Attachment'}</p>
-                                                <p className="text-xs text-slate-500">PDF Document</p>
-                                            </div>
-                                        </div>
-                                        <a
-                                            href={viewModal.target.assignment.pdfAttachmentUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="btn btn-secondary text-sm py-1.5"
-                                        >
-                                            <Download className="w-4 h-4" /> Download
-                                        </a>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Marks Breakdown */}
-                            <div>
-                                <h4 className="font-medium text-slate-700 mb-2">Marks Breakdown</h4>
-                                <div className="grid grid-cols-3 gap-2 text-sm">
-                                    <div className="bg-slate-100 rounded p-2 text-center">
-                                        <p className="text-slate-500 text-xs">Practical</p>
-                                        <p className="font-semibold">{viewModal.target.assignment.practicalMarks}</p>
-                                    </div>
-                                    <div className="bg-slate-100 rounded p-2 text-center">
-                                        <p className="text-slate-500 text-xs">Output</p>
-                                        <p className="font-semibold">{viewModal.target.assignment.outputMarks}</p>
-                                    </div>
-                                    <div className="bg-slate-100 rounded p-2 text-center">
-                                        <p className="text-slate-500 text-xs">Passing</p>
-                                        <p className="font-semibold">{viewModal.target.assignment.passingMarks}</p>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
-
-                        {/* Footer */}
                         <div className="p-4 border-t border-slate-200 flex justify-end gap-2">
-                            <button
-                                onClick={() => { setViewModal({ open: false, target: null }); handleEditClick(viewModal.target); }}
-                                className="btn btn-secondary"
-                            >
+                            <button onClick={() => { setViewModal({ open: false, target: null }); handleEditClick(viewModal.target); }} className="btn btn-secondary">
                                 <Edit2 className="w-4 h-4" /> Edit Target
                             </button>
-                            <button
-                                onClick={() => setViewModal({ open: false, target: null })}
-                                className="btn btn-primary"
-                            >
+                            <button onClick={() => setViewModal({ open: false, target: null })} className="btn btn-primary">
                                 Close
                             </button>
                         </div>
@@ -631,88 +634,196 @@ export default function AssignedWorkPage() {
                 </div>
             )}
 
-            {/* Edit Modal */}
+            {/* Enhanced Edit Modal - Similar to Assign Work */}
             {editModal.open && editModal.target && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEditModal({ open: false, target: null })}>
-                    <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold text-slate-900">Edit Assignment Target</h3>
-                            <button onClick={() => setEditModal({ open: false, target: null })} className="p-1 hover:bg-slate-100 rounded">
+                    <div className="bg-white rounded-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-semibold text-slate-900">Edit Assigned Work</h3>
+                                <p className="text-sm text-slate-500">{editModal.target.assignment.title}</p>
+                            </div>
+                            <button onClick={() => setEditModal({ open: false, target: null })} className="p-2 hover:bg-slate-100 rounded-lg">
                                 <X className="w-5 h-5 text-slate-500" />
                             </button>
                         </div>
 
-                        <p className="text-sm text-slate-500 mb-4">
-                            Editing: <strong>{editModal.target.assignment.title}</strong>
-                        </p>
-
-                        <div className="space-y-4">
-                            {/* Target Type */}
+                        {/* Content */}
+                        <div className="flex-1 overflow-auto p-4 space-y-6">
+                            {/* Step 1: Select Class */}
                             <div>
-                                <label className="label">Target Type</label>
+                                <label className="label">Select Class</label>
                                 <select
-                                    value={editForm.targetType}
-                                    onChange={(e) => setEditForm({ ...editForm, targetType: e.target.value, targetId: '' })}
+                                    value={editForm.classId}
+                                    onChange={(e) => handleEditClassChange(e.target.value)}
                                     className="input"
                                 >
-                                    <option value="class">Class</option>
-                                    <option value="group">Group</option>
-                                    <option value="student">Student</option>
-                                </select>
-                            </div>
-
-                            {/* Target Selection */}
-                            <div>
-                                <label className="label">
-                                    {editForm.targetType === 'class' ? 'Select Class' :
-                                        editForm.targetType === 'group' ? 'Select Group' : 'Select Student'}
-                                </label>
-                                <select
-                                    value={editForm.targetId}
-                                    onChange={(e) => setEditForm({ ...editForm, targetId: e.target.value })}
-                                    className="input"
-                                >
-                                    <option value="">Select...</option>
-                                    {editForm.targetType === 'class' && classes.map(c => (
+                                    <option value="">Choose a class...</option>
+                                    {classes.map(c => (
                                         <option key={c.id} value={c.id}>
                                             {c.name || `Grade ${c.gradeLevel}-${c.section}`}
                                         </option>
                                     ))}
-                                    {editForm.targetType === 'group' && groups.map(g => (
-                                        <option key={g.id} value={g.id}>
-                                            {g.name} ({g.className})
-                                        </option>
-                                    ))}
-                                    {editForm.targetType === 'student' && students.map(s => (
-                                        <option key={s.id} value={s.id}>
-                                            {s.firstName} {s.lastName}
-                                        </option>
-                                    ))}
                                 </select>
                             </div>
 
+                            {/* Step 2: Target Type */}
+                            {editForm.classId && (
+                                <div>
+                                    <label className="label mb-3">Assign To</label>
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditForm(prev => ({ ...prev, targetType: 'class', selectedTargets: [] }))}
+                                            className={`p-3 rounded-lg border-2 transition text-center ${editForm.targetType === 'class'
+                                                ? 'border-primary-500 bg-primary-50'
+                                                : 'border-slate-200 hover:border-slate-300'
+                                                }`}
+                                        >
+                                            <Users className={`w-6 h-6 mx-auto mb-1 ${editForm.targetType === 'class' ? 'text-primary-500' : 'text-slate-400'}`} />
+                                            <p className="font-medium text-sm text-slate-900">Entire Class</p>
+                                            <p className="text-xs text-slate-500">{editClassStudents.length} students</p>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditForm(prev => ({ ...prev, targetType: 'group', selectedTargets: [] }))}
+                                            className={`p-3 rounded-lg border-2 transition text-center ${editForm.targetType === 'group'
+                                                ? 'border-primary-500 bg-primary-50'
+                                                : 'border-slate-200 hover:border-slate-300'
+                                                }`}
+                                            disabled={editClassGroups.length === 0}
+                                        >
+                                            <UsersRound className={`w-6 h-6 mx-auto mb-1 ${editForm.targetType === 'group' ? 'text-primary-500' : 'text-slate-400'}`} />
+                                            <p className="font-medium text-sm text-slate-900">Group</p>
+                                            <p className="text-xs text-slate-500">{editClassGroups.length} groups</p>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditForm(prev => ({ ...prev, targetType: 'student', selectedTargets: [] }))}
+                                            className={`p-3 rounded-lg border-2 transition text-center ${editForm.targetType === 'student'
+                                                ? 'border-primary-500 bg-primary-50'
+                                                : 'border-slate-200 hover:border-slate-300'
+                                                }`}
+                                        >
+                                            <User className={`w-6 h-6 mx-auto mb-1 ${editForm.targetType === 'student' ? 'text-primary-500' : 'text-slate-400'}`} />
+                                            <p className="font-medium text-sm text-slate-900">Individual</p>
+                                            <p className="text-xs text-slate-500">Single student</p>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Group Selection */}
+                            {editForm.targetType === 'group' && editClassGroups.length > 0 && (
+                                <div>
+                                    <label className="label mb-2">Select Group</label>
+                                    <div className="grid grid-cols-2 gap-2 max-h-[150px] overflow-y-auto">
+                                        {editClassGroups.map(group => {
+                                            const isSelected = editForm.selectedTargets.includes(group.id);
+                                            return (
+                                                <div
+                                                    key={group.id}
+                                                    onClick={() => setEditForm(prev => ({ ...prev, selectedTargets: [group.id] }))}
+                                                    className={`p-3 rounded-lg border-2 cursor-pointer transition ${isSelected
+                                                        ? 'border-primary-500 bg-primary-50'
+                                                        : 'border-slate-200 hover:border-slate-300'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-6 h-6 rounded flex items-center justify-center ${isSelected ? 'bg-primary-500 text-white' : 'bg-slate-200'}`}>
+                                                            {isSelected ? <Check className="w-4 h-4" /> : <UsersRound className="w-4 h-4 text-slate-500" />}
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-medium text-sm">{group.name}</p>
+                                                            <p className="text-xs text-slate-500">{group.members?.length || 0} members</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Student Selection with Search */}
+                            {editForm.targetType === 'student' && (
+                                <div>
+                                    <label className="label mb-2">Select Student</label>
+                                    <div className="relative mb-3">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="Search by name or student ID..."
+                                            value={editStudentSearch}
+                                            onChange={(e) => setEditStudentSearch(e.target.value)}
+                                            className="input pl-10"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 max-h-[200px] overflow-y-auto">
+                                        {filteredEditStudents.map(student => {
+                                            const isSelected = editForm.selectedTargets.includes(student.id);
+                                            return (
+                                                <div
+                                                    key={student.id}
+                                                    onClick={() => setEditForm(prev => ({ ...prev, selectedTargets: [student.id] }))}
+                                                    className={`p-3 rounded-lg border-2 cursor-pointer transition ${isSelected
+                                                        ? 'border-primary-500 bg-primary-50'
+                                                        : 'border-slate-200 hover:border-slate-300'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${isSelected ? 'bg-primary-500 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                                                            {isSelected ? <Check className="w-3 h-3" /> : student.firstName?.[0]}
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="font-medium text-sm truncate">{student.firstName} {student.lastName}</p>
+                                                            <p className="text-xs text-slate-500">{student.studentId || student.admissionNumber || 'No ID'}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        {filteredEditStudents.length === 0 && (
+                                            <div className="col-span-2 text-center py-4 text-slate-500">
+                                                No students found
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Due Date */}
                             <div>
-                                <label className="label">Due Date (Optional)</label>
+                                <label className="label">Due Date</label>
                                 <input
                                     type="datetime-local"
                                     value={editForm.dueDate}
-                                    onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })}
+                                    onChange={(e) => setEditForm(prev => ({ ...prev, dueDate: e.target.value }))}
                                     className="input"
+                                />
+                            </div>
+
+                            {/* Special Instructions */}
+                            <div>
+                                <label className="label">Special Instructions (Optional)</label>
+                                <textarea
+                                    value={editForm.specialInstructions}
+                                    onChange={(e) => setEditForm(prev => ({ ...prev, specialInstructions: e.target.value }))}
+                                    className="input min-h-[80px]"
+                                    placeholder="Add any special notes or instructions..."
                                 />
                             </div>
                         </div>
 
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button
-                                onClick={() => setEditModal({ open: false, target: null })}
-                                className="btn btn-secondary"
-                            >
+                        {/* Footer */}
+                        <div className="p-4 border-t border-slate-200 flex justify-end gap-3">
+                            <button onClick={() => setEditModal({ open: false, target: null })} className="btn btn-secondary">
                                 Cancel
                             </button>
                             <button
                                 onClick={handleEditSave}
-                                disabled={editLoading || !editForm.targetId}
+                                disabled={editLoading || (!editForm.classId && editForm.targetType !== 'student') || (editForm.targetType !== 'class' && editForm.selectedTargets.length === 0)}
                                 className="btn btn-primary"
                             >
                                 {editLoading ? 'Saving...' : <><Save className="w-4 h-4" /> Save Changes</>}
