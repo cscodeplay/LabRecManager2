@@ -214,7 +214,7 @@ router.post('/sessions/:id/join', authenticate, asyncHandler(async (req, res) =>
 
     // Upsert participant
     const participant = await prisma.whiteboardParticipant.upsert({
-        where: { sessionId_userId: { sessionId: id, oderId: userId } },
+        where: { sessionId_userId: { sessionId: id, userId: userId } },
         update: { isActive: true, leftAt: null },
         create: {
             sessionId: id,

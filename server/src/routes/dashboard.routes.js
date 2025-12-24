@@ -260,7 +260,15 @@ router.get('/calendar', authenticate, asyncHandler(async (req, res) => {
                 assignmentId: true,
                 status: true,
                 submittedAt: true,
-                grade: { select: { finalMarks: true, maxMarks: true, isPublished: true, gradedAt: true } }
+                grade: {
+                    select: {
+                        finalMarks: true,
+                        maxMarks: true,
+                        isPublished: true,
+                        gradedAt: true,
+                        gradedBy: { select: { firstName: true, lastName: true } }
+                    }
+                }
             }
         });
     }
