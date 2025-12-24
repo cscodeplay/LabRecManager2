@@ -16,6 +16,7 @@ export default function DashboardPage() {
     const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [stats, setStats] = useState({});
     const [deadlines, setDeadlines] = useState([]);
+    const [siteUpdate, setSiteUpdate] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -30,12 +31,14 @@ export default function DashboardPage() {
     const loadDashboardData = async () => {
         setLoading(true);
         try {
-            const [statsRes, deadlinesRes] = await Promise.all([
+            const [statsRes, deadlinesRes, siteUpdateRes] = await Promise.all([
                 dashboardAPI.getStats(),
-                dashboardAPI.getDeadlines()
+                dashboardAPI.getDeadlines(),
+                dashboardAPI.getSiteUpdate().catch(() => null)
             ]);
             setStats(statsRes.data.data.stats);
             setDeadlines(deadlinesRes.data.data.upcomingDeadlines || []);
+            if (siteUpdateRes?.data?.data) setSiteUpdate(siteUpdateRes.data.data);
         } catch (error) {
             console.error('Failed to load dashboard:', error);
         } finally {
@@ -80,10 +83,16 @@ export default function DashboardPage() {
                         <h2 className="text-2xl font-bold">Welcome back, {user?.firstName}! 👋</h2>
                         <p className="text-white/80 mt-1">Here's what's happening with your lab activities.</p>
                     </div>
-                    {(user?.role === 'admin' || user?.role === 'principal') && (
+                    {(user?.role === 'admin' || user?.role === 'principal') && siteUpdate && (
                         <div className="text-right text-xs text-white/70">
                             <p>Last Updated</p>
-                            <p className="font-mono">Dec 24, 2024 • v1.5.0</p>
+                            <p className="font-mono">
+                                {new Date(siteUpdate.updatedAt).toLocaleString('en-IN', {
+                                    day: 'numeric', month: 'short', year: 'numeric',
+                                    hour: '2-digit', minute: '2-digit'
+                                })}
+                            </p>
+                            <p className="font-mono opacity-80">v{siteUpdate.version}</p>
                         </div>
                     )}
                 </div>

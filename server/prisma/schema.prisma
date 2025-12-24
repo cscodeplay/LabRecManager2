@@ -1141,6 +1141,17 @@ enum WhiteboardParticipantRole {
   viewer
 }
 
+model SiteUpdate {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  version     String    @db.VarChar(20)
+  description String
+  changes     String?
+  updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamp(6)
+  updatedBy   String?   @map("updated_by") @db.VarChar(100)
+  
+  @@map("site_updates")
+}
+
 enum UserRole {
   admin
   principal

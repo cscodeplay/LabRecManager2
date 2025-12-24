@@ -17,7 +17,7 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
         });
         const classIds = enrollments.map(e => e.classId);
 
-        const [assignedCount, submissionCount, pendingVivas] = await Promise.all([
+        const [assignedCount, submissionCount, pendingVivas, grades] = await Promise.all([
             prisma.assignmentTarget.count({
                 where: {
                     OR: [
@@ -327,6 +327,22 @@ router.get('/health', asyncHandler(async (req, res) => {
             responseTime: dbResponseTime,
             timestamp: new Date().toISOString(),
             error: dbError
+        }
+    });
+}));
+
+// Get latest site update - for displaying version info
+router.get('/site-update', asyncHandler(async (req, res) => {
+    const latestUpdate = await prisma.siteUpdate.findFirst({
+        orderBy: { updatedAt: 'desc' }
+    });
+
+    res.json({
+        success: true,
+        data: latestUpdate || {
+            version: '1.5.0',
+            description: 'Initial version',
+            updatedAt: new Date().toISOString()
         }
     });
 }));
