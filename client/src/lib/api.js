@@ -245,6 +245,7 @@ export const labsAPI = {
     deleteItem: (labId, itemId) => api.delete(`/labs/${labId}/items/${itemId}`),
     // Reports
     getInventoryReports: () => api.get('/labs/inventory-reports'),
+    getMaintenanceSummary: (period = 'month') => api.get('/labs/maintenance-summary', { params: { period } }),
     // Image upload
     uploadImage: (file) => {
         const formData = new FormData();

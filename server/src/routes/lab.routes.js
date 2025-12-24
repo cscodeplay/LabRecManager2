@@ -157,6 +157,111 @@ router.post('/items/:itemId/maintenance', authenticate, authorize('admin', 'prin
 }));
 
 /**
+ * @route   GET /api/labs/maintenance-summary
+ * @desc    Get maintenance summary grouped by item type and time period
+ * @access  Private (Admin/Principal)
+ */
+router.get('/maintenance-summary', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const schoolId = req.user.schoolId;
+    const { period = 'month' } = req.query; // week, month, quarter, year
+
+    // Calculate date range
+    const now = new Date();
+    let startDate;
+    switch (period) {
+        case 'week':
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+        case 'quarter':
+            startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+            break;
+        case 'year':
+            startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+            break;
+        default: // month
+            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
+
+    // Get all maintenance records with item info
+    const records = await prisma.itemMaintenanceHistory.findMany({
+        where: {
+            createdAt: { gte: startDate },
+            item: { schoolId }
+        },
+        include: {
+            item: { select: { id: true, itemType: true, itemNumber: true, lab: { select: { name: true } } } },
+            recordedBy: { select: { firstName: true, lastName: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+    });
+
+    // Group by item type
+    const byItemType = {};
+    // Group by maintenance type (repair, replacement, etc.)
+    const byActionType = {};
+    // Total cost
+    let totalCost = 0;
+
+    records.forEach(r => {
+        const itemType = r.item?.itemType || 'unknown';
+        const actionType = r.type || 'other';
+
+        if (!byItemType[itemType]) {
+            byItemType[itemType] = { count: 0, cost: 0 };
+        }
+        byItemType[itemType].count++;
+        byItemType[itemType].cost += parseFloat(r.cost || 0);
+
+        if (!byActionType[actionType]) {
+            byActionType[actionType] = { count: 0, cost: 0 };
+        }
+        byActionType[actionType].count++;
+        byActionType[actionType].cost += parseFloat(r.cost || 0);
+
+        totalCost += parseFloat(r.cost || 0);
+    });
+
+    // Recent records (last 10) with full timestamps
+    const recentRecords = records.slice(0, 10).map(r => ({
+        id: r.id,
+        itemType: r.item?.itemType,
+        itemNumber: r.item?.itemNumber,
+        labName: r.item?.lab?.name,
+        type: r.type,
+        description: r.description,
+        cost: r.cost,
+        vendor: r.vendor,
+        partName: r.partName,
+        recordedBy: r.recordedBy ? `${r.recordedBy.firstName} ${r.recordedBy.lastName}` : null,
+        createdAt: r.createdAt,
+        resolvedAt: r.resolvedAt
+    }));
+
+    res.json({
+        success: true,
+        data: {
+            period,
+            startDate,
+            endDate: now,
+            totalRecords: records.length,
+            totalCost: totalCost.toFixed(2),
+            byItemType: Object.entries(byItemType).map(([type, data]) => ({
+                type,
+                label: ITEM_TYPES[type]?.label || type,
+                ...data,
+                cost: data.cost.toFixed(2)
+            })),
+            byActionType: Object.entries(byActionType).map(([type, data]) => ({
+                type,
+                ...data,
+                cost: data.cost.toFixed(2)
+            })),
+            recentRecords
+        }
+    });
+}));
+
+/**
  * @route   GET /api/labs/inventory-reports
  * @desc    Get inventory reports with alerts
  * @access  Private (Admin/Principal)
