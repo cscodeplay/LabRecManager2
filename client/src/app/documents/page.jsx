@@ -277,12 +277,13 @@ export default function SharedDocumentsPage() {
                                     />
                                 </div>
                             ) : viewingDoc.fileType?.toLowerCase() === 'pdf' || viewingDoc.mimeType === 'application/pdf' ? (
-                                /* PDF Preview */
+                                /* PDF Preview - Using Google Docs viewer for better compatibility */
                                 <div className="w-full h-[75vh]">
                                     <iframe
-                                        src={`${viewingDoc.url}#toolbar=1&navpanes=0&scrollbar=1`}
+                                        src={`https://docs.google.com/gview?url=${encodeURIComponent(viewingDoc.url)}&embedded=true`}
                                         className="w-full h-full border-0"
                                         title={viewingDoc.name}
+                                        sandbox="allow-scripts allow-same-origin allow-popups"
                                     />
                                 </div>
                             ) : (
