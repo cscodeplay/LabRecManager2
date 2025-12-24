@@ -391,19 +391,19 @@ export default function AssignmentDetailPage() {
 
             {/* PDF Preview Modal */}
             {pdfPreviewOpen && assignment.pdfAttachmentUrl && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-5xl h-[90vh] flex flex-col">
-                        <div className="p-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setPdfPreviewOpen(false)}>
+                    <div className="bg-white rounded-2xl w-full max-w-4xl h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="p-3 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
                             <div className="flex items-center gap-3">
                                 <FileText className="w-5 h-5 text-red-500" />
-                                <h3 className="text-lg font-semibold">{assignment.pdfAttachmentName || 'PDF Preview'}</h3>
+                                <h3 className="text-base font-semibold">{assignment.pdfAttachmentName || 'PDF Preview'}</h3>
                             </div>
                             <div className="flex items-center gap-2">
                                 <a
                                     href={assignment.pdfAttachmentUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="btn btn-secondary text-sm"
+                                    className="btn btn-secondary text-sm py-1.5"
                                 >
                                     <Download className="w-4 h-4" /> Download
                                 </a>
@@ -415,10 +415,11 @@ export default function AssignmentDetailPage() {
                                 </button>
                             </div>
                         </div>
-                        <div className="flex-1 overflow-hidden">
+                        <div className="flex-1 overflow-hidden bg-slate-100">
+                            {/* Use Google Docs viewer for Cloudinary PDFs */}
                             <iframe
-                                src={`${assignment.pdfAttachmentUrl}#toolbar=1&navpanes=1&scrollbar=1`}
-                                className="w-full h-full"
+                                src={`https://docs.google.com/gview?url=${encodeURIComponent(assignment.pdfAttachmentUrl)}&embedded=true`}
+                                className="w-full h-full border-0"
                                 title="PDF Preview"
                             />
                         </div>

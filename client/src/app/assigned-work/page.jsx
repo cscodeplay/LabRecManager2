@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
     ListChecks, Search, Users, UsersRound, User, BookOpen, Calendar,
-    CheckCircle, ChevronRight, Filter, Eye, MoreVertical, Trash2
+    CheckCircle, ChevronRight, Filter, Eye, MoreVertical, Trash2, Edit2, Lock, Unlock, X, Save
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
@@ -20,6 +20,8 @@ export default function AssignedWorkPage() {
     const [assignedWork, setAssignedWork] = useState([]);
     const [classes, setClasses] = useState([]);
     const [students, setStudents] = useState([]);
+    const [groups, setGroups] = useState([]);
+    const [assignments, setAssignments] = useState([]);
 
     // Filters
     const [filterClass, setFilterClass] = useState('');
@@ -29,6 +31,11 @@ export default function AssignedWorkPage() {
     // Delete confirmation dialog
     const [deleteDialog, setDeleteDialog] = useState({ open: false, targetId: null, targetName: '', assignmentTitle: '' });
     const [deleteLoading, setDeleteLoading] = useState(false);
+
+    // Edit modal state
+    const [editModal, setEditModal] = useState({ open: false, target: null });
+    const [editForm, setEditForm] = useState({ assignmentId: '', targetType: '', targetId: '', dueDate: '' });
+    const [editLoading, setEditLoading] = useState(false);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -47,12 +54,24 @@ export default function AssignedWorkPage() {
                 api.get('/users', { params: { role: 'student' } })
             ]);
 
-            const assignments = assignmentsRes.data.data.assignments || [];
+            const assignmentsData = assignmentsRes.data.data.assignments || [];
             const classesData = classesRes.data.data.classes || [];
             const studentsData = usersRes.data.data.users || [];
 
+            setAssignments(assignmentsData);
             setClasses(classesData);
             setStudents(studentsData);
+
+            // Load groups from all classes
+            const allGroups = [];
+            for (const cls of classesData) {
+                try {
+                    const groupRes = await api.get(`/classes/${cls.id}/groups`);
+                    const grps = groupRes.data.data.groups || [];
+                    grps.forEach(g => allGroups.push({ ...g, className: cls.name || `Grade ${cls.gradeLevel}-${cls.section}` }));
+                } catch (e) { /* ignore */ }
+            }
+            setGroups(allGroups);
 
             // Create lookup maps
             const classMap = {};
@@ -61,14 +80,17 @@ export default function AssignedWorkPage() {
             const studentMap = {};
             studentsData.forEach(s => { studentMap[s.id] = s; });
 
+            const groupMap = {};
+            allGroups.forEach(g => { groupMap[g.id] = g; });
+
             // Flatten to show each assignment-target pair
             const targets = [];
-            assignments.forEach(assignment => {
+            assignmentsData.forEach(assignment => {
                 if (assignment.targets && assignment.targets.length > 0) {
                     assignment.targets.forEach(target => {
-                        // Look up class/student from our maps
                         const targetClass = target.targetClassId ? classMap[target.targetClassId] : null;
                         const targetStudent = target.targetStudentId ? studentMap[target.targetStudentId] : null;
+                        const targetGroup = target.targetGroupId ? groupMap[target.targetGroupId] : target.targetGroup;
 
                         targets.push({
                             id: target.id,
@@ -76,13 +98,14 @@ export default function AssignedWorkPage() {
                             targetType: target.targetType,
                             targetClassId: target.targetClassId,
                             targetClass: targetClass,
-                            targetGroup: target.targetGroup,
+                            targetGroup: targetGroup,
                             targetGroupId: target.targetGroupId,
                             targetStudentId: target.targetStudentId,
                             targetStudent: targetStudent,
                             assignedAt: target.assignedAt,
                             assignedBy: target.assignedBy,
-                            dueDate: target.dueDate
+                            dueDate: target.dueDate,
+                            isLocked: target.isLocked || false
                         });
                     });
                 }
@@ -146,6 +169,54 @@ export default function AssignedWorkPage() {
             toast.error('Failed to remove target');
         } finally {
             setDeleteLoading(false);
+        }
+    };
+
+    // Edit handlers
+    const handleEditClick = (target) => {
+        setEditForm({
+            assignmentId: target.assignment.id,
+            targetType: target.targetType,
+            targetId: target.targetType === 'class' ? target.targetClassId :
+                target.targetType === 'group' ? target.targetGroupId : target.targetStudentId,
+            dueDate: target.dueDate ? new Date(target.dueDate).toISOString().slice(0, 16) : ''
+        });
+        setEditModal({ open: true, target });
+    };
+
+    const handleEditSave = async () => {
+        if (!editModal.target) return;
+        setEditLoading(true);
+        try {
+            await api.put(`/assignments/targets/${editModal.target.id}`, {
+                targetType: editForm.targetType,
+                targetClassId: editForm.targetType === 'class' ? editForm.targetId : null,
+                targetGroupId: editForm.targetType === 'group' ? editForm.targetId : null,
+                targetStudentId: editForm.targetType === 'student' ? editForm.targetId : null,
+                dueDate: editForm.dueDate || null
+            });
+            toast.success('Target updated successfully');
+            setEditModal({ open: false, target: null });
+            loadData(); // Reload to refresh
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to update target');
+        } finally {
+            setEditLoading(false);
+        }
+    };
+
+    // Lock/Unlock handlers
+    const handleToggleLock = async (target) => {
+        try {
+            await api.put(`/assignments/targets/${target.id}`, {
+                isLocked: !target.isLocked
+            });
+            toast.success(target.isLocked ? 'Target unlocked' : 'Target locked');
+            setAssignedWork(prev => prev.map(t =>
+                t.id === target.id ? { ...t, isLocked: !t.isLocked } : t
+            ));
+        } catch (error) {
+            toast.error('Failed to update lock status');
         }
     };
 
@@ -308,17 +379,20 @@ export default function AssignedWorkPage() {
                                                     }`}>
                                                     {assignment.status}
                                                 </span>
-                                                {assignment.dueDate && (
-                                                    <span className="flex items-center gap-1">
-                                                        <Calendar className="w-3 h-3" />
-                                                        Due: {new Date(assignment.dueDate).toLocaleDateString()}
-                                                    </span>
-                                                )}
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="text-sm text-slate-500">
-                                        {targets.length} target{targets.length !== 1 && 's'}
+                                    <div className="flex items-center gap-2">
+                                        <Link
+                                            href={`/assignments/${assignment.id}`}
+                                            className="p-2 text-slate-400 hover:text-primary-500 hover:bg-primary-50 rounded-lg transition"
+                                            title="View Assignment"
+                                        >
+                                            <Eye className="w-4 h-4" />
+                                        </Link>
+                                        <span className="text-sm text-slate-500">
+                                            {targets.length} target{targets.length !== 1 && 's'}
+                                        </span>
                                     </div>
                                 </div>
 
@@ -329,9 +403,14 @@ export default function AssignedWorkPage() {
                                             <div className="flex items-center gap-3">
                                                 {getTargetIcon(target.targetType)}
                                                 <div>
-                                                    <p className="font-medium text-slate-900">
-                                                        {getTargetName(target)}
-                                                    </p>
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="font-medium text-slate-900">
+                                                            {getTargetName(target)}
+                                                        </p>
+                                                        {target.isLocked && (
+                                                            <Lock className="w-3.5 h-3.5 text-amber-500" title="Locked" />
+                                                        )}
+                                                    </div>
                                                     <p className="text-xs text-slate-500">
                                                         {target.targetType.charAt(0).toUpperCase() + target.targetType.slice(1)}
                                                         {target.dueDate && (
@@ -346,19 +425,46 @@ export default function AssignedWorkPage() {
                                                         {target.assignedAt && (
                                                             <span> • Assigned {new Date(target.assignedAt).toLocaleDateString()}</span>
                                                         )}
-                                                        {target.assignedBy && (
-                                                            <span> by {target.assignedBy.firstName} {target.assignedBy.lastName}</span>
-                                                        )}
                                                     </p>
                                                 </div>
                                             </div>
-                                            <button
-                                                onClick={() => handleRemoveClick(target)}
-                                                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
-                                                title="Remove target"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                                            <div className="flex items-center gap-1">
+                                                {/* View Icon */}
+                                                <Link
+                                                    href={`/assignments/${assignment.id}`}
+                                                    className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition"
+                                                    title="View Assignment"
+                                                >
+                                                    <Eye className="w-4 h-4" />
+                                                </Link>
+                                                {/* Edit Icon */}
+                                                <button
+                                                    onClick={() => handleEditClick(target)}
+                                                    className="p-2 text-slate-400 hover:text-primary-500 hover:bg-primary-50 rounded-lg transition"
+                                                    title="Edit Target"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                                {/* Lock/Unlock Icon */}
+                                                <button
+                                                    onClick={() => handleToggleLock(target)}
+                                                    className={`p-2 rounded-lg transition ${target.isLocked
+                                                        ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50'
+                                                        : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50'
+                                                        }`}
+                                                    title={target.isLocked ? 'Unlock' : 'Lock'}
+                                                >
+                                                    {target.isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                                                </button>
+                                                {/* Delete Icon */}
+                                                <button
+                                                    onClick={() => handleRemoveClick(target)}
+                                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                                                    title="Remove target"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -367,6 +473,97 @@ export default function AssignedWorkPage() {
                     </div>
                 )}
             </main>
+
+            {/* Edit Modal */}
+            {editModal.open && editModal.target && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEditModal({ open: false, target: null })}>
+                    <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-900">Edit Assignment Target</h3>
+                            <button onClick={() => setEditModal({ open: false, target: null })} className="p-1 hover:bg-slate-100 rounded">
+                                <X className="w-5 h-5 text-slate-500" />
+                            </button>
+                        </div>
+
+                        <p className="text-sm text-slate-500 mb-4">
+                            Editing: <strong>{editModal.target.assignment.title}</strong>
+                        </p>
+
+                        <div className="space-y-4">
+                            {/* Target Type */}
+                            <div>
+                                <label className="label">Target Type</label>
+                                <select
+                                    value={editForm.targetType}
+                                    onChange={(e) => setEditForm({ ...editForm, targetType: e.target.value, targetId: '' })}
+                                    className="input"
+                                >
+                                    <option value="class">Class</option>
+                                    <option value="group">Group</option>
+                                    <option value="student">Student</option>
+                                </select>
+                            </div>
+
+                            {/* Target Selection */}
+                            <div>
+                                <label className="label">
+                                    {editForm.targetType === 'class' ? 'Select Class' :
+                                        editForm.targetType === 'group' ? 'Select Group' : 'Select Student'}
+                                </label>
+                                <select
+                                    value={editForm.targetId}
+                                    onChange={(e) => setEditForm({ ...editForm, targetId: e.target.value })}
+                                    className="input"
+                                >
+                                    <option value="">Select...</option>
+                                    {editForm.targetType === 'class' && classes.map(c => (
+                                        <option key={c.id} value={c.id}>
+                                            {c.name || `Grade ${c.gradeLevel}-${c.section}`}
+                                        </option>
+                                    ))}
+                                    {editForm.targetType === 'group' && groups.map(g => (
+                                        <option key={g.id} value={g.id}>
+                                            {g.name} ({g.className})
+                                        </option>
+                                    ))}
+                                    {editForm.targetType === 'student' && students.map(s => (
+                                        <option key={s.id} value={s.id}>
+                                            {s.firstName} {s.lastName}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Due Date */}
+                            <div>
+                                <label className="label">Due Date (Optional)</label>
+                                <input
+                                    type="datetime-local"
+                                    value={editForm.dueDate}
+                                    onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })}
+                                    className="input"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 mt-6">
+                            <button
+                                onClick={() => setEditModal({ open: false, target: null })}
+                                className="btn btn-secondary"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleEditSave}
+                                disabled={editLoading || !editForm.targetId}
+                                className="btn btn-primary"
+                            >
+                                {editLoading ? 'Saving...' : <><Save className="w-4 h-4" /> Save Changes</>}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Delete Confirmation Dialog */}
             <ConfirmDialog
@@ -382,4 +579,3 @@ export default function AssignedWorkPage() {
         </div>
     );
 }
-

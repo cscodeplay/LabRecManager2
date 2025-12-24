@@ -743,6 +743,90 @@ router.post('/:id/targets', authenticate, authorize('instructor', 'lab_assistant
 }));
 
 /**
+ * @route   PUT /api/assignments/targets/:targetId
+ * @desc    Update an assignment target (reassign, change due date, lock/unlock)
+ * @access  Private (Instructor, Admin)
+ */
+router.put('/targets/:targetId', authenticate, authorize('instructor', 'lab_assistant', 'admin', 'principal'), asyncHandler(async (req, res) => {
+    const { targetId } = req.params;
+    const { targetType, targetClassId, targetGroupId, targetStudentId, dueDate, isLocked } = req.body;
+
+    console.log('[PUT /targets/:targetId] targetId:', targetId, 'body:', req.body);
+
+    const existingTarget = await prisma.assignmentTarget.findUnique({
+        where: { id: targetId },
+        include: { assignment: true }
+    });
+
+    if (!existingTarget) {
+        return res.status(404).json({
+            success: false,
+            message: 'Target not found'
+        });
+    }
+
+    // Check ownership unless admin
+    if (req.user.role !== 'admin' && req.user.role !== 'principal' && existingTarget.assignment.createdById !== req.user.id) {
+        return res.status(403).json({
+            success: false,
+            message: 'Not authorized to update this target'
+        });
+    }
+
+    // Build update data
+    const updateData = {};
+
+    // Only update if values provided
+    if (typeof isLocked === 'boolean') {
+        updateData.isLocked = isLocked;
+    }
+
+    if (dueDate !== undefined) {
+        updateData.dueDate = dueDate ? new Date(dueDate) : null;
+    }
+
+    // If changing target type or target
+    if (targetType && targetType !== existingTarget.targetType) {
+        updateData.targetType = targetType;
+        // Clear all target IDs first
+        updateData.targetClassId = null;
+        updateData.targetGroupId = null;
+        updateData.targetStudentId = null;
+    }
+
+    if (targetClassId !== undefined) {
+        updateData.targetClassId = targetClassId || null;
+        if (targetClassId) updateData.targetType = 'class';
+    }
+    if (targetGroupId !== undefined) {
+        updateData.targetGroupId = targetGroupId || null;
+        if (targetGroupId) updateData.targetType = 'group';
+    }
+    if (targetStudentId !== undefined) {
+        updateData.targetStudentId = targetStudentId || null;
+        if (targetStudentId) updateData.targetType = 'student';
+    }
+
+    console.log('[PUT /targets/:targetId] updateData:', updateData);
+
+    const updatedTarget = await prisma.assignmentTarget.update({
+        where: { id: targetId },
+        data: updateData,
+        include: {
+            targetClass: { select: { id: true, name: true, gradeLevel: true, section: true } },
+            targetGroup: { select: { id: true, name: true } },
+            targetStudent: { select: { id: true, firstName: true, lastName: true } }
+        }
+    });
+
+    res.json({
+        success: true,
+        message: 'Target updated successfully',
+        data: { target: updatedTarget }
+    });
+}));
+
+/**
  * @route   DELETE /api/assignments/targets/:targetId
  * @desc    Remove an assignment target
  * @access  Private (Instructor, Admin)

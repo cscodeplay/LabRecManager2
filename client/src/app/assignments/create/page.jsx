@@ -269,10 +269,7 @@ export default function CreateAssignmentPage() {
                                 <label className="label">Passing Marks</label>
                                 <input type="number" className="input" {...register('passingMarks', { valueAsNumber: true })} />
                             </div>
-                            <div>
-                                <label className="label">Viva Marks</label>
-                                <input type="number" className="input" {...register('vivaMarks', { valueAsNumber: true })} />
-                            </div>
+
                             <div>
                                 <label className="label">Practical Marks</label>
                                 <input type="number" className="input" {...register('practicalMarks', { valueAsNumber: true })} />

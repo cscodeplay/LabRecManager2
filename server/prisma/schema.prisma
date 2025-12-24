@@ -607,6 +607,7 @@ model AssignmentTarget {
   extendedDueDate     DateTime?     @map("extended_due_date") @db.Timestamp(6)
   publishDate         DateTime?     @map("publish_date") @db.Timestamp(6)
   dueDate             DateTime?     @map("due_date") @db.Timestamp(6)
+  isLocked            Boolean       @default(false) @map("is_locked")
   assignedBy          User          @relation(fields: [assignedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   assignment          Assignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   targetGroup         StudentGroup? @relation(fields: [targetGroupId], references: [id], onDelete: NoAction, onUpdate: NoAction)
