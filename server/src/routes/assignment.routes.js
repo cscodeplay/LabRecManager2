@@ -242,7 +242,7 @@ router.get('/my-assigned', authenticate, asyncHandler(async (req, res) => {
                     percentage: true,
                     gradeLetter: true,
                     isPublished: true,
-                    feedback: true,
+                    generalRemarks: true,
                     gradedAt: true,
                     gradedBy: {
                         select: { id: true, firstName: true, lastName: true }
