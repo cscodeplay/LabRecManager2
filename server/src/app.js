@@ -209,6 +209,17 @@ io.on('connection', (socket) => {
     socket.to(`whiteboard-${sessionId}`).emit('whiteboard:clear', data);
   });
 
+  // Instructor broadcasts canvas state to all viewers
+  socket.on('whiteboard:canvas-state', (data) => {
+    const { sessionId, imageData } = data;
+
+    // Broadcast to all viewers in the session room
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:canvas-state', {
+      sessionId,
+      imageData
+    });
+  });
+
   // Student requests current canvas state when joining
   socket.on('whiteboard:request-state', (data) => {
     const { sessionId } = data;

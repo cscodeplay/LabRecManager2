@@ -79,6 +79,42 @@ export default function Whiteboard({
         saveToHistory();
     }, []);
 
+    // Broadcast canvas state when sharing starts and periodically while sharing
+    useEffect(() => {
+        if (!isSharing || !socket || !sessionId) return;
+
+        // Function to send current canvas state
+        const sendCanvasState = () => {
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+
+            const imageData = canvas.toDataURL('image/png');
+            socket.emit('whiteboard:canvas-state', {
+                sessionId,
+                imageData
+            });
+        };
+
+        // Send immediately when sharing starts
+        sendCanvasState();
+
+        // Also send periodically to keep viewers in sync (every 2 seconds)
+        const intervalId = setInterval(sendCanvasState, 2000);
+
+        // Listen for state requests from new viewers
+        const handleStateRequest = (data) => {
+            if (data.sessionId === sessionId) {
+                sendCanvasState();
+            }
+        };
+        socket.on('whiteboard:request-state', handleStateRequest);
+
+        return () => {
+            clearInterval(intervalId);
+            socket.off('whiteboard:request-state', handleStateRequest);
+        };
+    }, [isSharing, socket, sessionId]);
+
     // Save current state to history
     const saveToHistory = useCallback(() => {
         const canvas = canvasRef.current;
