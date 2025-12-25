@@ -369,5 +369,13 @@ export const adminAPI = {
     generatePin: (userId) => api.post(`/pin/${userId}/generate-pin`),
 };
 
+// Audit Logs API
+export const auditAPI = {
+    getLogs: (params) => api.get('/audit/logs', { params }),
+    getStats: () => api.get('/audit/stats'),
+    getEntityLogs: (entityType, entityId) => api.get(`/audit/logs/entity/${entityType}/${entityId}`),
+    getActions: () => api.get('/audit/actions'),
+};
+
 export default api;
 

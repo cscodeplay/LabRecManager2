@@ -39,6 +39,7 @@ model School {
   subjects              Subject[]
   users                 User[]
   whiteboardSessions    WhiteboardSession[]
+  auditLogs             AuditLog[]
 
   @@map("schools")
 }
@@ -169,6 +170,7 @@ model User {
   vivaSessionsAsStudent                          VivaSession[]            @relation("VivaStudent")
   whiteboardSessionsAsHost                       WhiteboardSession[]      @relation("WhiteboardHost")
   whiteboardParticipations                       WhiteboardParticipant[]
+  auditLogs                                      AuditLog[]
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")
@@ -1146,6 +1148,30 @@ model WhiteboardParticipant {
   @@index([sessionId], map: "idx_whiteboard_participants_session")
   @@index([userId], map: "idx_whiteboard_participants_user")
   @@map("whiteboard_participants")
+}
+
+model AuditLog {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String?   @map("user_id") @db.Uuid
+  schoolId   String?   @map("school_id") @db.Uuid
+  action     String    @db.VarChar(50)
+  entityType String    @map("entity_type") @db.VarChar(50)
+  entityId   String?   @map("entity_id") @db.Uuid
+  entityName String?   @map("entity_name") @db.VarChar(255)
+  details    Json?
+  ipAddress  String?   @map("ip_address") @db.VarChar(45)
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  school     School?   @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  
+  @@index([userId], map: "idx_audit_logs_user")
+  @@index([entityType, entityId], map: "idx_audit_logs_entity")
+  @@index([createdAt(sort: Desc)], map: "idx_audit_logs_created")
+  @@index([schoolId], map: "idx_audit_logs_school")
+  @@index([action], map: "idx_audit_logs_action")
+  @@map("audit_logs")
 }
 
 enum WhiteboardSessionStatus {

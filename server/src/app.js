@@ -32,6 +32,7 @@ const labRoutes = require('./routes/lab.routes');
 const fileRoutes = require('./routes/file.routes');
 const documentRoutes = require('./routes/document.routes');
 const whiteboardRoutes = require('./routes/whiteboard.routes');
+const auditRoutes = require('./routes/audit.routes');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -91,6 +92,7 @@ app.use('/api/labs', labRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/whiteboard', whiteboardRoutes);
+app.use('/api/audit', auditRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
