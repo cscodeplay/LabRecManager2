@@ -268,6 +268,40 @@ export default function MyAssignedWorkPage() {
                                                     </span>
                                                 )}
                                             </div>
+
+                                            {/* Submission & Grade Details Row */}
+                                            <div className="flex flex-wrap gap-4 text-xs text-slate-500 mt-2">
+                                                {assignment.hasSubmitted && assignment.submittedAt && (
+                                                    <span className="flex items-center gap-1 text-emerald-600">
+                                                        ✅ Submitted: {new Date(assignment.submittedAt).toLocaleString('en-IN', {
+                                                            day: 'numeric', month: 'short', year: 'numeric',
+                                                            hour: '2-digit', minute: '2-digit'
+                                                        })}
+                                                    </span>
+                                                )}
+                                                {assignment.needsRevision && (
+                                                    <span className="flex items-center gap-1 text-amber-600 font-medium">
+                                                        ⚠️ Revision Requested
+                                                    </span>
+                                                )}
+                                                {assignment.isGraded && assignment.grade && (
+                                                    <>
+                                                        {assignment.grade.gradedBy && (
+                                                            <span className="text-primary-600">
+                                                                👨‍🏫 Graded by: {assignment.grade.gradedBy.firstName} {assignment.grade.gradedBy.lastName}
+                                                            </span>
+                                                        )}
+                                                        {assignment.grade.gradedAt && (
+                                                            <span>
+                                                                📝 {new Date(assignment.grade.gradedAt).toLocaleString('en-IN', {
+                                                                    day: 'numeric', month: 'short', year: 'numeric',
+                                                                    hour: '2-digit', minute: '2-digit'
+                                                                })}
+                                                            </span>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
 
                                         {/* Right - Actions */}
@@ -279,16 +313,17 @@ export default function MyAssignedWorkPage() {
                                             >
                                                 <Eye className="w-5 h-5" />
                                             </Link>
-                                            {!assignment.hasSubmitted && (
+                                            {/* Show Submit button only if not submitted OR if revision requested */}
+                                            {(!assignment.hasSubmitted || assignment.needsRevision) && (
                                                 <Link
                                                     href={`/assignments/${assignment.id}/submit`}
-                                                    className="btn btn-primary"
+                                                    className={`btn ${assignment.needsRevision ? 'btn-warning' : 'btn-primary'}`}
                                                 >
                                                     <Send className="w-4 h-4" />
-                                                    Submit
+                                                    {assignment.needsRevision ? 'Revise' : 'Submit'}
                                                 </Link>
                                             )}
-                                            {assignment.hasSubmitted && assignment.isGraded && (
+                                            {assignment.isGraded && (
                                                 <Link
                                                     href="/grades"
                                                     className="btn btn-secondary"

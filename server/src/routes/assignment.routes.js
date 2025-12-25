@@ -236,7 +236,18 @@ router.get('/my-assigned', authenticate, asyncHandler(async (req, res) => {
         },
         include: {
             grade: {
-                select: { id: true, totalMarks: true, percentage: true, gradeLetter: true, isPublished: true }
+                select: {
+                    id: true,
+                    totalMarks: true,
+                    percentage: true,
+                    gradeLetter: true,
+                    isPublished: true,
+                    feedback: true,
+                    gradedAt: true,
+                    gradedBy: {
+                        select: { id: true, firstName: true, lastName: true }
+                    }
+                }
             }
         }
     });
@@ -248,13 +259,21 @@ router.get('/my-assigned', authenticate, asyncHandler(async (req, res) => {
     }
 
     // Merge assignment data with submission info
-    const assignments = Array.from(assignmentMap.values()).map(assignment => ({
-        ...assignment,
-        hasSubmitted: submissionMap.has(assignment.id),
-        submission: submissionMap.get(assignment.id) || null,
-        gradeId: submissionMap.get(assignment.id)?.grade?.id || null,
-        grade: submissionMap.get(assignment.id)?.grade || null
-    }));
+    const assignments = Array.from(assignmentMap.values()).map(assignment => {
+        const submission = submissionMap.get(assignment.id);
+        const grade = submission?.grade;
+
+        return {
+            ...assignment,
+            hasSubmitted: !!submission,
+            submittedAt: submission?.submittedAt || null,
+            submissionStatus: submission?.status || null,
+            needsRevision: submission?.status === 'revision_requested',
+            isGraded: !!(grade && grade.isPublished),
+            grade: grade || null,
+            gradeId: grade?.id || null
+        };
+    });
 
     // Sort by due date (urgent first)
     assignments.sort((a, b) => {
