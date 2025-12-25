@@ -2,21 +2,21 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from '@/lib/store';
+import { useRouter } from 'next/navigation';
 import io from 'socket.io-client';
 import toast from 'react-hot-toast';
-import SharedWhiteboardViewer from './SharedWhiteboardViewer';
-import { Pencil, X, Minimize2 } from 'lucide-react';
+import { Pencil, X } from 'lucide-react';
 
 const STORAGE_KEY = 'active_whiteboard_session';
 
 export default function WhiteboardNotificationListener() {
+    const router = useRouter();
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
     const socketRef = useRef(null);
 
     // Notification state
     const [sharedSession, setSharedSession] = useState(null);
-    const [showViewer, setShowViewer] = useState(false);
-    const [isMinimized, setIsMinimized] = useState(false);
+    const [showBadge, setShowBadge] = useState(false);
 
     const isStudent = user?.role === 'student';
 
@@ -31,7 +31,7 @@ export default function WhiteboardNotificationListener() {
                 // Check if session is still valid (within 2 hours)
                 if (session && session.timestamp && (Date.now() - session.timestamp < 2 * 60 * 60 * 1000)) {
                     setSharedSession(session);
-                    setIsMinimized(true); // Show minimized badge
+                    setShowBadge(true);
                 } else {
                     localStorage.removeItem(STORAGE_KEY);
                 }
@@ -86,10 +86,9 @@ export default function WhiteboardNotificationListener() {
         socketRef.current.on('whiteboard:shared-with-you', (data) => {
             console.log('[WhiteboardListener] Whiteboard shared:', data);
             setSharedSession(data);
-            setIsMinimized(false);
-            setShowViewer(true);
+            setShowBadge(true);
 
-            // Show toast notification
+            // Show toast notification with view button
             toast.custom((t) => (
                 <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white shadow-lg rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5`}>
                     <div className="flex-1 w-0 p-4">
@@ -100,43 +99,32 @@ export default function WhiteboardNotificationListener() {
                                 </div>
                             </div>
                             <div className="ml-3 flex-1">
-                                <p className="text-sm font-medium text-gray-900">
-                                    Whiteboard Shared
-                                </p>
-                                <p className="mt-1 text-sm text-gray-500">
+                                <p className="text-sm font-medium text-slate-900">Live Whiteboard</p>
+                                <p className="mt-1 text-sm text-slate-500">
                                     {data.instructorName} is sharing a whiteboard with you
                                 </p>
                             </div>
                         </div>
                     </div>
-                    <div className="flex border-l border-gray-200">
+                    <div className="flex border-l border-slate-200">
                         <button
-                            onClick={() => {
-                                toast.dismiss(t.id);
-                                setShowViewer(true);
-                                setIsMinimized(false);
-                            }}
+                            onClick={() => { toast.dismiss(t.id); router.push('/live-board'); }}
                             className="w-full border border-transparent rounded-none rounded-r-lg p-4 flex items-center justify-center text-sm font-medium text-amber-600 hover:text-amber-500 focus:outline-none"
                         >
                             View
                         </button>
                     </div>
                 </div>
-            ), {
-                duration: 10000,
-                position: 'top-right'
-            });
+            ), { duration: 10000 });
         });
 
-        // Listen for whiteboard ending
+        // Listen for whiteboard end
         socketRef.current.on('whiteboard:ended', (data) => {
-            console.log('[WhiteboardListener] Whiteboard ended:', data);
             if (sharedSession?.sessionId === data.sessionId) {
-                toast('Whiteboard session ended', { icon: '✅' });
                 setSharedSession(null);
-                setShowViewer(false);
-                setIsMinimized(false);
+                setShowBadge(false);
                 localStorage.removeItem(STORAGE_KEY);
+                toast('Whiteboard session ended', { icon: '📋' });
             }
         });
 
@@ -145,20 +133,16 @@ export default function WhiteboardNotificationListener() {
                 socketRef.current.disconnect();
             }
         };
-    }, [isAuthenticated, _hasHydrated, isStudent, user]);
+    }, [_hasHydrated, isAuthenticated, isStudent, user, router]);
 
-    // Handle minimize (X button minimizes, doesn't close)
-    const handleMinimize = () => {
-        setShowViewer(false);
-        setIsMinimized(true);
-    };
-
-    // Handle full close (only when instructor ends sharing)
-    const handleClose = () => {
-        setShowViewer(false);
-        setIsMinimized(false);
+    const handleDismiss = () => {
+        setShowBadge(false);
         setSharedSession(null);
         localStorage.removeItem(STORAGE_KEY);
+    };
+
+    const handleNavigate = () => {
+        router.push('/live-board');
     };
 
     // Only render for students
@@ -166,34 +150,33 @@ export default function WhiteboardNotificationListener() {
 
     return (
         <>
-            {/* Floating notification badge - shows when minimized or session active but viewer closed */}
-            {sharedSession && (isMinimized || !showViewer) && (
+            {/* Floating notification badge - shows when session active */}
+            {sharedSession && showBadge && (
                 <div className="fixed bottom-4 right-4 z-50">
-                    <button
-                        onClick={() => { setShowViewer(true); setIsMinimized(false); }}
-                        className="flex items-center gap-3 px-4 py-3 bg-amber-500 text-white rounded-xl shadow-lg hover:bg-amber-600 transition animate-bounce"
-                    >
-                        <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-                            <Pencil className="w-4 h-4" />
-                        </div>
-                        <div className="text-left">
-                            <p className="font-medium text-sm">Live Whiteboard</p>
-                            <p className="text-xs text-white/80">{sharedSession.instructorName}</p>
-                        </div>
-                        <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleNavigate}
+                            className="flex items-center gap-3 px-4 py-3 bg-amber-500 text-white rounded-xl shadow-lg hover:bg-amber-600 transition animate-bounce"
+                        >
+                            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                                <Pencil className="w-4 h-4" />
+                            </div>
+                            <div className="text-left">
+                                <p className="font-medium text-sm">Live Whiteboard</p>
+                                <p className="text-xs text-white/80">{sharedSession.instructorName}</p>
+                            </div>
+                            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                        </button>
+                        <button
+                            onClick={handleDismiss}
+                            className="p-2 bg-white rounded-full shadow-lg hover:bg-slate-100 transition"
+                            title="Dismiss"
+                        >
+                            <X className="w-4 h-4 text-slate-500" />
+                        </button>
+                    </div>
                 </div>
             )}
-
-            {/* Shared whiteboard viewer */}
-            <SharedWhiteboardViewer
-                isOpen={showViewer}
-                onClose={handleMinimize}
-                instructorName={sharedSession?.instructorName || 'Instructor'}
-                socket={socketRef.current}
-                sessionId={sharedSession?.sessionId}
-            />
         </>
     );
 }
-

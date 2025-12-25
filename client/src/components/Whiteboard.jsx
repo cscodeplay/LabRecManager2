@@ -53,6 +53,11 @@ export default function Whiteboard({
     const [startPos, setStartPos] = useState({ x: 0, y: 0 });
     const [currentPos, setCurrentPos] = useState({ x: 0, y: 0 });
 
+    // Text tool state
+    const [showTextInput, setShowTextInput] = useState(false);
+    const [textPos, setTextPos] = useState({ x: 0, y: 0 });
+    const [textValue, setTextValue] = useState('');
+
     // Canvas dimensions - keep fixed to prevent content loss
     const canvasWidth = width;
     const canvasHeight = height;
@@ -167,6 +172,15 @@ export default function Whiteboard({
     const startDrawing = useCallback((e) => {
         e.preventDefault();
         const pos = getPosition(e);
+
+        // Handle text tool separately
+        if (tool === 'text') {
+            setTextPos(pos);
+            setTextValue('');
+            setShowTextInput(true);
+            return;
+        }
+
         setIsDrawing(true);
         setStartPos(pos);
         setCurrentPos(pos);
@@ -188,6 +202,35 @@ export default function Whiteboard({
             });
         }
     }, [getPosition, tool, color, strokeWidth, emitDrawEvent]);
+
+    // Handle text submission
+    const handleTextSubmit = useCallback(() => {
+        if (!textValue.trim()) {
+            setShowTextInput(false);
+            return;
+        }
+
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        ctx.font = `${strokeWidth * 4 + 12}px sans-serif`;
+        ctx.fillStyle = color;
+        ctx.fillText(textValue, textPos.x, textPos.y);
+
+        // Emit text event
+        emitDrawEvent({
+            type: 'text',
+            x: textPos.x,
+            y: textPos.y,
+            text: textValue,
+            fontSize: strokeWidth * 4 + 12,
+            color
+        });
+
+        setShowTextInput(false);
+        setTextValue('');
+        saveToHistory();
+    }, [textValue, textPos, color, strokeWidth, emitDrawEvent, saveToHistory]);
 
     // Draw
     const draw = useCallback((e) => {
@@ -625,37 +668,74 @@ export default function Whiteboard({
 
             {/* Canvas */}
             <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center ${isFullscreen ? 'h-full' : ''}`}>
-                <canvas
-                    ref={canvasRef}
-                    width={canvasWidth}
-                    height={canvasHeight}
-                    className="rounded-lg shadow-lg touch-none"
-                    style={{
-                        maxWidth: isFullscreen ? '95vw' : '100%',
-                        maxHeight: isFullscreen ? 'calc(100vh - 200px)' : '100%',
-                        width: isFullscreen ? 'auto' : undefined,
-                        height: isFullscreen ? 'auto' : undefined,
-                        backgroundColor: bgColor,
-                        backgroundImage: bgPattern === 'dotted'
-                            ? 'radial-gradient(circle, #ccc 1px, transparent 1px)'
-                            : bgPattern === 'grid'
-                                ? 'linear-gradient(#e5e5e5 1px, transparent 1px), linear-gradient(90deg, #e5e5e5 1px, transparent 1px)'
-                                : bgPattern === 'lined'
-                                    ? 'linear-gradient(#e5e5e5 1px, transparent 1px)'
-                                    : 'none',
-                        backgroundSize: bgPattern === 'dotted' ? '20px 20px' : bgPattern === 'grid' ? '20px 20px' : '100% 25px',
-                        cursor: getCursor(),
-                        border: '2px solid #e2e8f0',
-                        outline: '1px solid #cbd5e1'
-                    }}
-                    onMouseDown={startDrawing}
-                    onMouseMove={draw}
-                    onMouseUp={stopDrawing}
-                    onMouseLeave={stopDrawing}
-                    onTouchStart={startDrawing}
-                    onTouchMove={draw}
-                    onTouchEnd={stopDrawing}
-                />
+                <div className="relative">
+                    <canvas
+                        ref={canvasRef}
+                        width={canvasWidth}
+                        height={canvasHeight}
+                        className="rounded-lg shadow-lg touch-none"
+                        style={{
+                            maxWidth: isFullscreen ? '95vw' : '100%',
+                            maxHeight: isFullscreen ? 'calc(100vh - 200px)' : '100%',
+                            width: isFullscreen ? 'auto' : undefined,
+                            height: isFullscreen ? 'auto' : undefined,
+                            backgroundColor: bgColor,
+                            backgroundImage: bgPattern === 'dotted'
+                                ? 'radial-gradient(circle, #ccc 1px, transparent 1px)'
+                                : bgPattern === 'grid'
+                                    ? 'linear-gradient(#e5e5e5 1px, transparent 1px), linear-gradient(90deg, #e5e5e5 1px, transparent 1px)'
+                                    : bgPattern === 'lined'
+                                        ? 'linear-gradient(#e5e5e5 1px, transparent 1px)'
+                                        : 'none',
+                            backgroundSize: bgPattern === 'dotted' ? '20px 20px' : bgPattern === 'grid' ? '20px 20px' : '100% 25px',
+                            cursor: getCursor(),
+                            border: '2px solid #e2e8f0',
+                            outline: '1px solid #cbd5e1'
+                        }}
+                        onMouseDown={startDrawing}
+                        onMouseMove={draw}
+                        onMouseUp={stopDrawing}
+                        onMouseLeave={stopDrawing}
+                        onTouchStart={startDrawing}
+                        onTouchMove={draw}
+                        onTouchEnd={stopDrawing}
+                    />
+                    {/* Text Input Popup */}
+                    {showTextInput && (
+                        <div
+                            className="absolute bg-white rounded-lg shadow-xl border border-slate-200 p-2 z-10"
+                            style={{ left: textPos.x, top: textPos.y }}
+                        >
+                            <input
+                                type="text"
+                                value={textValue}
+                                onChange={(e) => setTextValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleTextSubmit();
+                                    if (e.key === 'Escape') setShowTextInput(false);
+                                }}
+                                placeholder="Type text..."
+                                className="w-48 px-2 py-1 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                style={{ color, fontSize: `${strokeWidth * 2 + 12}px` }}
+                                autoFocus
+                            />
+                            <div className="flex gap-1 mt-1">
+                                <button
+                                    onClick={handleTextSubmit}
+                                    className="flex-1 px-2 py-1 bg-primary-500 text-white text-xs rounded hover:bg-primary-600"
+                                >
+                                    Add
+                                </button>
+                                <button
+                                    onClick={() => setShowTextInput(false)}
+                                    className="px-2 py-1 bg-slate-200 text-slate-700 text-xs rounded hover:bg-slate-300"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Footer */}
