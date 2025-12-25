@@ -36,7 +36,10 @@ export default function AssignmentDetailPage() {
     const loadAssignment = async () => {
         try {
             const res = await assignmentsAPI.getById(params.id);
-            setAssignment(res.data.data.assignment);
+            // Merge userSubmission into assignment object for easy access
+            const assignmentData = res.data.data.assignment;
+            assignmentData.userSubmission = res.data.data.userSubmission || null;
+            setAssignment(assignmentData);
         } catch (error) {
             toast.error('Failed to load assignment');
             router.push('/assignments');
