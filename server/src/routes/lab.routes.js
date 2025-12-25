@@ -595,9 +595,11 @@ router.put('/:id/status', authenticate, authorize('admin', 'principal'), asyncHa
 /**
  * @route   GET /api/labs/:id/maintenance-history
  * @desc    Get maintenance history for a lab
- * @access  Private (Admin)
+ * @access  Private (Admin/Principal/Lab Assistant)
  */
-router.get('/:id/maintenance-history', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+router.get('/:id/maintenance-history', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    console.log('[Maintenance History] Fetching for labId:', req.params.id);
+
     const history = await prisma.labMaintenanceHistory.findMany({
         where: { labId: req.params.id },
         include: {
@@ -606,6 +608,7 @@ router.get('/:id/maintenance-history', authenticate, authorize('admin', 'princip
         orderBy: { createdAt: 'desc' }
     });
 
+    console.log('[Maintenance History] Found', history.length, 'records');
     res.json({ success: true, data: { history } });
 }));
 
