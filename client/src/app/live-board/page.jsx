@@ -112,7 +112,7 @@ export default function LiveBoardPage() {
                                 </p>
                             </div>
                         </div>
-                        <div className="bg-white rounded-xl shadow-lg overflow-hidden" style={{ height: 'calc(100vh - 280px)' }}>
+                        <div className="bg-white rounded-xl shadow-lg overflow-hidden" style={{ height: 'calc(100vh - 200px)', minHeight: '500px' }}>
                             <SharedWhiteboardViewer
                                 isOpen={true}
                                 onClose={() => { }}

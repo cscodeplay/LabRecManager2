@@ -58,6 +58,10 @@ export default function Whiteboard({
     const [textPos, setTextPos] = useState({ x: 0, y: 0 });
     const [textValue, setTextValue] = useState('');
 
+    // Selection state
+    const [selection, setSelection] = useState(null); // { x, y, width, height }
+    const [clipboard, setClipboard] = useState(null); // imageData for copy/paste
+
     // Canvas dimensions - keep fixed to prevent content loss
     const canvasWidth = width;
     const canvasHeight = height;
@@ -133,6 +137,59 @@ export default function Whiteboard({
         saveToHistory();
     }, [saveToHistory]);
 
+    // Copy selection to clipboard
+    const handleCopySelection = useCallback(() => {
+        if (!selection) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.getImageData(selection.x, selection.y, selection.width, selection.height);
+        setClipboard({ imageData, width: selection.width, height: selection.height });
+    }, [selection]);
+
+    // Cut selection (copy + delete)
+    const handleCutSelection = useCallback(() => {
+        if (!selection) return;
+        handleCopySelection();
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(selection.x, selection.y, selection.width, selection.height);
+        setSelection(null);
+        saveToHistory();
+    }, [selection, handleCopySelection, saveToHistory]);
+
+    // Paste from clipboard
+    const handlePasteSelection = useCallback(() => {
+        if (!clipboard) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        // Paste at center of canvas
+        const x = (canvas.width - clipboard.width) / 2;
+        const y = (canvas.height - clipboard.height) / 2;
+        ctx.putImageData(clipboard.imageData, x, y);
+        saveToHistory();
+    }, [clipboard, saveToHistory]);
+
+    // Delete selection
+    const handleDeleteSelection = useCallback(() => {
+        if (!selection) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(selection.x, selection.y, selection.width, selection.height);
+        setSelection(null);
+        saveToHistory();
+    }, [selection, saveToHistory]);
+
     // Get position from event (works for both mouse and touch)
     const getPosition = useCallback((e) => {
         const canvas = canvasRef.current;
@@ -179,6 +236,11 @@ export default function Whiteboard({
             setTextValue('');
             setShowTextInput(true);
             return;
+        }
+
+        // Handle select tool - start drawing selection box
+        if (tool === 'select') {
+            setSelection(null); // Clear previous selection
         }
 
         setIsDrawing(true);
@@ -350,10 +412,20 @@ export default function Whiteboard({
                 color,
                 strokeWidth
             });
+        } else if (tool === 'select') {
+            // Create selection rectangle
+            const x = Math.min(startPos.x, pos.x);
+            const y = Math.min(startPos.y, pos.y);
+            const selWidth = Math.abs(pos.x - startPos.x);
+            const selHeight = Math.abs(pos.y - startPos.y);
+
+            if (selWidth > 5 && selHeight > 5) {
+                setSelection({ x, y, width: selWidth, height: selHeight });
+            }
         }
 
         setIsDrawing(false);
-        saveToHistory();
+        if (tool !== 'select') saveToHistory();
     }, [isDrawing, getPosition, tool, color, strokeWidth, startPos, saveToHistory, emitDrawEvent]);
 
     // Download as image
@@ -398,6 +470,7 @@ export default function Whiteboard({
     }, [getBlob]);
 
     const tools = [
+        { id: 'select', icon: MousePointer2, label: 'Select' },
         { id: 'pen', icon: Pencil, label: 'Pen' },
         { id: 'eraser', icon: Eraser, label: 'Eraser' },
         { id: 'line', icon: Minus, label: 'Line' },
@@ -408,7 +481,9 @@ export default function Whiteboard({
 
     // Get cursor based on tool
     const getCursor = () => {
+        if (tool === 'select') return 'default';
         if (tool === 'eraser') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${strokeWidth * 2}" height="${strokeWidth * 2}" viewBox="0 0 ${strokeWidth * 2} ${strokeWidth * 2}"><rect width="${strokeWidth * 2}" height="${strokeWidth * 2}" fill="white" stroke="black" stroke-width="1"/></svg>') ${strokeWidth} ${strokeWidth}, auto`;
+        if (tool === 'text') return 'text';
         return 'crosshair';
     };
 
@@ -628,6 +703,17 @@ export default function Whiteboard({
                     <Trash2 className="w-4 h-4" />
                 </button>
 
+                {/* Paste (when clipboard has content) */}
+                {clipboard && (
+                    <button
+                        onClick={handlePasteSelection}
+                        className="p-2 hover:bg-green-50 text-green-600 rounded-lg transition"
+                        title="Paste"
+                    >
+                        📋
+                    </button>
+                )}
+
                 <div className="flex-1" />
 
                 {/* Sharing, Download & Save */}
@@ -731,6 +817,50 @@ export default function Whiteboard({
                                     className="px-2 py-1 bg-slate-200 text-slate-700 text-xs rounded hover:bg-slate-300"
                                 >
                                     Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    {/* Selection Overlay */}
+                    {selection && (
+                        <div
+                            className="absolute border-2 border-dashed border-blue-500 bg-blue-500/10 pointer-events-none"
+                            style={{
+                                left: selection.x,
+                                top: selection.y,
+                                width: selection.width,
+                                height: selection.height
+                            }}
+                        >
+                            {/* Selection action buttons */}
+                            <div className="absolute -top-10 left-0 flex gap-1 pointer-events-auto">
+                                <button
+                                    onClick={handleCopySelection}
+                                    className="px-2 py-1 bg-white text-xs font-medium text-slate-700 rounded shadow border border-slate-200 hover:bg-slate-50"
+                                    title="Copy"
+                                >
+                                    Copy
+                                </button>
+                                <button
+                                    onClick={handleCutSelection}
+                                    className="px-2 py-1 bg-white text-xs font-medium text-slate-700 rounded shadow border border-slate-200 hover:bg-slate-50"
+                                    title="Cut"
+                                >
+                                    Cut
+                                </button>
+                                <button
+                                    onClick={handleDeleteSelection}
+                                    className="px-2 py-1 bg-red-500 text-xs font-medium text-white rounded shadow hover:bg-red-600"
+                                    title="Delete"
+                                >
+                                    Delete
+                                </button>
+                                <button
+                                    onClick={() => setSelection(null)}
+                                    className="px-2 py-1 bg-slate-200 text-xs font-medium text-slate-700 rounded hover:bg-slate-300"
+                                    title="Cancel"
+                                >
+                                    ✕
                                 </button>
                             </div>
                         </div>

@@ -9,8 +9,8 @@ export default function SharedWhiteboardViewer({
     instructorName = 'Instructor',
     socket,
     sessionId,
-    width = 800,
-    height = 500,
+    width = 1200,
+    height = 700,
     isInline = false // When true, renders inline instead of overlay
 }) {
     const canvasRef = useRef(null);
@@ -72,6 +72,10 @@ export default function SharedWhiteboardViewer({
                 ctx.beginPath();
                 ctx.ellipse(data.centerX, data.centerY, data.radiusX, data.radiusY, 0, 0, 2 * Math.PI);
                 ctx.stroke();
+            } else if (data.type === 'text') {
+                ctx.font = `${data.fontSize || 16}px sans-serif`;
+                ctx.fillStyle = data.color || '#000000';
+                ctx.fillText(data.text, data.x, data.y);
             }
         };
 
