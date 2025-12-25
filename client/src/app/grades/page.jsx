@@ -459,7 +459,7 @@ export default function GradesPage() {
                                         <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-500">
                                             <span className="flex items-center gap-1">
                                                 <Calendar className="w-4 h-4" />
-                                                Graded: {new Date(grade.gradedAt).toLocaleDateString()}
+                                                Graded: {new Date(grade.gradedAt).toLocaleString()}
                                             </span>
                                             {grade.gradedBy && (
                                                 <span>By: {grade.gradedBy.firstName} {grade.gradedBy.lastName}</span>
