@@ -119,7 +119,7 @@ export default function LiveBoardPage() {
                                 instructorName={sharedSession.instructorName}
                                 socket={socket}
                                 sessionId={sharedSession.sessionId}
-                                isFullPage={true}
+                                isInline={true}
                             />
                         </div>
                     </div>

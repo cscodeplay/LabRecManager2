@@ -32,7 +32,7 @@ export default function AdminWhiteboardsPage() {
         setLoading(true);
         try {
             const res = await api.get(`/whiteboard/sessions?status=${filter}`);
-            setSessions(res.data.data || []);
+            setSessions(res.data.data.sessions || []);
         } catch (err) {
             console.error('Failed to load sessions:', err);
             toast.error('Failed to load whiteboard sessions');
@@ -95,8 +95,8 @@ export default function AdminWhiteboardsPage() {
                             key={f}
                             onClick={() => setFilter(f)}
                             className={`px-4 py-2 rounded-md text-sm font-medium transition ${filter === f
-                                    ? 'bg-primary-500 text-white'
-                                    : 'text-slate-600 hover:bg-slate-100'
+                                ? 'bg-primary-500 text-white'
+                                : 'text-slate-600 hover:bg-slate-100'
                                 }`}
                         >
                             {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -202,8 +202,8 @@ export default function AdminWhiteboardsPage() {
                                     <button
                                         onClick={() => handleToggleRecording(session.id, session.isRecording)}
                                         className={`p-2 rounded-lg transition ${session.isRecording
-                                                ? 'bg-red-100 text-red-600 hover:bg-red-200'
-                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                            ? 'bg-red-100 text-red-600 hover:bg-red-200'
+                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                             }`}
                                         title={session.isRecording ? 'Stop Recording' : 'Start Recording'}
                                     >

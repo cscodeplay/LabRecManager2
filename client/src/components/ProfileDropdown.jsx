@@ -72,6 +72,11 @@ export default function ProfileDropdown() {
                                         {user.firstNameHindi} {user.lastNameHindi}
                                     </p>
                                 )}
+                                {(user.studentId || user.admissionNumber || user.employeeId) && (
+                                    <p className="text-xs text-white/70 font-mono">
+                                        ID: {user.studentId || user.admissionNumber || user.employeeId}
+                                    </p>
+                                )}
                                 <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
                                     {user.role?.replace('_', ' ').toUpperCase()}
                                 </span>

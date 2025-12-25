@@ -10,7 +10,8 @@ export default function SharedWhiteboardViewer({
     socket,
     sessionId,
     width = 800,
-    height = 500
+    height = 500,
+    isInline = false // When true, renders inline instead of overlay
 }) {
     const canvasRef = useRef(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -126,6 +127,73 @@ export default function SharedWhiteboardViewer({
 
     if (!isOpen) return null;
 
+    // Inline mode - render directly in parent container
+    if (isInline) {
+        return (
+            <div className="w-full h-full flex flex-col bg-white rounded-xl overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between p-3 border-b border-slate-200 bg-gradient-to-r from-amber-500 to-orange-500">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                            <Pencil className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                            <h3 className="font-semibold text-white flex items-center gap-2">
+                                Shared Whiteboard
+                                {isActive && (
+                                    <span className="flex items-center gap-1 text-xs bg-red-500 px-2 py-0.5 rounded-full">
+                                        <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                                        LIVE
+                                    </span>
+                                )}
+                            </h3>
+                            <p className="text-sm text-white/80 flex items-center gap-1">
+                                <User className="w-3 h-3" />
+                                {instructorName} is presenting
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setIsFullscreen(!isFullscreen)}
+                        className="p-2 hover:bg-white/20 rounded-lg transition text-white"
+                        title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                    >
+                        {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                    </button>
+                </div>
+
+                {/* Canvas */}
+                <div className="flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center">
+                    {isActive ? (
+                        <canvas
+                            ref={canvasRef}
+                            width={width}
+                            height={height}
+                            className="bg-white rounded-lg shadow-lg"
+                            style={{ maxWidth: '100%', maxHeight: '100%' }}
+                        />
+                    ) : (
+                        <div className="text-center py-16">
+                            <div className="w-20 h-20 bg-slate-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Pencil className="w-10 h-10 text-slate-400" />
+                            </div>
+                            <h3 className="text-xl font-semibold text-slate-900 mb-2">Sharing Ended</h3>
+                            <p className="text-slate-600">The instructor has stopped sharing the whiteboard</p>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 text-center">
+                    <p className="text-xs text-slate-500">
+                        👁️ View-only mode • You are watching the instructor's whiteboard live
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    // Overlay mode (default)
     return (
         <div className={`fixed z-50 ${isFullscreen ? 'inset-0' : 'inset-4 md:inset-8 lg:inset-12'} flex items-center justify-center`}>
             <div

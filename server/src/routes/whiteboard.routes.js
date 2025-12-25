@@ -40,11 +40,13 @@ router.get('/sessions', authenticate, authorize('admin', 'principal'), asyncHand
 
     res.json({
         success: true,
-        data: sessions.map(s => ({
-            ...s,
-            participantCount: s._count.participants,
-            duration: s.startedAt ? Math.floor((Date.now() - new Date(s.startedAt).getTime()) / 1000) : 0
-        }))
+        data: {
+            sessions: sessions.map(s => ({
+                ...s,
+                participantCount: s._count.participants,
+                duration: s.startedAt ? Math.floor((Date.now() - new Date(s.startedAt).getTime()) / 1000) : 0
+            }))
+        }
     });
 }));
 
