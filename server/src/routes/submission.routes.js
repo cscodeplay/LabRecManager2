@@ -182,11 +182,10 @@ router.get('/pending', authenticate, authorize('instructor', 'lab_assistant', 'a
     }
     // For admin and principal, no filter - they see all submissions
 
-    if (status) {
+    if (status && status !== 'all') {
         where.status = status;
-    } else {
-        where.status = { in: ['submitted', 'under_review'] };
     }
+    // When status is 'all' or not provided, don't filter by status - show all submissions
 
     const [submissions, total] = await Promise.all([
         prisma.submission.findMany({
@@ -224,8 +223,18 @@ router.get('/pending', authenticate, authorize('instructor', 'lab_assistant', 'a
                 grade: {
                     select: {
                         finalMarks: true,
+                        totalMarks: true,
+                        maxMarks: true,
                         gradeLetter: true,
-                        isPublished: true
+                        isPublished: true,
+                        gradedAt: true,
+                        gradedBy: {
+                            select: {
+                                id: true,
+                                firstName: true,
+                                lastName: true
+                            }
+                        }
                     }
                 }
             }
