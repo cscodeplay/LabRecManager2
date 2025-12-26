@@ -110,7 +110,7 @@ export default function CreateAssignmentPage() {
         try {
             const submitData = {
                 ...data,
-                dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : null,
+                // Note: dueDate is set in assign-work form, not here
                 publishDate: publishNow ? new Date().toISOString() : (data.publishDate ? new Date(data.publishDate).toISOString() : null),
                 status: publishNow ? 'published' : 'draft'
             };
@@ -338,7 +338,7 @@ export default function CreateAssignmentPage() {
                             </label>
                         </div>
 
-                        <div className="grid md:grid-cols-2 gap-4">
+                        <div>
                             <div>
                                 <label className="label flex items-center gap-2">
                                     <Calendar className="w-4 h-4" />
@@ -354,20 +354,13 @@ export default function CreateAssignmentPage() {
                                     {publishNow ? 'Disabled when "Publish Now" is selected' : 'Leave empty to save as draft'}
                                 </p>
                             </div>
-                            <div>
-                                <label className="label flex items-center gap-2">
-                                    <Calendar className="w-4 h-4" />
-                                    Submission Due Date
+                            {/* Note: Due Date is now set in the Assign Work form, not here */}
+                            <div className="mt-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" className="w-4 h-4 rounded" {...register('lateSubmissionAllowed')} />
+                                    <span className="text-sm text-slate-700">Allow late submissions (with penalty)</span>
                                 </label>
-                                <input type="datetime-local" className="input" {...register('dueDate')} />
-                                <p className="text-xs text-slate-500 mt-1">When students must submit by</p>
                             </div>
-                        </div>
-                        <div className="mt-4">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input type="checkbox" className="w-4 h-4 rounded" {...register('lateSubmissionAllowed')} />
-                                <span className="text-sm text-slate-700">Allow late submissions (with penalty)</span>
-                            </label>
                         </div>
                     </div>
 
