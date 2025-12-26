@@ -600,16 +600,30 @@ router.put('/:id/status', authenticate, authorize('admin', 'principal'), asyncHa
 router.get('/:id/maintenance-history', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
     console.log('[Maintenance History] Fetching for labId:', req.params.id);
 
-    const history = await prisma.labMaintenanceHistory.findMany({
-        where: { labId: req.params.id },
-        include: {
-            performedBy: { select: { id: true, firstName: true, lastName: true } }
-        },
-        orderBy: { createdAt: 'desc' }
-    });
+    try {
+        const history = await prisma.labMaintenanceHistory.findMany({
+            where: { labId: req.params.id },
+            include: {
+                performedBy: { select: { id: true, firstName: true, lastName: true } }
+            },
+            orderBy: [
+                { createdAt: 'desc' },
+                { id: 'desc' } // Fallback if createdAt is null
+            ]
+        });
 
-    console.log('[Maintenance History] Found', history.length, 'records');
-    res.json({ success: true, data: { history } });
+        console.log('[Maintenance History] Found', history.length, 'records');
+        res.json({ success: true, data: { history } });
+    } catch (error) {
+        console.error('[Maintenance History] Error:', error);
+        // If include fails due to NULL performedById, try without include
+        const historyBasic = await prisma.labMaintenanceHistory.findMany({
+            where: { labId: req.params.id },
+            orderBy: { id: 'desc' }
+        });
+        console.log('[Maintenance History] Basic fetch found', historyBasic.length, 'records');
+        res.json({ success: true, data: { history: historyBasic } });
+    }
 }));
 
 /**
