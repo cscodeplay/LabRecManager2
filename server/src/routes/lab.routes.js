@@ -598,31 +598,61 @@ router.put('/:id/status', authenticate, authorize('admin', 'principal'), asyncHa
  * @access  Private (Admin/Principal/Lab Assistant)
  */
 router.get('/:id/maintenance-history', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
-    console.log('[Maintenance History] Fetching for labId:', req.params.id);
+    const labId = req.params.id;
+    console.log('[Maintenance History] Fetching for labId:', labId);
 
     try {
+        // Try Prisma first
         const history = await prisma.labMaintenanceHistory.findMany({
-            where: { labId: req.params.id },
+            where: { labId: labId },
             include: {
                 performedBy: { select: { id: true, firstName: true, lastName: true } }
             },
             orderBy: [
                 { createdAt: 'desc' },
-                { id: 'desc' } // Fallback if createdAt is null
+                { id: 'desc' }
             ]
         });
 
-        console.log('[Maintenance History] Found', history.length, 'records');
-        res.json({ success: true, data: { history } });
+        console.log('[Maintenance History] Prisma found', history.length, 'records');
+
+        if (history.length > 0) {
+            res.json({ success: true, data: { history } });
+        } else {
+            // Fallback to raw SQL if Prisma returns empty
+            console.log('[Maintenance History] Trying raw SQL fallback...');
+            const rawHistory = await prisma.$queryRaw`
+                SELECT 
+                    id, lab_id as "labId", action, reason, 
+                    previous_status as "previousStatus", 
+                    new_status as "newStatus",
+                    started_at as "startedAt", 
+                    ended_at as "endedAt",
+                    expected_end_date as "expectedEndDate",
+                    performed_by_id as "performedById",
+                    created_at as "createdAt"
+                FROM lab_maintenance_history 
+                WHERE lab_id = ${labId}::uuid
+                ORDER BY created_at DESC NULLS LAST
+            `;
+            console.log('[Maintenance History] Raw SQL found', rawHistory.length, 'records');
+            res.json({ success: true, data: { history: rawHistory } });
+        }
     } catch (error) {
-        console.error('[Maintenance History] Error:', error);
-        // If include fails due to NULL performedById, try without include
-        const historyBasic = await prisma.labMaintenanceHistory.findMany({
-            where: { labId: req.params.id },
-            orderBy: { id: 'desc' }
-        });
-        console.log('[Maintenance History] Basic fetch found', historyBasic.length, 'records');
-        res.json({ success: true, data: { history: historyBasic } });
+        console.error('[Maintenance History] Error:', error.message);
+        // Try raw SQL on error
+        try {
+            const rawHistory = await prisma.$queryRaw`
+                SELECT * FROM lab_maintenance_history 
+                WHERE lab_id = ${labId}::uuid
+                ORDER BY id DESC
+            `;
+            console.log('[Maintenance History] Raw fallback found', rawHistory.length, 'records');
+            res.json({ success: true, data: { history: rawHistory } });
+        } catch (rawError) {
+            console.error('[Maintenance History] Raw SQL also failed:', rawError.message);
+            res.json({ success: true, data: { history: [] } });
+        }
     }
 }));
 
