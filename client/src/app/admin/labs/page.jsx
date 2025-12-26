@@ -145,12 +145,15 @@ export default function LabsPage() {
     };
 
     const loadMaintenanceHistory = async (lab) => {
+        console.log('[Debug] Loading maintenance history for lab:', lab.id, lab.name);
         setHistoryModal({ open: true, lab });
         setHistoryLoading(true);
         try {
             const res = await labsAPI.getMaintenanceHistory(lab.id);
+            console.log('[Debug] Maintenance history response:', res.data);
             setMaintenanceHistory(res.data.data.history || []);
         } catch (error) {
+            console.error('[Debug] Maintenance history error:', error);
             toast.error('Failed to load maintenance history');
             setMaintenanceHistory([]);
         } finally {
