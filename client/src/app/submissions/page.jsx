@@ -176,12 +176,20 @@ export default function SubmissionsPage() {
                                             {isInstructor && submission.student && (
                                                 <p className="text-sm text-slate-600 flex items-center gap-1 mt-1">
                                                     <User className="w-4 h-4" />
-                                                    {submission.student.firstName} {submission.student.lastName}
+                                                    <span className="font-medium">Student:</span> {submission.student.firstName} {submission.student.lastName}
                                                     {(submission.student.studentId || submission.student.admissionNumber) && (
                                                         <span className="text-slate-400">
                                                             ({submission.student.studentId || submission.student.admissionNumber})
                                                         </span>
                                                     )}
+                                                </p>
+                                            )}
+                                            {isInstructor && submission.assignment?.createdBy && (
+                                                <p className="text-sm text-primary-600 flex items-center gap-1 mt-1">
+                                                    <span className="font-medium">Assigned by:</span> {submission.assignment.createdBy.firstName} {submission.assignment.createdBy.lastName}
+                                                    <span className="text-slate-400 text-xs">
+                                                        ({submission.assignment.createdBy.role})
+                                                    </span>
                                                 </p>
                                             )}
                                             <p className="text-sm text-slate-500 mt-2">

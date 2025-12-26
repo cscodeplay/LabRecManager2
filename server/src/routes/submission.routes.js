@@ -201,7 +201,15 @@ router.get('/pending', authenticate, authorize('instructor', 'lab_assistant', 'a
                         title: true,
                         titleHindi: true,
                         experimentNumber: true,
-                        maxMarks: true
+                        maxMarks: true,
+                        createdBy: {
+                            select: {
+                                id: true,
+                                firstName: true,
+                                lastName: true,
+                                role: true
+                            }
+                        }
                     }
                 },
                 student: {
@@ -209,7 +217,8 @@ router.get('/pending', authenticate, authorize('instructor', 'lab_assistant', 'a
                         id: true,
                         firstName: true,
                         lastName: true,
-                        admissionNumber: true
+                        admissionNumber: true,
+                        studentId: true
                     }
                 },
                 grade: {
