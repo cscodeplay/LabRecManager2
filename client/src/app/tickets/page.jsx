@@ -67,9 +67,9 @@ export default function TicketsPage() {
         loadIssueTypes();
     }, [statusFilter, priorityFilter, myTicketsOnly]);
 
-    // Load items when lab changes (for hardware issues)
+    // Load items when lab changes (for hardware/software issues)
     useEffect(() => {
-        if (form.labId && form.category === 'hardware_issue') {
+        if (form.labId && (form.category === 'hardware_issue' || form.category === 'software_issue')) {
             loadLabItems(form.labId);
         } else {
             setLabItems([]);
@@ -425,11 +425,11 @@ export default function TicketsPage() {
                                 </div>
                             )}
 
-                            {/* Lab Selection - especially for hardware issues */}
-                            {(form.category === 'hardware_issue' || form.category === 'maintenance_request') && (
+                            {/* Lab Selection - for hardware/software issues */}
+                            {(form.category === 'hardware_issue' || form.category === 'software_issue' || form.category === 'maintenance_request') && (
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        Lab {form.category === 'hardware_issue' ? '*' : '(Optional)'}
+                                        Lab {(form.category === 'hardware_issue' || form.category === 'software_issue') ? '*' : '(Optional)'}
                                     </label>
                                     <select
                                         value={form.labId}
@@ -444,10 +444,10 @@ export default function TicketsPage() {
                                 </div>
                             )}
 
-                            {/* Item Selection - for hardware issues */}
-                            {form.category === 'hardware_issue' && form.labId && (
+                            {/* Item Selection - for hardware/software issues */}
+                            {(form.category === 'hardware_issue' || form.category === 'software_issue') && form.labId && (
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Affected Item *</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Affected PC/Item *</label>
                                     {itemsLoading ? (
                                         <div className="text-sm text-slate-500 py-2">Loading items...</div>
                                     ) : labItems.length === 0 ? (
