@@ -377,5 +377,17 @@ export const auditAPI = {
     getActions: () => api.get('/audit/actions'),
 };
 
-export default api;
+// Tickets API
+export const ticketsAPI = {
+    getAll: (params) => api.get('/tickets', { params }),
+    getById: (id) => api.get(`/tickets/${id}`),
+    create: (data) => api.post('/tickets', data),
+    update: (id, data) => api.put(`/tickets/${id}`, data),
+    resolve: (id, resolutionNotes) => api.put(`/tickets/${id}/resolve`, { resolutionNotes }),
+    close: (id) => api.put(`/tickets/${id}/close`),
+    delete: (id) => api.delete(`/tickets/${id}`),
+    addComment: (id, content) => api.post(`/tickets/${id}/comments`, { content }),
+    getStats: () => api.get('/tickets/stats'),
+};
 
+export default api;

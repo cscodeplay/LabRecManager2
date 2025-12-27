@@ -171,6 +171,10 @@ model User {
   whiteboardSessionsAsHost                       WhiteboardSession[]      @relation("WhiteboardHost")
   whiteboardParticipations                       WhiteboardParticipant[]
   auditLogs                                      AuditLog[]
+  ticketsCreated                                 Ticket[]                 @relation("TicketCreator")
+  ticketsAssigned                                Ticket[]                 @relation("TicketAssignee")
+  ticketsResolved                                Ticket[]                 @relation("TicketResolver")
+  ticketComments                                 TicketComment[]
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")
@@ -366,6 +370,7 @@ model Lab {
   incharge          User?                   @relation(fields: [inchargeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   school            School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   subject           Subject?                @relation(fields: [subjectId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tickets           Ticket[]
 
   @@map("labs")
 }
@@ -413,6 +418,7 @@ model LabItem {
   lab                Lab?                     @relation(fields: [labId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   school             School?                  @relation(fields: [schoolId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   assignedGroups     StudentGroup[]
+  tickets            Ticket[]
 
   @@unique([labId, itemNumber])
   @@map("lab_items")
@@ -1373,4 +1379,80 @@ enum document_share_target_type {
   instructor
   admin
   student
+}
+
+enum TicketStatus {
+  open
+  in_progress
+  resolved
+  closed
+
+  @@map("ticket_status")
+}
+
+enum TicketPriority {
+  low
+  medium
+  high
+  critical
+
+  @@map("ticket_priority")
+}
+
+enum TicketCategory {
+  hardware_issue
+  software_issue
+  maintenance_request
+  general_complaint
+  other
+
+  @@map("ticket_category")
+}
+
+model Ticket {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketNumber    String          @unique @map("ticket_number") @db.VarChar(20)
+  title           String          @db.VarChar(200)
+  description     String
+  category        TicketCategory  @default(other)
+  priority        TicketPriority  @default(medium)
+  status          TicketStatus    @default(open)
+  
+  itemId          String?         @map("item_id") @db.Uuid
+  labId           String?         @map("lab_id") @db.Uuid
+  
+  createdById     String          @map("created_by_id") @db.Uuid
+  assignedToId    String?         @map("assigned_to_id") @db.Uuid
+  resolvedById    String?         @map("resolved_by_id") @db.Uuid
+  
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamp(6)
+  resolvedAt      DateTime?       @map("resolved_at") @db.Timestamp(6)
+  
+  resolutionNotes String?         @map("resolution_notes")
+  
+  item            LabItem?        @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  lab             Lab?            @relation(fields: [labId], references: [id], onDelete: SetNull)
+  createdBy       User            @relation("TicketCreator", fields: [createdById], references: [id])
+  assignedTo      User?           @relation("TicketAssignee", fields: [assignedToId], references: [id])
+  resolvedBy      User?           @relation("TicketResolver", fields: [resolvedById], references: [id])
+  comments        TicketComment[]
+  
+  @@index([status])
+  @@index([createdById])
+  @@index([labId])
+  @@map("tickets")
+}
+
+model TicketComment {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId    String    @map("ticket_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  content     String
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  ticket      Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id])
+  
+  @@map("ticket_comments")
 }
