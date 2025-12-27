@@ -670,7 +670,7 @@ export default function LabInventoryPage() {
                                                         setMaintenanceHistory([]);
                                                         setMaintenanceLoading(true);
                                                         try {
-                                                            const res = await labsAPI.getMaintenanceHistory(item.id);
+                                                            const res = await labsAPI.getItemMaintenanceHistory(item.id);
                                                             setMaintenanceHistory(res.data.data.history || []);
                                                         } catch { }
                                                         setMaintenanceLoading(false);
@@ -1062,12 +1062,12 @@ export default function LabInventoryPage() {
                                                 <button onClick={async () => {
                                                     if (!maintenanceForm.description) { toast.error('Description required'); return; }
                                                     try {
-                                                        await labsAPI.addMaintenanceRecord(viewingItem.id, maintenanceForm);
+                                                        await labsAPI.addItemMaintenanceRecord(viewingItem.id, maintenanceForm);
                                                         toast.success('Record added');
                                                         setShowMaintenanceForm(false);
                                                         setMaintenanceForm({ type: 'issue', description: '', cost: '', vendor: '', partName: '' });
                                                         // Reload history
-                                                        const res = await labsAPI.getMaintenanceHistory(viewingItem.id);
+                                                        const res = await labsAPI.getItemMaintenanceHistory(viewingItem.id);
                                                         setMaintenanceHistory(res.data.data.history || []);
                                                     } catch (err) { toast.error('Failed to add record'); }
                                                 }} className="btn btn-primary text-xs flex-1">Save</button>
