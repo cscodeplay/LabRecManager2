@@ -1420,6 +1420,7 @@ model Ticket {
   
   itemId          String?         @map("item_id") @db.Uuid
   labId           String?         @map("lab_id") @db.Uuid
+  issueTypeId     String?         @map("issue_type_id") @db.Uuid
   
   createdById     String          @map("created_by_id") @db.Uuid
   assignedToId    String?         @map("assigned_to_id") @db.Uuid
@@ -1433,6 +1434,7 @@ model Ticket {
   
   item            LabItem?        @relation(fields: [itemId], references: [id], onDelete: SetNull)
   lab             Lab?            @relation(fields: [labId], references: [id], onDelete: SetNull)
+  issueType       TicketIssueType? @relation(fields: [issueTypeId], references: [id])
   createdBy       User            @relation("TicketCreator", fields: [createdById], references: [id])
   assignedTo      User?           @relation("TicketAssignee", fields: [assignedToId], references: [id])
   resolvedBy      User?           @relation("TicketResolver", fields: [resolvedById], references: [id])
@@ -1455,4 +1457,19 @@ model TicketComment {
   user        User      @relation(fields: [userId], references: [id])
   
   @@map("ticket_comments")
+}
+
+model TicketIssueType {
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  category     TicketCategory
+  name         String          @db.VarChar(100)
+  description  String?
+  displayOrder Int             @default(0) @map("display_order")
+  isActive     Boolean         @default(true) @map("is_active")
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  tickets      Ticket[]
+  
+  @@index([category])
+  @@map("ticket_issue_types")
 }

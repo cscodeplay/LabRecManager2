@@ -40,6 +40,9 @@ export default function TicketsPage() {
     const [detailLoading, setDetailLoading] = useState(false);
     const [newComment, setNewComment] = useState('');
     const [labs, setLabs] = useState([]);
+    const [issueTypes, setIssueTypes] = useState({});
+    const [labItems, setLabItems] = useState([]);
+    const [itemsLoading, setItemsLoading] = useState(false);
 
     // Filters
     const [statusFilter, setStatusFilter] = useState('all');
@@ -51,16 +54,27 @@ export default function TicketsPage() {
     const [form, setForm] = useState({
         title: '',
         description: '',
-        category: 'other',
+        category: 'hardware_issue',
         priority: 'medium',
         labId: '',
-        itemId: ''
+        itemId: '',
+        issueTypeId: ''
     });
 
     useEffect(() => {
         loadTickets();
         loadLabs();
+        loadIssueTypes();
     }, [statusFilter, priorityFilter, myTicketsOnly]);
+
+    // Load items when lab changes (for hardware issues)
+    useEffect(() => {
+        if (form.labId && form.category === 'hardware_issue') {
+            loadLabItems(form.labId);
+        } else {
+            setLabItems([]);
+        }
+    }, [form.labId, form.category]);
 
     const loadTickets = async () => {
         try {
@@ -86,6 +100,22 @@ export default function TicketsPage() {
         } catch { }
     };
 
+    const loadIssueTypes = async () => {
+        try {
+            const res = await ticketsAPI.getIssueTypes();
+            setIssueTypes(res.data.data.byCategory || {});
+        } catch { }
+    };
+
+    const loadLabItems = async (labId) => {
+        setItemsLoading(true);
+        try {
+            const res = await labsAPI.getItems(labId);
+            setLabItems(res.data.data.items || []);
+        } catch { }
+        setItemsLoading(false);
+    };
+
     const handleCreate = async (e) => {
         e.preventDefault();
         if (!form.title.trim() || !form.description.trim()) {
@@ -102,11 +132,12 @@ export default function TicketsPage() {
             };
             if (form.labId) data.labId = form.labId;
             if (form.itemId) data.itemId = form.itemId;
+            if (form.issueTypeId) data.issueTypeId = form.issueTypeId;
 
             const res = await ticketsAPI.create(data);
             toast.success(`Ticket ${res.data.data.ticket.ticketNumber} created!`);
             setShowCreateModal(false);
-            setForm({ title: '', description: '', category: 'other', priority: 'medium', labId: '', itemId: '' });
+            setForm({ title: '', description: '', category: 'hardware_issue', priority: 'medium', labId: '', itemId: '', issueTypeId: '' });
             loadTickets();
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to create ticket');
@@ -333,17 +364,19 @@ export default function TicketsPage() {
                                     value={form.description}
                                     onChange={(e) => setForm({ ...form, description: e.target.value })}
                                     placeholder="Detailed description of the issue..."
-                                    rows={4}
+                                    rows={3}
                                     className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
                                     required
                                 />
                             </div>
+
+                            {/* Category and Priority */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Category *</label>
                                     <select
                                         value={form.category}
-                                        onChange={(e) => setForm({ ...form, category: e.target.value })}
+                                        onChange={(e) => setForm({ ...form, category: e.target.value, issueTypeId: '', itemId: '' })}
                                         className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
                                     >
                                         <option value="hardware_issue">🔧 Hardware Issue</option>
@@ -367,19 +400,75 @@ export default function TicketsPage() {
                                     </select>
                                 </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Lab (Optional)</label>
-                                <select
-                                    value={form.labId}
-                                    onChange={(e) => setForm({ ...form, labId: e.target.value })}
-                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
-                                >
-                                    <option value="">Select a lab...</option>
-                                    {labs.map(lab => (
-                                        <option key={lab.id} value={lab.id}>{lab.name}</option>
-                                    ))}
-                                </select>
-                            </div>
+
+                            {/* Issue Type - Dynamic based on category */}
+                            {issueTypes[form.category]?.length > 0 && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Issue Type *</label>
+                                    <select
+                                        value={form.issueTypeId}
+                                        onChange={(e) => {
+                                            const selected = issueTypes[form.category]?.find(t => t.id === e.target.value);
+                                            setForm({
+                                                ...form,
+                                                issueTypeId: e.target.value,
+                                                title: selected ? selected.name : form.title
+                                            });
+                                        }}
+                                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                                    >
+                                        <option value="">Select issue type...</option>
+                                        {issueTypes[form.category]?.map(type => (
+                                            <option key={type.id} value={type.id}>{type.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Lab Selection - especially for hardware issues */}
+                            {(form.category === 'hardware_issue' || form.category === 'maintenance_request') && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                                        Lab {form.category === 'hardware_issue' ? '*' : '(Optional)'}
+                                    </label>
+                                    <select
+                                        value={form.labId}
+                                        onChange={(e) => setForm({ ...form, labId: e.target.value, itemId: '' })}
+                                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                                    >
+                                        <option value="">Select a lab...</option>
+                                        {labs.map(lab => (
+                                            <option key={lab.id} value={lab.id}>{lab.name} {lab.roomNumber ? `(${lab.roomNumber})` : ''}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Item Selection - for hardware issues */}
+                            {form.category === 'hardware_issue' && form.labId && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Affected Item *</label>
+                                    {itemsLoading ? (
+                                        <div className="text-sm text-slate-500 py-2">Loading items...</div>
+                                    ) : labItems.length === 0 ? (
+                                        <div className="text-sm text-amber-600 py-2">No items found in this lab</div>
+                                    ) : (
+                                        <select
+                                            value={form.itemId}
+                                            onChange={(e) => setForm({ ...form, itemId: e.target.value })}
+                                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                                        >
+                                            <option value="">Select item...</option>
+                                            {labItems.map(item => (
+                                                <option key={item.id} value={item.id}>
+                                                    {item.itemType} - {item.itemNumber} {item.brand ? `(${item.brand})` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    )}
+                                </div>
+                            )}
+
                             <div className="flex justify-end gap-2 pt-4">
                                 <button
                                     type="button"

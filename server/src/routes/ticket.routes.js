@@ -14,6 +14,43 @@ async function generateTicketNumber() {
 }
 
 /**
+ * @route   GET /api/tickets/issue-types
+ * @desc    Get all issue types (optionally filtered by category)
+ * @access  Private
+ */
+router.get('/issue-types', authenticate, asyncHandler(async (req, res) => {
+    const { category } = req.query;
+    const where = { isActive: true };
+
+    if (category) {
+        where.category = category;
+    }
+
+    const issueTypes = await prisma.ticketIssueType.findMany({
+        where,
+        orderBy: [
+            { category: 'asc' },
+            { displayOrder: 'asc' }
+        ]
+    });
+
+    // Group by category for easier frontend use
+    const grouped = issueTypes.reduce((acc, type) => {
+        if (!acc[type.category]) acc[type.category] = [];
+        acc[type.category].push(type);
+        return acc;
+    }, {});
+
+    res.json({
+        success: true,
+        data: {
+            issueTypes,
+            byCategory: grouped
+        }
+    });
+}));
+
+/**
  * @route   POST /api/tickets
  * @desc    Create a new ticket
  * @access  Private (Any authenticated user)
@@ -24,14 +61,15 @@ router.post('/', authenticate, [
     body('category').optional().isIn(['hardware_issue', 'software_issue', 'maintenance_request', 'general_complaint', 'other']),
     body('priority').optional().isIn(['low', 'medium', 'high', 'critical']),
     body('itemId').optional().isUUID(),
-    body('labId').optional().isUUID()
+    body('labId').optional().isUUID(),
+    body('issueTypeId').optional().isUUID()
 ], asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    const { title, description, category, priority, itemId, labId } = req.body;
+    const { title, description, category, priority, itemId, labId, issueTypeId } = req.body;
 
     const ticket = await prisma.ticket.create({
         data: {
@@ -43,12 +81,14 @@ router.post('/', authenticate, [
             status: 'open',
             itemId: itemId || null,
             labId: labId || null,
+            issueTypeId: issueTypeId || null,
             createdById: req.user.id
         },
         include: {
             createdBy: { select: { id: true, firstName: true, lastName: true, role: true } },
             item: { select: { id: true, itemNumber: true, itemType: true } },
-            lab: { select: { id: true, name: true } }
+            lab: { select: { id: true, name: true } },
+            issueType: { select: { id: true, name: true, category: true } }
         }
     });
 

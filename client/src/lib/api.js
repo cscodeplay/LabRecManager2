@@ -388,6 +388,7 @@ export const ticketsAPI = {
     delete: (id) => api.delete(`/tickets/${id}`),
     addComment: (id, content) => api.post(`/tickets/${id}/comments`, { content }),
     getStats: () => api.get('/tickets/stats'),
+    getIssueTypes: (category) => api.get('/tickets/issue-types', { params: category ? { category } : {} }),
 };
 
 export default api;
