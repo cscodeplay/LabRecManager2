@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { ticketsAPI, labsAPI } from '@/lib/api';
-import { useAuth } from '@/context/AuthContext';
+import { useAuthStore } from '@/lib/store';
 import { toast } from 'react-hot-toast';
 import {
     Ticket, Plus, Filter, Search, Clock, CheckCircle2, AlertCircle,
@@ -31,7 +31,7 @@ const categoryLabels = {
 };
 
 export default function TicketsPage() {
-    const { user } = useAuth();
+    const { user } = useAuthStore();
     const [tickets, setTickets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
