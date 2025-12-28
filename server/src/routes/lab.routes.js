@@ -1363,29 +1363,47 @@ router.get('/laptop-issuances', authenticate, authorize('admin', 'principal', 'l
  * @access  Private (Admin, Lab Assistant)
  */
 router.get('/laptops/available', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
-    // Get all laptops
-    const laptops = await prisma.labItem.findMany({
-        where: {
-            schoolId: req.user.schoolId,
-            itemType: 'laptop',
-            status: 'active'
-        },
-        include: {
-            lab: { select: { id: true, name: true } },
-            issuances: {
-                where: { status: 'issued' },
-                select: { id: true }
+    try {
+        // Get all laptops
+        const laptops = await prisma.labItem.findMany({
+            where: {
+                schoolId: req.user.schoolId,
+                itemType: 'laptop',
+                status: 'active'
+            },
+            include: {
+                lab: { select: { id: true, name: true } }
             }
+        });
+
+        // Try to get issued laptops (table may not exist yet)
+        let issuedLaptopIds = [];
+        try {
+            const issuedLaptops = await prisma.laptopIssuance.findMany({
+                where: { schoolId: req.user.schoolId, status: 'issued' },
+                select: { laptopId: true }
+            });
+            issuedLaptopIds = issuedLaptops.map(i => i.laptopId);
+        } catch (e) {
+            // Table doesn't exist yet - all laptops are available
+            console.log('laptop_issuances table not found, returning all laptops');
         }
-    });
 
-    // Filter out laptops that have active issuances
-    const availableLaptops = laptops.filter(l => l.issuances.length === 0);
+        // Filter out laptops that are currently issued
+        const availableLaptops = laptops.filter(l => !issuedLaptopIds.includes(l.id));
 
-    res.json({
-        success: true,
-        data: { laptops: availableLaptops }
-    });
+        res.json({
+            success: true,
+            data: { laptops: availableLaptops }
+        });
+    } catch (error) {
+        console.error('Get available laptops error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to load laptops',
+            error: error.message
+        });
+    }
 }));
 
 /**
