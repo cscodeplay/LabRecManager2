@@ -83,6 +83,13 @@ export default function ProcurementPage() {
     const [selectedVendorForPurchase, setSelectedVendorForPurchase] = useState(null);
     const [gstRate, setGstRate] = useState(18);
 
+    // Step 5: GST settings per vendor and quotation document URLs
+    const [vendorGstSettings, setVendorGstSettings] = useState({}); // { vendorId: { addGst: true, gstRate: 18 } }
+    const [vendorQuotationDocs, setVendorQuotationDocs] = useState({}); // { vendorId: 'filename' }
+
+    // Step 7: Editable quantities
+    const [editableQuantities, setEditableQuantities] = useState({}); // { itemId: quantity }
+
     // Step 3: New item form
     const [newItemForm, setNewItemForm] = useState({ itemName: '', specifications: '', quantity: 1, unit: 'pcs', estimatedUnitPrice: '' });
 
@@ -99,13 +106,20 @@ export default function ProcurementPage() {
         return numberToWords(Math.floor(num / 10000000)) + ' Crore' + (num % 10000000 ? ' ' + numberToWords(num % 10000000) : '');
     };
 
-    // Calculate vendor total from prices map
-    const calculateVendorTotal = (vendorId) => {
+    // Calculate vendor total from prices map (includes GST if enabled)
+    const calculateVendorTotal = (vendorId, includeGst = true) => {
         const prices = vendorQuotationPrices[vendorId] || {};
-        return requestDetail?.request?.items?.reduce((sum, item) => {
+        const gstSettings = vendorGstSettings[vendorId] || { addGst: true, gstRate: 18 };
+
+        const subtotal = requestDetail?.request?.items?.reduce((sum, item) => {
             const price = parseFloat(prices[item.id]) || 0;
             return sum + (price * item.quantity);
         }, 0) || 0;
+
+        if (includeGst && gstSettings.addGst) {
+            return subtotal + (subtotal * gstSettings.gstRate / 100);
+        }
+        return subtotal;
     };
 
     // Find vendor with lowest total
@@ -1458,10 +1472,57 @@ The undersigned requests approval to purchase the following items for the scienc
                                                 const vendor = vendors.find(v => v.id === vendorId);
                                                 return (
                                                     <div key={vendorId} className="bg-white p-4 rounded border">
-                                                        <h4 className="font-medium mb-3 flex items-center gap-2">
-                                                            {vendor?.name}
-                                                            {vendor?.isLocal && <span className="px-2 py-0.5 bg-green-200 text-green-800 text-xs rounded">Local</span>}
-                                                        </h4>
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <h4 className="font-medium flex items-center gap-2">
+                                                                {vendor?.name}
+                                                                {vendor?.isLocal && <span className="px-2 py-0.5 bg-green-200 text-green-800 text-xs rounded">Local</span>}
+                                                            </h4>
+                                                            <div className="flex items-center gap-2">
+                                                                <label className="flex items-center gap-2 text-sm">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        className="w-4 h-4"
+                                                                        checked={vendorGstSettings[vendorId]?.addGst !== false}
+                                                                        onChange={e => setVendorGstSettings(prev => ({
+                                                                            ...prev,
+                                                                            [vendorId]: { ...prev[vendorId], addGst: e.target.checked, gstRate: prev[vendorId]?.gstRate || 18 }
+                                                                        }))}
+                                                                    />
+                                                                    Add GST @
+                                                                </label>
+                                                                <input
+                                                                    type="number"
+                                                                    className="input w-16 text-sm"
+                                                                    value={vendorGstSettings[vendorId]?.gstRate ?? 18}
+                                                                    onChange={e => setVendorGstSettings(prev => ({
+                                                                        ...prev,
+                                                                        [vendorId]: { ...prev[vendorId], gstRate: parseFloat(e.target.value) || 0 }
+                                                                    }))}
+                                                                />
+                                                                <span className="text-sm">%</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Quotation Upload */}
+                                                        <div className="mb-3 p-2 bg-slate-50 rounded">
+                                                            <label className="label text-xs">Upload Quotation Copy</label>
+                                                            <input
+                                                                type="file"
+                                                                className="input text-sm"
+                                                                accept=".pdf,.jpg,.jpeg,.png"
+                                                                onChange={e => {
+                                                                    const file = e.target.files[0];
+                                                                    if (file) {
+                                                                        setVendorQuotationDocs(prev => ({ ...prev, [vendorId]: file.name }));
+                                                                        toast.success(`Quotation uploaded: ${file.name}`);
+                                                                    }
+                                                                }}
+                                                            />
+                                                            {vendorQuotationDocs[vendorId] && (
+                                                                <div className="text-xs text-green-600 mt-1">✓ {vendorQuotationDocs[vendorId]}</div>
+                                                            )}
+                                                        </div>
+
                                                         <div className="space-y-2">
                                                             {requestDetail.request.items?.map(item => (
                                                                 <div key={item.id} className="flex items-center gap-3">
@@ -1484,8 +1545,21 @@ The undersigned requests approval to purchase the following items for the scienc
                                                                 </div>
                                                             ))}
                                                         </div>
-                                                        <div className="mt-3 pt-3 border-t text-right font-semibold">
-                                                            Total: ₹{calculateVendorTotal(vendorId).toLocaleString()}
+                                                        <div className="mt-3 pt-3 border-t">
+                                                            <div className="flex justify-between text-sm">
+                                                                <span>Subtotal:</span>
+                                                                <span>₹{calculateVendorTotal(vendorId, false).toLocaleString()}</span>
+                                                            </div>
+                                                            {(vendorGstSettings[vendorId]?.addGst !== false) && (
+                                                                <div className="flex justify-between text-sm text-slate-600">
+                                                                    <span>GST ({vendorGstSettings[vendorId]?.gstRate ?? 18}%):</span>
+                                                                    <span>₹{(calculateVendorTotal(vendorId, false) * (vendorGstSettings[vendorId]?.gstRate ?? 18) / 100).toLocaleString()}</span>
+                                                                </div>
+                                                            )}
+                                                            <div className="flex justify-between font-semibold text-lg mt-1">
+                                                                <span>Total:</span>
+                                                                <span>₹{calculateVendorTotal(vendorId).toLocaleString()}</span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 );
@@ -1600,9 +1674,16 @@ The undersigned requests approval to purchase the following items for the scienc
                                         <div className="text-slate-500 italic">Please select a vendor in Step 6 first.</div>
                                     ) : (() => {
                                         const vendor = vendors.find(v => v.id === selectedVendorForPurchase);
-                                        const subtotal = calculateVendorTotal(selectedVendorForPurchase);
-                                        const gstAmount = subtotal * (gstRate / 100);
-                                        const grandTotal = subtotal + gstAmount;
+
+                                        // Calculate total with editable quantities
+                                        const calculatePOTotal = () => {
+                                            return requestDetail?.request?.items?.reduce((sum, item) => {
+                                                const price = parseFloat(vendorQuotationPrices[selectedVendorForPurchase]?.[item.id]) || 0;
+                                                const qty = editableQuantities[item.id] ?? item.quantity;
+                                                return sum + (price * qty);
+                                            }, 0) || 0;
+                                        };
+                                        const grandTotal = calculatePOTotal();
 
                                         return (
                                             <div className="space-y-4">
@@ -1624,28 +1705,31 @@ The undersigned requests approval to purchase the following items for the scienc
                                                     <tbody>
                                                         {requestDetail?.request?.items?.map((item, idx) => {
                                                             const price = parseFloat(vendorQuotationPrices[selectedVendorForPurchase]?.[item.id]) || 0;
+                                                            const qty = editableQuantities[item.id] ?? item.quantity;
                                                             return (
                                                                 <tr key={item.id}>
                                                                     <td className="border p-2 text-center">{idx + 1}</td>
                                                                     <td className="border p-2">{item.itemName}</td>
-                                                                    <td className="border p-2 text-center">{item.quantity} {item.unit || 'pcs'}</td>
+                                                                    <td className="border p-2 text-center">
+                                                                        <input
+                                                                            type="number"
+                                                                            className="input w-20 text-sm text-center"
+                                                                            min="1"
+                                                                            value={qty}
+                                                                            onChange={e => setEditableQuantities(prev => ({
+                                                                                ...prev,
+                                                                                [item.id]: parseInt(e.target.value) || 1
+                                                                            }))}
+                                                                        />
+                                                                        <span className="text-xs text-slate-500 ml-1">{item.unit || 'pcs'}</span>
+                                                                    </td>
                                                                     <td className="border p-2 text-right">₹{price.toLocaleString()}</td>
-                                                                    <td className="border p-2 text-right">₹{(price * item.quantity).toLocaleString()}</td>
+                                                                    <td className="border p-2 text-right">₹{(price * qty).toLocaleString()}</td>
                                                                 </tr>
                                                             );
                                                         })}
-                                                        <tr className="bg-slate-50">
-                                                            <td colSpan={4} className="border p-2 text-right font-medium">Subtotal:</td>
-                                                            <td className="border p-2 text-right font-medium">₹{subtotal.toLocaleString()}</td>
-                                                        </tr>
-                                                        <tr className="bg-slate-50">
-                                                            <td colSpan={4} className="border p-2 text-right">
-                                                                GST @ <input type="number" value={gstRate} onChange={e => setGstRate(parseFloat(e.target.value) || 0)} className="input w-16 text-sm inline mx-1" />%:
-                                                            </td>
-                                                            <td className="border p-2 text-right">₹{gstAmount.toLocaleString()}</td>
-                                                        </tr>
                                                         <tr className="bg-green-100 font-bold">
-                                                            <td colSpan={4} className="border p-2 text-right text-lg">Grand Total:</td>
+                                                            <td colSpan={4} className="border p-2 text-right text-lg">Total Amount:</td>
                                                             <td className="border p-2 text-right text-lg">₹{grandTotal.toLocaleString()}</td>
                                                         </tr>
                                                     </tbody>
