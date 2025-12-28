@@ -401,4 +401,27 @@ export const ticketsAPI = {
     getIssueTypes: (category) => api.get('/tickets/issue-types', { params: category ? { category } : {} }),
 };
 
+// Procurement API
+export const procurementAPI = {
+    // Vendors
+    getVendors: () => api.get('/procurement/vendors'),
+    createVendor: (data) => api.post('/procurement/vendors', data),
+    updateVendor: (id, data) => api.put(`/procurement/vendors/${id}`, data),
+    deleteVendor: (id) => api.delete(`/procurement/vendors/${id}`),
+    // Requests
+    getRequests: (params) => api.get('/procurement/requests', { params }),
+    getRequest: (id) => api.get(`/procurement/requests/${id}`),
+    createRequest: (data) => api.post('/procurement/requests', data),
+    updateRequest: (id, data) => api.put(`/procurement/requests/${id}`, data),
+    addItem: (requestId, data) => api.post(`/procurement/requests/${requestId}/items`, data),
+    removeItem: (requestId, itemId) => api.delete(`/procurement/requests/${requestId}/items/${itemId}`),
+    // Quotations
+    addQuotation: (requestId, data) => api.post(`/procurement/requests/${requestId}/quotations`, data),
+    // Approval
+    approveRequest: (requestId, approvedItems) => api.post(`/procurement/requests/${requestId}/approve`, { approvedItems }),
+    // Print data
+    getPrintData: (requestId) => api.get(`/procurement/requests/${requestId}/print`),
+};
+
 export default api;
+

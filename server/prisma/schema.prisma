@@ -41,6 +41,8 @@ model School {
   whiteboardSessions    WhiteboardSession[]
   auditLogs             AuditLog[]
   laptopIssuances       LaptopIssuance[]
+  vendors               Vendor[]
+  procurementRequests   ProcurementRequest[]
 
   @@map("schools")
 }
@@ -179,6 +181,8 @@ model User {
   laptopsIssuedTo                                LaptopIssuance[]         @relation("LaptopIssuedTo")
   laptopsIssuedBy                                LaptopIssuance[]         @relation("LaptopIssuedBy")
   laptopsReceivedBy                              LaptopIssuance[]         @relation("LaptopReceivedBy")
+  procurementsCreated                            ProcurementRequest[]     @relation("ProcurementCreatedBy")
+  procurementsApproved                           ProcurementRequest[]     @relation("ProcurementApprovedBy")
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")
@@ -1522,3 +1526,128 @@ model LaptopIssuance {
   @@index([schoolId])
   @@map("laptop_issuances")
 }
+
+// ============================================================
+// PROCUREMENT / QUOTATION MANAGEMENT
+// ============================================================
+
+enum ProcurementStatus {
+  draft
+  quotation_requested
+  quotes_received
+  approved
+  ordered
+  completed
+  cancelled
+
+  @@map("procurement_status")
+}
+
+model Vendor {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String   @db.VarChar(200)
+  contactPerson String?  @map("contact_person") @db.VarChar(100)
+  email         String?  @db.VarChar(100)
+  phone         String?  @db.VarChar(20)
+  address       String?
+  gstin         String?  @db.VarChar(20)
+  schoolId      String   @map("school_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  school              School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  quotations          VendorQuotation[]
+  approvedItems       ProcurementItem[]   @relation("ApprovedVendor")
+
+  @@index([schoolId])
+  @@map("vendors")
+}
+
+model ProcurementRequest {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title          String            @db.VarChar(200)
+  description    String?
+  purpose        String?
+  department     String?           @db.VarChar(100)
+  budgetCode     String?           @map("budget_code") @db.VarChar(50)
+  estimatedTotal Decimal?          @map("estimated_total") @db.Decimal(14, 2)
+  approvedTotal  Decimal?          @map("approved_total") @db.Decimal(14, 2)
+  status         ProcurementStatus @default(draft)
+  createdById    String            @map("created_by_id") @db.Uuid
+  approvedById   String?           @map("approved_by_id") @db.Uuid
+  approvedAt     DateTime?         @map("approved_at") @db.Timestamp(6)
+  schoolId       String            @map("school_id") @db.Uuid
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  school     School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdBy  User              @relation("ProcurementCreatedBy", fields: [createdById], references: [id])
+  approvedBy User?             @relation("ProcurementApprovedBy", fields: [approvedById], references: [id])
+  items      ProcurementItem[]
+  quotations VendorQuotation[]
+
+  @@index([schoolId])
+  @@index([status])
+  @@map("procurement_requests")
+}
+
+model ProcurementItem {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId          String   @map("request_id") @db.Uuid
+  itemName           String   @map("item_name") @db.VarChar(200)
+  description        String?
+  specifications     String?
+  quantity           Int      @default(1)
+  unit               String?  @default("pcs") @db.VarChar(50)
+  estimatedUnitPrice Decimal? @map("estimated_unit_price") @db.Decimal(12, 2)
+  approvedUnitPrice  Decimal? @map("approved_unit_price") @db.Decimal(12, 2)
+  approvedVendorId   String?  @map("approved_vendor_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  request        ProcurementRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  approvedVendor Vendor?            @relation("ApprovedVendor", fields: [approvedVendorId], references: [id])
+  quotationItems QuotationItem[]
+
+  @@index([requestId])
+  @@map("procurement_items")
+}
+
+model VendorQuotation {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId       String   @map("request_id") @db.Uuid
+  vendorId        String   @map("vendor_id") @db.Uuid
+  quotationNumber String?  @map("quotation_number") @db.VarChar(50)
+  quotationDate   DateTime? @map("quotation_date") @db.Date
+  validUntil      DateTime? @map("valid_until") @db.Date
+  documentUrl     String?  @map("document_url") @db.VarChar(500)
+  totalAmount     Decimal? @map("total_amount") @db.Decimal(14, 2)
+  terms           String?
+  remarks         String?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  request ProcurementRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  vendor  Vendor             @relation(fields: [vendorId], references: [id])
+  items   QuotationItem[]
+
+  @@index([requestId])
+  @@index([vendorId])
+  @@map("vendor_quotations")
+}
+
+model QuotationItem {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId       String   @map("quotation_id") @db.Uuid
+  procurementItemId String   @map("procurement_item_id") @db.Uuid
+  unitPrice         Decimal  @map("unit_price") @db.Decimal(12, 2)
+  quantity          Int?
+  totalPrice        Decimal? @map("total_price") @db.Decimal(12, 2)
+  remarks           String?
+
+  quotation       VendorQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  procurementItem ProcurementItem @relation(fields: [procurementItemId], references: [id], onDelete: Cascade)
+
+  @@index([quotationId])
+  @@index([procurementItemId])
+  @@map("quotation_items")
+}
+

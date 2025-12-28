@@ -1,0 +1,355 @@
+const express = require('express');
+const router = express.Router();
+const { prisma } = require('../config/database');
+const { authenticate, authorize } = require('../middleware/auth');
+
+const asyncHandler = (fn) => (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+};
+
+// ============================================================
+// VENDOR MANAGEMENT
+// ============================================================
+
+/**
+ * @route   GET /api/procurement/vendors
+ * @desc    Get all vendors
+ */
+router.get('/vendors', authenticate, asyncHandler(async (req, res) => {
+    const vendors = await prisma.vendor.findMany({
+        where: { schoolId: req.user.schoolId },
+        orderBy: { name: 'asc' }
+    });
+    res.json({ success: true, data: vendors });
+}));
+
+/**
+ * @route   POST /api/procurement/vendors
+ * @desc    Create a vendor
+ */
+router.post('/vendors', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { name, contactPerson, email, phone, address, gstin } = req.body;
+    const vendor = await prisma.vendor.create({
+        data: { name, contactPerson, email, phone, address, gstin, schoolId: req.user.schoolId }
+    });
+    res.status(201).json({ success: true, data: vendor, message: 'Vendor created' });
+}));
+
+/**
+ * @route   PUT /api/procurement/vendors/:id
+ * @desc    Update a vendor
+ */
+router.put('/vendors/:id', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { name, contactPerson, email, phone, address, gstin } = req.body;
+    const vendor = await prisma.vendor.update({
+        where: { id: req.params.id },
+        data: { name, contactPerson, email, phone, address, gstin }
+    });
+    res.json({ success: true, data: vendor, message: 'Vendor updated' });
+}));
+
+/**
+ * @route   DELETE /api/procurement/vendors/:id
+ * @desc    Delete a vendor
+ */
+router.delete('/vendors/:id', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    await prisma.vendor.delete({ where: { id: req.params.id } });
+    res.json({ success: true, message: 'Vendor deleted' });
+}));
+
+// ============================================================
+// PROCUREMENT REQUESTS
+// ============================================================
+
+/**
+ * @route   GET /api/procurement/requests
+ * @desc    Get all procurement requests
+ */
+router.get('/requests', authenticate, asyncHandler(async (req, res) => {
+    const { status } = req.query;
+    const where = { schoolId: req.user.schoolId };
+    if (status) where.status = status;
+
+    const requests = await prisma.procurementRequest.findMany({
+        where,
+        include: {
+            createdBy: { select: { firstName: true, lastName: true } },
+            approvedBy: { select: { firstName: true, lastName: true } },
+            items: { select: { id: true, itemName: true, quantity: true, estimatedUnitPrice: true } },
+            quotations: { select: { id: true, vendorId: true, totalAmount: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+    });
+    res.json({ success: true, data: requests });
+}));
+
+/**
+ * @route   GET /api/procurement/requests/:id
+ * @desc    Get procurement request with full details and comparison
+ */
+router.get('/requests/:id', authenticate, asyncHandler(async (req, res) => {
+    const request = await prisma.procurementRequest.findFirst({
+        where: { id: req.params.id, schoolId: req.user.schoolId },
+        include: {
+            createdBy: { select: { firstName: true, lastName: true, email: true } },
+            approvedBy: { select: { firstName: true, lastName: true } },
+            items: {
+                include: {
+                    approvedVendor: { select: { name: true } },
+                    quotationItems: {
+                        include: {
+                            quotation: {
+                                include: { vendor: { select: { id: true, name: true } } }
+                            }
+                        }
+                    }
+                }
+            },
+            quotations: {
+                include: {
+                    vendor: { select: { id: true, name: true, email: true, phone: true } },
+                    items: true
+                }
+            }
+        }
+    });
+
+    if (!request) {
+        return res.status(404).json({ success: false, message: 'Request not found' });
+    }
+
+    // Build comparison matrix
+    const comparison = request.items.map(item => {
+        const vendorPrices = {};
+        let lowestPrice = Infinity;
+        let lowestVendorId = null;
+
+        item.quotationItems.forEach(qi => {
+            const vendorId = qi.quotation.vendor.id;
+            const vendorName = qi.quotation.vendor.name;
+            const price = parseFloat(qi.unitPrice);
+            vendorPrices[vendorId] = { vendorName, unitPrice: price, quotationItemId: qi.id };
+            if (price < lowestPrice) {
+                lowestPrice = price;
+                lowestVendorId = vendorId;
+            }
+        });
+
+        return {
+            itemId: item.id,
+            itemName: item.itemName,
+            quantity: item.quantity,
+            unit: item.unit,
+            specifications: item.specifications,
+            vendorPrices,
+            lowestVendorId,
+            lowestPrice: lowestPrice === Infinity ? null : lowestPrice,
+            approvedVendorId: item.approvedVendorId,
+            approvedUnitPrice: item.approvedUnitPrice
+        };
+    });
+
+    res.json({ success: true, data: { request, comparison } });
+}));
+
+/**
+ * @route   POST /api/procurement/requests
+ * @desc    Create procurement request with items
+ */
+router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const { title, description, purpose, department, budgetCode, items } = req.body;
+
+    const request = await prisma.procurementRequest.create({
+        data: {
+            title,
+            description,
+            purpose,
+            department,
+            budgetCode,
+            status: 'draft',
+            createdById: req.user.id,
+            schoolId: req.user.schoolId,
+            items: {
+                create: items?.map(item => ({
+                    itemName: item.itemName,
+                    description: item.description,
+                    specifications: item.specifications,
+                    quantity: item.quantity || 1,
+                    unit: item.unit || 'pcs',
+                    estimatedUnitPrice: item.estimatedUnitPrice
+                })) || []
+            }
+        },
+        include: { items: true }
+    });
+
+    res.status(201).json({ success: true, data: request, message: 'Procurement request created' });
+}));
+
+/**
+ * @route   PUT /api/procurement/requests/:id
+ * @desc    Update procurement request
+ */
+router.put('/requests/:id', authenticate, asyncHandler(async (req, res) => {
+    const { title, description, purpose, department, budgetCode, status } = req.body;
+
+    const request = await prisma.procurementRequest.update({
+        where: { id: req.params.id },
+        data: { title, description, purpose, department, budgetCode, status }
+    });
+
+    res.json({ success: true, data: request, message: 'Request updated' });
+}));
+
+/**
+ * @route   POST /api/procurement/requests/:id/items
+ * @desc    Add item to procurement request
+ */
+router.post('/requests/:id/items', authenticate, asyncHandler(async (req, res) => {
+    const { itemName, description, specifications, quantity, unit, estimatedUnitPrice } = req.body;
+
+    const item = await prisma.procurementItem.create({
+        data: {
+            requestId: req.params.id,
+            itemName,
+            description,
+            specifications,
+            quantity: quantity || 1,
+            unit: unit || 'pcs',
+            estimatedUnitPrice
+        }
+    });
+
+    res.status(201).json({ success: true, data: item, message: 'Item added' });
+}));
+
+/**
+ * @route   DELETE /api/procurement/requests/:id/items/:itemId
+ * @desc    Remove item from procurement request
+ */
+router.delete('/requests/:id/items/:itemId', authenticate, asyncHandler(async (req, res) => {
+    await prisma.procurementItem.delete({ where: { id: req.params.itemId } });
+    res.json({ success: true, message: 'Item removed' });
+}));
+
+// ============================================================
+// VENDOR QUOTATIONS
+// ============================================================
+
+/**
+ * @route   POST /api/procurement/requests/:id/quotations
+ * @desc    Add vendor quotation with item prices
+ */
+router.post('/requests/:id/quotations', authenticate, asyncHandler(async (req, res) => {
+    const { vendorId, quotationNumber, quotationDate, validUntil, documentUrl, terms, remarks, items } = req.body;
+
+    // Calculate total
+    let totalAmount = 0;
+    if (items) {
+        items.forEach(item => {
+            totalAmount += (parseFloat(item.unitPrice) || 0) * (item.quantity || 1);
+        });
+    }
+
+    const quotation = await prisma.vendorQuotation.create({
+        data: {
+            requestId: req.params.id,
+            vendorId,
+            quotationNumber,
+            quotationDate: quotationDate ? new Date(quotationDate) : null,
+            validUntil: validUntil ? new Date(validUntil) : null,
+            documentUrl,
+            totalAmount,
+            terms,
+            remarks,
+            items: {
+                create: items?.map(item => ({
+                    procurementItemId: item.procurementItemId,
+                    unitPrice: item.unitPrice,
+                    quantity: item.quantity,
+                    totalPrice: (parseFloat(item.unitPrice) || 0) * (item.quantity || 1),
+                    remarks: item.remarks
+                })) || []
+            }
+        },
+        include: { vendor: { select: { name: true } }, items: true }
+    });
+
+    // Update request status
+    await prisma.procurementRequest.update({
+        where: { id: req.params.id },
+        data: { status: 'quotes_received' }
+    });
+
+    res.status(201).json({ success: true, data: quotation, message: 'Quotation added' });
+}));
+
+/**
+ * @route   POST /api/procurement/requests/:id/approve
+ * @desc    Approve procurement with selected vendors and quantities
+ */
+router.post('/requests/:id/approve', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { approvedItems } = req.body; // [{itemId, vendorId, unitPrice, quantity}]
+
+    let approvedTotal = 0;
+
+    for (const item of approvedItems) {
+        await prisma.procurementItem.update({
+            where: { id: item.itemId },
+            data: {
+                approvedVendorId: item.vendorId,
+                approvedUnitPrice: item.unitPrice,
+                quantity: item.quantity
+            }
+        });
+        approvedTotal += (parseFloat(item.unitPrice) || 0) * (item.quantity || 0);
+    }
+
+    const request = await prisma.procurementRequest.update({
+        where: { id: req.params.id },
+        data: {
+            status: 'approved',
+            approvedById: req.user.id,
+            approvedAt: new Date(),
+            approvedTotal
+        }
+    });
+
+    res.json({ success: true, data: request, message: 'Procurement approved' });
+}));
+
+/**
+ * @route   GET /api/procurement/requests/:id/print
+ * @desc    Get data for printable comparative statement
+ */
+router.get('/requests/:id/print', authenticate, asyncHandler(async (req, res) => {
+    const request = await prisma.procurementRequest.findFirst({
+        where: { id: req.params.id, schoolId: req.user.schoolId },
+        include: {
+            createdBy: { select: { firstName: true, lastName: true } },
+            approvedBy: { select: { firstName: true, lastName: true } },
+            items: {
+                include: {
+                    approvedVendor: true,
+                    quotationItems: {
+                        include: {
+                            quotation: { include: { vendor: true } }
+                        }
+                    }
+                }
+            },
+            quotations: { include: { vendor: true } }
+        }
+    });
+
+    if (!request) {
+        return res.status(404).json({ success: false, message: 'Request not found' });
+    }
+
+    // Get unique vendors
+    const vendors = request.quotations.map(q => q.vendor);
+
+    res.json({ success: true, data: { request, vendors } });
+}));
+
+module.exports = router;
