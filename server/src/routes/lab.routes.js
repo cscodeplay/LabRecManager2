@@ -442,6 +442,28 @@ router.get('/items/pcs', authenticate, asyncHandler(async (req, res) => {
 }));
 
 /**
+ * @route   GET /api/labs/items/all
+ * @desc    Get all items across all labs (for barcode generator)
+ * @access  Private
+ */
+router.get('/items/all', authenticate, asyncHandler(async (req, res) => {
+    const items = await prisma.labItem.findMany({
+        where: { schoolId: req.user.schoolId },
+        select: {
+            id: true, itemNumber: true, serialNo: true, brand: true,
+            modelNo: true, itemType: true, status: true,
+            lab: { select: { name: true } }
+        },
+        orderBy: { itemNumber: 'asc' }
+    });
+
+    res.json({
+        success: true,
+        data: items
+    });
+}));
+
+/**
  * @route   GET /api/labs
  * @desc    Get all labs for the school
  * @access  Private

@@ -277,6 +277,8 @@ export const labsAPI = {
     issueLaptop: (data) => api.post('/labs/laptop-issuances', data),
     returnLaptop: (id, data) => api.put(`/labs/laptop-issuances/${id}/return`, data),
     getIssuanceVoucher: (id) => api.get(`/labs/laptop-issuances/${id}/voucher`),
+    // List all items across all labs
+    listAllItems: () => api.get('/labs/items/all'),
 };
 
 // Users API
