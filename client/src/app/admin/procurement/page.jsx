@@ -74,9 +74,50 @@ export default function ProcurementPage() {
     const [receiveForm, setReceiveForm] = useState({ receivingVideoUrl: '', receivingNotes: '' });
     const [selectedLabId, setSelectedLabId] = useState('');
 
-    // Workflow step state (1-4)
+    // Workflow step state (1-7)
     const [workflowStep, setWorkflowStep] = useState(1);
     const [selectedVendorIds, setSelectedVendorIds] = useState([]);
+
+    // Step 5-7 state
+    const [vendorQuotationPrices, setVendorQuotationPrices] = useState({}); // { vendorId: { itemId: price } }
+    const [selectedVendorForPurchase, setSelectedVendorForPurchase] = useState(null);
+    const [gstRate, setGstRate] = useState(18);
+
+    // Number to words helper
+    const numberToWords = (num) => {
+        const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+        const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+        if (num === 0) return 'Zero';
+        if (num < 20) return ones[num];
+        if (num < 100) return tens[Math.floor(num / 10)] + (num % 10 ? ' ' + ones[num % 10] : '');
+        if (num < 1000) return ones[Math.floor(num / 100)] + ' Hundred' + (num % 100 ? ' ' + numberToWords(num % 100) : '');
+        if (num < 100000) return numberToWords(Math.floor(num / 1000)) + ' Thousand' + (num % 1000 ? ' ' + numberToWords(num % 1000) : '');
+        if (num < 10000000) return numberToWords(Math.floor(num / 100000)) + ' Lakh' + (num % 100000 ? ' ' + numberToWords(num % 100000) : '');
+        return numberToWords(Math.floor(num / 10000000)) + ' Crore' + (num % 10000000 ? ' ' + numberToWords(num % 10000000) : '');
+    };
+
+    // Calculate vendor total from prices map
+    const calculateVendorTotal = (vendorId) => {
+        const prices = vendorQuotationPrices[vendorId] || {};
+        return requestDetail?.request?.items?.reduce((sum, item) => {
+            const price = parseFloat(prices[item.id]) || 0;
+            return sum + (price * item.quantity);
+        }, 0) || 0;
+    };
+
+    // Find vendor with lowest total
+    const getLowestVendor = () => {
+        let lowestVendor = null;
+        let lowestTotal = Infinity;
+        selectedVendorIds.forEach(vid => {
+            const total = calculateVendorTotal(vid);
+            if (total > 0 && total < lowestTotal) {
+                lowestTotal = total;
+                lowestVendor = vid;
+            }
+        });
+        return { vendorId: lowestVendor, total: lowestTotal };
+    };
 
     useEffect(() => {
         if (_hasHydrated && !isAuthenticated) router.push('/login');
@@ -1158,20 +1199,23 @@ export default function ProcurementPage() {
 
                             {/* Workflow Steps Tabs */}
                             <div className="mb-6">
-                                <div className="flex border-b border-slate-200">
+                                <div className="flex flex-wrap border-b border-slate-200">
                                     {[
-                                        { step: 1, label: 'Requirement Letter', icon: FileText },
+                                        { step: 1, label: 'Letter', icon: FileText },
                                         { step: 2, label: 'Committee', icon: Users },
                                         { step: 3, label: 'Items', icon: Package },
-                                        { step: 4, label: 'Vendors & Quotations', icon: Building }
+                                        { step: 4, label: 'Call Quotations', icon: Building },
+                                        { step: 5, label: 'Received', icon: Receipt },
+                                        { step: 6, label: 'Comparative', icon: Calculator },
+                                        { step: 7, label: 'Purchase Order', icon: ClipboardList }
                                     ].map(({ step, label, icon: Icon }) => (
                                         <button
                                             key={step}
                                             onClick={() => setWorkflowStep(step)}
-                                            className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors ${workflowStep === step ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                                            className={`flex items-center gap-1 px-3 py-2 border-b-2 transition-colors text-xs ${workflowStep === step ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                                         >
-                                            <Icon className="w-4 h-4" />
-                                            <span className="text-sm font-medium">Step {step}: {label}</span>
+                                            <Icon className="w-3 h-3" />
+                                            <span className="font-medium">{step}. {label}</span>
                                         </button>
                                     ))}
                                 </div>
@@ -1324,11 +1368,250 @@ export default function ProcurementPage() {
 
                                     <div className="flex gap-2">
                                         <button onClick={() => setWorkflowStep(3)} className="btn btn-secondary">← Back</button>
+                                        <button onClick={() => setWorkflowStep(5)} disabled={selectedVendorIds.length === 0} className="btn btn-primary">Next: Quotations Received →</button>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Actions */}
+                            {/* Step 5: Quotations Received */}
+                            {workflowStep === 5 && (
+                                <div className="mb-6 p-4 bg-orange-50 rounded-lg border border-orange-200">
+                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-orange-800">
+                                        <Receipt className="w-5 h-5" /> Step 5: Vendor Quotations Received
+                                    </h3>
+                                    <p className="text-slate-600 text-sm mb-4">Enter prices from quotations received from each vendor for comparison.</p>
+
+                                    {selectedVendorIds.length === 0 ? (
+                                        <div className="text-slate-500 italic">No vendors selected. Go back to Step 4 to select vendors.</div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {selectedVendorIds.map(vendorId => {
+                                                const vendor = vendors.find(v => v.id === vendorId);
+                                                return (
+                                                    <div key={vendorId} className="bg-white p-4 rounded border">
+                                                        <h4 className="font-medium mb-3 flex items-center gap-2">
+                                                            {vendor?.name}
+                                                            {vendor?.isLocal && <span className="px-2 py-0.5 bg-green-200 text-green-800 text-xs rounded">Local</span>}
+                                                        </h4>
+                                                        <div className="space-y-2">
+                                                            {requestDetail.request.items?.map(item => (
+                                                                <div key={item.id} className="flex items-center gap-3">
+                                                                    <span className="flex-1 text-sm">{item.itemName} (Qty: {item.quantity})</span>
+                                                                    <div className="flex items-center gap-1">
+                                                                        <span className="text-sm text-slate-500">₹</span>
+                                                                        <input
+                                                                            type="number"
+                                                                            className="input w-28 text-sm"
+                                                                            placeholder="Unit Price"
+                                                                            value={vendorQuotationPrices[vendorId]?.[item.id] || ''}
+                                                                            onChange={e => {
+                                                                                setVendorQuotationPrices(prev => ({
+                                                                                    ...prev,
+                                                                                    [vendorId]: { ...prev[vendorId], [item.id]: e.target.value }
+                                                                                }));
+                                                                            }}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <div className="mt-3 pt-3 border-t text-right font-semibold">
+                                                            Total: ₹{calculateVendorTotal(vendorId).toLocaleString()}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    <div className="flex gap-2 mt-4">
+                                        <button onClick={() => setWorkflowStep(4)} className="btn btn-secondary">← Back</button>
+                                        <button onClick={() => setWorkflowStep(6)} className="btn btn-primary">Next: Comparative Statement →</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Step 6: Comparative Statement */}
+                            {workflowStep === 6 && (
+                                <div className="mb-6 p-4 bg-cyan-50 rounded-lg border border-cyan-200">
+                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-cyan-800">
+                                        <Calculator className="w-5 h-5" /> Step 6: Comparative Statement
+                                    </h3>
+                                    <p className="text-slate-600 text-sm mb-4">Compare prices from all vendors. Lowest total is auto-selected.</p>
+
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-100">
+                                                    <th className="border p-2 text-left">S.No</th>
+                                                    <th className="border p-2 text-left">Item</th>
+                                                    <th className="border p-2 text-center">Qty</th>
+                                                    {selectedVendorIds.map(vid => {
+                                                        const v = vendors.find(v => v.id === vid);
+                                                        const { vendorId: lowestId } = getLowestVendor();
+                                                        return (
+                                                            <th key={vid} className={`border p-2 text-center ${vid === lowestId ? 'bg-green-100' : ''}`}>
+                                                                {v?.name} {vid === lowestId && '✓'}
+                                                            </th>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {requestDetail?.request?.items?.map((item, idx) => (
+                                                    <tr key={item.id}>
+                                                        <td className="border p-2">{idx + 1}</td>
+                                                        <td className="border p-2">{item.itemName}</td>
+                                                        <td className="border p-2 text-center">{item.quantity}</td>
+                                                        {selectedVendorIds.map(vid => {
+                                                            const price = parseFloat(vendorQuotationPrices[vid]?.[item.id]) || 0;
+                                                            return (
+                                                                <td key={vid} className="border p-2 text-right">
+                                                                    {price > 0 ? `₹${(price * item.quantity).toLocaleString()}` : '-'}
+                                                                </td>
+                                                            );
+                                                        })}
+                                                    </tr>
+                                                ))}
+                                                <tr className="font-bold bg-slate-50">
+                                                    <td colSpan={3} className="border p-2 text-right">TOTAL:</td>
+                                                    {selectedVendorIds.map(vid => {
+                                                        const total = calculateVendorTotal(vid);
+                                                        const { vendorId: lowestId } = getLowestVendor();
+                                                        return (
+                                                            <td key={vid} className={`border p-2 text-right ${vid === lowestId ? 'bg-green-200 text-green-800' : ''}`}>
+                                                                ₹{total.toLocaleString()}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {(() => {
+                                        const { vendorId, total } = getLowestVendor();
+                                        const selectedVendor = vendors.find(v => v.id === vendorId);
+                                        if (selectedVendor) {
+                                            return (
+                                                <div className="mt-4 p-4 bg-green-100 rounded border border-green-300">
+                                                    <p className="font-semibold text-green-800">
+                                                        ✓ Selected Vendor: <span className="text-lg">{selectedVendor.name}</span>
+                                                    </p>
+                                                    <p className="text-green-700 text-sm mt-1">
+                                                        Reason: Lowest quotation amount of ₹{total.toLocaleString()}
+                                                    </p>
+                                                    <button
+                                                        onClick={() => setSelectedVendorForPurchase(vendorId)}
+                                                        className="btn bg-green-600 hover:bg-green-700 text-white mt-3"
+                                                    >
+                                                        <Check className="w-4 h-4" /> Confirm Selection
+                                                    </button>
+                                                </div>
+                                            );
+                                        }
+                                        return <div className="text-slate-500 italic mt-4">Enter prices in Step 5 to see comparison.</div>;
+                                    })()}
+
+                                    <div className="flex gap-2 mt-4">
+                                        <button onClick={() => setWorkflowStep(5)} className="btn btn-secondary">← Back</button>
+                                        <button onClick={() => setWorkflowStep(7)} disabled={!selectedVendorForPurchase} className="btn btn-primary">Next: Purchase Order →</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Step 7: Purchase Order */}
+                            {workflowStep === 7 && (
+                                <div className="mb-6 p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-emerald-800">
+                                        <ClipboardList className="w-5 h-5" /> Step 7: Purchase Order
+                                    </h3>
+
+                                    {!selectedVendorForPurchase ? (
+                                        <div className="text-slate-500 italic">Please select a vendor in Step 6 first.</div>
+                                    ) : (() => {
+                                        const vendor = vendors.find(v => v.id === selectedVendorForPurchase);
+                                        const subtotal = calculateVendorTotal(selectedVendorForPurchase);
+                                        const gstAmount = subtotal * (gstRate / 100);
+                                        const grandTotal = subtotal + gstAmount;
+
+                                        return (
+                                            <div className="space-y-4">
+                                                <div className="bg-white p-4 rounded border">
+                                                    <h4 className="font-medium mb-2">Vendor: {vendor?.name}</h4>
+                                                    <p className="text-slate-600 text-sm">{vendor?.address}</p>
+                                                </div>
+
+                                                <table className="w-full text-sm border-collapse">
+                                                    <thead>
+                                                        <tr className="bg-slate-100">
+                                                            <th className="border p-2">S.No</th>
+                                                            <th className="border p-2 text-left">Item</th>
+                                                            <th className="border p-2">Qty</th>
+                                                            <th className="border p-2">Unit Price</th>
+                                                            <th className="border p-2">Amount</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {requestDetail?.request?.items?.map((item, idx) => {
+                                                            const price = parseFloat(vendorQuotationPrices[selectedVendorForPurchase]?.[item.id]) || 0;
+                                                            return (
+                                                                <tr key={item.id}>
+                                                                    <td className="border p-2 text-center">{idx + 1}</td>
+                                                                    <td className="border p-2">{item.itemName}</td>
+                                                                    <td className="border p-2 text-center">{item.quantity} {item.unit || 'pcs'}</td>
+                                                                    <td className="border p-2 text-right">₹{price.toLocaleString()}</td>
+                                                                    <td className="border p-2 text-right">₹{(price * item.quantity).toLocaleString()}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                        <tr className="bg-slate-50">
+                                                            <td colSpan={4} className="border p-2 text-right font-medium">Subtotal:</td>
+                                                            <td className="border p-2 text-right font-medium">₹{subtotal.toLocaleString()}</td>
+                                                        </tr>
+                                                        <tr className="bg-slate-50">
+                                                            <td colSpan={4} className="border p-2 text-right">
+                                                                GST @ <input type="number" value={gstRate} onChange={e => setGstRate(parseFloat(e.target.value) || 0)} className="input w-16 text-sm inline mx-1" />%:
+                                                            </td>
+                                                            <td className="border p-2 text-right">₹{gstAmount.toLocaleString()}</td>
+                                                        </tr>
+                                                        <tr className="bg-green-100 font-bold">
+                                                            <td colSpan={4} className="border p-2 text-right text-lg">Grand Total:</td>
+                                                            <td className="border p-2 text-right text-lg">₹{grandTotal.toLocaleString()}</td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+
+                                                <div className="bg-blue-50 p-3 rounded border border-blue-200">
+                                                    <strong>Amount in Words:</strong> Rupees {numberToWords(Math.round(grandTotal))} Only
+                                                </div>
+
+                                                <div className="flex justify-end">
+                                                    <div className="bg-white p-4 rounded border w-80">
+                                                        <h4 className="font-medium mb-3 text-center">Committee Signatures</h4>
+                                                        <div className="space-y-4">
+                                                            {requestDetail?.request?.committee?.map(m => (
+                                                                <div key={m.id} className="text-center border-b pb-3">
+                                                                    <div className="h-10 border-b border-dashed border-slate-400 mb-1" />
+                                                                    <div className="font-medium">{m.user?.firstName} {m.user?.lastName}</div>
+                                                                    <div className="text-xs text-slate-500">{m.role}</div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    <div className="flex gap-2 mt-4">
+                                        <button onClick={() => setWorkflowStep(6)} className="btn btn-secondary">← Back</button>
+                                        <button onClick={openCombinedPdfPreview} className="btn bg-emerald-600 hover:bg-emerald-700 text-white">
+                                            <Printer className="w-4 h-4" /> Generate Purchase Order PDF
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                             <div className="flex flex-wrap gap-2 mb-6">
                                 <button onClick={openQuotationModal} className="btn btn-primary">
                                     <Plus className="w-4 h-4" /> Add Vendor Quote
