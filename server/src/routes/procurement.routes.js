@@ -406,14 +406,21 @@ router.get('/requests/:id/print', authenticate, asyncHandler(async (req, res) =>
  * @desc    Get staff members for committee selection
  */
 router.get('/staff', authenticate, asyncHandler(async (req, res) => {
-    const staff = await prisma.user.findMany({
-        where: {
-            schoolId: req.user.schoolId,
-            role: { in: ['admin', 'principal', 'teacher', 'lab_assistant', 'instructor'] }
-        },
-        select: { id: true, firstName: true, lastName: true, role: true, email: true }
-    });
-    res.json({ success: true, data: staff });
+    try {
+        console.log('Fetching staff for schoolId:', req.user.schoolId);
+        const staff = await prisma.user.findMany({
+            where: {
+                schoolId: req.user.schoolId,
+                role: { in: ['admin', 'principal', 'teacher', 'lab_assistant', 'instructor'] }
+            },
+            select: { id: true, firstName: true, lastName: true, role: true, email: true }
+        });
+        console.log('Found staff:', staff.length);
+        res.json({ success: true, data: staff });
+    } catch (error) {
+        console.error('GET /staff error:', error);
+        res.status(500).json({ success: false, message: 'Failed to load staff', error: error.message });
+    }
 }));
 
 /**
