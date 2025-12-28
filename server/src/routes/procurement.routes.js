@@ -195,33 +195,40 @@ router.get('/requests/:id', authenticate, asyncHandler(async (req, res) => {
  * @desc    Create procurement request with items
  */
 router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
-    const { title, description, purpose, department, budgetCode, items } = req.body;
+    try {
+        const { title, description, purpose, department, budgetCode, items } = req.body;
+        console.log('Creating request:', { title, purpose, department, itemCount: items?.length, schoolId: req.user.schoolId });
 
-    const request = await prisma.procurementRequest.create({
-        data: {
-            title,
-            description,
-            purpose,
-            department,
-            budgetCode,
-            status: 'draft',
-            createdById: req.user.id,
-            schoolId: req.user.schoolId,
-            items: {
-                create: items?.map(item => ({
-                    itemName: item.itemName,
-                    description: item.description,
-                    specifications: item.specifications,
-                    quantity: item.quantity || 1,
-                    unit: item.unit || 'pcs',
-                    estimatedUnitPrice: item.estimatedUnitPrice
-                })) || []
-            }
-        },
-        include: { items: true }
-    });
+        const request = await prisma.procurementRequest.create({
+            data: {
+                title,
+                description,
+                purpose,
+                department,
+                budgetCode,
+                status: 'draft',
+                createdById: req.user.id,
+                schoolId: req.user.schoolId,
+                items: {
+                    create: items?.map(item => ({
+                        itemName: item.itemName,
+                        description: item.description,
+                        specifications: item.specifications,
+                        quantity: item.quantity || 1,
+                        unit: item.unit || 'pcs',
+                        estimatedUnitPrice: item.estimatedUnitPrice ? parseFloat(item.estimatedUnitPrice) : null
+                    })) || []
+                }
+            },
+            include: { items: true }
+        });
 
-    res.status(201).json({ success: true, data: request, message: 'Procurement request created' });
+        console.log('Created request:', request.id);
+        res.status(201).json({ success: true, data: request, message: 'Procurement request created' });
+    } catch (error) {
+        console.error('POST /requests error:', error);
+        res.status(500).json({ success: false, message: 'Failed to create request', error: error.message, meta: error.meta });
+    }
 }));
 
 /**
