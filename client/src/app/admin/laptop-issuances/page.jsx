@@ -31,8 +31,26 @@ export default function LaptopIssuancesPage() {
     const [showIssueModal, setShowIssueModal] = useState(false);
     const [availableLaptops, setAvailableLaptops] = useState([]);
     const [staffMembers, setStaffMembers] = useState([]);
+
+    // Calculate default return date (April of current/next year - end of session)
+    const getDefaultReturnDate = () => {
+        const now = new Date();
+        const year = now.getMonth() >= 3 ? now.getFullYear() + 1 : now.getFullYear(); // If after March, next year
+        return `${year}-04-30`; // April 30
+    };
+
     const [issueForm, setIssueForm] = useState({
-        laptopId: '', issuedToId: '', purpose: '', expectedReturnDate: '', conditionOnIssue: 'good', remarks: ''
+        laptopId: '', issuedToId: '', purpose: '',
+        expectedReturnDate: getDefaultReturnDate(),
+        conditionOnIssue: 'good',
+        remarks: '',
+        // Component status fields
+        screenStatus: 'working',
+        keyboardStatus: 'working',
+        touchpadStatus: 'working',
+        batteryStatus: 'working',
+        portsStatus: 'working',
+        chargerStatus: 'working'
     });
     const [issuing, setIssuing] = useState(false);
 
@@ -452,18 +470,49 @@ export default function LaptopIssuancesPage() {
                                     placeholder="e.g., Online teaching, Project work"
                                 />
                             </div>
+
+                            {/* Component Status Section */}
+                            <div>
+                                <label className="label mb-2">Component Status (at time of issue)</label>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-3 bg-slate-50 rounded-lg">
+                                    {[
+                                        { key: 'screenStatus', label: '🖥️ Screen' },
+                                        { key: 'keyboardStatus', label: '⌨️ Keyboard' },
+                                        { key: 'touchpadStatus', label: '🖱️ Touchpad' },
+                                        { key: 'batteryStatus', label: '🔋 Battery' },
+                                        { key: 'portsStatus', label: '🔌 Ports' },
+                                        { key: 'chargerStatus', label: '⚡ Charger' }
+                                    ].map(comp => (
+                                        <div key={comp.key} className="flex items-center justify-between p-2 bg-white rounded border">
+                                            <span className="text-sm">{comp.label}</span>
+                                            <select
+                                                value={issueForm[comp.key]}
+                                                onChange={(e) => setIssueForm({ ...issueForm, [comp.key]: e.target.value })}
+                                                className="text-xs border rounded px-1 py-0.5"
+                                            >
+                                                <option value="working">✓ Working</option>
+                                                <option value="minor_issue">⚠ Minor Issue</option>
+                                                <option value="not_working">✕ Not Working</option>
+                                                <option value="na">N/A</option>
+                                            </select>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="label">Expected Return Date</label>
+                                    <label className="label">Expected Return Date (Session End)</label>
                                     <input
                                         type="date"
                                         value={issueForm.expectedReturnDate}
                                         onChange={(e) => setIssueForm({ ...issueForm, expectedReturnDate: e.target.value })}
                                         className="input"
                                     />
+                                    <p className="text-xs text-slate-500 mt-1">Default: End of session (April)</p>
                                 </div>
                                 <div>
-                                    <label className="label">Condition</label>
+                                    <label className="label">Overall Condition</label>
                                     <select
                                         value={issueForm.conditionOnIssue}
                                         onChange={(e) => setIssueForm({ ...issueForm, conditionOnIssue: e.target.value })}
@@ -483,7 +532,7 @@ export default function LaptopIssuancesPage() {
                                     onChange={(e) => setIssueForm({ ...issueForm, remarks: e.target.value })}
                                     className="input"
                                     rows={2}
-                                    placeholder="Any additional notes..."
+                                    placeholder="Any additional notes about condition, accessories, etc..."
                                 />
                             </div>
                             <div className="flex justify-end gap-2 pt-4">

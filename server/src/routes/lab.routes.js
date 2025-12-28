@@ -10,6 +10,7 @@ const { uploadSingle } = require('../middleware/upload');
 const ITEM_TYPES = {
     pc: { label: 'Computer', specFields: ['processor', 'ram', 'storage', 'os', 'monitor'] },
     laptop: { label: 'Laptop', specFields: ['processor', 'ram', 'storage', 'os', 'screenSize', 'battery'] },
+    tablet: { label: 'Tablet', specFields: ['processor', 'ram', 'storage', 'os', 'screenSize', 'battery'] },
     printer: { label: 'Printer', specFields: ['printType', 'paperSize', 'connectivity'] },
     router: { label: 'WiFi Router', specFields: ['speed', 'frequency', 'ports'] },
     speaker: { label: 'Speaker', specFields: ['power', 'channels'] },

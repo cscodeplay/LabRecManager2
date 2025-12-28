@@ -1,17 +1,15 @@
 -- ============================================================
 -- LAPTOP INVENTORY DATA
--- Acer TravelMate P246M Laptops
+-- Acer TravelMate P246M Laptops - Computer Lab 2
 -- ============================================================
 
--- NOTE: Replace 'YOUR_SCHOOL_ID' with actual school UUID
--- You can find it with: SELECT id FROM schools LIMIT 1;
+-- NOTE: This will assign laptops to "Computer Lab 2" (or similar name)
+-- First, get the lab ID for Computer Lab 2
 
--- First, get school ID (run this to find your school_id)
--- SELECT id, name FROM schools;
-
--- Insert CR series laptops (18 laptops)
-INSERT INTO lab_items (item_number, item_type, brand, model_no, serial_no, status, school_id)
-SELECT val.item_number, 'laptop', 'Acer', 'TravelMate P246M', val.serial_no, 'active', s.id
+-- Insert CR series laptops (18 laptops) into Computer Lab 2
+INSERT INTO lab_items (item_number, item_type, brand, model_no, serial_no, status, school_id, lab_id)
+SELECT val.item_number, 'laptop', 'Acer', 'TravelMate P246M', val.serial_no, 'active', s.id,
+       COALESCE((SELECT id FROM labs WHERE LOWER(name) LIKE '%computer lab 2%' OR LOWER(name) LIKE '%lab 2%' LIMIT 1), NULL)
 FROM schools s
 CROSS JOIN (VALUES
     ('CR-01', 'UNVA8S1001F3879436'),
@@ -36,9 +34,10 @@ CROSS JOIN (VALUES
 WHERE s.id = (SELECT id FROM schools LIMIT 1)
 ON CONFLICT DO NOTHING;
 
--- Insert SL series laptops (3 laptops)
-INSERT INTO lab_items (item_number, item_type, brand, model_no, serial_no, status, school_id)
-SELECT val.item_number, 'laptop', 'Acer', 'TravelMate P246M', val.serial_no, 'active', s.id
+-- Insert SL series laptops (3 laptops) into Computer Lab 2
+INSERT INTO lab_items (item_number, item_type, brand, model_no, serial_no, status, school_id, lab_id)
+SELECT val.item_number, 'laptop', 'Acer', 'TravelMate P246M', val.serial_no, 'active', s.id,
+       COALESCE((SELECT id FROM labs WHERE LOWER(name) LIKE '%computer lab 2%' OR LOWER(name) LIKE '%lab 2%' LIMIT 1), NULL)
 FROM schools s
 CROSS JOIN (VALUES
     ('SL-01', 'UNVA8S1001F3875894'),
@@ -48,8 +47,15 @@ CROSS JOIN (VALUES
 WHERE s.id = (SELECT id FROM schools LIMIT 1)
 ON CONFLICT DO NOTHING;
 
--- Verify inserted laptops
-SELECT item_number, brand, model_no, serial_no, status 
-FROM lab_items 
-WHERE item_type = 'laptop' 
-ORDER BY item_number;
+-- Update existing laptops to assign to Computer Lab 2 (if already inserted without lab)
+UPDATE lab_items 
+SET lab_id = (SELECT id FROM labs WHERE LOWER(name) LIKE '%computer lab 2%' OR LOWER(name) LIKE '%lab 2%' LIMIT 1)
+WHERE item_type = 'laptop' AND lab_id IS NULL;
+
+-- Verify inserted laptops with their lab assignment
+SELECT li.item_number, li.brand, li.model_no, li.serial_no, li.status, l.name as lab_name
+FROM lab_items li
+LEFT JOIN labs l ON li.lab_id = l.id
+WHERE li.item_type = 'laptop' 
+ORDER BY li.item_number;
+
