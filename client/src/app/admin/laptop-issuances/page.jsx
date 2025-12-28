@@ -195,56 +195,92 @@ export default function LaptopIssuancesPage() {
     };
 
     const printVoucher = () => {
+        // Build component status HTML
+        const componentStatusHtml = voucherData?.componentStatus ?
+            Object.entries(voucherData.componentStatus).map(([key, status]) => {
+                const icons = { screen: '🖥️', keyboard: '⌨️', touchpad: '🖱️', battery: '🔋', ports: '🔌', charger: '⚡' };
+                const colors = { working: '#16a34a', minor_issue: '#d97706', not_working: '#dc2626' };
+                const labels = { working: '✓ Working', minor_issue: '⚠ Minor Issue', not_working: '✕ Not Working' };
+                return `<div style="display: flex; align-items: center; gap: 8px;">
+                    <span>${icons[key] || '•'}</span>
+                    <span style="text-transform: capitalize;">${key}:</span>
+                    <span style="color: ${colors[status] || '#475569'}; font-weight: ${status !== 'working' ? 'bold' : 'normal'};">${labels[status] || status}</span>
+                </div>`;
+            }).join('') : '';
+
         const printWindow = window.open('', '_blank');
         printWindow.document.write(`
             <html>
             <head><title>Voucher - ${voucherData?.voucherNumber}</title>
             <style>
-                body { font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: auto; }
-                h1 { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; }
-                .section { margin: 20px 0; }
-                .section h3 { background: #f0f0f0; padding: 8px; margin: 0 0 10px; }
-                .row { display: flex; padding: 5px 0; border-bottom: 1px solid #eee; }
-                .label { font-weight: bold; width: 120px; }
-                .signatures { display: flex; justify-content: space-between; margin-top: 60px; }
+                * { box-sizing: border-box; margin: 0; padding: 0; }
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; padding: 30px; max-width: 500px; margin: auto; color: #1e293b; }
+                .header { text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0; }
+                .voucher-number { font-size: 28px; font-weight: 700; color: #0f172a; }
+                .voucher-subtitle { font-size: 14px; color: #64748b; margin-top: 4px; }
+                .section { padding: 16px; border-radius: 12px; margin-bottom: 16px; }
+                .section-blue { background: #eff6ff; }
+                .section-green { background: #f0fdf4; }
+                .section-slate { background: #f8fafc; }
+                .section-amber { background: #fffbeb; }
+                .section-title { font-weight: 600; margin-bottom: 12px; font-size: 15px; }
+                .title-blue { color: #1e40af; }
+                .title-green { color: #166534; }
+                .title-slate { color: #0f172a; }
+                .title-amber { color: #92400e; }
+                .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px; }
+                .grid-label { color: #3b82f6; }
+                .grid-label-green { color: #22c55e; }
+                .grid-label-slate { color: #64748b; }
+                .row { font-size: 14px; margin-bottom: 6px; }
+                .component-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px; }
+                .signatures { display: flex; justify-content: space-between; margin-top: 50px; padding-top: 20px; }
                 .signature { text-align: center; }
-                .signature-line { border-top: 1px solid #333; width: 150px; margin-top: 40px; padding-top: 5px; }
+                .signature-line { border-top: 1px solid #334155; width: 150px; margin-top: 50px; padding-top: 8px; font-size: 12px; color: #64748b; }
+                @media print { body { padding: 20px; } }
             </style>
             </head>
             <body>
-                <h1>Laptop Issuance Voucher</h1>
-                <p style="text-align: center; font-size: 18px; color: #666;">${voucherData?.voucherNumber}</p>
-                
-                <div class="section">
-                    <h3>School Details</h3>
-                    <div class="row"><span class="label">Name:</span> ${voucherData?.school?.name || 'N/A'}</div>
+                <div class="header">
+                    <div class="voucher-number">${voucherData?.voucherNumber}</div>
+                    <div class="voucher-subtitle">Laptop Issuance Voucher</div>
                 </div>
                 
-                <div class="section">
-                    <h3>Laptop Details</h3>
-                    <div class="row"><span class="label">Item No:</span> ${voucherData?.laptop?.itemNumber}</div>
-                    <div class="row"><span class="label">Brand:</span> ${voucherData?.laptop?.brand || 'N/A'}</div>
-                    <div class="row"><span class="label">Model:</span> ${voucherData?.laptop?.modelNo || 'N/A'}</div>
-                    <div class="row"><span class="label">Serial No:</span> ${voucherData?.laptop?.serialNo || 'N/A'}</div>
-                    <div class="row"><span class="label">Condition:</span> ${voucherData?.conditionOnIssue}</div>
+                <div class="section section-blue">
+                    <div class="section-title title-blue">Laptop Details</div>
+                    <div class="grid">
+                        <div><span class="grid-label">Item No:</span> ${voucherData?.laptop?.itemNumber || 'N/A'}</div>
+                        <div><span class="grid-label">Brand:</span> ${voucherData?.laptop?.brand || 'N/A'}</div>
+                        <div><span class="grid-label">Model:</span> ${voucherData?.laptop?.modelNo || 'N/A'}</div>
+                        <div><span class="grid-label">Serial:</span> ${voucherData?.laptop?.serialNo || 'N/A'}</div>
+                    </div>
                 </div>
                 
-                <div class="section">
-                    <h3>Issued To</h3>
-                    <div class="row"><span class="label">Name:</span> ${voucherData?.issuedTo?.firstName} ${voucherData?.issuedTo?.lastName}</div>
-                    <div class="row"><span class="label">Role:</span> ${voucherData?.issuedTo?.role}</div>
-                    <div class="row"><span class="label">Email:</span> ${voucherData?.issuedTo?.email}</div>
-                    <div class="row"><span class="label">Phone:</span> ${voucherData?.issuedTo?.phone || 'N/A'}</div>
+                <div class="section section-green">
+                    <div class="section-title title-green">Issued To</div>
+                    <div class="row"><span class="grid-label-green">Name:</span> ${voucherData?.issuedTo?.firstName} ${voucherData?.issuedTo?.lastName}</div>
+                    <div class="row"><span class="grid-label-green">Role:</span> ${voucherData?.issuedTo?.role || 'N/A'}</div>
+                    <div class="row"><span class="grid-label-green">Email:</span> ${voucherData?.issuedTo?.email || 'N/A'}</div>
+                    <div class="row"><span class="grid-label-green">Phone:</span> ${voucherData?.issuedTo?.phone || 'N/A'}</div>
                 </div>
                 
-                <div class="section">
-                    <h3>Issue Details</h3>
-                    <div class="row"><span class="label">Issue Date:</span> ${new Date(voucherData?.issuedAt).toLocaleDateString()}</div>
-                    <div class="row"><span class="label">Expected Return:</span> ${voucherData?.expectedReturnDate ? new Date(voucherData?.expectedReturnDate).toLocaleDateString() : 'N/A'}</div>
-                    <div class="row"><span class="label">Purpose:</span> ${voucherData?.purpose || 'N/A'}</div>
-                    <div class="row"><span class="label">Remarks:</span> ${voucherData?.remarks || 'N/A'}</div>
-                    <div class="row"><span class="label">Issued By:</span> ${voucherData?.issuedBy?.firstName} ${voucherData?.issuedBy?.lastName}</div>
+                <div class="section section-slate">
+                    <div class="section-title title-slate">Issue Details</div>
+                    <div class="grid">
+                        <div><span class="grid-label-slate">Issue Date:</span> ${new Date(voucherData?.issuedAt).toLocaleDateString()}</div>
+                        <div><span class="grid-label-slate">Condition:</span> ${voucherData?.conditionOnIssue || 'good'}</div>
+                        <div><span class="grid-label-slate">Expected Return:</span> ${voucherData?.expectedReturnDate ? new Date(voucherData?.expectedReturnDate).toLocaleDateString() : 'N/A'}</div>
+                        <div><span class="grid-label-slate">Issued By:</span> ${voucherData?.issuedBy?.firstName} ${voucherData?.issuedBy?.lastName}</div>
+                    </div>
+                    ${voucherData?.purpose ? `<div class="row" style="margin-top: 8px;"><span class="grid-label-slate">Purpose:</span> ${voucherData.purpose}</div>` : ''}
                 </div>
+                
+                ${componentStatusHtml ? `
+                <div class="section section-amber">
+                    <div class="section-title title-amber">Component Status at Issue</div>
+                    <div class="component-grid">${componentStatusHtml}</div>
+                </div>
+                ` : ''}
                 
                 <div class="signatures">
                     <div class="signature">
