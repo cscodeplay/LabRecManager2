@@ -427,8 +427,40 @@ export default function LaptopIssuancesPage() {
                             </button>
                         </div>
                         <form onSubmit={handleIssueLaptop} className="p-6 space-y-4">
+                            {/* Barcode Scanner Input */}
+                            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                <label className="label text-blue-700 flex items-center gap-2 mb-2">
+                                    <span>📷</span> Scan Barcode / Serial No
+                                </label>
+                                <input
+                                    type="text"
+                                    placeholder="Scan or type barcode/serial number..."
+                                    className="input font-mono"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const scanned = e.target.value.trim().toUpperCase();
+                                            // Find laptop by serial number or item number
+                                            const match = availableLaptops.find(l =>
+                                                l.serialNo?.toUpperCase() === scanned ||
+                                                l.itemNumber?.toUpperCase() === scanned
+                                            );
+                                            if (match) {
+                                                setIssueForm({ ...issueForm, laptopId: match.id });
+                                                toast.success(`Selected: ${match.itemNumber}`);
+                                                e.target.value = '';
+                                            } else {
+                                                toast.error(`No laptop found with barcode/serial: ${scanned}`);
+                                            }
+                                        }
+                                    }}
+                                />
+                                <p className="text-xs text-blue-600 mt-1">Press Enter after scanning. Works with camera apps & laser scanners.</p>
+                            </div>
+
                             <div>
-                                <label className="label">Select Laptop *</label>
+                                <label className="label">Select Laptop * (or use scanner above)</label>
                                 <select
                                     value={issueForm.laptopId}
                                     onChange={(e) => setIssueForm({ ...issueForm, laptopId: e.target.value })}
@@ -438,7 +470,7 @@ export default function LaptopIssuancesPage() {
                                     <option value="">Choose laptop...</option>
                                     {availableLaptops.map(laptop => (
                                         <option key={laptop.id} value={laptop.id}>
-                                            {laptop.itemNumber} - {laptop.brand} {laptop.modelNo} ({laptop.lab?.name || 'No Lab'})
+                                            {laptop.itemNumber} - {laptop.brand} {laptop.modelNo} ({laptop.serialNo || 'No Serial'})
                                         </option>
                                     ))}
                                 </select>
@@ -654,6 +686,45 @@ export default function LaptopIssuancesPage() {
                                         <div className="mt-2 text-sm"><span className="text-slate-600">Purpose:</span> {voucherData.purpose}</div>
                                     )}
                                 </div>
+
+                                {/* Component Status Section */}
+                                {voucherData.componentStatus && Object.keys(voucherData.componentStatus).length > 0 && (
+                                    <div className="p-4 bg-amber-50 rounded-lg">
+                                        <h3 className="font-semibold text-amber-900 mb-2">Component Status at Issue</h3>
+                                        <div className="grid grid-cols-2 gap-2 text-sm">
+                                            {Object.entries(voucherData.componentStatus).map(([key, status]) => {
+                                                const statusColors = {
+                                                    working: 'text-green-600',
+                                                    minor_issue: 'text-amber-600 font-medium',
+                                                    not_working: 'text-red-600 font-bold',
+                                                    na: 'text-slate-400'
+                                                };
+                                                const icons = {
+                                                    screen: '🖥️', keyboard: '⌨️', touchpad: '🖱️',
+                                                    battery: '🔋', ports: '🔌', charger: '⚡'
+                                                };
+                                                const displayStatus = status === 'working' ? '✓ Working' :
+                                                    status === 'minor_issue' ? '⚠ Minor Issue' :
+                                                        status === 'not_working' ? '✕ Not Working' : '— N/A';
+                                                return (
+                                                    <div key={key} className="flex items-center gap-2">
+                                                        <span>{icons[key] || '•'}</span>
+                                                        <span className="capitalize">{key}:</span>
+                                                        <span className={statusColors[status] || 'text-slate-600'}>{displayStatus}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        {/* Highlight issues */}
+                                        {Object.values(voucherData.componentStatus).some(s => s === 'minor_issue' || s === 'not_working') && (
+                                            <div className="mt-2 p-2 bg-red-100 rounded text-red-800 text-sm">
+                                                ⚠️ <strong>Issues Found:</strong> {Object.entries(voucherData.componentStatus)
+                                                    .filter(([, s]) => s === 'minor_issue' || s === 'not_working')
+                                                    .map(([k]) => k).join(', ')}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {voucherData.status === 'returned' && (
                                     <div className="p-4 bg-green-100 rounded-lg">

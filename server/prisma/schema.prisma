@@ -1489,24 +1489,26 @@ enum IssuanceStatus {
 }
 
 model LaptopIssuance {
-  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  laptopId           String          @map("laptop_id") @db.Uuid
-  issuedToId         String          @map("issued_to_id") @db.Uuid
-  issuedById         String          @map("issued_by_id") @db.Uuid
-  voucherNumber      String          @unique @map("voucher_number") @db.VarChar(30)
-  purpose            String?
-  issuedAt           DateTime        @default(now()) @map("issued_at") @db.Timestamp(6)
-  expectedReturnDate DateTime?       @map("expected_return_date") @db.Date
-  returnedAt         DateTime?       @map("returned_at") @db.Timestamp(6)
-  receivedById       String?         @map("received_by_id") @db.Uuid
-  conditionOnIssue   String?         @default("good") @map("condition_on_issue") @db.VarChar(50)
-  conditionOnReturn  String?         @map("condition_on_return") @db.VarChar(50)
-  remarks            String?
-  returnRemarks      String?         @map("return_remarks")
-  status             IssuanceStatus  @default(issued)
-  schoolId           String          @map("school_id") @db.Uuid
-  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamp(6)
+  id                       String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  laptopId                 String          @map("laptop_id") @db.Uuid
+  issuedToId               String          @map("issued_to_id") @db.Uuid
+  issuedById               String          @map("issued_by_id") @db.Uuid
+  voucherNumber            String          @unique @map("voucher_number") @db.VarChar(30)
+  purpose                  String?
+  issuedAt                 DateTime        @default(now()) @map("issued_at") @db.Timestamp(6)
+  expectedReturnDate       DateTime?       @map("expected_return_date") @db.Date
+  returnedAt               DateTime?       @map("returned_at") @db.Timestamp(6)
+  receivedById             String?         @map("received_by_id") @db.Uuid
+  conditionOnIssue         String?         @default("good") @map("condition_on_issue") @db.VarChar(50)
+  conditionOnReturn        String?         @map("condition_on_return") @db.VarChar(50)
+  componentStatus          Json?           @default("{}") @map("component_status") @db.JsonB
+  componentStatusOnReturn  Json?           @map("component_status_on_return") @db.JsonB
+  remarks                  String?
+  returnRemarks            String?         @map("return_remarks")
+  status                   IssuanceStatus  @default(issued)
+  schoolId                 String          @map("school_id") @db.Uuid
+  createdAt                DateTime        @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt                DateTime        @updatedAt @map("updated_at") @db.Timestamp(6)
   
   laptop             LabItem         @relation(fields: [laptopId], references: [id], onDelete: Cascade)
   issuedTo           User            @relation("LaptopIssuedTo", fields: [issuedToId], references: [id])

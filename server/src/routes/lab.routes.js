@@ -1494,6 +1494,17 @@ router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', '
             return res.status(404).json({ success: false, message: 'Staff member not found' });
         }
 
+        // Build component status from individual fields
+        const { screenStatus, keyboardStatus, touchpadStatus, batteryStatus, portsStatus, chargerStatus } = req.body;
+        const componentStatus = {
+            screen: screenStatus || 'working',
+            keyboard: keyboardStatus || 'working',
+            touchpad: touchpadStatus || 'working',
+            battery: batteryStatus || 'working',
+            ports: portsStatus || 'working',
+            charger: chargerStatus || 'working'
+        };
+
         const issuance = await prisma.laptopIssuance.create({
             data: {
                 laptopId,
@@ -1503,6 +1514,7 @@ router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', '
                 purpose,
                 expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
                 conditionOnIssue: conditionOnIssue || 'good',
+                componentStatus,
                 remarks,
                 status: 'issued',
                 schoolId: req.user.schoolId
