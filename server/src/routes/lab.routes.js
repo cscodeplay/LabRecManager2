@@ -1580,35 +1580,44 @@ router.put('/laptop-issuances/:id/return', authenticate, authorize('admin', 'pri
  * @access  Private (Admin, Lab Assistant)
  */
 router.get('/laptop-issuances/:id/voucher', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
-    const issuance = await prisma.laptopIssuance.findFirst({
-        where: { id: req.params.id, schoolId: req.user.schoolId },
-        include: {
-            laptop: {
-                select: {
-                    id: true, itemNumber: true, brand: true, modelNo: true, serialNo: true,
-                    specs: true,
-                    lab: { select: { name: true } }
-                }
-            },
-            issuedTo: {
-                select: {
-                    id: true, firstName: true, lastName: true, email: true, phone: true, role: true
-                }
-            },
-            issuedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
-            receivedBy: { select: { id: true, firstName: true, lastName: true } },
-            school: { select: { name: true, address: true, phone: true, email: true } }
+    try {
+        const issuance = await prisma.laptopIssuance.findFirst({
+            where: { id: req.params.id, schoolId: req.user.schoolId },
+            include: {
+                laptop: {
+                    select: {
+                        id: true, itemNumber: true, brand: true, modelNo: true, serialNo: true,
+                        specs: true,
+                        lab: { select: { name: true } }
+                    }
+                },
+                issuedTo: {
+                    select: {
+                        id: true, firstName: true, lastName: true, email: true, phone: true, role: true
+                    }
+                },
+                issuedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
+                receivedBy: { select: { id: true, firstName: true, lastName: true } },
+                school: { select: { name: true, address: true, phone: true, email: true } }
+            }
+        });
+
+        if (!issuance) {
+            return res.status(404).json({ success: false, message: 'Issuance record not found' });
         }
-    });
 
-    if (!issuance) {
-        return res.status(404).json({ success: false, message: 'Issuance record not found' });
+        res.json({
+            success: true,
+            data: { voucher: issuance }
+        });
+    } catch (error) {
+        console.error('Get voucher error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to load voucher',
+            error: error.message
+        });
     }
-
-    res.json({
-        success: true,
-        data: { voucher: issuance }
-    });
 }));
 
 module.exports = router;

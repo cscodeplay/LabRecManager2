@@ -149,7 +149,9 @@ export default function LaptopIssuancesPage() {
             setVoucherData(res.data.data.voucher);
             setShowVoucherModal(true);
         } catch (error) {
-            toast.error('Failed to load voucher');
+            const errorMsg = error.response?.data?.message || error.message || 'Failed to load voucher';
+            console.error('Voucher error:', error.response?.data || error);
+            toast.error(errorMsg, { duration: 8000 });
         }
     };
 
