@@ -9,6 +9,7 @@ const { uploadSingle } = require('../middleware/upload');
 // Item types with their specific spec fields
 const ITEM_TYPES = {
     pc: { label: 'Computer', specFields: ['processor', 'ram', 'storage', 'os', 'monitor'] },
+    laptop: { label: 'Laptop', specFields: ['processor', 'ram', 'storage', 'os', 'screenSize', 'battery'] },
     printer: { label: 'Printer', specFields: ['printType', 'paperSize', 'connectivity'] },
     router: { label: 'WiFi Router', specFields: ['speed', 'frequency', 'ports'] },
     speaker: { label: 'Speaker', specFields: ['power', 'channels'] },
@@ -1311,6 +1312,265 @@ router.get('/items/:itemId/shift-history', authenticate, asyncHandler(async (req
     res.json({
         success: true,
         data: { history }
+    });
+}));
+
+// ==================== LAPTOP ISSUANCE ====================
+
+/**
+ * Generate voucher number
+ */
+async function generateVoucherNumber(prisma) {
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const count = await prisma.laptopIssuance.count();
+    return `LV-${dateStr}-${String(count + 1).padStart(4, '0')}`;
+}
+
+/**
+ * @route   GET /api/labs/laptop-issuances
+ * @desc    Get all laptop issuances
+ * @access  Private (Admin, Lab Assistant)
+ */
+router.get('/laptop-issuances', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const { status, laptopId, issuedToId } = req.query;
+    const where = { schoolId: req.user.schoolId };
+
+    if (status) where.status = status;
+    if (laptopId) where.laptopId = laptopId;
+    if (issuedToId) where.issuedToId = issuedToId;
+
+    const issuances = await prisma.laptopIssuance.findMany({
+        where,
+        include: {
+            laptop: { select: { id: true, itemNumber: true, brand: true, modelNo: true, serialNo: true } },
+            issuedTo: { select: { id: true, firstName: true, lastName: true, email: true, role: true } },
+            issuedBy: { select: { id: true, firstName: true, lastName: true } },
+            receivedBy: { select: { id: true, firstName: true, lastName: true } }
+        },
+        orderBy: { issuedAt: 'desc' }
+    });
+
+    res.json({
+        success: true,
+        data: { issuances }
+    });
+}));
+
+/**
+ * @route   GET /api/labs/laptops/available
+ * @desc    Get laptops available for issuance (not currently issued)
+ * @access  Private (Admin, Lab Assistant)
+ */
+router.get('/laptops/available', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    // Get all laptops
+    const laptops = await prisma.labItem.findMany({
+        where: {
+            schoolId: req.user.schoolId,
+            itemType: 'laptop',
+            status: 'active'
+        },
+        include: {
+            lab: { select: { id: true, name: true } },
+            issuances: {
+                where: { status: 'issued' },
+                select: { id: true }
+            }
+        }
+    });
+
+    // Filter out laptops that have active issuances
+    const availableLaptops = laptops.filter(l => l.issuances.length === 0);
+
+    res.json({
+        success: true,
+        data: { laptops: availableLaptops }
+    });
+}));
+
+/**
+ * @route   GET /api/labs/staff-members
+ * @desc    Get staff members who can receive laptops
+ * @access  Private (Admin, Lab Assistant)
+ */
+router.get('/staff-members', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const staffRoles = ['admin', 'principal', 'instructor', 'lab_assistant'];
+
+    const staff = await prisma.user.findMany({
+        where: {
+            schoolId: req.user.schoolId,
+            role: { in: staffRoles },
+            isActive: true
+        },
+        select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            role: true
+        },
+        orderBy: [{ role: 'asc' }, { firstName: 'asc' }]
+    });
+
+    res.json({
+        success: true,
+        data: { staff }
+    });
+}));
+
+/**
+ * @route   POST /api/labs/laptop-issuances
+ * @desc    Issue a laptop to a staff member
+ * @access  Private (Admin, Lab Assistant)
+ */
+router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', 'lab_assistant'), [
+    body('laptopId').isUUID().withMessage('Valid laptop ID required'),
+    body('issuedToId').isUUID().withMessage('Valid staff member ID required'),
+    body('purpose').optional().isString(),
+    body('expectedReturnDate').optional().isISO8601(),
+    body('conditionOnIssue').optional().isString()
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { laptopId, issuedToId, purpose, expectedReturnDate, conditionOnIssue, remarks } = req.body;
+
+    // Verify laptop exists and is type laptop
+    const laptop = await prisma.labItem.findFirst({
+        where: { id: laptopId, schoolId: req.user.schoolId, itemType: 'laptop' }
+    });
+
+    if (!laptop) {
+        return res.status(404).json({ success: false, message: 'Laptop not found' });
+    }
+
+    // Check if laptop is already issued
+    const existingIssuance = await prisma.laptopIssuance.findFirst({
+        where: { laptopId, status: 'issued' }
+    });
+
+    if (existingIssuance) {
+        return res.status(400).json({ success: false, message: 'This laptop is already issued' });
+    }
+
+    // Verify staff member exists
+    const staffMember = await prisma.user.findFirst({
+        where: { id: issuedToId, schoolId: req.user.schoolId }
+    });
+
+    if (!staffMember) {
+        return res.status(404).json({ success: false, message: 'Staff member not found' });
+    }
+
+    const issuance = await prisma.laptopIssuance.create({
+        data: {
+            laptopId,
+            issuedToId,
+            issuedById: req.user.id,
+            voucherNumber: await generateVoucherNumber(prisma),
+            purpose,
+            expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
+            conditionOnIssue: conditionOnIssue || 'good',
+            remarks,
+            status: 'issued',
+            schoolId: req.user.schoolId
+        },
+        include: {
+            laptop: { select: { id: true, itemNumber: true, brand: true, modelNo: true, serialNo: true } },
+            issuedTo: { select: { id: true, firstName: true, lastName: true, email: true } },
+            issuedBy: { select: { id: true, firstName: true, lastName: true } }
+        }
+    });
+
+    res.status(201).json({
+        success: true,
+        message: `Laptop ${laptop.itemNumber} issued to ${staffMember.firstName} ${staffMember.lastName}. Voucher: ${issuance.voucherNumber}`,
+        data: { issuance }
+    });
+}));
+
+/**
+ * @route   PUT /api/labs/laptop-issuances/:id/return
+ * @desc    Mark a laptop as returned
+ * @access  Private (Admin, Lab Assistant)
+ */
+router.put('/laptop-issuances/:id/return', authenticate, authorize('admin', 'principal', 'lab_assistant'), [
+    body('conditionOnReturn').optional().isString(),
+    body('returnRemarks').optional().isString()
+], asyncHandler(async (req, res) => {
+    const { conditionOnReturn, returnRemarks } = req.body;
+
+    const issuance = await prisma.laptopIssuance.findFirst({
+        where: { id: req.params.id, schoolId: req.user.schoolId }
+    });
+
+    if (!issuance) {
+        return res.status(404).json({ success: false, message: 'Issuance record not found' });
+    }
+
+    if (issuance.status !== 'issued') {
+        return res.status(400).json({ success: false, message: 'Laptop is not currently issued' });
+    }
+
+    const updated = await prisma.laptopIssuance.update({
+        where: { id: req.params.id },
+        data: {
+            status: 'returned',
+            returnedAt: new Date(),
+            receivedById: req.user.id,
+            conditionOnReturn: conditionOnReturn || 'good',
+            returnRemarks
+        },
+        include: {
+            laptop: { select: { id: true, itemNumber: true, brand: true } },
+            issuedTo: { select: { id: true, firstName: true, lastName: true } }
+        }
+    });
+
+    res.json({
+        success: true,
+        message: `Laptop ${updated.laptop.itemNumber} returned successfully`,
+        data: { issuance: updated }
+    });
+}));
+
+/**
+ * @route   GET /api/labs/laptop-issuances/:id/voucher
+ * @desc    Get voucher details for printing/sharing
+ * @access  Private (Admin, Lab Assistant)
+ */
+router.get('/laptop-issuances/:id/voucher', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const issuance = await prisma.laptopIssuance.findFirst({
+        where: { id: req.params.id, schoolId: req.user.schoolId },
+        include: {
+            laptop: {
+                select: {
+                    id: true, itemNumber: true, brand: true, modelNo: true, serialNo: true,
+                    specs: true,
+                    lab: { select: { name: true } }
+                }
+            },
+            issuedTo: {
+                select: {
+                    id: true, firstName: true, lastName: true, email: true, phone: true, role: true
+                }
+            },
+            issuedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
+            receivedBy: { select: { id: true, firstName: true, lastName: true } },
+            school: { select: { name: true, address: true, phone: true, email: true } }
+        }
+    });
+
+    if (!issuance) {
+        return res.status(404).json({ success: false, message: 'Issuance record not found' });
+    }
+
+    res.json({
+        success: true,
+        data: { voucher: issuance }
     });
 }));
 

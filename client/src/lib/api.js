@@ -270,6 +270,13 @@ export const labsAPI = {
     rejectShiftRequest: (requestId, adminNotes) => api.put(`/labs/shift-requests/${requestId}/reject`, { adminNotes }),
     completeShiftRequest: (requestId, notes) => api.put(`/labs/shift-requests/${requestId}/complete`, { notes }),
     getItemShiftHistory: (itemId) => api.get(`/labs/items/${itemId}/shift-history`),
+    // Laptop Issuances
+    getLaptopIssuances: (params) => api.get('/labs/laptop-issuances', { params }),
+    getAvailableLaptops: () => api.get('/labs/laptops/available'),
+    getStaffMembers: () => api.get('/labs/staff-members'),
+    issueLaptop: (data) => api.post('/labs/laptop-issuances', data),
+    returnLaptop: (id, data) => api.put(`/labs/laptop-issuances/${id}/return`, data),
+    getIssuanceVoucher: (id) => api.get(`/labs/laptop-issuances/${id}/voucher`),
 };
 
 // Users API
