@@ -1582,33 +1582,49 @@ router.put('/laptop-issuances/:id/return', authenticate, authorize('admin', 'pri
 router.get('/laptop-issuances/:id/voucher', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
     try {
         const issuance = await prisma.laptopIssuance.findFirst({
-            where: { id: req.params.id, schoolId: req.user.schoolId },
-            include: {
-                laptop: {
-                    select: {
-                        id: true, itemNumber: true, brand: true, modelNo: true, serialNo: true,
-                        specs: true,
-                        lab: { select: { name: true } }
-                    }
-                },
-                issuedTo: {
-                    select: {
-                        id: true, firstName: true, lastName: true, email: true, phone: true, role: true
-                    }
-                },
-                issuedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
-                receivedBy: { select: { id: true, firstName: true, lastName: true } },
-                school: { select: { name: true, address: true, phone: true, email: true } }
-            }
+            where: { id: req.params.id, schoolId: req.user.schoolId }
         });
 
         if (!issuance) {
             return res.status(404).json({ success: false, message: 'Issuance record not found' });
         }
 
+        // Fetch related data separately to avoid Prisma include issues
+        const [laptop, issuedTo, issuedBy, receivedBy, school] = await Promise.all([
+            prisma.labItem.findUnique({
+                where: { id: issuance.laptopId },
+                select: { id: true, itemNumber: true, brand: true, modelNo: true, serialNo: true, specs: true }
+            }),
+            prisma.user.findUnique({
+                where: { id: issuance.issuedToId },
+                select: { id: true, firstName: true, lastName: true, email: true, phone: true, role: true }
+            }),
+            prisma.user.findUnique({
+                where: { id: issuance.issuedById },
+                select: { id: true, firstName: true, lastName: true, role: true }
+            }),
+            issuance.receivedById ? prisma.user.findUnique({
+                where: { id: issuance.receivedById },
+                select: { id: true, firstName: true, lastName: true }
+            }) : null,
+            prisma.school.findUnique({
+                where: { id: issuance.schoolId },
+                select: { name: true, address: true, phone: true, email: true }
+            })
+        ]);
+
         res.json({
             success: true,
-            data: { voucher: issuance }
+            data: {
+                voucher: {
+                    ...issuance,
+                    laptop,
+                    issuedTo,
+                    issuedBy,
+                    receivedBy,
+                    school
+                }
+            }
         });
     } catch (error) {
         console.error('Get voucher error:', error);
