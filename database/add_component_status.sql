@@ -21,8 +21,19 @@ ADD COLUMN IF NOT EXISTS component_status JSONB DEFAULT '{}'::jsonb;
 ALTER TABLE laptop_issuances 
 ADD COLUMN IF NOT EXISTS component_status_on_return JSONB DEFAULT NULL;
 
--- Verify columns added
-SELECT column_name, data_type 
-FROM information_schema.columns 
-WHERE table_name = 'laptop_issuances' 
-AND column_name IN ('component_status', 'component_status_on_return');
+-- Update existing records with default component status (all working)
+UPDATE laptop_issuances 
+SET component_status = '{
+    "screen": "working",
+    "keyboard": "working",
+    "touchpad": "working",
+    "battery": "working",
+    "ports": "working",
+    "charger": "working"
+}'::jsonb
+WHERE component_status IS NULL OR component_status = '{}'::jsonb;
+
+-- Verify columns added and data updated
+SELECT id, voucher_number, component_status 
+FROM laptop_issuances 
+LIMIT 5;
