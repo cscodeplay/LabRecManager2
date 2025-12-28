@@ -86,16 +86,21 @@ export default function ProcurementPage() {
 
     const loadData = async () => {
         try {
+            console.log('Loading procurement data...');
             const [reqRes, vendorRes, staffRes] = await Promise.all([
-                procurementAPI.getRequests(),
-                procurementAPI.getVendors(),
-                procurementAPI.getStaff()
+                procurementAPI.getRequests().catch(e => { console.error('Requests error:', e); return { data: { data: [] } }; }),
+                procurementAPI.getVendors().catch(e => { console.error('Vendors error:', e); return { data: { data: [] } }; }),
+                procurementAPI.getStaff().catch(e => { console.error('Staff error:', e); return { data: { data: [] } }; })
             ]);
-            setRequests(reqRes.data.data || []);
-            setVendors(vendorRes.data.data || []);
-            setStaffList(staffRes.data.data || []);
+            console.log('Requests:', reqRes.data);
+            console.log('Vendors:', vendorRes.data);
+            console.log('Staff:', staffRes.data);
+            setRequests(reqRes.data?.data || []);
+            setVendors(vendorRes.data?.data || []);
+            setStaffList(staffRes.data?.data || []);
         } catch (error) {
-            toast.error('Failed to load data');
+            console.error('Load data error:', error);
+            toast.error('Failed to load data: ' + error.message);
         } finally {
             setLoading(false);
         }
