@@ -22,6 +22,7 @@ model School {
   secondaryLanguages    String[]               @map("secondary_languages")
   academicYearStart     Int?                   @default(4) @map("academic_year_start")
   logoUrl               String?                @map("logo_url")
+  letterheadUrl         String?                @map("letterhead_url") @db.VarChar(500)
   createdAt             DateTime?              @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt             DateTime?              @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
   academicYears         AcademicYear[]
@@ -38,6 +39,11 @@ model School {
   reportTemplates       ReportTemplate[]
   subjects              Subject[]
   users                 User[]
+  whiteboardSessions    WhiteboardSession[]
+  auditLogs             AuditLog[]
+  laptopIssuances       LaptopIssuance[]
+  vendors               Vendor[]
+  procurementRequests   ProcurementRequest[]
 
   @@map("schools")
 }
@@ -151,6 +157,7 @@ model User {
   groupMemberships                               GroupMember[]
   importHistory                                  ImportHistory[]
   maintenanceRecords                             ItemMaintenanceHistory[] @relation("MaintenanceRecordedBy")
+  labMaintenancePerformed                        LabMaintenanceHistory[]  @relation("LabMaintenancePerformer")
   lab_attendance_lab_attendance_marked_byTousers LabAttendance[]          @relation("lab_attendance_marked_byTousers")
   labAttendanceAsStudent                         LabAttendance[]          @relation("AttendanceStudent")
   materialUsageRecorded                          LabMaterialUsage[]       @relation("MaterialUsageRecorded")
@@ -165,6 +172,20 @@ model User {
   vivaQuestionsCreated                           VivaQuestion[]
   vivaSessionsAsExaminer                         VivaSession[]            @relation("VivaExaminer")
   vivaSessionsAsStudent                          VivaSession[]            @relation("VivaStudent")
+  whiteboardSessionsAsHost                       WhiteboardSession[]      @relation("WhiteboardHost")
+  whiteboardParticipations                       WhiteboardParticipant[]
+  auditLogs                                      AuditLog[]
+  ticketsCreated                                 Ticket[]                 @relation("TicketCreator")
+  ticketsAssigned                                Ticket[]                 @relation("TicketAssignee")
+  ticketsResolved                                Ticket[]                 @relation("TicketResolver")
+  ticketComments                                 TicketComment[]
+  laptopsIssuedTo                                LaptopIssuance[]         @relation("LaptopIssuedTo")
+  laptopsIssuedBy                                LaptopIssuance[]         @relation("LaptopIssuedBy")
+  laptopsReceivedBy                              LaptopIssuance[]         @relation("LaptopReceivedBy")
+  procurementsCreated                            ProcurementRequest[]     @relation("ProcurementCreatedBy")
+  procurementsApproved                           ProcurementRequest[]     @relation("ProcurementApprovedBy")
+  procurementsReceived                           ProcurementRequest[]     @relation("ProcurementReceivedBy")
+  procurementCommittees                          ProcurementCommittee[]
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")
@@ -235,7 +256,9 @@ model Class {
   finalLabMarks  FinalLabMarks[]
   labAttendance  LabAttendance[]
   groups         StudentGroup[]
+  whiteboardSessions WhiteboardSession[]
 
+  @@unique([schoolId, name], name: "unique_class_name_per_school")
   @@index([academicYearId])
   @@index([schoolId, academicYearId])
   @@index([schoolId], map: "idx_classes_school")
@@ -274,7 +297,9 @@ model StudentGroup {
   class          Class              @relation(fields: [classId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   createdBy      User               @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   submissions    Submission[]
+  whiteboardSessions WhiteboardSession[]
 
+  @@unique([classId, name], name: "unique_group_name_per_class")
   @@map("student_groups")
 }
 
@@ -329,16 +354,20 @@ model ClassSubject {
 }
 
 model Lab {
-  id                String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  schoolId          String                  @map("school_id") @db.Uuid
-  name              String                  @db.VarChar(100)
-  nameHindi         String?                 @map("name_hindi") @db.VarChar(100)
-  roomNumber        String?                 @map("room_number") @db.VarChar(20)
-  capacity          Int?                    @default(30)
-  subjectId         String?                 @map("subject_id") @db.Uuid
-  equipmentList     Json?                   @map("equipment_list")
-  inchargeId        String?                 @map("incharge_id") @db.Uuid
-  createdAt         DateTime?               @default(now()) @map("created_at") @db.Timestamp(6)
+  id                     String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId               String                  @map("school_id") @db.Uuid
+  name                   String                  @db.VarChar(100)
+  nameHindi              String?                 @map("name_hindi") @db.VarChar(100)
+  roomNumber             String?                 @map("room_number") @db.VarChar(20)
+  capacity               Int?                    @default(30)
+  subjectId              String?                 @map("subject_id") @db.Uuid
+  equipmentList          Json?                   @map("equipment_list")
+  inchargeId             String?                 @map("incharge_id") @db.Uuid
+  status                 String?                 @default("active") @db.VarChar(20)
+  maintenanceReason      String?                 @map("maintenance_reason")
+  maintenanceStartDate   DateTime?               @map("maintenance_start_date") @db.Timestamp(6)
+  maintenanceEndDate     DateTime?               @map("maintenance_end_date") @db.Timestamp(6)
+  createdAt              DateTime?               @default(now()) @map("created_at") @db.Timestamp(6)
   assignments       Assignment[]
   shiftHistoryFrom  EquipmentShiftHistory[] @relation("ShiftHistoryFromLab")
   shiftHistoryTo    EquipmentShiftHistory[] @relation("ShiftHistoryToLab")
@@ -348,11 +377,32 @@ model Lab {
   attendance        LabAttendance[]
   items             LabItem[]
   lab_materials     lab_materials[]
+  maintenanceHistory LabMaintenanceHistory[]
   incharge          User?                   @relation(fields: [inchargeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   school            School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   subject           Subject?                @relation(fields: [subjectId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tickets           Ticket[]
 
   @@map("labs")
+}
+
+model LabMaintenanceHistory {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  labId        String    @map("lab_id") @db.Uuid
+  action       String    @db.VarChar(20) // 'started', 'ended', 'extended'
+  reason       String?
+  previousStatus String?  @map("previous_status") @db.VarChar(20)
+  newStatus    String    @map("new_status") @db.VarChar(20)
+  startedAt    DateTime? @map("started_at") @db.Timestamp(6)
+  endedAt      DateTime? @map("ended_at") @db.Timestamp(6)
+  expectedEndDate DateTime? @map("expected_end_date") @db.Timestamp(6)
+  performedById String?   @map("performed_by_id") @db.Uuid
+  createdAt    DateTime?  @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  lab          Lab       @relation(fields: [labId], references: [id], onDelete: Cascade)
+  performedBy  User?     @relation("LabMaintenancePerformer", fields: [performedById], references: [id])
+  
+  @@map("lab_maintenance_history")
 }
 
 model LabItem {
@@ -379,6 +429,9 @@ model LabItem {
   lab                Lab?                     @relation(fields: [labId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   school             School?                  @relation(fields: [schoolId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   assignedGroups     StudentGroup[]
+  tickets            Ticket[]
+  issuances          LaptopIssuance[]
+  procurementItems   ProcurementItem[]
 
   @@unique([labId, itemNumber])
   @@map("lab_items")
@@ -605,6 +658,7 @@ model AssignmentTarget {
   extendedDueDate     DateTime?     @map("extended_due_date") @db.Timestamp(6)
   publishDate         DateTime?     @map("publish_date") @db.Timestamp(6)
   dueDate             DateTime?     @map("due_date") @db.Timestamp(6)
+  isLocked            Boolean       @default(false) @map("is_locked")
   assignedBy          User          @relation(fields: [assignedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   assignment          Assignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   targetGroup         StudentGroup? @relation(fields: [targetGroupId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -1069,6 +1123,105 @@ model lab_materials {
   labs               Lab                @relation(fields: [lab_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
+model WhiteboardSession {
+  id            String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId      String                      @map("school_id") @db.Uuid
+  hostId        String                      @map("host_id") @db.Uuid
+  title         String?                     @db.VarChar(255)
+  status        WhiteboardSessionStatus     @default(active)
+  targetType    WhiteboardTargetType?       @map("target_type")
+  targetClassId String?                     @map("target_class_id") @db.Uuid
+  targetGroupId String?                     @map("target_group_id") @db.Uuid
+  startedAt     DateTime?                   @default(now()) @map("started_at") @db.Timestamp(6)
+  endedAt       DateTime?                   @map("ended_at") @db.Timestamp(6)
+  recordingUrl  String?                     @map("recording_url")
+  isRecording   Boolean?                    @default(false) @map("is_recording")
+  canvasData    String?                     @map("canvas_data")
+  createdAt     DateTime?                   @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  school        School                      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  host          User                        @relation("WhiteboardHost", fields: [hostId], references: [id], onDelete: Cascade)
+  targetClass   Class?                      @relation(fields: [targetClassId], references: [id], onDelete: SetNull)
+  targetGroup   StudentGroup?               @relation(fields: [targetGroupId], references: [id], onDelete: SetNull)
+  participants  WhiteboardParticipant[]
+  
+  @@index([schoolId], map: "idx_whiteboard_sessions_school")
+  @@index([hostId], map: "idx_whiteboard_sessions_host")
+  @@index([status], map: "idx_whiteboard_sessions_status")
+  @@map("whiteboard_sessions")
+}
+
+model WhiteboardParticipant {
+  id        String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String                    @map("session_id") @db.Uuid
+  userId    String                    @map("user_id") @db.Uuid
+  role      WhiteboardParticipantRole @default(viewer)
+  joinedAt  DateTime?                 @default(now()) @map("joined_at") @db.Timestamp(6)
+  leftAt    DateTime?                 @map("left_at") @db.Timestamp(6)
+  isActive  Boolean?                  @default(true) @map("is_active")
+  
+  session   WhiteboardSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user      User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([sessionId, userId], map: "unique_participant_per_session")
+  @@index([sessionId], map: "idx_whiteboard_participants_session")
+  @@index([userId], map: "idx_whiteboard_participants_user")
+  @@map("whiteboard_participants")
+}
+
+model AuditLog {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String?   @map("user_id") @db.Uuid
+  schoolId   String?   @map("school_id") @db.Uuid
+  action     String    @db.VarChar(50)
+  entityType String    @map("entity_type") @db.VarChar(50)
+  entityId   String?   @map("entity_id") @db.Uuid
+  entityName String?   @map("entity_name") @db.VarChar(255)
+  details    Json?
+  ipAddress  String?   @map("ip_address") @db.VarChar(45)
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  school     School?   @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  
+  @@index([userId], map: "idx_audit_logs_user")
+  @@index([entityType, entityId], map: "idx_audit_logs_entity")
+  @@index([createdAt(sort: Desc)], map: "idx_audit_logs_created")
+  @@index([schoolId], map: "idx_audit_logs_school")
+  @@index([action], map: "idx_audit_logs_action")
+  @@map("audit_logs")
+}
+
+enum WhiteboardSessionStatus {
+  active
+  paused
+  ended
+}
+
+enum WhiteboardTargetType {
+  class
+  group
+  student
+}
+
+enum WhiteboardParticipantRole {
+  host
+  cohost
+  viewer
+}
+
+model SiteUpdate {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  version     String    @db.VarChar(20)
+  description String
+  changes     String?
+  updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamp(6)
+  updatedBy   String?   @map("updated_by") @db.VarChar(100)
+  
+  @@map("site_updates")
+}
+
 enum UserRole {
   admin
   principal
@@ -1239,4 +1392,315 @@ enum document_share_target_type {
   instructor
   admin
   student
+}
+
+enum TicketStatus {
+  open
+  in_progress
+  resolved
+  closed
+
+  @@map("ticket_status")
+}
+
+enum TicketPriority {
+  low
+  medium
+  high
+  critical
+
+  @@map("ticket_priority")
+}
+
+enum TicketCategory {
+  hardware_issue
+  software_issue
+  maintenance_request
+  general_complaint
+  other
+
+  @@map("ticket_category")
+}
+
+model Ticket {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketNumber    String          @unique @map("ticket_number") @db.VarChar(20)
+  title           String          @db.VarChar(200)
+  description     String
+  category        TicketCategory  @default(other)
+  priority        TicketPriority  @default(medium)
+  status          TicketStatus    @default(open)
+  
+  itemId          String?         @map("item_id") @db.Uuid
+  labId           String?         @map("lab_id") @db.Uuid
+  issueTypeId     String?         @map("issue_type_id") @db.Uuid
+  
+  createdById     String          @map("created_by_id") @db.Uuid
+  assignedToId    String?         @map("assigned_to_id") @db.Uuid
+  resolvedById    String?         @map("resolved_by_id") @db.Uuid
+  
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamp(6)
+  resolvedAt      DateTime?       @map("resolved_at") @db.Timestamp(6)
+  
+  resolutionNotes String?         @map("resolution_notes")
+  
+  item            LabItem?        @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  lab             Lab?            @relation(fields: [labId], references: [id], onDelete: SetNull)
+  issueType       TicketIssueType? @relation(fields: [issueTypeId], references: [id])
+  createdBy       User            @relation("TicketCreator", fields: [createdById], references: [id])
+  assignedTo      User?           @relation("TicketAssignee", fields: [assignedToId], references: [id])
+  resolvedBy      User?           @relation("TicketResolver", fields: [resolvedById], references: [id])
+  comments        TicketComment[]
+  
+  @@index([status])
+  @@index([createdById])
+  @@index([labId])
+  @@map("tickets")
+}
+
+model TicketComment {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId    String    @map("ticket_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  content     String
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  ticket      Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id])
+  
+  @@map("ticket_comments")
+}
+
+model TicketIssueType {
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  category     TicketCategory
+  name         String          @db.VarChar(100)
+  description  String?
+  displayOrder Int             @default(0) @map("display_order")
+  isActive     Boolean         @default(true) @map("is_active")
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  tickets      Ticket[]
+  
+  @@index([category])
+  @@map("ticket_issue_types")
+}
+
+enum IssuanceStatus {
+  issued
+  returned
+  overdue
+  lost
+  
+  @@map("issuance_status")
+}
+
+model LaptopIssuance {
+  id                       String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  laptopId                 String          @map("laptop_id") @db.Uuid
+  issuedToId               String          @map("issued_to_id") @db.Uuid
+  issuedById               String          @map("issued_by_id") @db.Uuid
+  voucherNumber            String          @unique @map("voucher_number") @db.VarChar(30)
+  purpose                  String?
+  issuedAt                 DateTime        @default(now()) @map("issued_at") @db.Timestamp(6)
+  expectedReturnDate       DateTime?       @map("expected_return_date") @db.Date
+  returnedAt               DateTime?       @map("returned_at") @db.Timestamp(6)
+  receivedById             String?         @map("received_by_id") @db.Uuid
+  conditionOnIssue         String?         @default("good") @map("condition_on_issue") @db.VarChar(50)
+  conditionOnReturn        String?         @map("condition_on_return") @db.VarChar(50)
+  componentStatus          Json?           @default("{}") @map("component_status") @db.JsonB
+  componentStatusOnReturn  Json?           @map("component_status_on_return") @db.JsonB
+  remarks                  String?
+  returnRemarks            String?         @map("return_remarks")
+  status                   IssuanceStatus  @default(issued)
+  schoolId                 String          @map("school_id") @db.Uuid
+  createdAt                DateTime        @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt                DateTime        @updatedAt @map("updated_at") @db.Timestamp(6)
+  
+  laptop             LabItem         @relation(fields: [laptopId], references: [id], onDelete: Cascade)
+  issuedTo           User            @relation("LaptopIssuedTo", fields: [issuedToId], references: [id])
+  issuedBy           User            @relation("LaptopIssuedBy", fields: [issuedById], references: [id])
+  receivedBy         User?           @relation("LaptopReceivedBy", fields: [receivedById], references: [id])
+  school             School          @relation(fields: [schoolId], references: [id])
+  
+  @@index([laptopId])
+  @@index([issuedToId])
+  @@index([status])
+  @@index([schoolId])
+  @@map("laptop_issuances")
+}
+
+// ============================================================
+// PROCUREMENT / QUOTATION MANAGEMENT
+// ============================================================
+
+enum ProcurementStatus {
+  draft
+  quotation_requested
+  quotes_received
+  approved
+  ordered
+  completed
+  cancelled
+
+  @@map("procurement_status")
+}
+
+model Vendor {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String   @db.VarChar(200)
+  contactPerson String?  @map("contact_person") @db.VarChar(100)
+  email         String?  @db.VarChar(100)
+  phone         String?  @db.VarChar(20)
+  address       String?
+  gstin         String?  @db.VarChar(20)
+  isLocal       Boolean  @default(false) @map("is_local")
+  schoolId      String   @map("school_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  school              School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  quotations          VendorQuotation[]
+  approvedItems       ProcurementItem[]   @relation("ApprovedVendor")
+
+  @@index([schoolId])
+  @@map("vendors")
+}
+
+model ProcurementRequest {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title          String            @db.VarChar(200)
+  description    String?
+  purpose        String?
+  department     String?           @db.VarChar(100)
+  budgetCode     String?           @map("budget_code") @db.VarChar(50)
+  // Purchase Request Letter (Step 1)
+  purchaseLetterUrl  String?       @map("purchase_letter_url") @db.VarChar(500)
+  purchaseLetterName String?       @map("purchase_letter_name") @db.VarChar(255)
+  estimatedTotal Decimal?          @map("estimated_total") @db.Decimal(14, 2)
+  approvedTotal  Decimal?          @map("approved_total") @db.Decimal(14, 2)
+  status         ProcurementStatus @default(draft)
+  createdById    String            @map("created_by_id") @db.Uuid
+  approvedById   String?           @map("approved_by_id") @db.Uuid
+  approvedAt     DateTime?         @map("approved_at") @db.Timestamp(6)
+  // Ordered
+  orderedAt      DateTime?         @map("ordered_at") @db.Timestamp(6)
+  poNumber       String?           @map("po_number") @db.VarChar(100)
+  poUrl          String?           @map("po_url") @db.VarChar(500)
+  // Billing
+  billNumber     String?           @map("bill_number") @db.VarChar(100)
+  billDate       DateTime?         @map("bill_date") @db.Date
+  billAmount     Decimal?          @map("bill_amount") @db.Decimal(14, 2)
+  billUrl        String?           @map("bill_url") @db.VarChar(500)
+  // Payment
+  paymentMethod  String?           @map("payment_method") @db.VarChar(50)
+  chequeNumber   String?           @map("cheque_number") @db.VarChar(50)
+  chequeUrl      String?           @map("cheque_url") @db.VarChar(500)
+  paymentDate    DateTime?         @map("payment_date") @db.Date
+  paymentReference String?         @map("payment_reference") @db.VarChar(100)
+  // Receiving
+  receivedAt     DateTime?         @map("received_at") @db.Timestamp(6)
+  receivedById   String?           @map("received_by_id") @db.Uuid
+  receivingVideoUrl String?        @map("receiving_video_url") @db.VarChar(500)
+  receivingNotes String?           @map("receiving_notes")
+  // Common
+  schoolId       String            @map("school_id") @db.Uuid
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  school     School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdBy  User              @relation("ProcurementCreatedBy", fields: [createdById], references: [id])
+  approvedBy User?             @relation("ProcurementApprovedBy", fields: [approvedById], references: [id])
+  receivedBy User?             @relation("ProcurementReceivedBy", fields: [receivedById], references: [id])
+  items      ProcurementItem[]
+  quotations VendorQuotation[]
+  committee  ProcurementCommittee[]
+
+  @@index([schoolId])
+  @@index([status])
+  @@map("procurement_requests")
+}
+
+model ProcurementItem {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId          String   @map("request_id") @db.Uuid
+  itemName           String   @map("item_name") @db.VarChar(200)
+  description        String?
+  specifications     String?
+  quantity           Int      @default(1)
+  unit               String?  @default("pcs") @db.VarChar(50)
+  estimatedUnitPrice Decimal? @map("estimated_unit_price") @db.Decimal(12, 2)
+  approvedUnitPrice  Decimal? @map("approved_unit_price") @db.Decimal(12, 2)
+  approvedVendorId   String?  @map("approved_vendor_id") @db.Uuid
+  // Receiving
+  isReceived         Boolean  @default(false) @map("is_received")
+  receivedQty        Int      @default(0) @map("received_qty")
+  inventoryItemId    String?  @map("inventory_item_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  request        ProcurementRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  approvedVendor Vendor?            @relation("ApprovedVendor", fields: [approvedVendorId], references: [id])
+  inventoryItem  LabItem?           @relation(fields: [inventoryItemId], references: [id])
+  quotationItems QuotationItem[]
+
+  @@index([requestId])
+  @@index([isReceived])
+  @@map("procurement_items")
+}
+
+model VendorQuotation {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId       String   @map("request_id") @db.Uuid
+  vendorId        String   @map("vendor_id") @db.Uuid
+  quotationNumber String?  @map("quotation_number") @db.VarChar(50)
+  quotationDate   DateTime? @map("quotation_date") @db.Date
+  validUntil      DateTime? @map("valid_until") @db.Date
+  documentUrl     String?  @map("document_url") @db.VarChar(500)
+  totalAmount     Decimal? @map("total_amount") @db.Decimal(14, 2)
+  terms           String?
+  remarks         String?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  request ProcurementRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  vendor  Vendor             @relation(fields: [vendorId], references: [id])
+  items   QuotationItem[]
+
+  @@index([requestId])
+  @@index([vendorId])
+  @@map("vendor_quotations")
+}
+
+model QuotationItem {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId       String   @map("quotation_id") @db.Uuid
+  procurementItemId String   @map("procurement_item_id") @db.Uuid
+  unitPrice         Decimal  @map("unit_price") @db.Decimal(12, 2)
+  quantity          Int?
+  totalPrice        Decimal? @map("total_price") @db.Decimal(12, 2)
+  remarks           String?
+
+  quotation       VendorQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  procurementItem ProcurementItem @relation(fields: [procurementItemId], references: [id], onDelete: Cascade)
+
+  @@index([quotationId])
+  @@index([procurementItemId])
+  @@map("quotation_items")
+}
+
+model ProcurementCommittee {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId   String   @map("request_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  role        String?  @default("member") @db.VarChar(50) // chairperson, member, secretary
+  designation String?  @db.VarChar(100)
+  addedAt     DateTime @default(now()) @map("added_at") @db.Timestamp(6)
+
+  request ProcurementRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, userId])
+  @@index([requestId])
+  @@index([userId])
+  @@map("procurement_committee")
 }

@@ -606,20 +606,164 @@ CREATE TABLE department_progress_summary (
 );
 
 -- =====================================================
+-- PROCUREMENT / QUOTATION MANAGEMENT
+-- =====================================================
+
+-- Procurement Status Enum
+DO $$ BEGIN
+    CREATE TYPE procurement_status AS ENUM ('draft', 'quotation_requested', 'quotes_received', 'approved', 'ordered', 'billed', 'paid', 'received', 'completed', 'cancelled');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+-- Vendors table
+CREATE TABLE IF NOT EXISTS vendors (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(200) NOT NULL,
+    contact_person VARCHAR(100),
+    email VARCHAR(100),
+    phone VARCHAR(20),
+    address TEXT,
+    gstin VARCHAR(20),
+    is_local BOOLEAN DEFAULT FALSE,
+    school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_vendors_school ON vendors(school_id);
+CREATE INDEX IF NOT EXISTS idx_vendors_is_local ON vendors(is_local);
+
+-- Procurement Requests (main procurement case)
+CREATE TABLE IF NOT EXISTS procurement_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    purpose TEXT,
+    department VARCHAR(100),
+    budget_code VARCHAR(50),
+    purchase_letter_url VARCHAR(500),
+    purchase_letter_name VARCHAR(255),
+    estimated_total DECIMAL(14,2),
+    approved_total DECIMAL(14,2),
+    status procurement_status DEFAULT 'draft',
+    created_by_id UUID NOT NULL REFERENCES users(id),
+    approved_by_id UUID REFERENCES users(id),
+    approved_at TIMESTAMP,
+    -- Ordered
+    ordered_at TIMESTAMP,
+    po_number VARCHAR(100),
+    po_url VARCHAR(500),
+    -- Billing
+    bill_number VARCHAR(100),
+    bill_date DATE,
+    bill_amount DECIMAL(14,2),
+    bill_url VARCHAR(500),
+    -- Payment
+    payment_method VARCHAR(50),
+    cheque_number VARCHAR(50),
+    cheque_url VARCHAR(500),
+    payment_date DATE,
+    payment_reference VARCHAR(100),
+    -- Receiving
+    received_at TIMESTAMP,
+    received_by_id UUID REFERENCES users(id),
+    receiving_video_url VARCHAR(500),
+    receiving_notes TEXT,
+    -- Common
+    school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_procurement_requests_school ON procurement_requests(school_id);
+CREATE INDEX IF NOT EXISTS idx_procurement_requests_status ON procurement_requests(status);
+
+-- Procurement Items (items to be procured)
+CREATE TABLE IF NOT EXISTS procurement_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id UUID NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
+    item_name VARCHAR(200) NOT NULL,
+    description TEXT,
+    specifications TEXT,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    unit VARCHAR(50) DEFAULT 'pcs',
+    estimated_unit_price DECIMAL(12,2),
+    approved_unit_price DECIMAL(12,2),
+    approved_vendor_id UUID REFERENCES vendors(id),
+    is_received BOOLEAN DEFAULT FALSE,
+    received_qty INTEGER DEFAULT 0,
+    inventory_item_id UUID REFERENCES lab_items(id),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_procurement_items_request ON procurement_items(request_id);
+CREATE INDEX IF NOT EXISTS idx_procurement_items_received ON procurement_items(is_received);
+
+-- Vendor Quotations (quotes from vendors for a procurement request)
+CREATE TABLE IF NOT EXISTS vendor_quotations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id UUID NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
+    vendor_id UUID NOT NULL REFERENCES vendors(id),
+    quotation_number VARCHAR(50),
+    quotation_date DATE,
+    valid_until DATE,
+    document_url VARCHAR(500),
+    total_amount DECIMAL(14,2),
+    terms TEXT,
+    remarks TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_vendor_quotations_request ON vendor_quotations(request_id);
+CREATE INDEX IF NOT EXISTS idx_vendor_quotations_vendor ON vendor_quotations(vendor_id);
+
+-- Quotation Line Items (prices per item from each vendor)
+CREATE TABLE IF NOT EXISTS quotation_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    quotation_id UUID NOT NULL REFERENCES vendor_quotations(id) ON DELETE CASCADE,
+    procurement_item_id UUID NOT NULL REFERENCES procurement_items(id) ON DELETE CASCADE,
+    unit_price DECIMAL(12,2) NOT NULL,
+    quantity INTEGER,
+    total_price DECIMAL(12,2),
+    remarks TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_quotation_items_quotation ON quotation_items(quotation_id);
+CREATE INDEX IF NOT EXISTS idx_quotation_items_item ON quotation_items(procurement_item_id);
+
+-- Procurement Committee Members (3-5 staff per procurement)
+CREATE TABLE IF NOT EXISTS procurement_committee (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id UUID NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role VARCHAR(50) DEFAULT 'member', -- 'chairperson', 'member', 'secretary'
+    designation VARCHAR(100),
+    added_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(request_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_procurement_committee_request ON procurement_committee(request_id);
+CREATE INDEX IF NOT EXISTS idx_procurement_committee_user ON procurement_committee(user_id);
+
+-- Add letterhead URL to schools (if not exists)
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS letterhead_url VARCHAR(500);
+
+-- =====================================================
 -- INDEXES FOR PERFORMANCE
 -- =====================================================
 
-CREATE INDEX idx_users_school ON users(school_id);
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_role ON users(role);
-CREATE INDEX idx_classes_school ON classes(school_id);
-CREATE INDEX idx_assignments_school ON assignments(school_id);
-CREATE INDEX idx_assignments_status ON assignments(status);
-CREATE INDEX idx_submissions_assignment ON submissions(assignment_id);
-CREATE INDEX idx_submissions_student ON submissions(student_id);
-CREATE INDEX idx_grades_submission ON grades(submission_id);
-CREATE INDEX idx_activity_logs_user ON activity_logs(user_id);
-CREATE INDEX idx_activity_logs_created ON activity_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_users_school ON users(school_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_classes_school ON classes(school_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_school ON assignments(school_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
+CREATE INDEX IF NOT EXISTS idx_submissions_assignment ON submissions(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(student_id);
+CREATE INDEX IF NOT EXISTS idx_grades_submission ON grades(submission_id);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_user ON activity_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_created ON activity_logs(created_at);
 
 -- =====================================================
 -- DONE!
