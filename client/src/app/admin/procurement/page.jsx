@@ -95,6 +95,7 @@ export default function ProcurementPage() {
 
     // Step 1: Letter content state
     const [letterContent, setLetterContent] = useState('');
+    const [letterUpload, setLetterUpload] = useState(null); // Track uploaded file
 
     // Step 8: Bill state
     const [billUpload, setBillUpload] = useState(null);
@@ -187,10 +188,66 @@ export default function ProcurementPage() {
         }
     };
 
-    // Save step data (placeholder - can be connected to backend)
+    // Save step data to backend
     const saveStepData = async (step) => {
-        toast.success(`Step ${step} data saved`);
-        return true;
+        try {
+            switch (step) {
+                case 1:
+                    // Save letter content or file
+                    if (letterContent.trim() || letterUpload) {
+                        await procurementAPI.uploadPurchaseLetter(selectedRequest.id, {
+                            letterContent: letterContent.trim(),
+                            letterFileName: letterUpload?.name || null
+                        });
+                    }
+                    break;
+                case 4:
+                    // Save selected vendors
+                    await procurementAPI.updateRequest(selectedRequest.id, {
+                        selectedVendorIds: selectedVendorIds
+                    });
+                    break;
+                case 5:
+                    // Save quotation prices
+                    await procurementAPI.updateRequest(selectedRequest.id, {
+                        vendorQuotationPrices: vendorQuotationPrices,
+                        vendorGstSettings: vendorGstSettings
+                    });
+                    break;
+                case 6:
+                    // Save selected vendor for purchase
+                    await procurementAPI.updateRequest(selectedRequest.id, {
+                        selectedVendorForPurchase: selectedVendorForPurchase
+                    });
+                    break;
+                case 7:
+                    // Save editable quantities
+                    await procurementAPI.updateRequest(selectedRequest.id, {
+                        editableQuantities: editableQuantities
+                    });
+                    break;
+                case 8:
+                    // Save bill and cheque info
+                    await procurementAPI.addBill(selectedRequest.id, {
+                        billFileName: billUpload,
+                        chequeNumber: chequeNumber
+                    });
+                    break;
+                case 9:
+                    // Save received items
+                    await procurementAPI.markReceived(selectedRequest.id, {
+                        receivedItems: receivedItems
+                    });
+                    break;
+            }
+            toast.success(`Step ${step} data saved`);
+            // Refresh request data
+            openRequestDetail(selectedRequest);
+            return true;
+        } catch (error) {
+            toast.error(`Failed to save Step ${step} data`);
+            return false;
+        }
     };
 
     // Save and proceed to next step
@@ -204,7 +261,7 @@ export default function ProcurementPage() {
     const isStepComplete = (step) => {
         switch (step) {
             case 1:
-                return !!(requestDetail?.request?.purchaseLetterUrl || letterContent.trim());
+                return !!(requestDetail?.request?.purchaseLetterUrl || letterUpload || letterContent.trim());
             case 2:
                 return (requestDetail?.request?.committee?.length || 0) >= 3;
             case 3:
@@ -1449,8 +1506,12 @@ export default function ProcurementPage() {
                                                 <label className="label">Upload Requirement Letter (PDF/Image)</label>
                                                 <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="input" onChange={e => {
                                                     const file = e.target.files[0];
-                                                    if (file) toast.success(`Selected: ${file.name} - Upload functionality to be connected`);
+                                                    if (file) {
+                                                        setLetterUpload(file);
+                                                        toast.success(`Selected: ${file.name}`);
+                                                    }
                                                 }} />
+                                                {letterUpload && <div className="text-sm text-green-600 mt-2">✓ {letterUpload.name}</div>}
                                             </div>
                                             <div className="text-center text-slate-500 text-sm">— OR —</div>
                                             <div>
