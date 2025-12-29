@@ -74,8 +74,9 @@ export default function ProcurementPage() {
     const [receiveForm, setReceiveForm] = useState({ receivingVideoUrl: '', receivingNotes: '' });
     const [selectedLabId, setSelectedLabId] = useState('');
 
-    // Workflow step state (1-7)
-    const [workflowStep, setWorkflowStep] = useState(1);
+    // Workflow step state (0=Request Info for new, 1-9 for existing)
+    const [workflowStep, setWorkflowStep] = useState(0);
+    const [isCreatingNew, setIsCreatingNew] = useState(false);
     const [selectedVendorIds, setSelectedVendorIds] = useState([]);
 
     // Step 5-7 state
@@ -757,16 +758,37 @@ export default function ProcurementPage() {
         return stages.indexOf(status);
     };
 
-    const handleCreateRequest = async (e) => {
-        e.preventDefault();
+    // Start new request workflow
+    const startNewRequest = () => {
+        setIsCreatingNew(true);
+        setRequestForm({ title: '', description: '', purpose: '', department: '', budgetCode: '', items: [] });
+        setSelectedRequest(null);
+        setRequestDetail(null);
+        setWorkflowStep(0);
+        setSelectedVendorIds([]);
+        setLetterContent('');
+        setLetterUpload(null);
+    };
+
+    const handleCreateRequest = async () => {
+        if (!requestForm.title.trim()) {
+            toast.error('Title is required');
+            return false;
+        }
         try {
-            await procurementAPI.createRequest(requestForm);
-            toast.success('Procurement request created');
-            setShowCreateModal(false);
-            setRequestForm({ title: '', description: '', purpose: '', department: '', budgetCode: '', items: [{ itemName: '', specifications: '', quantity: 1, unit: 'pcs', estimatedUnitPrice: '' }] });
+            const res = await procurementAPI.createRequest(requestForm);
+            toast.success('Request created! Proceeding to next steps...');
+            // After creation, load the new request and continue with the flow
+            const newRequest = res.data.data;
+            setSelectedRequest(newRequest);
+            setIsCreatingNew(false);
+            await openRequestDetail(newRequest);
+            setWorkflowStep(1);
             loadData();
+            return true;
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to create request');
+            return false;
         }
     };
 
@@ -1038,7 +1060,7 @@ export default function ProcurementPage() {
                         <button onClick={() => setShowVendorModal(true)} className="btn btn-secondary">
                             <Building className="w-4 h-4" /> Add Vendor
                         </button>
-                        <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
+                        <button onClick={startNewRequest} className="btn btn-primary">
                             <Plus className="w-4 h-4" /> New Request
                         </button>
                     </div>
@@ -1071,7 +1093,7 @@ export default function ProcurementPage() {
                             <div className="text-center py-12 bg-white rounded-xl shadow-sm">
                                 <ShoppingCart className="w-12 h-12 mx-auto text-slate-300 mb-3" />
                                 <p className="text-slate-500">No procurement requests yet</p>
-                                <button onClick={() => setShowCreateModal(true)} className="btn btn-primary mt-4">
+                                <button onClick={startNewRequest} className="btn btn-primary mt-4">
                                     <Plus className="w-4 h-4" /> Create First Request
                                 </button>
                             </div>
@@ -1325,35 +1347,45 @@ export default function ProcurementPage() {
             )}
 
             {/* Request Detail Modal with Comparison */}
-            {selectedRequest && requestDetail && (
+            {(selectedRequest && requestDetail) || isCreatingNew ? (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
                         <div className="p-6 border-b flex items-center justify-between sticky top-0 bg-white">
                             <div>
-                                <h2 className="text-lg font-semibold">{requestDetail.request.title}</h2>
-                                <span className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[requestDetail.request.status]}`}>
-                                    {STATUS_LABELS[requestDetail.request.status]}
-                                </span>
+                                <h2 className="text-lg font-semibold">
+                                    {isCreatingNew ? 'New Procurement Request' : requestDetail?.request?.title}
+                                </h2>
+                                {!isCreatingNew && (
+                                    <span className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[requestDetail?.request?.status]}`}>
+                                        {STATUS_LABELS[requestDetail?.request?.status]}
+                                    </span>
+                                )}
                             </div>
                             <div className="flex gap-2">
-                                <button onClick={openCombinedPdfPreview} className="btn bg-indigo-500 hover:bg-indigo-600 text-white text-sm">
-                                    <Eye className="w-4 h-4" /> Preview PDF
-                                </button>
-                                {requestDetail.comparison?.length > 0 && (
-                                    <button onClick={printComparison} className="btn btn-secondary text-sm">
-                                        <Printer className="w-4 h-4" /> Print Comparison
-                                    </button>
+                                {!isCreatingNew && (
+                                    <>
+                                        <button onClick={openCombinedPdfPreview} className="btn bg-indigo-500 hover:bg-indigo-600 text-white text-sm">
+                                            <Eye className="w-4 h-4" /> Preview PDF
+                                        </button>
+                                        {requestDetail?.comparison?.length > 0 && (
+                                            <button onClick={printComparison} className="btn btn-secondary text-sm">
+                                                <Printer className="w-4 h-4" /> Print Comparison
+                                            </button>
+                                        )}
+                                    </>
                                 )}
-                                <button onClick={() => setSelectedRequest(null)} className="text-slate-400 hover:text-slate-600">
+                                <button onClick={() => { setSelectedRequest(null); setIsCreatingNew(false); setWorkflowStep(1); }} className="text-slate-400 hover:text-slate-600">
                                     <X className="w-6 h-6" />
                                 </button>
                             </div>
                         </div>
                         <div className="p-6">
-                            <p className="text-slate-600 mb-4">{requestDetail.request.purpose}</p>
+                            {!isCreatingNew && requestDetail?.request?.purpose && (
+                                <p className="text-slate-600 mb-4">{requestDetail.request.purpose}</p>
+                            )}
 
                             {/* Flow Stage Forms */}
-                            {requestDetail.request.status === 'approved' && (
+                            {requestDetail?.request?.status === 'approved' && (
                                 <div className="mb-6 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
                                     <h3 className="font-semibold mb-3 flex items-center gap-2 text-indigo-800"><Truck className="w-5 h-5" /> Mark as Ordered</h3>
                                     <div className="grid grid-cols-2 gap-3">
@@ -1505,6 +1537,7 @@ export default function ProcurementPage() {
                             <div className="mb-6">
                                 <div className="flex flex-wrap border-b border-slate-200">
                                     {[
+                                        { step: 0, label: 'Request Info', icon: ClipboardList, showOnlyNew: true },
                                         { step: 1, label: 'Letter', icon: FileText },
                                         { step: 2, label: 'Committee', icon: Users },
                                         { step: 3, label: 'Items', icon: Package },
@@ -1514,10 +1547,10 @@ export default function ProcurementPage() {
                                         { step: 7, label: 'Purchase Order', icon: ClipboardList },
                                         { step: 8, label: 'Bill', icon: CreditCard },
                                         { step: 9, label: 'Received', icon: CheckCircle2 }
-                                    ].map(({ step, label, icon: Icon }) => {
-                                        const maxAccessible = getHighestAccessibleStep();
-                                        const isAccessible = step <= maxAccessible;
-                                        const isComplete = step < maxAccessible || (step === maxAccessible && isStepComplete(step));
+                                    ].filter(t => !t.showOnlyNew || isCreatingNew).map(({ step, label, icon: Icon }) => {
+                                        const maxAccessible = isCreatingNew ? 0 : getHighestAccessibleStep();
+                                        const isAccessible = isCreatingNew ? step === 0 : step <= maxAccessible;
+                                        const isComplete = isCreatingNew ? false : (step < maxAccessible || (step === maxAccessible && isStepComplete(step)));
                                         return (
                                             <button
                                                 key={step}
@@ -1537,12 +1570,80 @@ export default function ProcurementPage() {
                                                 ) : (
                                                     <Icon className="w-3 h-3" />
                                                 )}
-                                                <span className="font-medium">{step}. {label}</span>
+                                                <span className="font-medium">{isCreatingNew && step === 0 ? '' : `${step}. `}{label}</span>
                                             </button>
                                         );
                                     })}
                                 </div>
                             </div>
+
+                            {/* Step 0: Request Info (Create New) */}
+                            {workflowStep === 0 && isCreatingNew && (
+                                <div className="mb-6 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border border-indigo-200">
+                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-indigo-800">
+                                        <ClipboardList className="w-5 h-5" /> Create New Procurement Request
+                                    </h3>
+                                    <p className="text-slate-600 text-sm mb-4">Enter the basic information for your procurement request.</p>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                        <div className="md:col-span-2">
+                                            <label className="label">Title *</label>
+                                            <input
+                                                type="text"
+                                                value={requestForm.title}
+                                                onChange={e => setRequestForm({ ...requestForm, title: e.target.value })}
+                                                className="input"
+                                                placeholder="e.g., Computer Lab Hardware Upgrade"
+                                            />
+                                        </div>
+                                        <div className="md:col-span-2">
+                                            <label className="label">Purpose / Description</label>
+                                            <textarea
+                                                value={requestForm.purpose}
+                                                onChange={e => setRequestForm({ ...requestForm, purpose: e.target.value })}
+                                                className="input min-h-[80px]"
+                                                placeholder="Reason for procurement..."
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="label">Department</label>
+                                            <input
+                                                type="text"
+                                                value={requestForm.department}
+                                                onChange={e => setRequestForm({ ...requestForm, department: e.target.value })}
+                                                className="input"
+                                                placeholder="e.g., Computer Science"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="label">Budget Code</label>
+                                            <input
+                                                type="text"
+                                                value={requestForm.budgetCode}
+                                                onChange={e => setRequestForm({ ...requestForm, budgetCode: e.target.value })}
+                                                className="input"
+                                                placeholder="e.g., IT-2024-001"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => { setIsCreatingNew(false); setSelectedRequest(null); }}
+                                            className="btn btn-secondary"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleCreateRequest}
+                                            disabled={!requestForm.title.trim()}
+                                            className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Create & Continue →
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Step 1: Requirement Letter */}
                             {workflowStep === 1 && (
@@ -2285,7 +2386,7 @@ The undersigned requests approval to purchase the following items for the scienc
                         </div>
                     </div>
                 </div>
-            )}
+            ) : null}
 
             {/* Add Quotation Modal */}
             {showQuotationModal && (
