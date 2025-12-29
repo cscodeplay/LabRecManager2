@@ -241,11 +241,20 @@ router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assi
  * @desc    Update procurement request
  */
 router.put('/requests/:id', authenticate, asyncHandler(async (req, res) => {
-    const { title, description, purpose, department, budgetCode, status } = req.body;
+    const { title, description, purpose, department, budgetCode, status, selectedVendorIds } = req.body;
+
+    const updateData = {};
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (purpose !== undefined) updateData.purpose = purpose;
+    if (department !== undefined) updateData.department = department;
+    if (budgetCode !== undefined) updateData.budgetCode = budgetCode;
+    if (status !== undefined) updateData.status = status;
+    if (selectedVendorIds !== undefined) updateData.selectedVendorIds = selectedVendorIds;
 
     const request = await prisma.procurementRequest.update({
         where: { id: req.params.id },
-        data: { title, description, purpose, department, budgetCode, status }
+        data: updateData
     });
 
     res.json({ success: true, data: request, message: 'Request updated' });

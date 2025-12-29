@@ -203,9 +203,10 @@ export default function ProcurementPage() {
                     }
                     break;
                 case 4:
-                    // Step 4: Selected vendors are just UI state
-                    // Actual vendors are linked when quotations are added in Step 5
-                    // Nothing to save to DB here
+                    // Step 4: Save selected vendors to database
+                    await procurementAPI.updateRequest(selectedRequest.id, {
+                        selectedVendorIds: selectedVendorIds
+                    });
                     break;
                 case 5:
                     // Save quotation prices for each vendor
@@ -1205,8 +1206,10 @@ export default function ProcurementPage() {
                 setLetterUpload({ name: data.request.purchaseLetterName || 'Uploaded Document' });
             }
 
-            // Restore selected vendors from saved quotations
-            if (data.request?.quotations?.length > 0) {
+            // Restore selected vendors from DB first, fallback to quotations
+            if (data.request?.selectedVendorIds?.length > 0) {
+                setSelectedVendorIds(data.request.selectedVendorIds);
+            } else if (data.request?.quotations?.length > 0) {
                 const vendorIds = [...new Set(data.request.quotations.map(q => q.vendor.id))];
                 setSelectedVendorIds(vendorIds);
             }
