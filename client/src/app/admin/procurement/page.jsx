@@ -1170,7 +1170,7 @@ export default function ProcurementPage() {
                                         </button>
                                     </div>
                                 );
-                            }))
+                            })
                         )}
                     </div>
                 )}
