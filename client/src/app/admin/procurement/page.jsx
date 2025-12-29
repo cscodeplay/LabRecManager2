@@ -273,11 +273,23 @@ export default function ProcurementPage() {
                     }
                     break;
                 case 8:
-                    // Save bill and cheque info
-                    await procurementAPI.addBill(selectedRequest.id, {
-                        billFileName: billUpload,
-                        chequeNumber: chequeNumber
-                    });
+                    // Save bill and payment info
+                    // Use bill filename as billNumber for now
+                    if (billUpload) {
+                        await procurementAPI.addBill(selectedRequest.id, {
+                            billNumber: billUpload, // Use filename as bill reference
+                            billDate: new Date().toISOString().split('T')[0]
+                        });
+                    }
+                    // Save cheque info via payment endpoint if cheque exists
+                    if (chequeNumber) {
+                        await procurementAPI.addPayment(selectedRequest.id, {
+                            paymentMethod: 'cheque',
+                            chequeNumber: chequeNumber,
+                            paymentDate: new Date().toISOString().split('T')[0]
+                        });
+                    }
+                    await openRequestDetail(selectedRequest);
                     break;
                 case 9:
                     // Save received items
@@ -1488,8 +1500,10 @@ export default function ProcurementPage() {
                                     if (r.purchaseLetterUrl || r.letterContent) completed++; // Step 1
                                     if ((r.committee?.length || 0) >= 3) completed++; // Step 2
                                     if ((r.items?.length || 0) >= 1) completed++; // Step 3
-                                    // Step 4: vendors selected (we check quotations as proxy for vendor selection)
-                                    const uniqueVendors = [...new Set((r.quotations || []).map(q => q.vendorId))];
+                                    // Step 4: vendors selected (check selectedVendorIds or quotations)
+                                    const uniqueVendors = r.selectedVendorIds?.length > 0
+                                        ? r.selectedVendorIds
+                                        : [...new Set((r.quotations || []).map(q => q.vendor?.id || q.vendorId))];
                                     if (uniqueVendors.length >= 3) completed++; // Step 4
                                     // Step 5: quotation prices entered
                                     if ((r.quotations?.length || 0) >= 3) completed++; // Step 5
