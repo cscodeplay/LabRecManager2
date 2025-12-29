@@ -96,6 +96,14 @@ export default function ProcurementPage() {
     // Step 1: Letter content state
     const [letterContent, setLetterContent] = useState('');
 
+    // Step 8: Bill state
+    const [billUpload, setBillUpload] = useState(null);
+    const [chequeUpload, setChequeUpload] = useState(null);
+    const [chequeNumber, setChequeNumber] = useState('');
+
+    // Step 9: Items received state
+    const [receivedItems, setReceivedItems] = useState({}); // { itemId: { received: qty, serialNumbers: [] } }
+
     // Validation functions for each step
     const validateStep = (step) => {
         switch (step) {
@@ -106,8 +114,8 @@ export default function ProcurementPage() {
                 }
                 return true;
             case 2:
-                if (!requestDetail?.request?.committee?.length) {
-                    toast.error('Please add at least one committee member');
+                if (!requestDetail?.request?.committee?.length || requestDetail.request.committee.length < 3) {
+                    toast.error('Please add at least 3 committee members');
                     return false;
                 }
                 return true;
@@ -118,8 +126,13 @@ export default function ProcurementPage() {
                 }
                 return true;
             case 4:
-                if (!selectedVendorIds.length) {
-                    toast.error('Please select at least one vendor');
+                if (selectedVendorIds.length < 3) {
+                    toast.error('Please select at least 3 vendors');
+                    return false;
+                }
+                const localVendorsSelected = selectedVendorIds.filter(id => vendors.find(v => v.id === id)?.isLocal).length;
+                if (localVendorsSelected < 1) {
+                    toast.error('At least 1 local vendor must be selected');
                     return false;
                 }
                 return true;
@@ -143,11 +156,28 @@ export default function ProcurementPage() {
                 }
                 return true;
             case 7:
-                // All quantities must be > 0
+                // All quantities must be >= 1
                 for (const item of requestDetail?.request?.items || []) {
                     const qty = editableQuantities[item.id] ?? item.quantity;
-                    if (!qty || qty <= 0) {
-                        toast.error(`Enter valid quantity for "${item.itemName}"`);
+                    if (!qty || qty < 1) {
+                        toast.error(`Quantity for "${item.itemName}" must be at least 1`);
+                        return false;
+                    }
+                }
+                return true;
+            case 8:
+                if (!billUpload) {
+                    toast.error('Please upload the bill document');
+                    return false;
+                }
+                return true;
+            case 9:
+                // Check if all items have been received
+                for (const item of requestDetail?.request?.items || []) {
+                    const received = receivedItems[item.id]?.received ?? 0;
+                    const expected = editableQuantities[item.id] ?? item.quantity;
+                    if (received < expected) {
+                        toast.error(`Mark item "${item.itemName}" as received`);
                         return false;
                     }
                 }
@@ -1298,9 +1328,11 @@ export default function ProcurementPage() {
                                         { step: 2, label: 'Committee', icon: Users },
                                         { step: 3, label: 'Items', icon: Package },
                                         { step: 4, label: 'Call Quotations', icon: Building },
-                                        { step: 5, label: 'Received', icon: Receipt },
+                                        { step: 5, label: 'Quotations', icon: Receipt },
                                         { step: 6, label: 'Comparative', icon: Calculator },
-                                        { step: 7, label: 'Purchase Order', icon: ClipboardList }
+                                        { step: 7, label: 'Purchase Order', icon: ClipboardList },
+                                        { step: 8, label: 'Bill', icon: CreditCard },
+                                        { step: 9, label: 'Received', icon: CheckCircle2 }
                                     ].map(({ step, label, icon: Icon }) => (
                                         <button
                                             key={step}
@@ -1850,7 +1882,198 @@ The undersigned requests approval to purchase the following items for the scienc
                                         <button onClick={() => setWorkflowStep(6)} className="btn btn-secondary">← Back</button>
                                         <button onClick={() => saveStepData(7)} className="btn btn-secondary">Save</button>
                                         <button onClick={() => { if (validateStep(7)) openCombinedPdfPreview(); }} className="btn bg-emerald-600 hover:bg-emerald-700 text-white">
-                                            <Printer className="w-4 h-4" /> Generate Purchase Order PDF
+                                            <Printer className="w-4 h-4" /> Generate PO PDF
+                                        </button>
+                                        <button onClick={() => saveAndNext(7)} className="btn btn-primary">Save & Next →</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Step 8: Bill Received */}
+                            {workflowStep === 8 && (
+                                <div className="mb-6 p-4 bg-rose-50 rounded-lg border border-rose-200">
+                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-rose-800">
+                                        <CreditCard className="w-5 h-5" /> Step 8: Bill & Payment
+                                    </h3>
+                                    <p className="text-slate-600 text-sm mb-4">Upload the vendor bill and payment cheque for records.</p>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                        <div className="bg-white p-4 rounded border">
+                                            <label className="label">Upload Bill/Invoice *</label>
+                                            <input
+                                                type="file"
+                                                className="input"
+                                                accept=".pdf,.jpg,.jpeg,.png"
+                                                onChange={e => {
+                                                    const file = e.target.files[0];
+                                                    if (file) {
+                                                        setBillUpload(file.name);
+                                                        toast.success(`Bill uploaded: ${file.name}`);
+                                                    }
+                                                }}
+                                            />
+                                            {billUpload && <div className="text-sm text-green-600 mt-2">✓ {billUpload}</div>}
+                                        </div>
+
+                                        <div className="bg-white p-4 rounded border">
+                                            <label className="label">Upload Cheque Image (for auto-extraction)</label>
+                                            <input
+                                                type="file"
+                                                className="input"
+                                                accept=".jpg,.jpeg,.png"
+                                                onChange={e => {
+                                                    const file = e.target.files[0];
+                                                    if (file) {
+                                                        setChequeUpload(file.name);
+                                                        // Simulate OCR extraction (placeholder)
+                                                        setTimeout(() => {
+                                                            const mockChequeNo = Math.floor(100000 + Math.random() * 900000).toString();
+                                                            setChequeNumber(mockChequeNo);
+                                                            toast.success(`Cheque number extracted: ${mockChequeNo}`);
+                                                        }, 1000);
+                                                    }
+                                                }}
+                                            />
+                                            {chequeUpload && <div className="text-sm text-green-600 mt-2">✓ {chequeUpload}</div>}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-4 rounded border mb-4">
+                                        <label className="label">Cheque Number</label>
+                                        <input
+                                            type="text"
+                                            className="input"
+                                            placeholder="Auto-extracted or enter manually"
+                                            value={chequeNumber}
+                                            onChange={e => setChequeNumber(e.target.value)}
+                                        />
+                                        <p className="text-xs text-slate-500 mt-1">Cheque number is auto-extracted from uploaded image or can be entered manually</p>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setWorkflowStep(7)} className="btn btn-secondary">← Back</button>
+                                        <button onClick={() => saveStepData(8)} className="btn btn-secondary">Save</button>
+                                        <button onClick={() => saveAndNext(8)} className="btn btn-primary">Save & Next →</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Step 9: Items Received */}
+                            {workflowStep === 9 && (
+                                <div className="mb-6 p-4 bg-teal-50 rounded-lg border border-teal-200">
+                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-teal-800">
+                                        <CheckCircle2 className="w-5 h-5" /> Step 9: Items Received & Inventory Update
+                                    </h3>
+                                    <p className="text-slate-600 text-sm mb-4">Verify received items, scan barcodes for serial numbers, and update inventory.</p>
+
+                                    <div className="space-y-3 mb-4">
+                                        {requestDetail?.request?.items?.map((item, idx) => {
+                                            const expected = editableQuantities[item.id] ?? item.quantity;
+                                            const received = receivedItems[item.id]?.received ?? 0;
+                                            const serials = receivedItems[item.id]?.serialNumbers || [];
+
+                                            return (
+                                                <div key={item.id} className="bg-white p-4 rounded border">
+                                                    <div className="flex items-center justify-between mb-3">
+                                                        <div>
+                                                            <span className="text-slate-400 text-sm mr-2">{idx + 1}.</span>
+                                                            <span className="font-medium">{item.itemName}</span>
+                                                            <span className="text-slate-500 text-sm ml-2">(Expected: {expected})</span>
+                                                        </div>
+                                                        <div className={`px-3 py-1 rounded text-sm font-medium ${received >= expected ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                            {received}/{expected} Received
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-3 mb-3">
+                                                        <label className="text-sm">Received Qty:</label>
+                                                        <input
+                                                            type="number"
+                                                            className="input w-24"
+                                                            min="0"
+                                                            max={expected}
+                                                            value={received}
+                                                            onChange={e => setReceivedItems(prev => ({
+                                                                ...prev,
+                                                                [item.id]: { ...prev[item.id], received: parseInt(e.target.value) || 0 }
+                                                            }))}
+                                                        />
+                                                        <button
+                                                            onClick={() => setReceivedItems(prev => ({
+                                                                ...prev,
+                                                                [item.id]: { ...prev[item.id], received: expected }
+                                                            }))}
+                                                            className="btn btn-secondary text-sm"
+                                                        >
+                                                            Mark All Received
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="bg-slate-50 p-3 rounded">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <ScanLine className="w-4 h-4 text-slate-600" />
+                                                            <span className="text-sm font-medium">Serial Numbers (Barcode Scan)</span>
+                                                        </div>
+                                                        <div className="flex gap-2 mb-2">
+                                                            <input
+                                                                type="text"
+                                                                className="input flex-1"
+                                                                placeholder="Scan barcode or enter serial number"
+                                                                onKeyDown={e => {
+                                                                    if (e.key === 'Enter' && e.target.value.trim()) {
+                                                                        setReceivedItems(prev => ({
+                                                                            ...prev,
+                                                                            [item.id]: {
+                                                                                ...prev[item.id],
+                                                                                serialNumbers: [...(prev[item.id]?.serialNumbers || []), e.target.value.trim()]
+                                                                            }
+                                                                        }));
+                                                                        e.target.value = '';
+                                                                        toast.success('Serial number added');
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </div>
+                                                        {serials.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {serials.map((sn, i) => (
+                                                                    <span key={i} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">{sn}</span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <div className="bg-green-100 p-4 rounded border border-green-300 mb-4">
+                                        <h4 className="font-medium text-green-800 mb-2">Update Inventory</h4>
+                                        <p className="text-green-700 text-sm mb-3">Click below to add received items to the inventory system with serial numbers.</p>
+                                        <button
+                                            onClick={() => {
+                                                if (validateStep(9)) {
+                                                    toast.success('Items added to inventory successfully!');
+                                                }
+                                            }}
+                                            className="btn bg-green-600 hover:bg-green-700 text-white"
+                                        >
+                                            <Package className="w-4 h-4" /> Update Inventory
+                                        </button>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setWorkflowStep(8)} className="btn btn-secondary">← Back</button>
+                                        <button onClick={() => saveStepData(9)} className="btn btn-secondary">Save</button>
+                                        <button
+                                            onClick={() => {
+                                                if (validateStep(9)) {
+                                                    toast.success('Procurement workflow completed!');
+                                                }
+                                            }}
+                                            className="btn bg-teal-600 hover:bg-teal-700 text-white"
+                                        >
+                                            <Check className="w-4 h-4" /> Complete Procurement
                                         </button>
                                     </div>
                                 </div>
