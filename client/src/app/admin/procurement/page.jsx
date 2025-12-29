@@ -277,6 +277,13 @@ export default function ProcurementPage() {
 
     const handleAddCommitteeMember = async () => {
         if (!selectedStaffId) return;
+
+        // Check for duplicate
+        if (requestDetail?.request?.committee?.some(m => m.userId === selectedStaffId)) {
+            toast.error('This member is already in the committee');
+            return;
+        }
+
         try {
             await procurementAPI.addCommitteeMember(selectedRequest.id, { userId: selectedStaffId, role: committeeRole });
             toast.success('Committee member added');
@@ -1121,6 +1128,15 @@ export default function ProcurementPage() {
                             <div>
                                 <label className="label">GSTIN</label>
                                 <input type="text" value={vendorForm.gstin} onChange={(e) => setVendorForm({ ...vendorForm, gstin: e.target.value })} className="input" />
+                            </div>
+                            <div>
+                                <label className="label">Address</label>
+                                <textarea
+                                    value={vendorForm.address}
+                                    onChange={(e) => setVendorForm({ ...vendorForm, address: e.target.value })}
+                                    className="input min-h-[80px]"
+                                    placeholder="Full address of vendor"
+                                />
                             </div>
                             <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                                 <input
@@ -2078,33 +2094,7 @@ The undersigned requests approval to purchase the following items for the scienc
                                     </div>
                                 </div>
                             )}
-                            <div className="flex flex-wrap gap-2 mb-6">
-                                <button onClick={openQuotationModal} className="btn btn-primary">
-                                    <Plus className="w-4 h-4" /> Add Vendor Quote
-                                </button>
-                                {requestDetail.comparison?.length > 0 && requestDetail.request.status !== 'approved' && (
-                                    <button onClick={approveWithLowestPrices} className="btn bg-green-500 hover:bg-green-600 text-white">
-                                        <Check className="w-4 h-4" /> Approve (Lowest Prices)
-                                    </button>
-                                )}
-                            </div>
 
-                            {/* Items List */}
-                            <h3 className="font-semibold mb-2">Items ({requestDetail.request.items?.length})</h3>
-                            <div className="space-y-2">
-                                {requestDetail.request.items?.map(item => (
-                                    <div key={item.id} className="p-3 bg-slate-50 rounded-lg flex justify-between">
-                                        <div>
-                                            <span className="font-medium">{item.itemName}</span>
-                                            {item.specifications && <span className="text-slate-500 text-sm ml-2">({item.specifications})</span>}
-                                        </div>
-                                        <div className="text-sm text-slate-600">
-                                            Qty: {item.quantity} {item.unit}
-                                            {item.estimatedUnitPrice && ` | Est: ₹${item.estimatedUnitPrice}`}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
                         </div>
                     </div>
                 </div>
