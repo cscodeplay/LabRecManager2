@@ -583,4 +583,67 @@ router.post('/login-with-pin', asyncHandler(async (req, res) => {
     });
 }));
 
+/**
+ * @route   POST /api/auth/reset-admin-password
+ * @desc    Reset admin password (use secret key for security)
+ * @access  Public (with secret key)
+ */
+router.post('/reset-admin-password', asyncHandler(async (req, res) => {
+    const { email, newPassword, secretKey } = req.body;
+
+    // Security: Require a secret key (set this in env or use a fixed one for emergency)
+    const RESET_SECRET = process.env.ADMIN_RESET_SECRET || 'RESET_ADMIN_2024';
+
+    if (secretKey !== RESET_SECRET) {
+        return res.status(403).json({
+            success: false,
+            message: 'Invalid secret key'
+        });
+    }
+
+    if (!email || !newPassword) {
+        return res.status(400).json({
+            success: false,
+            message: 'Email and new password are required'
+        });
+    }
+
+    if (newPassword.length < 6) {
+        return res.status(400).json({
+            success: false,
+            message: 'Password must be at least 6 characters'
+        });
+    }
+
+    // Find user
+    const user = await prisma.user.findUnique({
+        where: { email }
+    });
+
+    if (!user) {
+        return res.status(404).json({
+            success: false,
+            message: 'User not found'
+        });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(newPassword, salt);
+
+    // Update password
+    await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash }
+    });
+
+    console.log(`Password reset for user: ${email}`);
+
+    res.json({
+        success: true,
+        message: `Password reset successfully for ${email}`,
+        hint: 'You can now login with the new password'
+    });
+}));
+
 module.exports = router;
