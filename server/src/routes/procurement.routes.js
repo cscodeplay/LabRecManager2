@@ -780,6 +780,7 @@ router.put('/requests/:id/receive', authenticate, asyncHandler(async (req, res) 
     console.log('=== RECEIVE ITEMS REQUEST ===');
     console.log('RequestId:', req.params.id);
     console.log('ReceivedItems:', JSON.stringify(receivedItems));
+    console.log('Available Statuses:', JSON.stringify(prisma.ProcurementStatus)); // DEBUG LOG
     console.log('==============================');
 
     // Update each item's received quantity and serial numbers
