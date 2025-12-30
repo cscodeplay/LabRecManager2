@@ -303,6 +303,14 @@ export default function ProcurementPage() {
                         }));
 
                         await procurementAPI.approveRequest(selectedRequest.id, approvedItems);
+
+                        // Save PO Number if entered
+                        if (orderForm.poNumber) {
+                            await procurementAPI.markOrdered(selectedRequest.id, {
+                                poNumber: orderForm.poNumber
+                            });
+                        }
+
                         await openRequestDetail(selectedRequest);
                     }
                     break;
@@ -1357,6 +1365,14 @@ export default function ProcurementPage() {
             }
             if (data.request?.paymentDate) {
                 setPaymentDate(new Date(data.request.paymentDate).toISOString().split('T')[0]);
+            }
+
+            // Restore PO Number and URL
+            if (data.request?.poNumber || data.request?.poUrl) {
+                setOrderForm({
+                    poNumber: data.request.poNumber || '',
+                    poUrl: data.request.poUrl || ''
+                });
             }
 
             // Restore quotation document names
@@ -2603,7 +2619,44 @@ The undersigned requests approval to purchase the following items for the scienc
                                                     ))} Only
                                                 </div>
 
-                                                <div className="flex justify-end">
+                                                {/* PO Number and Document */}
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                                    <div className="bg-white p-4 rounded border">
+                                                        <label className="label">PO Number</label>
+                                                        <input
+                                                            type="text"
+                                                            className="input w-full"
+                                                            placeholder="Enter PO Number (e.g., PO-2024-001)"
+                                                            value={orderForm.poNumber}
+                                                            onChange={e => setOrderForm({ ...orderForm, poNumber: e.target.value })}
+                                                        />
+                                                    </div>
+                                                    <div className="bg-white p-4 rounded border">
+                                                        <label className="label">Upload PO Document</label>
+                                                        <input
+                                                            type="file"
+                                                            className="input w-full"
+                                                            accept=".pdf,.jpg,.jpeg,.png"
+                                                            onChange={async (e) => {
+                                                                const file = e.target.files[0];
+                                                                if (file && selectedRequest?.id) {
+                                                                    try {
+                                                                        await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'po', file);
+                                                                        setOrderForm({ ...orderForm, poUrl: file.name });
+                                                                        toast.success('PO document uploaded');
+                                                                    } catch (err) {
+                                                                        toast.error('Upload failed');
+                                                                    }
+                                                                }
+                                                            }}
+                                                        />
+                                                        {(orderForm.poUrl || requestDetail?.request?.poUrl) && (
+                                                            <div className="text-sm text-green-600 mt-2">✓ PO Document uploaded</div>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex justify-end mt-4">
                                                     <div className="bg-white p-4 rounded border w-80">
                                                         <h4 className="font-medium mb-3 text-center">Committee Signatures</h4>
                                                         <div className="space-y-4">
@@ -2876,101 +2929,104 @@ The undersigned requests approval to purchase the following items for the scienc
 
                         </div>
                     </div>
-                </div>
-            ) : null}
+                </div >
+            ) : null
+            }
 
             {/* Add Quotation Modal */}
-            {showQuotationModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="p-6 border-b flex items-center justify-between">
-                            <h2 className="text-lg font-semibold">Add Vendor Quotation</h2>
-                            <button onClick={() => setShowQuotationModal(false)} className="text-slate-400 hover:text-slate-600">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <form onSubmit={handleAddQuotation} className="p-6 space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="label">Vendor *</label>
-                                    <select
-                                        value={quotationForm.vendorId}
-                                        onChange={(e) => setQuotationForm({ ...quotationForm, vendorId: e.target.value })}
-                                        className="input"
-                                        required
-                                    >
-                                        <option value="">Select vendor...</option>
-                                        {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="label">Quotation Number</label>
-                                    <input
-                                        type="text"
-                                        value={quotationForm.quotationNumber}
-                                        onChange={(e) => setQuotationForm({ ...quotationForm, quotationNumber: e.target.value })}
-                                        className="input"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="label">Quotation Date</label>
-                                    <input
-                                        type="date"
-                                        value={quotationForm.quotationDate}
-                                        onChange={(e) => setQuotationForm({ ...quotationForm, quotationDate: e.target.value })}
-                                        className="input"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="label">Valid Until</label>
-                                    <input
-                                        type="date"
-                                        value={quotationForm.validUntil}
-                                        onChange={(e) => setQuotationForm({ ...quotationForm, validUntil: e.target.value })}
-                                        className="input"
-                                    />
-                                </div>
+            {
+                showQuotationModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+                        <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                            <div className="p-6 border-b flex items-center justify-between">
+                                <h2 className="text-lg font-semibold">Add Vendor Quotation</h2>
+                                <button onClick={() => setShowQuotationModal(false)} className="text-slate-400 hover:text-slate-600">
+                                    <X className="w-5 h-5" />
+                                </button>
                             </div>
+                            <form onSubmit={handleAddQuotation} className="p-6 space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="label">Vendor *</label>
+                                        <select
+                                            value={quotationForm.vendorId}
+                                            onChange={(e) => setQuotationForm({ ...quotationForm, vendorId: e.target.value })}
+                                            className="input"
+                                            required
+                                        >
+                                            <option value="">Select vendor...</option>
+                                            {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="label">Quotation Number</label>
+                                        <input
+                                            type="text"
+                                            value={quotationForm.quotationNumber}
+                                            onChange={(e) => setQuotationForm({ ...quotationForm, quotationNumber: e.target.value })}
+                                            className="input"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="label">Quotation Date</label>
+                                        <input
+                                            type="date"
+                                            value={quotationForm.quotationDate}
+                                            onChange={(e) => setQuotationForm({ ...quotationForm, quotationDate: e.target.value })}
+                                            className="input"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="label">Valid Until</label>
+                                        <input
+                                            type="date"
+                                            value={quotationForm.validUntil}
+                                            onChange={(e) => setQuotationForm({ ...quotationForm, validUntil: e.target.value })}
+                                            className="input"
+                                        />
+                                    </div>
+                                </div>
 
-                            {/* Item Prices */}
-                            <div>
-                                <label className="label">Item Prices</label>
-                                <div className="space-y-2">
-                                    {quotationForm.items.map((item, idx) => (
-                                        <div key={item.procurementItemId} className="flex items-center gap-3 p-2 bg-slate-50 rounded">
-                                            <span className="flex-1 text-sm">{item.itemName}</span>
-                                            <span className="text-sm text-slate-500">Qty: {item.quantity}</span>
-                                            <div className="w-32">
-                                                <input
-                                                    type="number"
-                                                    value={item.unitPrice}
-                                                    onChange={(e) => {
-                                                        const newItems = [...quotationForm.items];
-                                                        newItems[idx].unitPrice = e.target.value;
-                                                        setQuotationForm({ ...quotationForm, items: newItems });
-                                                    }}
-                                                    className="input text-sm"
-                                                    placeholder="Unit ₹"
-                                                    step="0.01"
-                                                />
+                                {/* Item Prices */}
+                                <div>
+                                    <label className="label">Item Prices</label>
+                                    <div className="space-y-2">
+                                        {quotationForm.items.map((item, idx) => (
+                                            <div key={item.procurementItemId} className="flex items-center gap-3 p-2 bg-slate-50 rounded">
+                                                <span className="flex-1 text-sm">{item.itemName}</span>
+                                                <span className="text-sm text-slate-500">Qty: {item.quantity}</span>
+                                                <div className="w-32">
+                                                    <input
+                                                        type="number"
+                                                        value={item.unitPrice}
+                                                        onChange={(e) => {
+                                                            const newItems = [...quotationForm.items];
+                                                            newItems[idx].unitPrice = e.target.value;
+                                                            setQuotationForm({ ...quotationForm, items: newItems });
+                                                        }}
+                                                        className="input text-sm"
+                                                        placeholder="Unit ₹"
+                                                        step="0.01"
+                                                    />
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="flex justify-end gap-2 pt-4">
-                                <button type="button" onClick={() => setShowQuotationModal(false)} className="btn btn-secondary">
-                                    Cancel
-                                </button>
-                                <button type="submit" className="btn btn-primary">
-                                    Add Quotation
-                                </button>
-                            </div>
-                        </form>
+                                <div className="flex justify-end gap-2 pt-4">
+                                    <button type="button" onClick={() => setShowQuotationModal(false)} className="btn btn-secondary">
+                                        Cancel
+                                    </button>
+                                    <button type="submit" className="btn btn-primary">
+                                        Add Quotation
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 }
