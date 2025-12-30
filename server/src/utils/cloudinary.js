@@ -1,6 +1,8 @@
 const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 // Configure Cloudinary
 cloudinary.config({
@@ -9,62 +11,57 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Storage for images (purchase letter, bill, cheque, quotation docs)
-const imageStorage = new CloudinaryStorage({
-    cloudinary: cloudinary,
-    params: {
-        folder: 'procurement/documents',
-        allowed_formats: ['jpg', 'jpeg', 'png', 'pdf'],
-        transformation: [{ quality: 'auto:good' }]
+console.log('✅ Cloudinary service initialized');
+
+// Use temp directory for multer storage
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, os.tmpdir());
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
     }
 });
 
-// Storage for videos (receiving video)
-const videoStorage = new CloudinaryStorage({
-    cloudinary: cloudinary,
-    params: {
-        folder: 'procurement/videos',
-        resource_type: 'video',
-        allowed_formats: ['mp4', 'webm', 'mov']
-    }
-});
-
-// Create multer instances
-const uploadImage = multer({
-    storage: imageStorage,
-    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
-});
-
-const uploadVideo = multer({
-    storage: videoStorage,
+// Multer for temp file upload
+const upload = multer({
+    storage: storage,
     limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
 });
 
-// Delete file from Cloudinary
-const deleteFile = async (publicId, resourceType = 'image') => {
+// Upload file to Cloudinary
+const uploadToCloudinary = async (filePath, options = {}) => {
     try {
-        const result = await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
+        const result = await cloudinary.uploader.upload(filePath, {
+            folder: options.folder || 'procurement/documents',
+            resource_type: options.resourceType || 'auto',
+            ...options
+        });
+
+        // Delete temp file after upload
+        fs.unlink(filePath, (err) => {
+            if (err) console.error('Error deleting temp file:', err);
+        });
+
         return result;
     } catch (error) {
-        console.error('Cloudinary delete error:', error);
+        console.error('Cloudinary upload error:', error);
         throw error;
     }
 };
 
-// Get public_id from Cloudinary URL
-const getPublicIdFromUrl = (url) => {
-    if (!url) return null;
-    const parts = url.split('/');
-    const filename = parts[parts.length - 1];
-    const folder = parts[parts.length - 2];
-    const publicId = `${folder}/${filename.split('.')[0]}`;
-    return publicId;
+// Upload video to Cloudinary
+const uploadVideoToCloudinary = async (filePath) => {
+    return uploadToCloudinary(filePath, {
+        folder: 'procurement/videos',
+        resource_type: 'video'
+    });
 };
 
 module.exports = {
     cloudinary,
-    uploadImage,
-    uploadVideo,
-    deleteFile,
-    getPublicIdFromUrl
+    upload,
+    uploadToCloudinary,
+    uploadVideoToCloudinary
 };

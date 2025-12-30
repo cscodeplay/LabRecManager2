@@ -2,27 +2,26 @@ const express = require('express');
 const router = express.Router();
 const prisma = require('../config/database');
 const { authenticate } = require('../middleware/auth');
-const { uploadImage, uploadVideo } = require('../utils/cloudinary');
+const { upload, uploadToCloudinary, uploadVideoToCloudinary } = require('../utils/cloudinary');
 
 /**
  * @route   POST /api/upload/document
  * @desc    Upload a document (PDF/image) for procurement
  */
-router.post('/document', authenticate, uploadImage.single('file'), async (req, res) => {
+router.post('/document', authenticate, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ success: false, message: 'No file uploaded' });
         }
 
-        const fileUrl = req.file.path;
-        const fileName = req.file.originalname || req.file.filename;
+        const result = await uploadToCloudinary(req.file.path);
 
         res.json({
             success: true,
             data: {
-                url: fileUrl,
-                name: fileName,
-                publicId: req.file.filename
+                url: result.secure_url,
+                publicId: result.public_id,
+                name: req.file.originalname
             },
             message: 'File uploaded successfully'
         });
@@ -36,21 +35,20 @@ router.post('/document', authenticate, uploadImage.single('file'), async (req, r
  * @route   POST /api/upload/video
  * @desc    Upload a video for receiving verification
  */
-router.post('/video', authenticate, uploadVideo.single('file'), async (req, res) => {
+router.post('/video', authenticate, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ success: false, message: 'No video uploaded' });
         }
 
-        const fileUrl = req.file.path;
-        const fileName = req.file.originalname || req.file.filename;
+        const result = await uploadVideoToCloudinary(req.file.path);
 
         res.json({
             success: true,
             data: {
-                url: fileUrl,
-                name: fileName,
-                publicId: req.file.filename
+                url: result.secure_url,
+                publicId: result.public_id,
+                name: req.file.originalname
             },
             message: 'Video uploaded successfully'
         });
@@ -64,15 +62,16 @@ router.post('/video', authenticate, uploadVideo.single('file'), async (req, res)
  * @route   POST /api/upload/procurement/:requestId/:field
  * @desc    Upload and save to specific procurement field
  */
-router.post('/procurement/:requestId/:field', authenticate, uploadImage.single('file'), async (req, res) => {
+router.post('/procurement/:requestId/:field', authenticate, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ success: false, message: 'No file uploaded' });
         }
 
         const { requestId, field } = req.params;
-        const fileUrl = req.file.path;
-        const fileName = req.file.originalname || req.file.filename;
+        const result = await uploadToCloudinary(req.file.path);
+        const fileUrl = result.secure_url;
+        const fileName = req.file.originalname;
 
         // Map field names to DB columns
         const fieldMap = {
@@ -119,24 +118,24 @@ router.post('/procurement/:requestId/:field', authenticate, uploadImage.single('
  * @route   POST /api/upload/quotation/:quotationId
  * @desc    Upload quotation document for a specific quotation
  */
-router.post('/quotation/:quotationId', authenticate, uploadImage.single('file'), async (req, res) => {
+router.post('/quotation/:quotationId', authenticate, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ success: false, message: 'No file uploaded' });
         }
 
         const { quotationId } = req.params;
-        const fileUrl = req.file.path;
+        const result = await uploadToCloudinary(req.file.path);
 
         const quotation = await prisma.vendorQuotation.update({
             where: { id: quotationId },
-            data: { documentUrl: fileUrl }
+            data: { documentUrl: result.secure_url }
         });
 
         res.json({
             success: true,
             data: {
-                url: fileUrl,
+                url: result.secure_url,
                 quotation
             },
             message: 'Quotation document uploaded'
