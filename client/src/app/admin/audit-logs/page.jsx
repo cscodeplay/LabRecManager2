@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
     ArrowLeft, Activity, Search, Filter, RefreshCw,
     User, Clock, Download, ChevronLeft, ChevronRight,
-    AlertCircle, CheckCircle, Settings, FileText, Edit3, Trash2
+    AlertCircle, CheckCircle, Settings, FileText, Edit3, Trash2, Database
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { auditAPI } from '@/lib/api';
@@ -172,7 +172,7 @@ export default function AuditLogsPage() {
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Stats Cards */}
                 {stats && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                         <div className="card p-4">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
@@ -206,6 +206,17 @@ export default function AuditLogsPage() {
                                 </div>
                             </div>
                         </div>
+                        <Link href="/admin/query-logs" className="card p-4 hover:shadow-md transition-shadow cursor-pointer border-2 border-dashed border-orange-200 bg-orange-50">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
+                                    <Database className="w-5 h-5 text-orange-600" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-orange-600 font-medium">View DB Query Logs</p>
+                                    <p className="text-xs text-slate-500">Monitor database queries →</p>
+                                </div>
+                            </div>
+                        </Link>
                     </div>
                 )}
 
