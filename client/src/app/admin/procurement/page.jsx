@@ -236,7 +236,7 @@ export default function ProcurementPage() {
 
                             if (!existingQuotation) {
                                 // Create new quotation
-                                await procurementAPI.addQuotation(selectedRequest.id, {
+                                const newQuotationRes = await procurementAPI.addQuotation(selectedRequest.id, {
                                     vendorId,
                                     quotationNumber: `QT-${Date.now().toString(36).toUpperCase()}`,
                                     quotationDate: new Date().toISOString().split('T')[0],
@@ -246,6 +246,26 @@ export default function ProcurementPage() {
                                         quantity: item.quantity
                                     }))
                                 });
+
+                                // Upload quotation document if exists
+                                const docFile = vendorQuotationDocs[vendorId];
+                                if (docFile && docFile instanceof File && newQuotationRes?.data?.data?.id) {
+                                    try {
+                                        await uploadAPI.uploadQuotationDoc(newQuotationRes.data.data.id, docFile);
+                                    } catch (uploadErr) {
+                                        console.error('Quotation doc upload error:', uploadErr);
+                                    }
+                                }
+                            } else {
+                                // Update existing quotation document if new file uploaded
+                                const docFile = vendorQuotationDocs[vendorId];
+                                if (docFile && docFile instanceof File) {
+                                    try {
+                                        await uploadAPI.uploadQuotationDoc(existingQuotation.id, docFile);
+                                    } catch (uploadErr) {
+                                        console.error('Quotation doc upload error:', uploadErr);
+                                    }
+                                }
                             }
                         }
                     }
@@ -1311,11 +1331,43 @@ export default function ProcurementPage() {
             }
 
             // Restore bill/cheque info
-            if (data.request?.billDocumentUrl) {
-                setBillUpload(data.request.billDocumentName || 'Bill Document');
+            if (data.request?.billUrl) {
+                setBillUpload({ name: 'Bill Document' });
+            }
+            if (data.request?.billNumber) {
+                setBillNumber(data.request.billNumber);
+            }
+            if (data.request?.billDate) {
+                setBillDate(new Date(data.request.billDate).toISOString().split('T')[0]);
+            }
+            // Pre-populate bill amount from approved total
+            if (data.request?.approvedTotal && !data.request?.billAmount) {
+                setBillAmount(parseFloat(data.request.approvedTotal).toFixed(2));
+            } else if (data.request?.billAmount) {
+                setBillAmount(parseFloat(data.request.billAmount).toFixed(2));
             }
             if (data.request?.chequeNumber) {
                 setChequeNumber(data.request.chequeNumber);
+            }
+            if (data.request?.chequeUrl) {
+                setChequeUpload({ name: 'Cheque Image' });
+            }
+            if (data.request?.paymentMethod) {
+                setPaymentMethod(data.request.paymentMethod);
+            }
+            if (data.request?.paymentDate) {
+                setPaymentDate(new Date(data.request.paymentDate).toISOString().split('T')[0]);
+            }
+
+            // Restore quotation document names
+            if (data.request?.quotations?.length > 0) {
+                const docs = {};
+                data.request.quotations.forEach(q => {
+                    if (q.documentUrl) {
+                        docs[q.vendor.id] = 'Quotation Document';
+                    }
+                });
+                setVendorQuotationDocs(docs);
             }
 
             // Use currentStep from server if available, otherwise calculate
