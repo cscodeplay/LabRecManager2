@@ -147,7 +147,14 @@ export default function CreateAssignmentPage() {
 
             router.push(`/assignments/${assignmentId}`);
         } catch (error) {
-            toast.error(error.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'create'} assignment`);
+            // Show specific validation errors if available
+            const errorData = error.response?.data;
+            if (errorData?.errors?.length > 0) {
+                const errorMessages = errorData.errors.map(e => e.msg || e.message).join(', ');
+                toast.error(`Validation failed: ${errorMessages}`);
+            } else {
+                toast.error(errorData?.message || `Failed to ${isEditMode ? 'update' : 'create'} assignment`);
+            }
         } finally {
             setLoading(false);
         }
