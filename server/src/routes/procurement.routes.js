@@ -731,7 +731,32 @@ router.put('/requests/:id/payment', authenticate, authorize('admin', 'principal'
  * @desc    Mark items as received with optional video
  */
 router.put('/requests/:id/receive', authenticate, asyncHandler(async (req, res) => {
-    const { receivingVideoUrl, receivingNotes } = req.body;
+    const { receivedItems, receivingVideoUrl, receivingNotes } = req.body;
+
+    console.log('=== RECEIVE ITEMS REQUEST ===');
+    console.log('RequestId:', req.params.id);
+    console.log('ReceivedItems:', JSON.stringify(receivedItems));
+    console.log('==============================');
+
+    // Update each item's received quantity and serial numbers
+    if (receivedItems && typeof receivedItems === 'object') {
+        for (const [itemId, data] of Object.entries(receivedItems)) {
+            try {
+                await prisma.procurementItem.update({
+                    where: { id: itemId },
+                    data: {
+                        receivedQty: data.received || 0,
+                        isReceived: (data.received || 0) > 0,
+                        serialNumbers: data.serialNumbers || [],
+                        receivedAt: new Date(),
+                        receivedById: req.user.id
+                    }
+                });
+            } catch (itemErr) {
+                console.error(`Failed to update item ${itemId}:`, itemErr.message);
+            }
+        }
+    }
 
     const request = await prisma.procurementRequest.update({
         where: { id: req.params.id },

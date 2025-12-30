@@ -186,6 +186,7 @@ model User {
   vivaSessionsAsStudent                          VivaSession[]            @relation("VivaStudent")
   whiteboardParticipations                       WhiteboardParticipant[]
   whiteboardSessionsAsHost                       WhiteboardSession[]      @relation("WhiteboardHost")
+  procurementItemsReceived                       ProcurementItem[]        @relation("ProcurementItemReceivedBy")
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")
@@ -1375,11 +1376,15 @@ model ProcurementItem {
   approvedVendorId   String?            @map("approved_vendor_id") @db.Uuid
   isReceived         Boolean            @default(false) @map("is_received")
   receivedQty        Int                @default(0) @map("received_qty")
+  serialNumbers      Json?              @map("serial_numbers")
+  receivedAt         DateTime?          @map("received_at") @db.Timestamp(6)
+  receivedById       String?            @map("received_by_id") @db.Uuid
   inventoryItemId    String?            @map("inventory_item_id") @db.Uuid
   createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamp(6)
   approvedVendor     Vendor?            @relation("ApprovedVendor", fields: [approvedVendorId], references: [id])
   inventoryItem      LabItem?           @relation(fields: [inventoryItemId], references: [id])
   request            ProcurementRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  receivedBy         User?              @relation("ProcurementItemReceivedBy", fields: [receivedById], references: [id])
   quotationItems     QuotationItem[]
 
   @@index([requestId])
