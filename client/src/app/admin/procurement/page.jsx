@@ -128,8 +128,10 @@ export default function ProcurementPage() {
                 }
                 return true;
             case 4:
-                if (selectedVendorIds.length < 3) {
-                    toast.error('Please select at least 3 vendors');
+                // Check local setting
+                const minVendors = (requestDetail?.request?.estimatedTotal || 0) > 100000 ? 5 : 3;
+                if (selectedVendorIds.length < minVendors) {
+                    toast.error(`Please select at least ${minVendors} vendors`);
                     return false;
                 }
                 const localVendorsSelected = selectedVendorIds.filter(id => vendors.find(v => v.id === id)?.isLocal).length;
@@ -139,49 +141,39 @@ export default function ProcurementPage() {
                 }
                 return true;
             case 5:
-                // Check if all items have prices for all vendors
-                for (const vendorId of selectedVendorIds) {
+                // Check if all vendors have at least one price entered
+                const hasPrices = selectedVendorIds.every(vendorId => {
                     const prices = vendorQuotationPrices[vendorId] || {};
-                    for (const item of requestDetail?.request?.items || []) {
-                        if (!prices[item.id] || parseFloat(prices[item.id]) <= 0) {
-                            const vendor = vendors.find(v => v.id === vendorId);
-                            toast.error(`Enter price for "${item.itemName}" from ${vendor?.name}`);
-                            return false;
-                        }
-                    }
+                    return Object.values(prices).some(p => parseFloat(p) > 0) ||
+                        requestDetail?.request?.quotations?.find(q => q.vendorId === vendorId);
+                });
+
+                if (!hasPrices) {
+                    toast.error('Please enter quotation prices for all selected vendors');
+                    return false;
                 }
                 return true;
             case 6:
                 if (!selectedVendorForPurchase) {
-                    toast.error('Please confirm vendor selection');
+                    toast.error('Please select a vendor for purchase');
                     return false;
                 }
                 return true;
             case 7:
-                // All quantities must be >= 1
-                for (const item of requestDetail?.request?.items || []) {
-                    const qty = editableQuantities[item.id] ?? item.quantity;
-                    if (!qty || qty < 1) {
-                        toast.error(`Quantity for "${item.itemName}" must be at least 1`);
-                        return false;
-                    }
-                }
+                // Wait for PO generation
                 return true;
             case 8:
-                if (!billUpload) {
-                    toast.error('Please upload the bill document');
+                // Bill upload or existing bill required
+                if ((!billUpload && !requestDetail?.request?.billUrl) && !requestDetail?.request?.billNumber) {
+                    toast.error('Please upload the bill');
                     return false;
                 }
                 return true;
             case 9:
-                // Check if all items have been received
-                for (const item of requestDetail?.request?.items || []) {
-                    const received = receivedItems[item.id]?.received ?? 0;
-                    const expected = editableQuantities[item.id] ?? item.quantity;
-                    if (received < expected) {
-                        toast.error(`Mark item "${item.itemName}" as received`);
-                        return false;
-                    }
+                // Items received confirmation
+                if (!requestDetail?.request?.items?.some(i => i.isReceived || receivedItems[i.id]?.received > 0)) {
+                    toast.error('Please mark items as received');
+                    return false;
                 }
                 return true;
             default:
@@ -1531,7 +1523,17 @@ export default function ProcurementPage() {
                             requests.map(req => {
                                 // Use currentStep from DB if available, otherwise calculate
                                 const getCompletedSteps = (r) => {
-                                    // Calculate strictly from data for accuracy
+                                    // If we have explicit currentStep from DB, use it
+                                    if (r.currentStep) {
+                                        // If status is completed/received, force 9
+                                        if (r.status === 'received' || r.status === 'completed') return 9;
+                                        // Don't count step 1 twice (currentStep=1 means 0 completed if brand new, but usually 1 means step 1 in progress/done)
+                                        // Actually currentStep represents "Next Step to do" essentially in this workflow logic
+                                        // But displayed as "Steps Completed"
+                                        return Math.max(1, r.currentStep - 1);
+                                    }
+
+                                    // Fallback calculation strictly from data for accuracy
                                     let completed = 0;
                                     if (r.purchaseLetterUrl || r.letterContent) completed++; // Step 1
                                     if ((r.committee?.length || 0) >= 3) completed++; // Step 2

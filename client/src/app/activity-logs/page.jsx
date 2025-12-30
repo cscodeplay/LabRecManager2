@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
     Activity, Search, Filter, Calendar, User, Clock,
     FileText, Award, Video, LogIn, LogOut, Users, BookOpen,
-    ChevronLeft, ChevronRight
+    ChevronLeft, ChevronRight, Database
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
@@ -135,7 +136,12 @@ export default function ActivityLogsPage() {
 
     return (
         <div className="min-h-screen bg-slate-50">
-            <PageHeader title="Activity Logs" titleHindi="गतिविधि लॉग" />
+            <PageHeader title="Activity Logs" titleHindi="गतिविधि लॉग">
+                <Link href="/admin/query-logs" className="btn btn-warning gap-2">
+                    <Database className="w-4 h-4" />
+                    Query Logs
+                </Link>
+            </PageHeader>
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Filters */}
