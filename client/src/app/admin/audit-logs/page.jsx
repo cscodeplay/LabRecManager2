@@ -162,10 +162,16 @@ export default function AuditLogsPage() {
                             <p className="text-sm text-slate-500">System-wide activity tracking</p>
                         </div>
                     </div>
-                    <button onClick={loadData} className="btn btn-secondary gap-2">
-                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                        Refresh
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <Link href="/admin/query-logs" className="btn btn-warning gap-2">
+                            <Database className="w-4 h-4" />
+                            Query Logs
+                        </Link>
+                        <button onClick={loadData} className="btn btn-secondary gap-2">
+                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                            Refresh
+                        </button>
+                    </div>
                 </div>
             </header>
 
