@@ -1678,6 +1678,8 @@ enum ProcurementStatus {
   quotes_received
   approved
   ordered
+  paid
+  received
   completed
   cancelled
 
