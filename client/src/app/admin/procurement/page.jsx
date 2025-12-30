@@ -102,6 +102,11 @@ export default function ProcurementPage() {
     const [billUpload, setBillUpload] = useState(null);
     const [chequeUpload, setChequeUpload] = useState(null);
     const [chequeNumber, setChequeNumber] = useState('');
+    const [billNumber, setBillNumber] = useState('');
+    const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
+    const [billAmount, setBillAmount] = useState('');
+    const [paymentMethod, setPaymentMethod] = useState('cheque');
+    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
 
     // Step 9: Items received state
     const [receivedItems, setReceivedItems] = useState({}); // { itemId: { received: qty, serialNumbers: [] } }
@@ -276,20 +281,27 @@ export default function ProcurementPage() {
                     }
                     break;
                 case 8:
-                    // Upload bill document
+                    // Upload bill document if new file selected
                     if (billUpload && billUpload instanceof File) {
                         try {
                             await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'bill', billUpload);
-                            // Also set billNumber and date
-                            await procurementAPI.addBill(selectedRequest.id, {
-                                billNumber: billUpload.name,
-                                billDate: new Date().toISOString().split('T')[0]
-                            });
                         } catch (err) {
-                            console.error('Bill upload/save error:', err);
+                            console.error('Bill upload error:', err);
                             toast.error('Bill upload failed: ' + (err.response?.data?.message || err.message));
                         }
                     }
+
+                    // Save bill details (always, to update fields like amount/number)
+                    try {
+                        await procurementAPI.addBill(selectedRequest.id, {
+                            billNumber: billNumber || (billUpload?.name || 'BILL'),
+                            billDate: billDate,
+                            billAmount: billAmount
+                        });
+                    } catch (err) {
+                        console.error('Bill details save error:', err);
+                    }
+
                     // Upload cheque image
                     if (chequeUpload && chequeUpload instanceof File) {
                         try {
@@ -298,17 +310,18 @@ export default function ProcurementPage() {
                             console.error('Cheque upload error:', err);
                         }
                     }
-                    // Save payment info (may fail if not admin/principal)
-                    if (chequeNumber) {
+                    // Save payment info
+                    if (chequeNumber || paymentMethod) {
                         try {
                             await procurementAPI.addPayment(selectedRequest.id, {
-                                paymentMethod: 'cheque',
+                                paymentMethod: paymentMethod,
                                 chequeNumber: chequeNumber,
-                                paymentDate: new Date().toISOString().split('T')[0]
+                                camelUrl: null, // chequeUrl handled by upload above
+                                paymentDate: paymentDate,
+                                paymentReference: chequeNumber // Use cheque number as ref for now
                             });
                         } catch (err) {
                             console.error('Payment save error:', err);
-                            // Payment may require admin role, don't fail entire step
                         }
                     }
                     await openRequestDetail(selectedRequest);
@@ -316,8 +329,11 @@ export default function ProcurementPage() {
                 case 9:
                     // Save received items
                     await procurementAPI.markReceived(selectedRequest.id, {
-                        receivedItems: receivedItems
+                        receivedItems: receivedItems,
+                        status: 'received' // Explicitly mark as received
                     });
+                    // Force refresh
+                    await openRequestDetail(selectedRequest);
                     break;
             }
             toast.success(`Step ${step} data saved`);
@@ -2607,16 +2623,66 @@ The undersigned requests approval to purchase the following items for the scienc
                                         </div>
                                     </div>
 
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                        <div className="bg-white p-4 rounded border">
+                                            <label className="label">Bill Number / Invoice No.</label>
+                                            <input
+                                                type="text"
+                                                className="input mb-3"
+                                                placeholder="Enter Bill Number"
+                                                value={billNumber}
+                                                onChange={e => setBillNumber(e.target.value)}
+                                            />
+                                            <label className="label">Bill Date</label>
+                                            <input
+                                                type="date"
+                                                className="input mb-3"
+                                                value={billDate}
+                                                onChange={e => setBillDate(e.target.value)}
+                                            />
+                                            <label className="label">Bill Amount (₹)</label>
+                                            <input
+                                                type="number"
+                                                className="input"
+                                                placeholder="0.00"
+                                                value={billAmount}
+                                                onChange={e => setBillAmount(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="bg-white p-4 rounded border">
+                                            <label className="label">Payment Method</label>
+                                            <select
+                                                className="input mb-3"
+                                                value={paymentMethod}
+                                                onChange={e => setPaymentMethod(e.target.value)}
+                                            >
+                                                <option value="cheque">Cheque</option>
+                                                <option value="upi">UPI</option>
+                                                <option value="neft">NEFT/RTGS</option>
+                                                <option value="cash">Cash</option>
+                                            </select>
+
+                                            <label className="label">Cheque/Ref Number</label>
+                                            <input
+                                                type="text"
+                                                className="input mb-3"
+                                                placeholder="Cheque No. or Transaction Ref"
+                                                value={chequeNumber}
+                                                onChange={e => setChequeNumber(e.target.value)}
+                                            />
+
+                                            <label className="label">Payment Date</label>
+                                            <input
+                                                type="date"
+                                                className="input"
+                                                value={paymentDate}
+                                                onChange={e => setPaymentDate(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+
                                     <div className="bg-white p-4 rounded border mb-4">
-                                        <label className="label">Cheque Number</label>
-                                        <input
-                                            type="text"
-                                            className="input"
-                                            placeholder="Auto-extracted or enter manually"
-                                            value={chequeNumber}
-                                            onChange={e => setChequeNumber(e.target.value)}
-                                        />
-                                        <p className="text-xs text-slate-500 mt-1">Cheque number is auto-extracted from uploaded image or can be entered manually</p>
+                                        <p className="text-xs text-slate-500 mt-1">Ensure all bill and payment details are accurate.</p>
                                     </div>
 
                                     <div className="flex gap-2">
@@ -2735,8 +2801,9 @@ The undersigned requests approval to purchase the following items for the scienc
                                         <button onClick={() => setWorkflowStep(8)} className="btn btn-secondary">← Back</button>
                                         <button onClick={() => saveStepData(9)} disabled={!isStepComplete(9)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
                                         <button
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 if (validateStep(9)) {
+                                                    await saveStepData(9);
                                                     toast.success('Procurement workflow completed!');
                                                 }
                                             }}
