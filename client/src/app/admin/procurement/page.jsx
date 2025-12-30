@@ -380,8 +380,13 @@ export default function ProcurementPage() {
                 }
                 return true;
             case 8:
-                return !!billUpload;
+                // Step 8 complete if bill is uploaded (either in state or saved in DB)
+                return !!(billUpload || requestDetail?.request?.billNumber || requestDetail?.request?.billUrl);
             case 9:
+                // Step 9 requires Step 8 to be complete first
+                const step8Done = !!(billUpload || requestDetail?.request?.billNumber || requestDetail?.request?.billUrl);
+                if (!step8Done) return false;
+                // Then check all items received
                 for (const item of requestDetail?.request?.items || []) {
                     const received = receivedItems[item.id]?.received ?? 0;
                     const expected = editableQuantities[item.id] ?? item.quantity;
@@ -2484,15 +2489,42 @@ The undersigned requests approval to purchase the following items for the scienc
                                                                 </tr>
                                                             );
                                                         })}
-                                                        <tr className="bg-green-100 font-bold">
-                                                            <td colSpan={4} className="border p-2 text-right text-lg">Total Amount:</td>
-                                                            <td className="border p-2 text-right text-lg">₹{grandTotal.toLocaleString()}</td>
+                                                        <tr className="bg-slate-50">
+                                                            <td colSpan={4} className="border p-2 text-right font-medium">Subtotal:</td>
+                                                            <td className="border p-2 text-right font-medium">₹{grandTotal.toLocaleString()}</td>
                                                         </tr>
+                                                        {(vendorGstSettings[selectedVendorForPurchase]?.addGst !== false) && (() => {
+                                                            const gstRate = vendorGstSettings[selectedVendorForPurchase]?.gstRate ?? 18;
+                                                            const gstAmount = grandTotal * gstRate / 100;
+                                                            const grandTotalWithGst = grandTotal + gstAmount;
+                                                            return (
+                                                                <>
+                                                                    <tr className="bg-slate-50">
+                                                                        <td colSpan={4} className="border p-2 text-right text-slate-600">GST ({gstRate}%):</td>
+                                                                        <td className="border p-2 text-right text-slate-600">₹{gstAmount.toLocaleString()}</td>
+                                                                    </tr>
+                                                                    <tr className="bg-green-100 font-bold">
+                                                                        <td colSpan={4} className="border p-2 text-right text-lg">Grand Total (Incl. GST):</td>
+                                                                        <td className="border p-2 text-right text-lg">₹{grandTotalWithGst.toLocaleString()}</td>
+                                                                    </tr>
+                                                                </>
+                                                            );
+                                                        })()}
+                                                        {vendorGstSettings[selectedVendorForPurchase]?.addGst === false && (
+                                                            <tr className="bg-green-100 font-bold">
+                                                                <td colSpan={4} className="border p-2 text-right text-lg">Grand Total:</td>
+                                                                <td className="border p-2 text-right text-lg">₹{grandTotal.toLocaleString()}</td>
+                                                            </tr>
+                                                        )}
                                                     </tbody>
                                                 </table>
 
                                                 <div className="bg-blue-50 p-3 rounded border border-blue-200">
-                                                    <strong>Amount in Words:</strong> Rupees {numberToWords(Math.round(grandTotal))} Only
+                                                    <strong>Amount in Words:</strong> Rupees {numberToWords(Math.round(
+                                                        vendorGstSettings[selectedVendorForPurchase]?.addGst !== false
+                                                            ? grandTotal + (grandTotal * (vendorGstSettings[selectedVendorForPurchase]?.gstRate ?? 18) / 100)
+                                                            : grandTotal
+                                                    ))} Only
                                                 </div>
 
                                                 <div className="flex justify-end">
