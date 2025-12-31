@@ -75,12 +75,16 @@ const requestLogger = (req, res, next) => {
                 description += ` (Error: ${res.statusCode})`;
             }
 
+            // Valid ActivityType enum values from schema
+            const VALID_ACTION_TYPES = ['login', 'logout', 'submission', 'grade', 'assignment', 'payment', 'viva', 'other'];
+            const safeActionType = VALID_ACTION_TYPES.includes(actionType) ? actionType : 'other';
+
             prisma.activityLog.create({
                 data: {
                     userId: req.user.id,
                     schoolId: req.user.schoolId || null,
-                    actionType: actionType,
-                    action_type: actionType,
+                    actionType: safeActionType, // Must be valid Enum
+                    action_type: actionType,    // Can be any string (detailed)
                     entityType: entityType,
                     entityId: entityId || null,
                     description: description.substring(0, 500),
@@ -96,6 +100,7 @@ const requestLogger = (req, res, next) => {
             }).catch(err => {
                 console.error('Activity log failed:', err.message);
             });
+
         }
 
         return originalEnd.apply(res, args);
