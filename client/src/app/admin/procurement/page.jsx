@@ -2081,6 +2081,7 @@ export default function ProcurementPage() {
                                             <FileText className="w-5 h-5 text-green-600" />
                                             <span className="flex-1">{requestDetail?.request?.purchaseLetterName || 'Purchase Letter'}</span>
                                             <a href={requestDetail?.request?.purchaseLetterUrl} target="_blank" rel="noreferrer" className="btn btn-secondary text-sm">View</a>
+                                            <a href={requestDetail?.request?.purchaseLetterUrl} download className="btn btn-secondary text-sm">Download</a>
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
@@ -2662,7 +2663,14 @@ The undersigned requests approval to purchase the following items for the scienc
                                                             }}
                                                         />
                                                         {(orderForm.poUrl || requestDetail?.request?.poUrl) && (
-                                                            <div className="text-sm text-green-600 mt-2">✓ PO Document uploaded</div>
+                                                            <div className="text-sm text-green-600 mt-2 flex items-center gap-2">
+                                                                ✓ PO Document uploaded
+                                                                {requestDetail?.request?.poUrl && (
+                                                                    <a href={requestDetail.request.poUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                                                                        View/Download
+                                                                    </a>
+                                                                )}
+                                                            </div>
                                                         )}
                                                     </div>
                                                 </div>
@@ -2720,6 +2728,14 @@ The undersigned requests approval to purchase the following items for the scienc
                                                 }}
                                             />
                                             {billUpload && <div className="text-sm text-green-600 mt-2">✓ {billUpload.name || billUpload}</div>}
+                                            {requestDetail?.request?.billUrl && (
+                                                <div className="mt-2 flex items-center gap-2">
+                                                    <span className="text-sm text-green-600">✓ Bill uploaded</span>
+                                                    <a href={requestDetail.request.billUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-sm">
+                                                        View/Download
+                                                    </a>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="bg-white p-4 rounded border">
@@ -2742,6 +2758,14 @@ The undersigned requests approval to purchase the following items for the scienc
                                                 }}
                                             />
                                             {chequeUpload && <div className="text-sm text-green-600 mt-2">✓ {chequeUpload.name || chequeUpload}</div>}
+                                            {requestDetail?.request?.chequeUrl && (
+                                                <div className="mt-2 flex items-center gap-2">
+                                                    <span className="text-sm text-green-600">✓ Cheque uploaded</span>
+                                                    <a href={requestDetail.request.chequeUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-sm">
+                                                        View/Download
+                                                    </a>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 

@@ -1466,8 +1466,8 @@ router.get('/staff-members', authenticate, authorize('admin', 'principal', 'lab_
  * @access  Private (Admin, Lab Assistant)
  */
 router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', 'lab_assistant'), [
-    body('laptopId').isUUID().withMessage('Valid laptop ID required'),
-    body('issuedToId').isUUID().withMessage('Valid staff member ID required'),
+    body('laptopId').notEmpty().withMessage('Laptop ID required'),
+    body('issuedToId').notEmpty().withMessage('Staff member ID required'),
     body('purpose').optional().isString(),
     body('expectedReturnDate').optional().isISO8601(),
     body('conditionOnIssue').optional().isString()
