@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useTranslation } from 'react-i18next';
 import {
     FileText, Upload, Award, Video, Users,
     ChevronRight, TrendingUp, Clock, CheckCircle, BookOpen, Monitor, Pencil, Ticket, GraduationCap, Layers
@@ -13,6 +14,7 @@ import AssignmentCalendar from '@/components/AssignmentCalendar';
 
 export default function DashboardPage() {
     const router = useRouter();
+    const { t } = useTranslation('common');
     const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [stats, setStats] = useState({});
     const [deadlines, setDeadlines] = useState([]);
@@ -37,7 +39,6 @@ export default function DashboardPage() {
                 dashboardAPI.getDeadlines(),
                 dashboardAPI.getSiteUpdate().catch(() => null)
             ];
-            // Fetch student profile for student users
             if (user?.role === 'student') {
                 requests.push(dashboardAPI.getStudentProfile().catch(() => null));
             }
@@ -87,12 +88,12 @@ export default function DashboardPage() {
             <div className="card p-6 bg-gradient-to-r from-primary-500 to-accent-500 text-white">
                 <div className="flex items-start justify-between">
                     <div>
-                        <h2 className="text-2xl font-bold">Welcome back, {user?.firstName}! 👋</h2>
-                        <p className="text-white/80 mt-1">Here's what's happening with your lab activities.</p>
+                        <h2 className="text-2xl font-bold">{t('dashboard.welcomeBack', { name: user?.firstName })} 👋</h2>
+                        <p className="text-white/80 mt-1">{t('dashboard.labActivities')}</p>
                     </div>
                     {(user?.role === 'admin' || user?.role === 'principal') && siteUpdate && (
                         <Link href="/admin/site-updates" className="text-right text-xs text-white/70 hover:text-white transition">
-                            <p>Last Updated</p>
+                            <p>{t('dashboard.lastUpdated')}</p>
                             <p className="font-mono">
                                 {new Date(siteUpdate.updatedAt).toLocaleString('en-IN', {
                                     day: 'numeric', month: 'short', year: 'numeric',
@@ -115,7 +116,7 @@ export default function DashboardPage() {
                                     <GraduationCap className="w-5 h-5 text-blue-600" />
                                 </div>
                                 <div>
-                                    <p className="text-xs text-slate-500 font-medium">Class</p>
+                                    <p className="text-xs text-slate-500 font-medium">{t('dashboard.class')}</p>
                                     <p className="font-semibold text-slate-800">{studentProfile.primaryClass.name}</p>
                                 </div>
                             </div>
@@ -126,7 +127,7 @@ export default function DashboardPage() {
                                     <Layers className="w-5 h-5 text-purple-600" />
                                 </div>
                                 <div>
-                                    <p className="text-xs text-slate-500 font-medium">Group</p>
+                                    <p className="text-xs text-slate-500 font-medium">{t('dashboard.group')}</p>
                                     <p className="font-semibold text-slate-800">{studentProfile.primaryGroup.name}</p>
                                 </div>
                             </div>
@@ -137,7 +138,7 @@ export default function DashboardPage() {
                                     <Monitor className="w-5 h-5 text-emerald-600" />
                                 </div>
                                 <div>
-                                    <p className="text-xs text-slate-500 font-medium">Assigned PC</p>
+                                    <p className="text-xs text-slate-500 font-medium">{t('dashboard.assignedPc')}</p>
                                     <p className="font-semibold text-slate-800">
                                         {studentProfile.assignedPc.itemNumber}
                                         {studentProfile.assignedPc.lab && <span className="text-slate-500 font-normal"> • {studentProfile.assignedPc.lab.name}</span>}
@@ -146,7 +147,7 @@ export default function DashboardPage() {
                             </div>
                         )}
                         {!studentProfile.primaryClass && !studentProfile.primaryGroup && !studentProfile.assignedPc && (
-                            <p className="text-slate-500 text-sm">No class or group assigned yet.</p>
+                            <p className="text-slate-500 text-sm">{t('dashboard.noClassGroup')}</p>
                         )}
                     </div>
                 </div>
@@ -156,26 +157,26 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {user?.role === 'student' && (
                     <>
-                        <StatCard icon={FileText} label="Assigned to Me" value={stats.assignedToMe || 0} color="bg-primary-500" />
-                        <StatCard icon={Upload} label="My Submissions" value={stats.mySubmissions || 0} color="bg-emerald-500" />
-                        <StatCard icon={Video} label="Pending Vivas" value={stats.pendingVivas || 0} color="bg-amber-500" />
-                        <StatCard icon={Award} label="Avg. Score" value={stats.avgScore != null ? `${stats.avgScore}%` : '--'} color="bg-accent-500" trend={stats.totalGrades > 0 ? `${stats.totalGrades} graded` : null} />
+                        <StatCard icon={FileText} label={t('dashboard.assignedToMe')} value={stats.assignedToMe || 0} color="bg-primary-500" />
+                        <StatCard icon={Upload} label={t('dashboard.mySubmissions')} value={stats.mySubmissions || 0} color="bg-emerald-500" />
+                        <StatCard icon={Video} label={t('dashboard.pendingVivas')} value={stats.pendingVivas || 0} color="bg-amber-500" />
+                        <StatCard icon={Award} label={t('dashboard.avgScore')} value={stats.avgScore != null ? `${stats.avgScore}%` : '--'} color="bg-accent-500" trend={stats.totalGrades > 0 ? `${stats.totalGrades} ${t('dashboard.graded')}` : null} />
                     </>
                 )}
                 {(user?.role === 'instructor' || user?.role === 'lab_assistant') && (
                     <>
-                        <StatCard icon={FileText} label="My Assignments" value={stats.myAssignments || 0} color="bg-primary-500" />
-                        <StatCard icon={Clock} label="Pending Grading" value={stats.pendingGrading || 0} color="bg-amber-500" />
-                        <StatCard icon={Video} label="Scheduled Vivas" value={stats.scheduledVivas || 0} color="bg-emerald-500" />
-                        <StatCard icon={CheckCircle} label="Completed" value="--" color="bg-accent-500" />
+                        <StatCard icon={FileText} label={t('dashboard.myAssignments')} value={stats.myAssignments || 0} color="bg-primary-500" />
+                        <StatCard icon={Clock} label={t('dashboard.pendingGrading')} value={stats.pendingGrading || 0} color="bg-amber-500" />
+                        <StatCard icon={Video} label={t('dashboard.scheduledVivas')} value={stats.scheduledVivas || 0} color="bg-emerald-500" />
+                        <StatCard icon={CheckCircle} label={t('dashboard.completed')} value="--" color="bg-accent-500" />
                     </>
                 )}
                 {user?.role === 'admin' && (
                     <>
-                        <StatCard icon={Users} label="Total Users" value={stats.totalUsers || 0} color="bg-primary-500" />
-                        <StatCard icon={BookOpen} label="Total Classes" value={stats.totalClasses || 0} color="bg-emerald-500" />
-                        <StatCard icon={FileText} label="Assignments" value={stats.totalAssignments || 0} color="bg-amber-500" />
-                        <StatCard icon={TrendingUp} label="Active Labs" value={stats.activeLabs ?? '--'} color="bg-accent-500" trend={stats.maintenanceLabs > 0 ? `${stats.maintenanceLabs} maintenance` : null} />
+                        <StatCard icon={Users} label={t('dashboard.totalUsers')} value={stats.totalUsers || 0} color="bg-primary-500" />
+                        <StatCard icon={BookOpen} label={t('dashboard.totalClasses')} value={stats.totalClasses || 0} color="bg-emerald-500" />
+                        <StatCard icon={FileText} label={t('dashboard.assignments')} value={stats.totalAssignments || 0} color="bg-amber-500" />
+                        <StatCard icon={TrendingUp} label={t('dashboard.activeLabs')} value={stats.activeLabs ?? '--'} color="bg-accent-500" trend={stats.maintenanceLabs > 0 ? `${stats.maintenanceLabs} ${t('dashboard.maintenance')}` : null} />
                     </>
                 )}
             </div>
@@ -190,8 +191,8 @@ export default function DashboardPage() {
                                     <FileText className="w-6 h-6 text-primary-600" />
                                 </div>
                                 <div>
-                                    <p className="font-semibold text-slate-900">View Assignments</p>
-                                    <p className="text-sm text-slate-500">Check pending work</p>
+                                    <p className="font-semibold text-slate-900">{t('dashboard.viewAssignments')}</p>
+                                    <p className="text-sm text-slate-500">{t('dashboard.checkPendingWork')}</p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                             </div>
@@ -202,8 +203,8 @@ export default function DashboardPage() {
                                     <Upload className="w-6 h-6 text-emerald-600" />
                                 </div>
                                 <div>
-                                    <p className="font-semibold text-slate-900">My Submissions</p>
-                                    <p className="text-sm text-slate-500">Track your work</p>
+                                    <p className="font-semibold text-slate-900">{t('dashboard.mySubmissions')}</p>
+                                    <p className="text-sm text-slate-500">{t('dashboard.trackYourWork')}</p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                             </div>
@@ -214,8 +215,8 @@ export default function DashboardPage() {
                                     <Award className="w-6 h-6 text-amber-600" />
                                 </div>
                                 <div>
-                                    <p className="font-semibold text-slate-900">View Grades</p>
-                                    <p className="text-sm text-slate-500">Check your scores</p>
+                                    <p className="font-semibold text-slate-900">{t('dashboard.viewGrades')}</p>
+                                    <p className="text-sm text-slate-500">{t('dashboard.checkScores')}</p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                             </div>
@@ -226,9 +227,9 @@ export default function DashboardPage() {
                                     <Ticket className="w-6 h-6 text-red-600" />
                                 </div>
                                 <div>
-                                    <p className="font-semibold text-slate-900">Report Issue</p>
+                                    <p className="font-semibold text-slate-900">{t('dashboard.reportIssue')}</p>
                                     <p className="text-sm text-slate-500">
-                                        {studentProfile?.assignedPc ? `PC ${studentProfile.assignedPc.itemNumber}` : 'Create a ticket'}
+                                        {studentProfile?.assignedPc ? `PC ${studentProfile.assignedPc.itemNumber}` : t('common.createTicket')}
                                     </p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
@@ -244,8 +245,8 @@ export default function DashboardPage() {
                                     <FileText className="w-6 h-6 text-primary-600" />
                                 </div>
                                 <div>
-                                    <p className="font-semibold text-slate-900">Create Assignment</p>
-                                    <p className="text-sm text-slate-500">Add new practical</p>
+                                    <p className="font-semibold text-slate-900">{t('dashboard.createAssignment')}</p>
+                                    <p className="text-sm text-slate-500">{t('dashboard.addNewPractical')}</p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                             </div>
@@ -256,8 +257,8 @@ export default function DashboardPage() {
                                     <Clock className="w-6 h-6 text-amber-600" />
                                 </div>
                                 <div>
-                                    <p className="font-semibold text-slate-900">Review Pending</p>
-                                    <p className="text-sm text-slate-500">Grade submissions</p>
+                                    <p className="font-semibold text-slate-900">{t('dashboard.reviewPending')}</p>
+                                    <p className="text-sm text-slate-500">{t('dashboard.gradeSubmissions')}</p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                             </div>
@@ -268,8 +269,8 @@ export default function DashboardPage() {
                                     <Users className="w-6 h-6 text-emerald-600" />
                                 </div>
                                 <div>
-                                    <p className="font-semibold text-slate-900">Manage Classes</p>
-                                    <p className="text-sm text-slate-500">View students</p>
+                                    <p className="font-semibold text-slate-900">{t('dashboard.manageClasses')}</p>
+                                    <p className="text-sm text-slate-500">{t('dashboard.viewStudents')}</p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                             </div>
@@ -280,8 +281,8 @@ export default function DashboardPage() {
                                     <Pencil className="w-6 h-6 text-amber-600" />
                                 </div>
                                 <div>
-                                    <p className="font-semibold text-slate-900">Whiteboard</p>
-                                    <p className="text-sm text-slate-500">Share with students</p>
+                                    <p className="font-semibold text-slate-900">{t('nav.whiteboard')}</p>
+                                    <p className="text-sm text-slate-500">{t('dashboard.shareWithStudents')}</p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                             </div>
@@ -296,8 +297,8 @@ export default function DashboardPage() {
                                     <Monitor className="w-6 h-6 text-blue-600" />
                                 </div>
                                 <div>
-                                    <p className="font-semibold text-slate-900">Labs & PCs</p>
-                                    <p className="text-sm text-slate-500">Manage computer labs</p>
+                                    <p className="font-semibold text-slate-900">{t('nav.labsPCs')}</p>
+                                    <p className="text-sm text-slate-500">{t('dashboard.manageComputerLabs')}</p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                             </div>
@@ -308,8 +309,8 @@ export default function DashboardPage() {
                                     <Users className="w-6 h-6 text-purple-600" />
                                 </div>
                                 <div>
-                                    <p className="font-semibold text-slate-900">User Management</p>
-                                    <p className="text-sm text-slate-500">Manage all users</p>
+                                    <p className="font-semibold text-slate-900">{t('dashboard.userManagement')}</p>
+                                    <p className="text-sm text-slate-500">{t('dashboard.manageAllUsers')}</p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                             </div>
@@ -320,8 +321,8 @@ export default function DashboardPage() {
                                     <BookOpen className="w-6 h-6 text-emerald-600" />
                                 </div>
                                 <div>
-                                    <p className="font-semibold text-slate-900">Import Students</p>
-                                    <p className="text-sm text-slate-500">Bulk import CSV</p>
+                                    <p className="font-semibold text-slate-900">{t('dashboard.importStudents')}</p>
+                                    <p className="text-sm text-slate-500">{t('dashboard.bulkImportCsv')}</p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                             </div>
@@ -333,14 +334,14 @@ export default function DashboardPage() {
             {/* Upcoming deadlines */}
             <div className="card">
                 <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                    <h3 className="font-semibold text-slate-900">Upcoming Deadlines</h3>
-                    <Link href="/assignments" className="text-sm text-primary-600 hover:underline">View all →</Link>
+                    <h3 className="font-semibold text-slate-900">{t('dashboard.upcomingDeadlines')}</h3>
+                    <Link href="/assignments" className="text-sm text-primary-600 hover:underline">{t('common.viewAll')} →</Link>
                 </div>
                 <div className="divide-y divide-slate-100">
                     {deadlines.length === 0 ? (
                         <div className="p-8 text-center text-slate-500">
                             <Clock className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                            <p>No upcoming deadlines</p>
+                            <p>{t('dashboard.noUpcomingDeadlines')}</p>
                         </div>
                     ) : (
                         deadlines.slice(0, 5).map((item, i) => {
@@ -349,7 +350,11 @@ export default function DashboardPage() {
                             const timeLeft = dueDate - now;
                             const hoursLeft = Math.floor(timeLeft / (1000 * 60 * 60));
                             const daysLeft = Math.floor(hoursLeft / 24);
-                            const timeLeftText = daysLeft > 0 ? `${daysLeft}d ${hoursLeft % 24}h left` : hoursLeft > 0 ? `${hoursLeft}h left` : 'Due soon!';
+                            const timeLeftText = daysLeft > 0
+                                ? t('dashboard.daysLeft', { days: daysLeft, hours: hoursLeft % 24 })
+                                : hoursLeft > 0
+                                    ? t('dashboard.hoursLeft', { hours: hoursLeft })
+                                    : t('dashboard.dueSoon');
 
                             const statusColors = {
                                 graded: 'bg-emerald-100 text-emerald-700',
@@ -358,10 +363,10 @@ export default function DashboardPage() {
                                 pending: 'bg-slate-100 text-slate-600'
                             };
                             const statusLabels = {
-                                graded: '✓ Graded',
-                                submitted: '✓ Submitted',
-                                needs_revision: '! Revision',
-                                pending: 'Pending'
+                                graded: `✓ ${t('dashboard.graded')}`,
+                                submitted: `✓ ${t('dashboard.submitted')}`,
+                                needs_revision: `! ${t('dashboard.revision')}`,
+                                pending: t('dashboard.pending')
                             };
 
                             return (
@@ -377,7 +382,7 @@ export default function DashboardPage() {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <span className={`text-xs px-2 py-1 rounded-full ${statusColors[item.status] || statusColors.pending}`}>
-                                            {statusLabels[item.status] || 'Pending'}
+                                            {statusLabels[item.status] || t('dashboard.pending')}
                                         </span>
                                         <div className="text-right">
                                             <span className="badge badge-warning text-xs">
