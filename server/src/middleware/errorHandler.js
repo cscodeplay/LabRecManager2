@@ -47,14 +47,21 @@ const errorHandler = (err, req, res, next) => {
         });
     }
 
-    // Default server error
+    // Default server error - ALWAYS include details for debugging
+    console.error('[ERROR-HANDLER] Unhandled error:', err.message);
+    console.error('[ERROR-HANDLER] Stack:', err.stack);
+
     res.status(500).json({
         success: false,
-        message: process.env.NODE_ENV === 'development'
-            ? err.message
-            : 'Internal server error.',
+        message: 'Internal server error.',
         messageHindi: 'आंतरिक सर्वर त्रुटि।',
-        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+        // Always include debug info for now
+        debug: {
+            errorName: err.name,
+            errorMessage: err.message,
+            errorCode: err.code || null,
+            stack: err.stack?.split('\n').slice(0, 5).join('\n') // First 5 lines of stack
+        }
     });
 };
 
