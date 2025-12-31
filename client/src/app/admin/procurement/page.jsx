@@ -1624,10 +1624,8 @@ export default function ProcurementPage() {
                                     if (r.purchaseLetterUrl || r.letterContent) completed++; // Step 1
                                     if ((r.committee?.length || 0) >= 3) completed++; // Step 2
                                     if ((r.items?.length || 0) >= 1) completed++; // Step 3
-                                    // Step 4: vendors selected
-                                    const uniqueVendors = r.selectedVendorIds?.length > 0
-                                        ? r.selectedVendorIds
-                                        : [...new Set((r.quotations || []).map(q => q.vendor?.id || q.vendorId))];
+                                    // Step 4: vendors selected (derived from quotations now)
+                                    const uniqueVendors = [...new Set((r.quotations || []).map(q => q.vendor?.id || q.vendorId))];
                                     if (uniqueVendors.length >= 3) completed++; // Step 4
                                     // Step 5: quotation prices entered
                                     if ((r.quotations?.length || 0) >= 3) completed++; // Step 5
