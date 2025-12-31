@@ -217,10 +217,8 @@ export default function ProcurementPage() {
                     }
                     break;
                 case 4:
-                    // Step 4: Save selected vendors to database
-                    await procurementAPI.updateRequest(selectedRequest.id, {
-                        selectedVendorIds: selectedVendorIds
-                    });
+                    // Step 4: Vendors are selected locally, quotations will be created in Step 5
+                    // No database save needed - vendor IDs are derived from quotations
                     break;
                 case 5:
                     // Save quotation prices for each vendor
@@ -1295,10 +1293,8 @@ export default function ProcurementPage() {
                 setLetterUpload({ name: data.request.purchaseLetterName || 'Uploaded Document' });
             }
 
-            // Restore selected vendors from DB first, fallback to quotations
-            if (data.request?.selectedVendorIds?.length > 0) {
-                setSelectedVendorIds(data.request.selectedVendorIds);
-            } else if (data.request?.quotations?.length > 0) {
+            // Restore selected vendors from quotations
+            if (data.request?.quotations?.length > 0) {
                 const vendorIds = [...new Set(data.request.quotations.map(q => q.vendor.id))];
                 setSelectedVendorIds(vendorIds);
             }
@@ -2364,14 +2360,31 @@ The undersigned requests approval to purchase the following items for the scienc
                                                                 onChange={e => {
                                                                     const file = e.target.files[0];
                                                                     if (file) {
-                                                                        setVendorQuotationDocs(prev => ({ ...prev, [vendorId]: file.name }));
-                                                                        toast.success(`Quotation uploaded: ${file.name}`);
+                                                                        setVendorQuotationDocs(prev => ({ ...prev, [vendorId]: file }));
+                                                                        toast.success(`Quotation selected: ${file.name}`);
                                                                     }
                                                                 }}
                                                             />
                                                             {vendorQuotationDocs[vendorId] && (
-                                                                <div className="text-xs text-green-600 mt-1">✓ {vendorQuotationDocs[vendorId]}</div>
+                                                                <div className="text-xs text-green-600 mt-1">✓ {vendorQuotationDocs[vendorId]?.name || vendorQuotationDocs[vendorId]}</div>
                                                             )}
+                                                            {/* View uploaded quotation document */}
+                                                            {(() => {
+                                                                const existingQuotation = requestDetail?.request?.quotations?.find(q => q.vendor?.id === vendorId);
+                                                                if (existingQuotation?.documentUrl) {
+                                                                    return (
+                                                                        <a
+                                                                            href={existingQuotation.documentUrl}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs mt-1"
+                                                                        >
+                                                                            📄 View Uploaded Quotation
+                                                                        </a>
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            })()}
                                                         </div>
 
                                                         <div className="space-y-2">
