@@ -316,6 +316,66 @@ router.get('/calendar', authenticate, asyncHandler(async (req, res) => {
     });
 }));
 
+// Student profile - class, group, and assigned PC
+router.get('/student-profile', authenticate, asyncHandler(async (req, res) => {
+    if (req.user.role !== 'student') {
+        return res.status(403).json({ success: false, message: 'Only students can access this endpoint' });
+    }
+
+    const userId = req.user.id;
+
+    // Get student's class enrollments and group memberships
+    const [enrollments, groups] = await Promise.all([
+        prisma.classEnrollment.findMany({
+            where: { studentId: userId, status: 'active' },
+            include: {
+                class: {
+                    select: { id: true, name: true, gradeLevel: true, section: true }
+                }
+            }
+        }),
+        prisma.groupMember.findMany({
+            where: { studentId: userId },
+            include: {
+                group: {
+                    select: {
+                        id: true,
+                        name: true,
+                        assignedPc: {
+                            select: {
+                                id: true,
+                                itemNumber: true,
+                                itemType: true,
+                                brand: true,
+                                modelNo: true,
+                                lab: { select: { id: true, name: true } }
+                            }
+                        }
+                    }
+                }
+            }
+        })
+    ]);
+
+    // Find the assigned PC from any group
+    const groupWithPc = groups.find(g => g.group.assignedPc);
+
+    res.json({
+        success: true,
+        data: {
+            classes: enrollments.map(e => e.class),
+            groups: groups.map(g => ({
+                id: g.group.id,
+                name: g.group.name,
+                assignedPc: g.group.assignedPc
+            })),
+            primaryClass: enrollments[0]?.class || null,
+            primaryGroup: groups[0]?.group ? { id: groups[0].group.id, name: groups[0].group.name } : null,
+            assignedPc: groupWithPc?.group.assignedPc || null
+        }
+    });
+}));
+
 // Database health check - public endpoint
 router.get('/health', asyncHandler(async (req, res) => {
     const startTime = Date.now();

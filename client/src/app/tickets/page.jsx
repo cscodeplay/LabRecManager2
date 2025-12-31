@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { ticketsAPI, labsAPI } from '@/lib/api';
+import { ticketsAPI, labsAPI, dashboardAPI } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { toast } from 'react-hot-toast';
 import {
@@ -43,6 +43,7 @@ export default function TicketsPage() {
     const [issueTypes, setIssueTypes] = useState({});
     const [labItems, setLabItems] = useState([]);
     const [itemsLoading, setItemsLoading] = useState(false);
+    const [studentProfile, setStudentProfile] = useState(null);
 
     // Filters
     const [statusFilter, setStatusFilter] = useState('all');
@@ -65,7 +66,18 @@ export default function TicketsPage() {
         loadTickets();
         loadLabs();
         loadIssueTypes();
+        // Load student profile to get assigned PC
+        if (user?.role === 'student') {
+            loadStudentProfile();
+        }
     }, [statusFilter, priorityFilter, myTicketsOnly]);
+
+    const loadStudentProfile = async () => {
+        try {
+            const res = await dashboardAPI.getStudentProfile();
+            setStudentProfile(res.data.data);
+        } catch { }
+    };
 
     // Load items when lab changes (for hardware/software issues)
     useEffect(() => {
@@ -136,8 +148,16 @@ export default function TicketsPage() {
                 category: form.category,
                 priority: form.priority
             };
-            if (form.labId) data.labId = form.labId;
-            if (form.itemId) data.itemId = form.itemId;
+            // For students, auto-use their assigned PC if available
+            if (user?.role === 'student' && studentProfile?.assignedPc) {
+                data.itemId = studentProfile.assignedPc.id;
+                if (studentProfile.assignedPc.lab?.id) {
+                    data.labId = studentProfile.assignedPc.lab.id;
+                }
+            } else {
+                if (form.labId) data.labId = form.labId;
+                if (form.itemId) data.itemId = form.itemId;
+            }
             if (form.issueTypeId) data.issueTypeId = form.issueTypeId;
 
             const res = await ticketsAPI.create(data);
@@ -431,8 +451,8 @@ export default function TicketsPage() {
                                 </div>
                             )}
 
-                            {/* Lab Selection - for hardware/software issues */}
-                            {(form.category === 'hardware_issue' || form.category === 'software_issue' || form.category === 'maintenance_request') && (
+                            {/* Lab Selection - for hardware/software issues (hidden for students) */}
+                            {user?.role !== 'student' && (form.category === 'hardware_issue' || form.category === 'software_issue' || form.category === 'maintenance_request') && (
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">
                                         Lab {(form.category === 'hardware_issue' || form.category === 'software_issue') ? '*' : '(Optional)'}
@@ -450,8 +470,8 @@ export default function TicketsPage() {
                                 </div>
                             )}
 
-                            {/* Item Selection - for hardware/software issues */}
-                            {(form.category === 'hardware_issue' || form.category === 'software_issue') && form.labId && (
+                            {/* Item Selection - for hardware/software issues (hidden for students) */}
+                            {user?.role !== 'student' && (form.category === 'hardware_issue' || form.category === 'software_issue') && form.labId && (
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Affected PC/Item *</label>
                                     {itemsLoading ? (
@@ -471,6 +491,22 @@ export default function TicketsPage() {
                                                 </option>
                                             ))}
                                         </select>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Show assigned PC info for students */}
+                            {user?.role === 'student' && (form.category === 'hardware_issue' || form.category === 'software_issue') && (
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                    <p className="text-sm font-medium text-blue-700 mb-1">Your Assigned System</p>
+                                    {studentProfile?.assignedPc ? (
+                                        <p className="text-blue-800">
+                                            {studentProfile.assignedPc.itemType} - {studentProfile.assignedPc.itemNumber}
+                                            {studentProfile.assignedPc.brand && ` (${studentProfile.assignedPc.brand})`}
+                                            {studentProfile.assignedPc.lab && ` • ${studentProfile.assignedPc.lab.name}`}
+                                        </p>
+                                    ) : (
+                                        <p className="text-blue-600 text-sm">No PC assigned. Your ticket will be submitted without a specific system reference.</p>
                                     )}
                                 </div>
                             )}

@@ -301,6 +301,7 @@ export const dashboardAPI = {
     getSiteUpdate: () => api.get('/dashboard/site-update'),
     getAllSiteUpdates: () => api.get('/dashboard/site-updates'),
     addSiteUpdate: (data) => api.post('/dashboard/site-updates', data),
+    getStudentProfile: () => api.get('/dashboard/student-profile'),
 };
 
 // Reports API

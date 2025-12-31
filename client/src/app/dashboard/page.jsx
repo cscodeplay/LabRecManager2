@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
     FileText, Upload, Award, Video, Users,
-    ChevronRight, TrendingUp, Clock, CheckCircle, BookOpen, Monitor, Pencil
+    ChevronRight, TrendingUp, Clock, CheckCircle, BookOpen, Monitor, Pencil, Ticket, GraduationCap, Layers
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { dashboardAPI } from '@/lib/api';
@@ -17,6 +17,7 @@ export default function DashboardPage() {
     const [stats, setStats] = useState({});
     const [deadlines, setDeadlines] = useState([]);
     const [siteUpdate, setSiteUpdate] = useState(null);
+    const [studentProfile, setStudentProfile] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -31,14 +32,20 @@ export default function DashboardPage() {
     const loadDashboardData = async () => {
         setLoading(true);
         try {
-            const [statsRes, deadlinesRes, siteUpdateRes] = await Promise.all([
+            const requests = [
                 dashboardAPI.getStats(),
                 dashboardAPI.getDeadlines(),
                 dashboardAPI.getSiteUpdate().catch(() => null)
-            ]);
+            ];
+            // Fetch student profile for student users
+            if (user?.role === 'student') {
+                requests.push(dashboardAPI.getStudentProfile().catch(() => null));
+            }
+            const [statsRes, deadlinesRes, siteUpdateRes, studentProfileRes] = await Promise.all(requests);
             setStats(statsRes.data.data.stats);
             setDeadlines(deadlinesRes.data.data.upcomingDeadlines || []);
             if (siteUpdateRes?.data?.data) setSiteUpdate(siteUpdateRes.data.data);
+            if (studentProfileRes?.data?.data) setStudentProfile(studentProfileRes.data.data);
         } catch (error) {
             console.error('Failed to load dashboard:', error);
         } finally {
@@ -97,6 +104,53 @@ export default function DashboardPage() {
                     )}
                 </div>
             </div>
+
+            {/* Student Profile Info Card */}
+            {user?.role === 'student' && studentProfile && (
+                <div className="card p-4 bg-white">
+                    <div className="flex flex-wrap items-center gap-6">
+                        {studentProfile.primaryClass && (
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                                    <GraduationCap className="w-5 h-5 text-blue-600" />
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 font-medium">Class</p>
+                                    <p className="font-semibold text-slate-800">{studentProfile.primaryClass.name}</p>
+                                </div>
+                            </div>
+                        )}
+                        {studentProfile.primaryGroup && (
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                                    <Layers className="w-5 h-5 text-purple-600" />
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 font-medium">Group</p>
+                                    <p className="font-semibold text-slate-800">{studentProfile.primaryGroup.name}</p>
+                                </div>
+                            </div>
+                        )}
+                        {studentProfile.assignedPc && (
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                                    <Monitor className="w-5 h-5 text-emerald-600" />
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 font-medium">Assigned PC</p>
+                                    <p className="font-semibold text-slate-800">
+                                        {studentProfile.assignedPc.itemNumber}
+                                        {studentProfile.assignedPc.lab && <span className="text-slate-500 font-normal"> • {studentProfile.assignedPc.lab.name}</span>}
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                        {!studentProfile.primaryClass && !studentProfile.primaryGroup && !studentProfile.assignedPc && (
+                            <p className="text-slate-500 text-sm">No class or group assigned yet.</p>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Stats grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -162,6 +216,20 @@ export default function DashboardPage() {
                                 <div>
                                     <p className="font-semibold text-slate-900">View Grades</p>
                                     <p className="text-sm text-slate-500">Check your scores</p>
+                                </div>
+                                <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
+                            </div>
+                        </Link>
+                        <Link href="/tickets" className="card p-4 hover:shadow-lg transition group">
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center group-hover:bg-red-200 transition">
+                                    <Ticket className="w-6 h-6 text-red-600" />
+                                </div>
+                                <div>
+                                    <p className="font-semibold text-slate-900">Report Issue</p>
+                                    <p className="text-sm text-slate-500">
+                                        {studentProfile?.assignedPc ? `PC ${studentProfile.assignedPc.itemNumber}` : 'Create a ticket'}
+                                    </p>
                                 </div>
                                 <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                             </div>
