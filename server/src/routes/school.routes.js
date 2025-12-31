@@ -144,6 +144,16 @@ router.get('/', authenticate, authorize('admin'), asyncHandler(async (req, res) 
  * @access  Private
  */
 router.get('/:id', authenticate, asyncHandler(async (req, res) => {
+    // Validate UUID format to prevent "Inconsistent column data" error
+    // if a semantic URL (like 'profile' or 'public') falls through
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(req.params.id)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid School ID format'
+        });
+    }
+
     const school = await prisma.school.findUnique({
         where: { id: req.params.id },
         include: {
@@ -210,6 +220,12 @@ router.post('/', authenticate, authorize('admin'), asyncHandler(async (req, res)
  * @access  Private (Admin, Principal)
  */
 router.put('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    // Validate UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'Invalid School ID' });
+    }
+
     const school = await prisma.school.update({
         where: { id: req.params.id },
         data: req.body
@@ -229,6 +245,12 @@ router.put('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(a
  */
 router.put('/:id/letterhead', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
     const { letterheadUrl } = req.body;
+
+    // Validate UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'Invalid School ID' });
+    }
 
     const school = await prisma.school.update({
         where: { id: req.params.id },
