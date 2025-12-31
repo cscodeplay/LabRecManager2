@@ -571,10 +571,19 @@ router.delete('/requests/:id/committee/:memberId', authenticate, authorize('admi
  * @desc    Get all data for combined PDF preview
  */
 router.get('/requests/:id/preview', authenticate, asyncHandler(async (req, res) => {
-    // Get school with letterhead
+    // Get school with letterhead and contact details
     const school = await prisma.school.findFirst({
         where: { id: req.user.schoolId },
-        select: { name: true, address: true, letterheadUrl: true, logoUrl: true }
+        select: {
+            name: true,
+            address: true,
+            letterheadUrl: true,
+            logoUrl: true,
+            pinCode: true,
+            email: true,
+            phone1: true,
+            phone2: true
+        }
     });
 
     // Get request with all details

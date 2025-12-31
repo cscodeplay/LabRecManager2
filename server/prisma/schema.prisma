@@ -23,6 +23,10 @@ model School {
   academicYearStart     Int?                   @default(4) @map("academic_year_start")
   logoUrl               String?                @map("logo_url")
   letterheadUrl         String?                @map("letterhead_url") @db.VarChar(500)
+  email                 String?                @db.VarChar(255)
+  phone1                String?                @db.VarChar(20)
+  phone2                String?                @db.VarChar(20)
+  pinCode               String?                @map("pin_code") @db.VarChar(10)
   createdAt             DateTime?              @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt             DateTime?              @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
   academicYears         AcademicYear[]

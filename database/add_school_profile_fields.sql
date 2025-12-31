@@ -1,0 +1,5 @@
+-- Add school profile fields to schools table
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS phone1 VARCHAR(20);
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS phone2 VARCHAR(20);
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS pin_code VARCHAR(10);

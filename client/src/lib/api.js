@@ -479,5 +479,25 @@ export const uploadAPI = {
     }
 };
 
+// School Profile API
+export const schoolAPI = {
+    getProfile: () => api.get('/schools/profile'),
+    updateProfile: (data) => api.put('/schools/profile', data),
+    uploadLogo: (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return api.post('/upload/document', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+    },
+    uploadLetterhead: (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return api.post('/upload/document', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+    }
+};
+
 export default api;
 

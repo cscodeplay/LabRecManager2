@@ -28,6 +28,84 @@ router.get('/academic-years', asyncHandler(async (req, res) => {
     });
 }));
 
+/**
+ * @route   GET /api/schools/profile
+ * @desc    Get current user's school profile
+ * @access  Private (Admin, Principal)
+ */
+router.get('/profile', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const school = await prisma.school.findUnique({
+        where: { id: req.user.schoolId },
+        select: {
+            id: true,
+            name: true,
+            nameHindi: true,
+            nameRegional: true,
+            code: true,
+            address: true,
+            state: true,
+            district: true,
+            pinCode: true,
+            email: true,
+            phone1: true,
+            phone2: true,
+            logoUrl: true,
+            letterheadUrl: true,
+            boardAffiliation: true,
+            primaryLanguage: true
+        }
+    });
+
+    if (!school) {
+        return res.status(404).json({
+            success: false,
+            message: 'School not found'
+        });
+    }
+
+    res.json({
+        success: true,
+        data: school
+    });
+}));
+
+/**
+ * @route   PUT /api/schools/profile
+ * @desc    Update current user's school profile
+ * @access  Private (Admin, Principal)
+ */
+router.put('/profile', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const {
+        name, nameHindi, nameRegional, address, state, district, pinCode,
+        email, phone1, phone2, logoUrl, letterheadUrl, boardAffiliation
+    } = req.body;
+
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (nameHindi !== undefined) updateData.nameHindi = nameHindi;
+    if (nameRegional !== undefined) updateData.nameRegional = nameRegional;
+    if (address !== undefined) updateData.address = address;
+    if (state !== undefined) updateData.state = state;
+    if (district !== undefined) updateData.district = district;
+    if (pinCode !== undefined) updateData.pinCode = pinCode;
+    if (email !== undefined) updateData.email = email;
+    if (phone1 !== undefined) updateData.phone1 = phone1;
+    if (phone2 !== undefined) updateData.phone2 = phone2;
+    if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
+    if (letterheadUrl !== undefined) updateData.letterheadUrl = letterheadUrl;
+    if (boardAffiliation !== undefined) updateData.boardAffiliation = boardAffiliation;
+
+    const school = await prisma.school.update({
+        where: { id: req.user.schoolId },
+        data: updateData
+    });
+
+    res.json({
+        success: true,
+        message: 'School profile updated successfully',
+        data: school
+    });
+}));
 
 /**
  * @route   GET /api/schools

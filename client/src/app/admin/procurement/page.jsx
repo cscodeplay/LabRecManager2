@@ -592,6 +592,7 @@ export default function ProcurementPage() {
                 .letterhead { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #1e40af; padding-bottom: 15px; }
                 .letterhead img { max-height: 80px; }
                 .letterhead h2 { margin: 5px 0; color: #1e40af; }
+                .letterhead-details { font-size: 10px; color: #555; margin-top: 5px; }
                 .section-title { background: #1e40af; color: white; padding: 8px 12px; font-weight: bold; margin: 15px 0 10px 0; font-size: 13px; }
                 table { width: 100%; border-collapse: collapse; margin: 10px 0; }
                 th, td { border: 1px solid #333; padding: 6px 8px; text-align: left; }
@@ -615,7 +616,16 @@ export default function ProcurementPage() {
                 <!-- PAGE 1: REQUEST LETTER -->
                 <div class="page">
                     ${school?.letterheadUrl ? `<div class="letterhead"><img src="${school.letterheadUrl}" alt="Letterhead" style="max-width:100%" /></div>` :
-                    `<div class="letterhead"><h2>${school?.name || 'Institution Name'}</h2><p>${school?.address || ''}</p></div>`}
+                    `<div class="letterhead">
+                        ${school?.logoUrl ? '<img src="' + school.logoUrl + '" alt="Logo" style="max-height: 60px; margin-bottom: 5px;" />' : ''}
+                        <h2>${school?.name || 'Institution Name'}</h2>
+                        <p style="margin: 3px 0;">${school?.address || ''}${school?.pinCode ? ', PIN: ' + school.pinCode : ''}</p>
+                        <p class="letterhead-details">
+                            ${school?.email ? '✉ ' + school.email + ' ' : ''}
+                            ${school?.phone1 ? '📞 ' + school.phone1 : ''}
+                            ${school?.phone2 ? ' / ' + school.phone2 : ''}
+                        </p>
+                    </div>`}
                     
                     <div class="section-title">1. REQUEST FOR NEW PURCHASE</div>
                     <div class="meta-info">
