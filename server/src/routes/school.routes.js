@@ -45,39 +45,57 @@ router.get('/academic-years', asyncHandler(async (req, res) => {
  * @access  Private (Admin, Principal)
  */
 router.get('/profile', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
-    const school = await prisma.school.findUnique({
-        where: { id: req.user.schoolId },
-        select: {
-            id: true,
-            name: true,
-            nameHindi: true,
-            nameRegional: true,
-            code: true,
-            address: true,
-            state: true,
-            district: true,
-            pinCode: true,
-            email: true,
-            phone1: true,
-            phone2: true,
-            logoUrl: true,
-            letterheadUrl: true,
-            boardAffiliation: true,
-            primaryLanguage: true
-        }
-    });
+    console.log('[DEBUG] GET /profile hit. User:', req.user.id, 'SchoolID:', req.user.schoolId);
 
-    if (!school) {
-        return res.status(404).json({
+    // Explicitly validate schoolId from user token before query
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!req.user.schoolId || !uuidRegex.test(req.user.schoolId)) {
+        console.error('[ERROR] Invalid School ID in User Token:', req.user.schoolId);
+        return res.status(400).json({
             success: false,
-            message: 'School not found'
+            message: 'Invalid School ID in user profile'
         });
     }
 
-    res.json({
-        success: true,
-        data: school
-    });
+    try {
+        const school = await prisma.school.findUnique({
+            where: { id: req.user.schoolId },
+            select: {
+                id: true,
+                name: true,
+                nameHindi: true,
+                nameRegional: true,
+                code: true,
+                address: true,
+                state: true,
+                district: true,
+                pinCode: true,
+                email: true,
+                phone1: true,
+                phone2: true,
+                logoUrl: true,
+                letterheadUrl: true,
+                boardAffiliation: true,
+                primaryLanguage: true
+            }
+        });
+
+        if (!school) {
+            console.error('[ERROR] School not found for ID:', req.user.schoolId);
+            return res.status(404).json({
+                success: false,
+                message: 'School not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: school
+        });
+    } catch (error) {
+        console.error('[CRITICAL] Error in GET /profile:', error);
+        throw error;
+    }
 }));
 
 /**
@@ -144,39 +162,47 @@ router.get('/', authenticate, authorize('admin'), asyncHandler(async (req, res) 
  * @access  Private
  */
 router.get('/:id', authenticate, asyncHandler(async (req, res) => {
+    console.log('[DEBUG] GET /:id hit. Params ID:', req.params.id);
+
     // Validate UUID format to prevent "Inconsistent column data" error
     // if a semantic URL (like 'profile' or 'public') falls through
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(req.params.id)) {
+        console.warn('[WARN] Invalid UUID passed to GET /:id:', req.params.id);
         return res.status(400).json({
             success: false,
             message: 'Invalid School ID format'
         });
     }
 
-    const school = await prisma.school.findUnique({
-        where: { id: req.params.id },
-        include: {
-            academicYears: {
-                orderBy: { startDate: 'desc' }
-            },
-            _count: {
-                select: { users: true, classes: true, subjects: true, labs: true }
+    try {
+        const school = await prisma.school.findUnique({
+            where: { id: req.params.id },
+            include: {
+                academicYears: {
+                    orderBy: { startDate: 'desc' }
+                },
+                _count: {
+                    select: { users: true, classes: true, subjects: true, labs: true }
+                }
             }
-        }
-    });
-
-    if (!school) {
-        return res.status(404).json({
-            success: false,
-            message: 'School not found'
         });
-    }
 
-    res.json({
-        success: true,
-        data: { school }
-    });
+        if (!school) {
+            return res.status(404).json({
+                success: false,
+                message: 'School not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: { school }
+        });
+    } catch (error) {
+        console.error('[CRITICAL] Error in GET /:id:', error);
+        throw error;
+    }
 }));
 
 /**
