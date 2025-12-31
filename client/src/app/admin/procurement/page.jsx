@@ -654,6 +654,20 @@ export default function ProcurementPage() {
                     </div>
                 </div>
 
+                <!-- PAGE 1.1: UPLOADED PURCHASE LETTER (if exists) -->
+                ${request.purchaseLetterUrl ? `
+                <div class="page">
+                    <div class="section-title">1.1 UPLOADED REQUIREMENT LETTER</div>
+                    <p><strong>Document:</strong> ${request.purchaseLetterName || 'Purchase Letter'}</p>
+                    <div style="margin: 15px 0; text-align: center; border: 1px solid #ddd; padding: 10px; min-height: 600px;">
+                        ${request.purchaseLetterUrl.includes('.pdf') ?
+                        `<p>PDF Document: <a href="${request.purchaseLetterUrl}" target="_blank">${request.purchaseLetterUrl}</a></p>
+                            <p style="color: #666; font-style: italic;">PDF documents will be included as appendix. Click link to view.</p>` :
+                        `<img src="${request.purchaseLetterUrl}" alt="Purchase Letter" style="max-width: 100%; max-height: 800px; object-fit: contain;" />`
+                    }
+                    </div>
+                </div>` : ''}
+
                 <!-- PAGE 2: CALL FOR QUOTATIONS -->
                 <div class="page">
                     ${school?.letterheadUrl ? `<div class="letterhead"><img src="${school.letterheadUrl}" alt="Letterhead" style="max-width:100%" /></div>` :
@@ -715,6 +729,26 @@ export default function ProcurementPage() {
                         </div>
                     `).join('')}
                 </div>
+
+                <!-- PAGE 3.1: VENDOR QUOTATION COPIES (uploaded documents) -->
+                ${request.quotations?.filter(q => q.documentUrl).length > 0 ?
+                    request.quotations.filter(q => q.documentUrl).map((q, idx) => `
+                <div class="page">
+                    <div class="section-title">3.${idx + 1} QUOTATION COPY - ${q.vendor?.name || 'Vendor ' + (idx + 1)}</div>
+                    <div class="meta-info">
+                        <p><strong>Vendor:</strong> ${q.vendor?.name || '-'}</p>
+                        <p><strong>Quotation Number:</strong> ${q.quotationNumber || 'N/A'}</p>
+                        <p><strong>Date:</strong> ${q.quotationDate ? new Date(q.quotationDate).toLocaleDateString('en-IN') : 'N/A'}</p>
+                        <p><strong>Total Amount:</strong> ₹${(q.totalAmount || 0).toLocaleString()}</p>
+                    </div>
+                    <div style="margin: 15px 0; text-align: center; border: 1px solid #ddd; padding: 10px; min-height: 500px;">
+                        ${q.documentUrl.includes('.pdf') ?
+                            '<p>PDF Document: <a href="' + q.documentUrl + '" target="_blank">' + q.documentUrl + '</a></p><p style="color: #666; font-style: italic;">PDF documents will be included as appendix. Click link to view.</p>' :
+                            '<img src="' + q.documentUrl + '" alt="Quotation from ' + (q.vendor?.name || 'Vendor') + '" style="max-width: 100%; max-height: 700px; object-fit: contain;" />'
+                        }
+                    </div>
+                </div>
+                `).join('') : ''}
 
                 <!-- PAGE 4: COMPARATIVE STATEMENT (Landscape) -->
                 <div class="page" style="page: landscape;">
@@ -880,6 +914,22 @@ export default function ProcurementPage() {
                     </div>
                 </div>
 
+                <!-- PAGE 6.1: UPLOADED PO DOCUMENT (if exists) -->
+                ${request.poUrl ? `
+                <div class="page">
+                    <div class="section-title">6.1 UPLOADED PURCHASE ORDER DOCUMENT</div>
+                    <div class="meta-info">
+                        <p><strong>PO Number:</strong> ${request.poNumber || 'N/A'}</p>
+                        <p><strong>Ordered Date:</strong> ${request.orderedAt ? new Date(request.orderedAt).toLocaleDateString('en-IN') : 'N/A'}</p>
+                    </div>
+                    <div style="margin: 15px 0; text-align: center; border: 1px solid #ddd; padding: 10px; min-height: 600px;">
+                        ${request.poUrl.includes('.pdf') ?
+                        '<p>PDF Document: <a href="' + request.poUrl + '" target="_blank">' + request.poUrl + '</a></p><p style="color: #666; font-style: italic;">PDF documents will be included as appendix. Click link to view.</p>' :
+                        '<img src="' + request.poUrl + '" alt="Purchase Order" style="max-width: 100%; max-height: 800px; object-fit: contain;" />'
+                    }
+                    </div>
+                </div>` : ''}
+
                 <!-- PAGE 7: BILL RECEIVED (shown if bill exists) -->
                 ${request.billNumber ? `
                 <div class="page">
@@ -924,6 +974,40 @@ export default function ProcurementPage() {
                         <div class="signature"><div class="signature-line">Received By</div></div>
                         <div class="signature"><div class="signature-line">Verified By</div></div>
                         <div class="signature"><div class="signature-line">Approved for Payment</div></div>
+                    </div>
+                </div>` : ''}
+
+                <!-- PAGE 7.1: UPLOADED BILL DOCUMENT (if exists) -->
+                ${request.billUrl ? `
+                <div class="page">
+                    <div class="section-title">7.1 UPLOADED BILL / INVOICE</div>
+                    <div class="meta-info">
+                        <p><strong>Bill Number:</strong> ${request.billNumber || 'N/A'}</p>
+                        <p><strong>Bill Date:</strong> ${request.billDate ? new Date(request.billDate).toLocaleDateString('en-IN') : 'N/A'}</p>
+                        <p><strong>Amount:</strong> ₹${(request.billAmount || 0).toLocaleString()}</p>
+                    </div>
+                    <div style="margin: 15px 0; text-align: center; border: 1px solid #ddd; padding: 10px; min-height: 600px;">
+                        ${request.billUrl.includes('.pdf') ?
+                        '<p>PDF Document: <a href="' + request.billUrl + '" target="_blank">' + request.billUrl + '</a></p><p style="color: #666; font-style: italic;">PDF documents will be included as appendix. Click link to view.</p>' :
+                        '<img src="' + request.billUrl + '" alt="Bill/Invoice" style="max-width: 100%; max-height: 800px; object-fit: contain;" />'
+                    }
+                    </div>
+                </div>` : ''}
+
+                <!-- PAGE 7.2: UPLOADED CHEQUE IMAGE (if exists) -->
+                ${request.chequeUrl ? `
+                <div class="page">
+                    <div class="section-title">7.2 UPLOADED CHEQUE / PAYMENT PROOF</div>
+                    <div class="meta-info">
+                        <p><strong>Payment Method:</strong> ${request.paymentMethod || 'Cheque'}</p>
+                        <p><strong>Cheque/Reference Number:</strong> ${request.chequeNumber || 'N/A'}</p>
+                        <p><strong>Payment Date:</strong> ${request.paymentDate ? new Date(request.paymentDate).toLocaleDateString('en-IN') : 'N/A'}</p>
+                    </div>
+                    <div style="margin: 15px 0; text-align: center; border: 1px solid #ddd; padding: 10px; min-height: 600px;">
+                        ${request.chequeUrl.includes('.pdf') ?
+                        '<p>PDF Document: <a href="' + request.chequeUrl + '" target="_blank">' + request.chequeUrl + '</a></p><p style="color: #666; font-style: italic;">PDF documents will be included as appendix. Click link to view.</p>' :
+                        '<img src="' + request.chequeUrl + '" alt="Cheque/Payment Proof" style="max-width: 100%; max-height: 800px; object-fit: contain;" />'
+                    }
                     </div>
                 </div>` : ''}
 
