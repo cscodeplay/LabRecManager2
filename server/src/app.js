@@ -102,13 +102,27 @@ app.use('/api/procurement', procurementRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/admin/query-logs', queryLogRoutes);
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    version: '1.0.0'
-  });
+const prisma = require('./config/database');
+
+// Health check endpoint (Keep-Alive)
+app.get('/api/health', async (req, res) => {
+  try {
+    // Lightweight query to keep DB awake
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({
+      status: 'ok',
+      database: 'connected',
+      timestamp: new Date().toISOString(),
+      version: '1.0.0'
+    });
+  } catch (error) {
+    console.error('Health check DB error:', error);
+    res.status(500).json({
+      status: 'error',
+      database: 'disconnected',
+      error: error.message
+    });
+  }
 });
 
 // Socket.io connection handling for viva sessions

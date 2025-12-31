@@ -1,0 +1,24 @@
+name: Keep Alive
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Health Endpoint
+        run: |
+          # Replace with your actual Render URL
+          URL="${{ secrets.RENDER_APP_URL }}/api/health"
+          echo "Pinging $URL..."
+          status_code=$(curl --write-out "%{http_code}" --silent --output /dev/null "$URL")
+          if [ "$status_code" -ne 200 ]; then
+            echo "Health check failed with status $status_code"
+            exit 1
+          else
+            echo "Health check success!"
+          fi
