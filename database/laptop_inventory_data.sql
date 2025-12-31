@@ -11,10 +11,17 @@ GROUP BY item_number
 HAVING COUNT(*) > 1;
 
 -- STEP 2: If duplicates exist, delete them keeping only one copy
+-- Note: MIN(id) doesn't work on UUID, so we use ROW_NUMBER() instead
 DELETE FROM lab_items 
-WHERE id NOT IN (
-    SELECT MIN(id) FROM lab_items WHERE item_type = 'laptop' GROUP BY item_number
-) AND item_type = 'laptop';
+WHERE id IN (
+    SELECT id FROM (
+        SELECT id, 
+               ROW_NUMBER() OVER (PARTITION BY item_number ORDER BY created_at) as rn
+        FROM lab_items 
+        WHERE item_type = 'laptop'
+    ) duplicates
+    WHERE rn > 1
+);
 
 -- STEP 3: Now safely update all laptops to assign to Computer Lab 2
 UPDATE lab_items 

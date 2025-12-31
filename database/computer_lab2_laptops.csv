@@ -1,0 +1,22 @@
+itemType,itemNumber,brand,modelNo,serialNo,specs,status,notes,quantity
+laptop,CR-01,Acer,P246M,UNVA8S1001F3879436,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-02,Acer,P246M,UNVA8S1001F3879401,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-03,Acer,P246M,UNVA8S1001F3879487,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-04,Acer,P246M,UNVA8S1001F3879480,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-05,Acer,P246M,UNVA8S1001F3879475,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-06,Acer,P246M,UNVA8S1001F3879452,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-07,Acer,P246M,UNVA8S1001F3879393,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-08,Acer,P246M,UNVA8S1001F3879474,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-09,Acer,P246M,UNVA8S1001F3879391,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-10,Acer,P246M,UNVA8S1001F3879399,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-11,Acer,P246M,UNVA8S1001F3879441,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-12,Acer,P246M,UNVA8S1001F3879370,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-13,Acer,P246M,UNVA8S1001F3879486,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-14,Acer,P246M,UNVA8S1001F3879397,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-15,Acer,P246M,UNVA8S1001F3879427,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-16,Acer,P246M,UNVA8S1001F3879455,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-17,Acer,P246M,UNVA8S1001F3879459,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,CR-18,Acer,P246M,UNVA8S1001F3879409,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,SL-01,Acer,P246M,UNVA8S1001F3875894,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,SL-02,Acer,P246M,UNVA8S1001F3875893,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1
+laptop,SL-03,Acer,P246M,UNVA8S1001F3879450,"{""processor"":""Intel i5 2nd Gen"",""ram"":""8GB"",""storage"":""1000GB HDD"",""webcam"":true,""mic"":true,""screen"":""14 inch""}",active,Computer Lab 2,1

@@ -1472,18 +1472,24 @@ router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', '
     body('expectedReturnDate').optional().isISO8601(),
     body('conditionOnIssue').optional().isString()
 ], asyncHandler(async (req, res) => {
+    console.log('[POST /laptop-issuances] Request body:', JSON.stringify(req.body, null, 2));
+    console.log('[POST /laptop-issuances] User:', req.user.id, 'School:', req.user.schoolId);
+
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
+            console.log('[POST /laptop-issuances] Validation errors:', errors.array());
             return res.status(400).json({ success: false, errors: errors.array() });
         }
 
         const { laptopId, issuedToId, purpose, expectedReturnDate, conditionOnIssue, remarks } = req.body;
+        console.log('[POST /laptop-issuances] Parsed data - laptopId:', laptopId, 'issuedToId:', issuedToId);
 
         // Verify laptop exists and is type laptop
         const laptop = await prisma.labItem.findFirst({
             where: { id: laptopId, schoolId: req.user.schoolId, itemType: 'laptop' }
         });
+        console.log('[POST /laptop-issuances] Found laptop:', laptop ? laptop.itemNumber : 'NOT FOUND');
 
         if (!laptop) {
             return res.status(404).json({ success: false, message: 'Laptop not found or not of type laptop' });
@@ -1495,8 +1501,10 @@ router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', '
             existingIssuance = await prisma.laptopIssuance.findFirst({
                 where: { laptopId, status: 'issued' }
             });
+            console.log('[POST /laptop-issuances] Existing issuance check:', existingIssuance ? 'ALREADY ISSUED' : 'Available');
         } catch (e) {
-            console.error('laptop_issuances table error:', e.message);
+            console.error('[POST /laptop-issuances] laptop_issuances table error:', e.message);
+            console.error('[POST /laptop-issuances] Full error:', e);
             return res.status(500).json({
                 success: false,
                 message: `Database error: ${e.message}. Have you run laptop_issuance_migration.sql?`
@@ -1511,6 +1519,7 @@ router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', '
         const staffMember = await prisma.user.findFirst({
             where: { id: issuedToId, schoolId: req.user.schoolId }
         });
+        console.log('[POST /laptop-issuances] Found staff member:', staffMember ? `${staffMember.firstName} ${staffMember.lastName}` : 'NOT FOUND');
 
         if (!staffMember) {
             return res.status(404).json({ success: false, message: 'Staff member not found' });
@@ -1527,26 +1536,33 @@ router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', '
             charger: chargerStatus || 'working'
         };
 
+        const voucherNumber = await generateVoucherNumber(prisma);
+        console.log('[POST /laptop-issuances] Generated voucher:', voucherNumber);
+
+        const createData = {
+            laptopId,
+            issuedToId,
+            issuedById: req.user.id,
+            voucherNumber,
+            purpose,
+            expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
+            conditionOnIssue: conditionOnIssue || 'good',
+            componentStatus,
+            remarks,
+            status: 'issued',
+            schoolId: req.user.schoolId
+        };
+        console.log('[POST /laptop-issuances] Create data:', JSON.stringify(createData, null, 2));
+
         const issuance = await prisma.laptopIssuance.create({
-            data: {
-                laptopId,
-                issuedToId,
-                issuedById: req.user.id,
-                voucherNumber: await generateVoucherNumber(prisma),
-                purpose,
-                expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
-                conditionOnIssue: conditionOnIssue || 'good',
-                componentStatus,
-                remarks,
-                status: 'issued',
-                schoolId: req.user.schoolId
-            },
+            data: createData,
             include: {
                 laptop: { select: { id: true, itemNumber: true, brand: true, modelNo: true, serialNo: true } },
                 issuedTo: { select: { id: true, firstName: true, lastName: true, email: true } },
                 issuedBy: { select: { id: true, firstName: true, lastName: true } }
             }
         });
+        console.log('[POST /laptop-issuances] Created issuance:', issuance.id, 'Voucher:', issuance.voucherNumber);
 
         res.status(201).json({
             success: true,
@@ -1554,11 +1570,16 @@ router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', '
             data: { issuance }
         });
     } catch (error) {
-        console.error('Issue laptop error:', error);
+        console.error('[POST /laptop-issuances] ERROR:', error.message);
+        console.error('[POST /laptop-issuances] Error code:', error.code);
+        console.error('[POST /laptop-issuances] Error meta:', error.meta);
+        console.error('[POST /laptop-issuances] Full error:', error);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to issue laptop',
-            error: error.message
+            error: error.message,
+            code: error.code,
+            meta: error.meta
         });
     }
 }));
