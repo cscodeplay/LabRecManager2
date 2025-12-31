@@ -348,7 +348,6 @@ export default function ProcurementPage() {
                             await procurementAPI.addPayment(selectedRequest.id, {
                                 paymentMethod: paymentMethod,
                                 chequeNumber: chequeNumber,
-                                camelUrl: null, // chequeUrl handled by upload above
                                 paymentDate: paymentDate,
                                 paymentReference: chequeNumber // Use cheque number as ref for now
                             });

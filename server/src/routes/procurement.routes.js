@@ -693,13 +693,13 @@ router.put('/requests/:id/bill', authenticate, asyncHandler(async (req, res) => 
     console.log('Body:', JSON.stringify(req.body));
 
     try {
-        const { billNumber, billDate, billAmount, billUrl } = req.body;
+        const { billNumber, billDate, billAmount } = req.body;
 
         const updateData = {
             status: 'billed',
             billNumber: billNumber || null,
-            billDate: billDate ? new Date(billDate) : null,
-            billUrl: billUrl || null
+            billDate: billDate ? new Date(billDate) : null
+            // Note: billUrl is set separately via upload endpoint
         };
 
         // Only add billAmount if it's a valid number
@@ -740,13 +740,13 @@ router.put('/requests/:id/payment', authenticate, authorize('admin', 'principal'
     console.log('Body:', JSON.stringify(req.body));
 
     try {
-        const { paymentMethod, chequeNumber, chequeUrl, paymentDate, paymentReference } = req.body;
+        const { paymentMethod, chequeNumber, paymentDate, paymentReference } = req.body;
 
         const updateData = {
             status: 'paid',
             paymentMethod: paymentMethod || null,
             chequeNumber: chequeNumber || null,
-            chequeUrl: chequeUrl || null,
+            // Note: chequeUrl is set separately via upload endpoint
             paymentDate: paymentDate ? new Date(paymentDate) : null,
             paymentReference: paymentReference || null
         };
