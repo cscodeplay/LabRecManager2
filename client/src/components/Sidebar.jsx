@@ -3,87 +3,90 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
 import {
     Home, BookOpen, FileText, Award, Users, GraduationCap,
     Video, BarChart3, Settings, LogOut, Menu, X, ChevronLeft,
     Beaker, ClipboardList, Activity, ClipboardCheck, Send, ListChecks, UserPlus, Monitor, FolderOpen, Pencil, Ticket, Building
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
+import LanguageSelector from './LanguageSelector';
 
 const navItems = {
     admin: [
-        { href: '/dashboard', label: 'Dashboard', labelHindi: 'डैशबोर्ड', icon: Home },
-        { href: '/classes', label: 'Classes', labelHindi: 'कक्षाएं', icon: Users },
-        { href: '/users', label: 'Manage Users', labelHindi: 'उपयोगकर्ता प्रबंधन', icon: UserPlus },
-        { href: '/admin/labs', label: 'Labs & PCs', labelHindi: 'लैब और पीसी', icon: Monitor },
-        { href: '/assignments', label: 'Assignments', labelHindi: 'असाइनमेंट', icon: BookOpen },
-        { href: '/assigned-work', label: 'Assigned Work', labelHindi: 'सौंपा गया कार्य', icon: ListChecks },
-        { href: '/submissions', label: 'Review Submissions', labelHindi: 'समीक्षा प्रस्तुतियाँ', icon: ClipboardList },
-        { href: '/admin/documents', label: 'Documents', labelHindi: 'दस्तावेज़', icon: FolderOpen },
-        { href: '/grades', label: 'Grades', labelHindi: 'ग्रेड', icon: Award },
-        { href: '/viva', label: 'Viva', labelHindi: 'मौखिक', icon: Video },
-        { href: '/whiteboard', label: 'Whiteboard', labelHindi: 'व्हाइटबोर्ड', icon: Pencil },
-        { href: '/admin/whiteboards', label: 'Live Sessions', labelHindi: 'लाइव सत्र', icon: Video },
-        { href: '/activity-logs', label: 'Activity Logs', labelHindi: 'गतिविधि लॉग', icon: Activity },
-        { href: '/tickets', label: 'Tickets', labelHindi: 'टिकट', icon: Ticket },
-        { href: '/admin/school-profile', label: 'School Profile', labelHindi: 'स्कूल प्रोफ़ाइल', icon: Building },
-        { href: '/reports', label: 'Reports', labelHindi: 'रिपोर्ट', icon: BarChart3 },
-        { href: '/settings', label: 'Settings', labelHindi: 'सेटिंग्स', icon: Settings },
+        { href: '/dashboard', labelKey: 'nav.dashboard', icon: Home },
+        { href: '/classes', labelKey: 'nav.classes', icon: Users },
+        { href: '/users', labelKey: 'nav.manageUsers', icon: UserPlus },
+        { href: '/admin/labs', labelKey: 'nav.labsPCs', icon: Monitor },
+        { href: '/assignments', labelKey: 'nav.assignments', icon: BookOpen },
+        { href: '/assigned-work', labelKey: 'nav.assignedWork', icon: ListChecks },
+        { href: '/submissions', labelKey: 'nav.reviewSubmissions', icon: ClipboardList },
+        { href: '/admin/documents', labelKey: 'nav.documents', icon: FolderOpen },
+        { href: '/grades', labelKey: 'nav.grades', icon: Award },
+        { href: '/viva', labelKey: 'nav.viva', icon: Video },
+        { href: '/whiteboard', labelKey: 'nav.whiteboard', icon: Pencil },
+        { href: '/admin/whiteboards', labelKey: 'nav.liveSessions', icon: Video },
+        { href: '/activity-logs', labelKey: 'nav.activityLogs', icon: Activity },
+        { href: '/tickets', labelKey: 'nav.tickets', icon: Ticket },
+        { href: '/admin/school-profile', labelKey: 'nav.schoolProfile', icon: Building },
+        { href: '/reports', labelKey: 'nav.reports', icon: BarChart3 },
+        { href: '/settings', labelKey: 'nav.settings', icon: Settings },
     ],
     principal: [
-        { href: '/dashboard', label: 'Dashboard', labelHindi: 'डैशबोर्ड', icon: Home },
-        { href: '/classes', label: 'Classes', labelHindi: 'कक्षाएं', icon: Users },
-        { href: '/users', label: 'Manage Users', labelHindi: 'उपयोगकर्ता प्रबंधन', icon: UserPlus },
-        { href: '/admin/documents', label: 'Documents', labelHindi: 'दस्तावेज़', icon: FolderOpen },
-        { href: '/grades', label: 'Grades', labelHindi: 'ग्रेड', icon: Award },
-        { href: '/activity-logs', label: 'Activity Logs', labelHindi: 'गतिविधि लॉग', icon: Activity },
-        { href: '/tickets', label: 'Tickets', labelHindi: 'टिकट', icon: Ticket },
-        { href: '/admin/school-profile', label: 'School Profile', labelHindi: 'स्कूल प्रोफ़ाइल', icon: Building },
-        { href: '/reports', label: 'Reports', labelHindi: 'रिपोर्ट', icon: BarChart3 },
-        { href: '/settings', label: 'Settings', labelHindi: 'सेटिंग्स', icon: Settings },
+        { href: '/dashboard', labelKey: 'nav.dashboard', icon: Home },
+        { href: '/classes', labelKey: 'nav.classes', icon: Users },
+        { href: '/users', labelKey: 'nav.manageUsers', icon: UserPlus },
+        { href: '/admin/documents', labelKey: 'nav.documents', icon: FolderOpen },
+        { href: '/grades', labelKey: 'nav.grades', icon: Award },
+        { href: '/activity-logs', labelKey: 'nav.activityLogs', icon: Activity },
+        { href: '/tickets', labelKey: 'nav.tickets', icon: Ticket },
+        { href: '/admin/school-profile', labelKey: 'nav.schoolProfile', icon: Building },
+        { href: '/reports', labelKey: 'nav.reports', icon: BarChart3 },
+        { href: '/settings', labelKey: 'nav.settings', icon: Settings },
     ],
     instructor: [
-        { href: '/dashboard', label: 'Dashboard', labelHindi: 'डैशबोर्ड', icon: Home },
-        { href: '/classes', label: 'My Classes', labelHindi: 'मेरी कक्षाएं', icon: Users },
-        { href: '/assignments', label: 'Assignments', labelHindi: 'असाइनमेंट', icon: BookOpen },
-        { href: '/assigned-work', label: 'Assigned Work', labelHindi: 'सौंपा गया कार्य', icon: ListChecks },
-        { href: '/submissions', label: 'Review', labelHindi: 'समीक्षा', icon: ClipboardList },
-        { href: '/documents', label: 'Shared Docs', labelHindi: 'साझा दस्तावेज़', icon: FolderOpen },
-        { href: '/grades', label: 'Grades', labelHindi: 'ग्रेड', icon: Award },
-        { href: '/viva', label: 'Viva', labelHindi: 'मौखिक', icon: Video },
-        { href: '/whiteboard', label: 'Whiteboard', labelHindi: 'व्हाइटबोर्ड', icon: Pencil },
-        { href: '/activity-logs', label: 'Activity Logs', labelHindi: 'गतिविधि लॉग', icon: Activity },
-        { href: '/tickets', label: 'Tickets', labelHindi: 'टिकट', icon: Ticket },
-        { href: '/reports', label: 'Reports', labelHindi: 'रिपोर्ट', icon: BarChart3 },
-        { href: '/settings', label: 'Settings', labelHindi: 'सेटिंग्स', icon: Settings },
+        { href: '/dashboard', labelKey: 'nav.dashboard', icon: Home },
+        { href: '/classes', labelKey: 'nav.myClasses', icon: Users },
+        { href: '/assignments', labelKey: 'nav.assignments', icon: BookOpen },
+        { href: '/assigned-work', labelKey: 'nav.assignedWork', icon: ListChecks },
+        { href: '/submissions', labelKey: 'nav.review', icon: ClipboardList },
+        { href: '/documents', labelKey: 'nav.sharedDocs', icon: FolderOpen },
+        { href: '/grades', labelKey: 'nav.grades', icon: Award },
+        { href: '/viva', labelKey: 'nav.viva', icon: Video },
+        { href: '/whiteboard', labelKey: 'nav.whiteboard', icon: Pencil },
+        { href: '/activity-logs', labelKey: 'nav.activityLogs', icon: Activity },
+        { href: '/tickets', labelKey: 'nav.tickets', icon: Ticket },
+        { href: '/reports', labelKey: 'nav.reports', icon: BarChart3 },
+        { href: '/settings', labelKey: 'nav.settings', icon: Settings },
     ],
     lab_assistant: [
-        { href: '/dashboard', label: 'Dashboard', labelHindi: 'डैशबोर्ड', icon: Home },
-        { href: '/classes', label: 'Classes', labelHindi: 'कक्षाएं', icon: Users },
-        { href: '/admin/labs', label: 'Labs & PCs', labelHindi: 'लैब और पीसी', icon: Monitor },
-        { href: '/assignments', label: 'Assignments', labelHindi: 'असाइनमेंट', icon: BookOpen },
-        { href: '/assigned-work', label: 'Assigned Work', labelHindi: 'सौंपा गया कार्य', icon: ListChecks },
-        { href: '/submissions', label: 'Review Submissions', labelHindi: 'समीक्षा प्रस्तुतियाँ', icon: FileText },
-        { href: '/documents', label: 'Shared Docs', labelHindi: 'साझा दस्तावेज़', icon: FolderOpen },
-        { href: '/tickets', label: 'Tickets', labelHindi: 'टिकट', icon: Ticket },
-        { href: '/settings', label: 'Settings', labelHindi: 'सेटिंग्स', icon: Settings },
+        { href: '/dashboard', labelKey: 'nav.dashboard', icon: Home },
+        { href: '/classes', labelKey: 'nav.classes', icon: Users },
+        { href: '/admin/labs', labelKey: 'nav.labsPCs', icon: Monitor },
+        { href: '/assignments', labelKey: 'nav.assignments', icon: BookOpen },
+        { href: '/assigned-work', labelKey: 'nav.assignedWork', icon: ListChecks },
+        { href: '/submissions', labelKey: 'nav.reviewSubmissions', icon: FileText },
+        { href: '/documents', labelKey: 'nav.sharedDocs', icon: FolderOpen },
+        { href: '/tickets', labelKey: 'nav.tickets', icon: Ticket },
+        { href: '/settings', labelKey: 'nav.settings', icon: Settings },
     ],
     student: [
-        { href: '/dashboard', label: 'Dashboard', labelHindi: 'डैशबोर्ड', icon: Home },
-        { href: '/my-work', label: 'Assigned Work', labelHindi: 'सौंपा गया कार्य', icon: ClipboardCheck },
-        { href: '/submissions', label: 'My Submissions', labelHindi: 'मेरी प्रस्तुतियाँ', icon: FileText },
-        { href: '/documents', label: 'Shared Docs', labelHindi: 'साझा दस्तावेज़', icon: FolderOpen },
-        { href: '/grades', label: 'My Grades', labelHindi: 'मेरे ग्रेड', icon: Award },
-        { href: '/viva', label: 'Viva', labelHindi: 'मौखिक', icon: Video },
-        { href: '/live-board', label: 'Live Board', labelHindi: 'लाइव बोर्ड', icon: Pencil },
-        { href: '/tickets', label: 'Report Issue', labelHindi: 'समस्या दर्ज करें', icon: Ticket },
-        { href: '/settings', label: 'Settings', labelHindi: 'सेटिंग्स', icon: Settings },
+        { href: '/dashboard', labelKey: 'nav.dashboard', icon: Home },
+        { href: '/my-work', labelKey: 'nav.myWork', icon: ClipboardCheck },
+        { href: '/submissions', labelKey: 'nav.mySubmissions', icon: FileText },
+        { href: '/documents', labelKey: 'nav.sharedDocs', icon: FolderOpen },
+        { href: '/grades', labelKey: 'nav.myGrades', icon: Award },
+        { href: '/viva', labelKey: 'nav.viva', icon: Video },
+        { href: '/live-board', labelKey: 'nav.liveBoard', icon: Pencil },
+        { href: '/tickets', labelKey: 'nav.reportIssue', icon: Ticket },
+        { href: '/settings', labelKey: 'nav.settings', icon: Settings },
     ],
 };
 
 
 export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }) {
     const pathname = usePathname();
+    const { t } = useTranslation('common');
     const { user, logout } = useAuthStore();
     const [isMobile, setIsMobile] = useState(false);
     const [schoolInfo, setSchoolInfo] = useState({ name: 'ULRMS', logoUrl: '' });
@@ -144,7 +147,7 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                         </div>
                         <div>
                             <h1 className="font-bold text-slate-900 dark:text-slate-100 text-lg leading-none truncate max-w-[150px]" title={schoolInfo.name}>{schoolInfo.name}</h1>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">Unified Lab Records</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">{t('sidebar.unifiedLabRecords')}</p>
                         </div>
                     </Link>
                 )}
@@ -172,6 +175,7 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                             ? pathname === '/assignments' || (pathname.startsWith('/assignments/') && !pathname.startsWith('/assignments/assign'))
                             : pathname === item.href || pathname.startsWith(item.href + '/');
                         const Icon = item.icon;
+                        const label = t(item.labelKey);
                         return (
                             <li key={item.href}>
                                 <Link
@@ -181,11 +185,11 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                                         ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/30'
                                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                                         }`}
-                                    title={isCollapsed && !isMobile ? item.label : undefined}
+                                    title={isCollapsed && !isMobile ? label : undefined}
                                 >
                                     <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`} />
                                     {(!isCollapsed || isMobile) && (
-                                        <span className="font-medium">{item.label}</span>
+                                        <span className="font-medium">{label}</span>
                                     )}
                                 </Link>
                             </li>
@@ -196,6 +200,11 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
 
             {/* User Info & Logout */}
             <div className="p-3 border-t border-slate-200 dark:border-slate-700">
+                {/* Language Selector */}
+                <div className="mb-2">
+                    <LanguageSelector isCollapsed={isCollapsed && !isMobile} />
+                </div>
+
                 {(!isCollapsed || isMobile) && user && (
                     <Link href="/settings" className="flex items-center gap-3 px-3 py-2 mb-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                         <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-medium text-sm">
@@ -218,10 +227,10 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                     onClick={handleLogout}
                     className={`flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition ${isCollapsed && !isMobile ? 'justify-center' : ''
                         }`}
-                    title={isCollapsed && !isMobile ? 'Logout' : undefined}
+                    title={isCollapsed && !isMobile ? t('auth.logout') : undefined}
                 >
                     <LogOut className="w-5 h-5" />
-                    {(!isCollapsed || isMobile) && <span className="font-medium">Logout</span>}
+                    {(!isCollapsed || isMobile) && <span className="font-medium">{t('auth.logout')}</span>}
                 </button>
             </div>
         </>
