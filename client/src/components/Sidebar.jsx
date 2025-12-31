@@ -98,18 +98,21 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
     // Fetch school info if user is logged in
     useEffect(() => {
         if (user?.schoolId) {
+            console.log('[Sidebar] Fetching school info for schoolId:', user.schoolId);
             import('@/lib/api').then(module => {
                 const api = module.default;
                 api.get(`/schools/${user.schoolId}`)
                     .then(res => {
+                        console.log('[Sidebar] School API response:', res.data);
                         if (res.data.success && res.data.data.school) {
+                            console.log('[Sidebar] School logoUrl:', res.data.data.school.logoUrl);
                             setSchoolInfo({
                                 name: res.data.data.school.name,
                                 logoUrl: res.data.data.school.logoUrl
                             });
                         }
                     })
-                    .catch(err => console.error('Failed to load school info', err));
+                    .catch(err => console.error('[Sidebar] Failed to load school info', err));
             });
         }
     }, [user?.schoolId]);
