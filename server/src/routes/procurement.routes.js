@@ -153,7 +153,8 @@ router.get('/requests/:id', authenticate, asyncHandler(async (req, res) => {
                     vendor: { select: { id: true, name: true, email: true, phone: true, isLocal: true } },
                     items: true
                 }
-            }
+            },
+            school: { select: { name: true, nameHindi: true, address: true, district: true } }
         }
     });
 
