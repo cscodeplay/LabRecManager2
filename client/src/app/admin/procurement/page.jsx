@@ -861,12 +861,68 @@ export default function ProcurementPage() {
                     </div>
                 </div>
 
-                <!-- PAGE 6: PURCHASE ORDER -->
+                <!-- PAGE 6: PROCEEDINGS OF COMMITTEE -->
                 <div class="page">
                     ${school?.letterheadUrl ? `<div class="letterhead"><img src="${school.letterheadUrl}" alt="Letterhead" style="max-width:100%" /></div>` :
                     `<div class="letterhead"><h2>${school?.name || 'Institution Name'}</h2></div>`}
                     
-                    <div class="section-title">6. PURCHASE ORDER</div>
+                    <div class="section-title">6. PROCEEDINGS OF COMMITTEE FOR ${request.title?.toUpperCase()}</div>
+                    
+                    <table style="margin-bottom: 15px;">
+                        <tr><td style="width: 150px; font-weight: bold;">Proceeding of:</td><td>Committee to Recommend ${request.title}</td></tr>
+                        <tr><td style="font-weight: bold;">Assembled at:</td><td>${school?.name || 'Institution Name'}${school?.district ? ', ' + school.district : ''}</td></tr>
+                        <tr><td style="font-weight: bold;">On:</td><td>${request.proceedingsDate ? new Date(request.proceedingsDate).toLocaleDateString('en-IN') : today}</td></tr>
+                        <tr><td style="font-weight: bold;">For the purpose of:</td><td>To Recommend ${request.title}</td></tr>
+                        <tr><td style="font-weight: bold;">By the order of:</td><td>Vide Memo no. <strong>${request.memoVideNo || '________'}</strong></td></tr>
+                    </table>
+                    
+                    <p style="margin: 15px 0; text-align: justify;">
+                        The Board having reassembled in pursuance of the above order proceeded to examine the quotations 
+                        received from the following dealers. The following dealers were asked to give samples; quotations to 
+                        provide ${request.title} vide our office letter no. __________ (Copy Enclosed).
+                    </p>
+                    
+                    <p style="margin: 10px 0;"><strong>Vendors Asked:</strong></p>
+                    <ol style="margin-left: 30px;">
+                        ${vendors.map(v => `<li>${v.name}</li>`).join('')}
+                    </ol>
+                    
+                    <p style="margin: 15px 0;"><strong>1. The Following dealers have supplied the quotations (Quotation Enclosed):</strong></p>
+                    <ol style="margin-left: 30px;">
+                        ${vendors.filter(v => request.quotations?.some(q => q.vendorId === v.id)).map(v =>
+                        `<li>${v.name} (${request.title})</li>`
+                    ).join('') || '<li>No quotations received</li>'}
+                    </ol>
+                    
+                    <p style="margin: 15px 0;"><strong>2.</strong> The Comparative statement of rates is placed at Appendix A.</p>
+                    
+                    <div style="margin: 20px 0; padding: 15px; border: 1px solid #333;">
+                        <p style="font-weight: bold; text-decoration: underline; margin-bottom: 10px;">Recommendation:</p>
+                        <p>The board recommends that dealer <strong>${vendors[0]?.name || '________________'}</strong> should be given 
+                        the ${request.title}.</p>
+                    </div>
+                    
+                    <div style="margin-top: 50px;">
+                        <p style="margin-bottom: 30px;"><strong>Committee Signatures:</strong></p>
+                        <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
+                            ${committee?.map((member, idx) => `
+                                <div style="text-align: center; width: 150px; margin-bottom: 20px;">
+                                    <div style="border-top: 1px solid #333; margin-top: 40px; padding-top: 5px; font-size: 10px;">
+                                        ${member.role === 'chairperson' ? 'Presiding Officer' : 'Member ' + (idx + 1)}
+                                    </div>
+                                    <div style="font-weight: bold; font-size: 11px;">${member.user?.firstName || ''} ${member.user?.lastName || ''}</div>
+                                </div>
+                            `).join('') || '<div style="text-align: center; width: 100%;">No committee members assigned</div>'}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PAGE 7: PURCHASE ORDER -->
+                <div class="page">
+                    ${school?.letterheadUrl ? `<div class="letterhead"><img src="${school.letterheadUrl}" alt="Letterhead" style="max-width:100%" /></div>` :
+                    `<div class="letterhead"><h2>${school?.name || 'Institution Name'}</h2></div>`}
+                    
+                    <div class="section-title">7. PURCHASE ORDER</div>
                     <div class="meta-info">
                         <p><strong>PO Number:</strong> ${request.poNumber || 'PO-' + request.id?.slice(0, 8).toUpperCase()}</p>
                         <p><strong>PO Date:</strong> ${request.orderedAt ? new Date(request.orderedAt).toLocaleDateString('en-IN') : today}</p>
@@ -927,13 +983,13 @@ export default function ProcurementPage() {
                     }
                 </div>` : ''}
 
-                <!-- PAGE 7: BILL RECEIVED (shown if bill exists) -->
+                <!-- PAGE 8: BILL RECEIVED (shown if bill exists) -->
                 ${request.billNumber ? `
                 <div class="page">
                     ${school?.letterheadUrl ? `<div class="letterhead"><img src="${school.letterheadUrl}" alt="Letterhead" style="max-width:100%" /></div>` :
                         `<div class="letterhead"><h2>${school?.name || 'Institution Name'}</h2></div>`}
                     
-                    <div class="section-title">7. BILL / INVOICE RECEIVED</div>
+                    <div class="section-title">8. BILL / INVOICE RECEIVED</div>
                     <div class="meta-info">
                         <p><strong>Bill/Invoice Number:</strong> ${request.billNumber}</p>
                         <p><strong>Bill Date:</strong> ${request.billDate ? new Date(request.billDate).toLocaleDateString('en-IN') : '-'}</p>
@@ -992,7 +1048,7 @@ export default function ProcurementPage() {
                     }
                 </div>` : ''}
 
-                <!-- PAGE 8: STOCK REGISTER / INVENTORY SHEET (shown only if complete) -->
+                <!-- PAGE 9: STOCK REGISTER / INVENTORY SHEET (shown only if complete) -->
                 ${isComplete ? `
                 <div class="page">
                     ${school?.letterheadUrl ? `<div class="letterhead"><img src="${school.letterheadUrl}" alt="Letterhead" style="max-width:100%" /></div>` :
