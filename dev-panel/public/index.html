@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Control Panel - Lab Record Manager</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+      min-height: 100vh;
+      color: #fff;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      padding: 30px 0;
+      margin-bottom: 30px;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      color: #a0aec0;
+      font-size: 1rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 25px;
+      margin-bottom: 30px;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(20px);
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 25px;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.4rem;
+      font-weight: 600;
+    }
+
+    .icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+    }
+
+    .icon.server { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+    .icon.client { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+    .icon.git { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+
+    .status {
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+
+    .status.running {
+      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+      color: #000;
+    }
+
+    .status.stopped {
+      background: rgba(255, 107, 107, 0.3);
+      color: #ff6b6b;
+      border: 1px solid #ff6b6b;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 14px 20px;
+      border: none;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-width: 120px;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-start {
+      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+      color: #000;
+    }
+
+    .btn-start:hover:not(:disabled) {
+      box-shadow: 0 10px 30px rgba(56, 239, 125, 0.4);
+      transform: translateY(-2px);
+    }
+
+    .btn-stop {
+      background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
+      color: #fff;
+    }
+
+    .btn-stop:hover:not(:disabled) {
+      box-shadow: 0 10px 30px rgba(245, 87, 108, 0.4);
+      transform: translateY(-2px);
+    }
+
+    .btn-push {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+    }
+
+    .btn-push:hover:not(:disabled) {
+      box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+      transform: translateY(-2px);
+    }
+
+    .logs {
+      margin-top: 20px;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 12px;
+      padding: 15px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 0.85rem;
+    }
+
+    .logs::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .logs::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+    }
+
+    .logs::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+    }
+
+    .log-entry {
+      padding: 4px 0;
+      color: #a0aec0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+
+    .log-time {
+      color: #667eea;
+      margin-right: 10px;
+    }
+
+    .git-section {
+      grid-column: 1 / -1;
+    }
+
+    .commit-input {
+      width: 100%;
+      padding: 15px 20px;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.2);
+      color: #fff;
+      font-size: 1rem;
+      margin-bottom: 15px;
+      transition: border-color 0.3s ease;
+    }
+
+    .commit-input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .commit-input::placeholder {
+      color: #718096;
+    }
+
+    .git-status {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 12px;
+      padding: 15px;
+      margin-top: 15px;
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+      color: #a0aec0;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      padding: 16px 24px;
+      border-radius: 12px;
+      font-weight: 500;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .toast.success {
+      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+      color: #000;
+    }
+
+    .toast.error {
+      background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
+      color: #fff;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .quick-links {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      margin-bottom: 30px;
+      flex-wrap: wrap;
+    }
+
+    .quick-link {
+      padding: 12px 24px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 30px;
+      color: #fff;
+      text-decoration: none;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .quick-link:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: translateY(-2px);
+    }
+
+    @media (max-width: 768px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      
+      h1 {
+        font-size: 1.8rem;
+      }
+
+      .btn-group {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎛️ Dev Control Panel</h1>
+      <p class="subtitle">Lab Record Manager - Development Tools</p>
+    </header>
+
+    <div class="quick-links">
+      <a href="http://localhost:3000" target="_blank" class="quick-link">
+        🌐 Client (3000)
+      </a>
+      <a href="http://localhost:5000/api/health" target="_blank" class="quick-link">
+        💓 Server Health (5000)
+      </a>
+    </div>
+
+    <div class="grid">
+      <!-- Server Control -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="icon server">⚡</div>
+            Backend Server
+          </div>
+          <span class="status stopped" id="server-status">Checking...</span>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-start" id="restart-server" onclick="restartServer()">
+            🔄 Restart
+          </button>
+          <button class="btn btn-stop" id="stop-server" onclick="stopServer()">
+            ⏹️ Stop
+          </button>
+        </div>
+        <div class="logs" id="server-logs">
+          <div class="log-entry">No logs yet...</div>
+        </div>
+      </div>
+
+      <!-- Client Control -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="icon client">🖥️</div>
+            Frontend Client
+          </div>
+          <span class="status stopped" id="client-status">Checking...</span>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-start" id="restart-client" onclick="restartClient()">
+            🔄 Restart
+          </button>
+          <button class="btn btn-stop" id="stop-client" onclick="stopClient()">
+            ⏹️ Stop
+          </button>
+        </div>
+        <div class="logs" id="client-logs">
+          <div class="log-entry">No logs yet...</div>
+        </div>
+      </div>
+
+      <!-- Git Section -->
+      <div class="card git-section">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="icon git">📦</div>
+            Git Push Controls
+          </div>
+        </div>
+        <input type="text" class="commit-input" id="commit-message" placeholder="Enter commit message (optional)...">
+        <div class="btn-group">
+          <button class="btn btn-push" onclick="pushAll()">
+            🚀 Push All Changes
+          </button>
+          <button class="btn btn-push" onclick="pushServer()">
+            📤 Push Server Only
+          </button>
+          <button class="btn btn-push" onclick="pushClient()">
+            📤 Push Client Only
+          </button>
+        </div>
+        <div class="git-status" id="git-status">Loading status...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // Fetch and update status
+    async function updateStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        
+        // Update server status
+        const serverStatus = document.getElementById('server-status');
+        serverStatus.textContent = data.server.charAt(0).toUpperCase() + data.server.slice(1);
+        serverStatus.className = 'status ' + data.server;
+        
+        // Update client status
+        const clientStatus = document.getElementById('client-status');
+        clientStatus.textContent = data.client.charAt(0).toUpperCase() + data.client.slice(1);
+        clientStatus.className = 'status ' + data.client;
+        
+        // Update logs
+        if (data.serverLogs.length > 0) {
+          document.getElementById('server-logs').innerHTML = data.serverLogs
+            .map(log => `<div class="log-entry"><span class="log-time">${new Date(log.time).toLocaleTimeString()}</span>${log.message}</div>`)
+            .join('');
+        }
+        
+        if (data.clientLogs.length > 0) {
+          document.getElementById('client-logs').innerHTML = data.clientLogs
+            .map(log => `<div class="log-entry"><span class="log-time">${new Date(log.time).toLocaleTimeString()}</span>${log.message}</div>`)
+            .join('');
+        }
+      } catch (err) {
+        console.error('Failed to fetch status:', err);
+      }
+    }
+
+    // Update git status
+    async function updateGitStatus() {
+      try {
+        const res = await fetch('/api/git-status');
+        const data = await res.json();
+        document.getElementById('git-status').textContent = data.status || 'No changes detected';
+      } catch (err) {
+        document.getElementById('git-status').textContent = 'Failed to fetch git status';
+      }
+    }
+
+    // Toast notification
+    function showToast(message, type = 'success') {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = 'toast ' + type + ' show';
+      setTimeout(() => {
+        toast.className = 'toast';
+      }, 3000);
+    }
+
+    // Set button loading state
+    function setLoading(btnId, loading) {
+      const btn = document.getElementById(btnId);
+      if (loading) {
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner"></div> Working...';
+      } else {
+        btn.disabled = false;
+      }
+    }
+
+    // Restart Server
+    async function restartServer() {
+      setLoading('restart-server', true);
+      try {
+        const res = await fetch('/api/restart-server', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message);
+      } catch (err) {
+        showToast('Failed to restart server', 'error');
+      }
+      document.getElementById('restart-server').innerHTML = '🔄 Restart';
+      document.getElementById('restart-server').disabled = false;
+    }
+
+    // Stop Server
+    async function stopServer() {
+      setLoading('stop-server', true);
+      try {
+        const res = await fetch('/api/stop-server', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message);
+      } catch (err) {
+        showToast('Failed to stop server', 'error');
+      }
+      document.getElementById('stop-server').innerHTML = '⏹️ Stop';
+      document.getElementById('stop-server').disabled = false;
+    }
+
+    // Restart Client
+    async function restartClient() {
+      setLoading('restart-client', true);
+      try {
+        const res = await fetch('/api/restart-client', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message);
+      } catch (err) {
+        showToast('Failed to restart client', 'error');
+      }
+      document.getElementById('restart-client').innerHTML = '🔄 Restart';
+      document.getElementById('restart-client').disabled = false;
+    }
+
+    // Stop Client
+    async function stopClient() {
+      setLoading('stop-client', true);
+      try {
+        const res = await fetch('/api/stop-client', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message);
+      } catch (err) {
+        showToast('Failed to stop client', 'error');
+      }
+      document.getElementById('stop-client').innerHTML = '⏹️ Stop';
+      document.getElementById('stop-client').disabled = false;
+    }
+
+    // Push All
+    async function pushAll() {
+      const message = document.getElementById('commit-message').value;
+      showToast('Pushing changes...', 'success');
+      try {
+        const res = await fetch('/api/push-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ ' + data.message);
+          document.getElementById('commit-message').value = '';
+        } else {
+          showToast('❌ ' + data.error, 'error');
+        }
+      } catch (err) {
+        showToast('Push failed', 'error');
+      }
+      updateGitStatus();
+    }
+
+    // Push Server
+    async function pushServer() {
+      const message = document.getElementById('commit-message').value;
+      showToast('Pushing server changes...', 'success');
+      try {
+        const res = await fetch('/api/push-server', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ ' + data.message);
+        } else {
+          showToast('❌ ' + data.error, 'error');
+        }
+      } catch (err) {
+        showToast('Push failed', 'error');
+      }
+      updateGitStatus();
+    }
+
+    // Push Client
+    async function pushClient() {
+      const message = document.getElementById('commit-message').value;
+      showToast('Pushing client changes...', 'success');
+      try {
+        const res = await fetch('/api/push-client', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ ' + data.message);
+        } else {
+          showToast('❌ ' + data.error, 'error');
+        }
+      } catch (err) {
+        showToast('Push failed', 'error');
+      }
+      updateGitStatus();
+    }
+
+    // Initial load and polling
+    updateStatus();
+    updateGitStatus();
+    setInterval(updateStatus, 3000);
+    setInterval(updateGitStatus, 10000);
+  </script>
+</body>
+</html>
