@@ -201,7 +201,7 @@ router.get('/requests/:id', authenticate, asyncHandler(async (req, res) => {
  */
 router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
     try {
-        const { title, description, purpose, department, budgetCode, items } = req.body;
+        const { title, description, purpose, department, budgetCode, memoVideNo, items } = req.body;
         console.log('Creating request:', { title, purpose, department, itemCount: items?.length, schoolId: req.user.schoolId });
 
         const request = await prisma.procurementRequest.create({
@@ -211,6 +211,7 @@ router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assi
                 purpose,
                 department,
                 budgetCode,
+                memoVideNo,
                 status: 'draft',
                 createdById: req.user.id,
                 schoolId: req.user.schoolId,
@@ -241,7 +242,7 @@ router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assi
  * @desc    Update procurement request
  */
 router.put('/requests/:id', authenticate, asyncHandler(async (req, res) => {
-    const { title, description, purpose, department, budgetCode, status } = req.body;
+    const { title, description, purpose, department, budgetCode, memoVideNo, proceedingsDate, status } = req.body;
 
     const updateData = {};
     if (title !== undefined) updateData.title = title;
@@ -249,6 +250,8 @@ router.put('/requests/:id', authenticate, asyncHandler(async (req, res) => {
     if (purpose !== undefined) updateData.purpose = purpose;
     if (department !== undefined) updateData.department = department;
     if (budgetCode !== undefined) updateData.budgetCode = budgetCode;
+    if (memoVideNo !== undefined) updateData.memoVideNo = memoVideNo;
+    if (proceedingsDate !== undefined) updateData.proceedingsDate = new Date(proceedingsDate);
     if (status !== undefined) updateData.status = status;
 
 

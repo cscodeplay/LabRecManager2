@@ -103,6 +103,8 @@ export default function ProcurementPage() {
     // Step 1: Letter content state
     const [letterContent, setLetterContent] = useState('');
     const [letterUpload, setLetterUpload] = useState(null); // Track uploaded file
+    const [memoVideNo, setMemoVideNo] = useState(''); // Memo Vide No for proceedings
+    const [proceedingsDate, setProceedingsDate] = useState(new Date().toISOString().split('T')[0]);
 
     // Step 8: Bill state
     const [billUpload, setBillUpload] = useState(null);
@@ -213,6 +215,12 @@ export default function ProcurementPage() {
                         // Save letter content only
                         await procurementAPI.uploadPurchaseLetter(selectedRequest.id, {
                             letterContent: letterContent.trim()
+                        });
+                    }
+                    // Save memoVideNo if set
+                    if (memoVideNo.trim()) {
+                        await procurementAPI.updateRequest(selectedRequest.id, {
+                            memoVideNo: memoVideNo.trim()
                         });
                     }
                     break;
@@ -1692,7 +1700,7 @@ export default function ProcurementPage() {
                                     return Math.min(completed, 9);
                                 };
                                 const completedSteps = getCompletedSteps(req);
-                                const progressPercent = Math.round((completedSteps / 9) * 100);
+                                const progressPercent = Math.round((completedSteps / 10) * 100);
 
                                 return (
                                     <div key={req.id} className="bg-white rounded-xl shadow-sm p-4 hover:shadow-md transition-shadow">
@@ -1709,7 +1717,7 @@ export default function ProcurementPage() {
                                         {/* Progress Bar */}
                                         <div className="mb-3">
                                             <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-                                                <span>Step {completedSteps}/9 completed</span>
+                                                <span>Step {completedSteps}/10 completed</span>
                                                 <span className="font-medium">{progressPercent}%</span>
                                             </div>
                                             <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -2131,6 +2139,19 @@ export default function ProcurementPage() {
                                         <FileText className="w-5 h-5" /> Step 1: Requirement Letter
                                     </h3>
                                     <p className="text-slate-600 text-sm mb-4">Upload a request letter for new purchase or the letter will be generated with school letterhead.</p>
+
+                                    {/* Memo Vide No Field */}
+                                    <div className="mb-4">
+                                        <label className="label">Memo Vide No. *</label>
+                                        <input
+                                            type="text"
+                                            className="input"
+                                            placeholder="e.g., MS/2024-25/123"
+                                            value={memoVideNo || requestDetail?.request?.memoVideNo || ''}
+                                            onChange={e => setMemoVideNo(e.target.value)}
+                                        />
+                                        <p className="text-xs text-slate-500 mt-1">This will appear in the Proceedings of Committee document.</p>
+                                    </div>
 
                                     {requestDetail?.request?.purchaseLetterUrl ? (
                                         <div className="flex items-center gap-3 bg-white p-3 rounded mb-4">
@@ -2579,13 +2600,110 @@ The undersigned requests approval to purchase the following items for the scienc
                                     <div className="flex gap-2 mt-4">
                                         <button onClick={() => setWorkflowStep(5)} className="btn btn-secondary">← Back</button>
                                         <button onClick={() => saveStepData(6)} disabled={!isStepComplete(6)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
-                                        <button onClick={() => saveAndNext(6)} disabled={!isStepComplete(6)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
+                                        <button onClick={() => { saveStepData(6); setWorkflowStep(7); }} disabled={!isStepComplete(6)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Step 7: Purchase Order */}
+                            {/* NEW Step 7: Proceedings of Committee */}
                             {workflowStep === 7 && (
+                                <div className="mb-6 p-4 bg-violet-50 rounded-lg border border-violet-200">
+                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-violet-800">
+                                        <FileText className="w-5 h-5" /> Step 7: Proceedings of Committee
+                                    </h3>
+                                    <p className="text-slate-600 text-sm mb-4">Review and generate the Committee Proceedings document.</p>
+
+                                    {/* Proceedings Preview */}
+                                    <div className="bg-white p-6 rounded border space-y-4 text-sm">
+                                        <h4 className="font-bold text-center border-b pb-2">
+                                            Proceedings of Committee for {requestDetail?.request?.title}
+                                        </h4>
+
+                                        <table className="w-full text-sm">
+                                            <tbody>
+                                                <tr><td className="font-medium py-1 w-40">Proceeding of:</td><td>Committee to Recommend {requestDetail?.request?.title}</td></tr>
+                                                <tr><td className="font-medium py-1">Assembled at:</td><td>{requestDetail?.request?.school?.name || 'School Name'}</td></tr>
+                                                <tr><td className="font-medium py-1">On:</td>
+                                                    <td>
+                                                        <input
+                                                            type="date"
+                                                            className="input py-1 px-2 text-sm w-40"
+                                                            value={proceedingsDate}
+                                                            onChange={e => setProceedingsDate(e.target.value)}
+                                                        />
+                                                    </td>
+                                                </tr>
+                                                <tr><td className="font-medium py-1">For the purpose of:</td><td>To Recommend {requestDetail?.request?.title}</td></tr>
+                                                <tr><td className="font-medium py-1">By the order of:</td><td>Vide Memo no. <strong>{requestDetail?.request?.memoVideNo || memoVideNo || '___'}</strong></td></tr>
+                                            </tbody>
+                                        </table>
+
+                                        <div className="mt-4 pt-4 border-t">
+                                            <p className="mb-3">The Board having reassembled in pursuance of the above order proceeded to examine the quotations received from the following dealers:</p>
+
+                                            <div className="mb-4">
+                                                <p className="font-medium mb-2">Vendors Asked to Give Quotations (Step 4):</p>
+                                                <ul className="list-disc list-inside pl-2">
+                                                    {selectedVendorIds.length > 0 ? selectedVendorIds.map((vid, idx) => {
+                                                        const v = vendors.find(vendor => vendor.id === vid);
+                                                        return <li key={vid}>{String.fromCharCode(97 + idx)}) {v?.name}</li>;
+                                                    }) : <li className="text-slate-500 italic">No vendors selected in Step 4</li>}
+                                                </ul>
+                                            </div>
+
+                                            <div className="mb-4">
+                                                <p className="font-medium mb-2">1. The Following Dealers Supplied Quotations (Step 5):</p>
+                                                <ul className="list-disc list-inside pl-2">
+                                                    {requestDetail?.request?.quotations?.length > 0 ? requestDetail.request.quotations.map((q, idx) => (
+                                                        <li key={q.id}>{String.fromCharCode(97 + idx)}) {q.vendor?.name}</li>
+                                                    )) : <li className="text-slate-500 italic">No quotations received yet</li>}
+                                                </ul>
+                                            </div>
+
+                                            <p className="mb-4">2. The Comparative statement of rates is placed at Appendix A.</p>
+
+                                            <div className="mb-4 pt-4 border-t">
+                                                <p className="font-medium underline mb-2">Recommendation:</p>
+                                                <p>The board recommends that dealer <strong>
+                                                    {selectedVendorForPurchase
+                                                        ? vendors.find(v => v.id === selectedVendorForPurchase)?.name
+                                                        : '________________'}
+                                                </strong> should be given the {requestDetail?.request?.title}.</p>
+                                            </div>
+
+                                            {/* Committee Signatories */}
+                                            <div className="mt-6 pt-4 border-t">
+                                                <p className="font-medium mb-3">Committee Signatures:</p>
+                                                <div className="grid grid-cols-2 gap-4 text-right">
+                                                    {requestDetail?.request?.committee?.map((member, idx) => (
+                                                        <div key={member.id} className="text-right">
+                                                            <p className="text-xs text-slate-500 uppercase">{member.role === 'chairperson' ? 'Presiding Officer' : `Member ${idx}`}</p>
+                                                            <p className="font-medium">{member.user?.firstName} {member.user?.lastName}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-2 mt-4">
+                                        <button onClick={() => setWorkflowStep(6)} className="btn btn-secondary">← Back</button>
+                                        <button
+                                            onClick={async () => {
+                                                await procurementAPI.updateRequest(selectedRequest.id, { proceedingsDate: new Date(proceedingsDate) });
+                                                toast.success('Proceedings saved!');
+                                            }}
+                                            className="btn btn-secondary"
+                                        >
+                                            Save Proceedings
+                                        </button>
+                                        <button onClick={() => setWorkflowStep(8)} className="btn btn-primary">Continue to Purchase Order →</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Step 8: Purchase Order (was Step 7) */}
+                            {workflowStep === 8 && (
                                 <div className="mb-6 p-4 bg-emerald-50 rounded-lg border border-emerald-200">
                                     <h3 className="font-semibold mb-3 flex items-center gap-2 text-emerald-800">
                                         <ClipboardList className="w-5 h-5" /> Step 7: Purchase Order
@@ -2750,18 +2868,18 @@ The undersigned requests approval to purchase the following items for the scienc
                                     })()}
 
                                     <div className="flex gap-2 mt-4">
-                                        <button onClick={() => setWorkflowStep(6)} className="btn btn-secondary">← Back</button>
+                                        <button onClick={() => setWorkflowStep(7)} className="btn btn-secondary">← Back</button>
                                         <button onClick={() => saveStepData(7)} disabled={!isStepComplete(7)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
                                         <button onClick={() => { if (validateStep(7)) openCombinedPdfPreview(); }} disabled={!isStepComplete(7)} className="btn bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 disabled:cursor-not-allowed">
                                             <Printer className="w-4 h-4" /> Generate PO PDF
                                         </button>
-                                        <button onClick={() => saveAndNext(7)} disabled={!isStepComplete(7)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
+                                        <button onClick={() => { saveStepData(7); setWorkflowStep(9); }} disabled={!isStepComplete(7)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Step 8: Bill Received */}
-                            {workflowStep === 8 && (
+                            {/* Step 9: Bill Received (was Step 8) */}
+                            {workflowStep === 9 && (
                                 <div className="mb-6 p-4 bg-rose-50 rounded-lg border border-rose-200">
                                     <h3 className="font-semibold mb-3 flex items-center gap-2 text-rose-800">
                                         <CreditCard className="w-5 h-5" /> Step 8: Bill & Payment
@@ -2897,15 +3015,15 @@ The undersigned requests approval to purchase the following items for the scienc
                                     </div>
 
                                     <div className="flex gap-2">
-                                        <button onClick={() => setWorkflowStep(7)} className="btn btn-secondary">← Back</button>
+                                        <button onClick={() => setWorkflowStep(8)} className="btn btn-secondary">← Back</button>
                                         <button onClick={() => saveStepData(8)} disabled={!isStepComplete(8)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
-                                        <button onClick={() => saveAndNext(8)} disabled={!isStepComplete(8)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
+                                        <button onClick={() => { saveStepData(8); setWorkflowStep(10); }} disabled={!isStepComplete(8)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Step 9: Items Received */}
-                            {workflowStep === 9 && (
+                            {/* Step 10: Items Received (was Step 9) */}
+                            {workflowStep === 10 && (
                                 <div className="mb-6 p-4 bg-teal-50 rounded-lg border border-teal-200">
                                     <h3 className="font-semibold mb-3 flex items-center gap-2 text-teal-800">
                                         <CheckCircle2 className="w-5 h-5" /> Step 9: Items Received & Inventory Update

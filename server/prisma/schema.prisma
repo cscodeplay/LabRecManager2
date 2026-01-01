@@ -1350,6 +1350,8 @@ model ProcurementRequest {
   receivedById       String?                @map("received_by_id") @db.Uuid
   receivingVideoUrl  String?                @map("receiving_video_url") @db.VarChar(500)
   receivingNotes     String?                @map("receiving_notes")
+  memoVideNo         String?                @map("memo_vide_no") @db.VarChar(100)
+  proceedingsDate    DateTime?              @map("proceedings_date") @db.Date
   schoolId           String                 @map("school_id") @db.Uuid
   createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamp(6)
