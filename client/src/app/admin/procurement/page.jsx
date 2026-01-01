@@ -2707,7 +2707,7 @@ The undersigned requests approval to purchase the following items for the scienc
                             {workflowStep === 8 && (
                                 <div className="mb-6 p-4 bg-emerald-50 rounded-lg border border-emerald-200">
                                     <h3 className="font-semibold mb-3 flex items-center gap-2 text-emerald-800">
-                                        <ClipboardList className="w-5 h-5" /> Step 7: Purchase Order
+                                        <ClipboardList className="w-5 h-5" /> Step 8: Purchase Order
                                     </h3>
 
                                     {!selectedVendorForPurchase ? (
@@ -2883,7 +2883,7 @@ The undersigned requests approval to purchase the following items for the scienc
                             {workflowStep === 9 && (
                                 <div className="mb-6 p-4 bg-rose-50 rounded-lg border border-rose-200">
                                     <h3 className="font-semibold mb-3 flex items-center gap-2 text-rose-800">
-                                        <CreditCard className="w-5 h-5" /> Step 8: Bill & Payment
+                                        <CreditCard className="w-5 h-5" /> Step 9: Bill & Payment
                                     </h3>
                                     <p className="text-slate-600 text-sm mb-4">Upload the vendor bill and payment cheque for records.</p>
 
@@ -3027,7 +3027,7 @@ The undersigned requests approval to purchase the following items for the scienc
                             {workflowStep === 10 && (
                                 <div className="mb-6 p-4 bg-teal-50 rounded-lg border border-teal-200">
                                     <h3 className="font-semibold mb-3 flex items-center gap-2 text-teal-800">
-                                        <CheckCircle2 className="w-5 h-5" /> Step 9: Items Received & Inventory Update
+                                        <CheckCircle2 className="w-5 h-5" /> Step 10: Items Received & Inventory Update
                                     </h3>
                                     <p className="text-slate-600 text-sm mb-4">Verify received items, scan barcodes for serial numbers, and update inventory.</p>
 
