@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dev Control Panel - Lab Record Manager</title>
+  <title>Multi-Project Dev Control Panel</title>
   <style>
     * {
       margin: 0;
@@ -26,23 +27,90 @@
 
     header {
       text-align: center;
-      padding: 30px 0;
-      margin-bottom: 30px;
+      padding: 20px 0;
+      margin-bottom: 20px;
     }
 
     h1 {
-      font-size: 2.5rem;
+      font-size: 2.2rem;
       font-weight: 700;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
     }
 
     .subtitle {
       color: #a0aec0;
-      font-size: 1rem;
+      font-size: 0.95rem;
+    }
+
+    /* Project Selector */
+    .project-bar {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 25px;
+      flex-wrap: wrap;
+    }
+
+    .project-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      flex: 1;
+    }
+
+    .project-tab {
+      padding: 10px 18px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 2px solid transparent;
+      border-radius: 12px;
+      color: #a0aec0;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .project-tab:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .project-tab.active {
+      background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
+      border-color: #667eea;
+      color: #fff;
+    }
+
+    .project-tab .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ff6b6b;
+    }
+
+    .project-tab .status-dot.running {
+      background: #38ef7d;
+    }
+
+    .btn-add-project {
+      padding: 10px 18px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      border-radius: 12px;
+      color: #fff;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .btn-add-project:hover {
+      box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+      transform: translateY(-2px);
     }
 
     .grid {
@@ -77,7 +145,7 @@
       display: flex;
       align-items: center;
       gap: 12px;
-      font-size: 1.4rem;
+      font-size: 1.3rem;
       font-weight: 600;
     }
 
@@ -91,9 +159,21 @@
       font-size: 1.3rem;
     }
 
-    .icon.server { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-    .icon.client { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
-    .icon.git { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+    .icon.server {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+
+    .icon.client {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
+
+    .icon.git {
+      background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+    }
+
+    .icon.settings {
+      background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+    }
 
     .status {
       padding: 6px 14px;
@@ -176,10 +256,10 @@
       background: rgba(0, 0, 0, 0.3);
       border-radius: 12px;
       padding: 15px;
-      max-height: 200px;
+      max-height: 180px;
       overflow-y: auto;
       font-family: 'Monaco', 'Consolas', monospace;
-      font-size: 0.85rem;
+      font-size: 0.8rem;
     }
 
     .logs::-webkit-scrollbar {
@@ -197,18 +277,14 @@
     }
 
     .log-entry {
-      padding: 4px 0;
+      padding: 3px 0;
       color: #a0aec0;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
 
-    .log-entry:last-child {
-      border-bottom: none;
-    }
-
     .log-time {
       color: #667eea;
-      margin-right: 10px;
+      margin-right: 8px;
     }
 
     .git-section {
@@ -232,10 +308,6 @@
       border-color: #667eea;
     }
 
-    .commit-input::placeholder {
-      color: #718096;
-    }
-
     .git-status {
       background: rgba(0, 0, 0, 0.3);
       border-radius: 12px;
@@ -245,8 +317,125 @@
       font-size: 0.85rem;
       white-space: pre-wrap;
       color: #a0aec0;
-      max-height: 150px;
+      max-height: 120px;
       overflow-y: auto;
+    }
+
+    .quick-links {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+    }
+
+    .quick-link {
+      padding: 10px 18px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 25px;
+      color: #fff;
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.9rem;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .quick-link:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: translateY(-2px);
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-overlay.show {
+      display: flex;
+    }
+
+    .modal {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 30px;
+      width: 90%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal h2 {
+      margin-bottom: 25px;
+      font-size: 1.5rem;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: #a0aec0;
+      font-weight: 500;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.3);
+      color: #fff;
+      font-size: 0.95rem;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 25px;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+      color: #fff;
     }
 
     .toast {
@@ -259,7 +448,7 @@
       transform: translateY(100px);
       opacity: 0;
       transition: all 0.3s ease;
-      z-index: 1000;
+      z-index: 1100;
     }
 
     .toast.show {
@@ -287,67 +476,65 @@
     }
 
     @keyframes spin {
-      to { transform: rotate(360deg); }
+      to {
+        transform: rotate(360deg);
+      }
     }
 
-    .quick-links {
-      display: flex;
-      gap: 15px;
-      justify-content: center;
-      margin-bottom: 30px;
-      flex-wrap: wrap;
-    }
-
-    .quick-link {
-      padding: 12px 24px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 30px;
-      color: #fff;
-      text-decoration: none;
-      font-weight: 500;
-      transition: all 0.3s ease;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .quick-link:hover {
-      background: rgba(255, 255, 255, 0.2);
-      transform: translateY(-2px);
+    .port-info {
+      font-size: 0.85rem;
+      color: #718096;
+      margin-top: 8px;
     }
 
     @media (max-width: 768px) {
       .grid {
         grid-template-columns: 1fr;
       }
-      
+
       h1 {
-        font-size: 1.8rem;
+        font-size: 1.6rem;
       }
 
       .btn-group {
         flex-direction: column;
       }
+
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+
+      .project-bar {
+        flex-direction: column;
+        align-items: stretch;
+      }
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <header>
-      <h1>🎛️ Dev Control Panel</h1>
-      <p class="subtitle">Lab Record Manager - Development Tools</p>
+      <h1>🎛️ Multi-Project Dev Control Panel</h1>
+      <p class="subtitle">Manage multiple projects from one place</p>
     </header>
 
-    <div class="quick-links">
-      <a href="http://localhost:3000" target="_blank" class="quick-link">
-        🌐 Client (3000)
-      </a>
-      <a href="http://localhost:5000/api/health" target="_blank" class="quick-link">
-        💓 Server Health (5000)
-      </a>
+    <!-- Project Selector -->
+    <div class="project-bar">
+      <div class="project-tabs" id="project-tabs">
+        <!-- Tabs populated dynamically -->
+      </div>
+      <button class="btn-add-project" onclick="showAddProjectModal()">
+        ➕ Add Project
+      </button>
     </div>
 
-    <div class="grid">
+    <!-- Quick Links -->
+    <div class="quick-links" id="quick-links">
+      <!-- Links populated dynamically -->
+    </div>
+
+    <div class="grid" id="main-grid">
       <!-- Server Control -->
       <div class="card">
         <div class="card-header">
@@ -357,6 +544,7 @@
           </div>
           <span class="status stopped" id="server-status">Checking...</span>
         </div>
+        <p class="port-info" id="server-port-info">Port: --</p>
         <div class="btn-group">
           <button class="btn btn-start" id="restart-server" onclick="restartServer()">
             🔄 Restart
@@ -366,7 +554,7 @@
           </button>
         </div>
         <div class="logs" id="server-logs">
-          <div class="log-entry">No logs yet...</div>
+          <div class="log-entry">Select a project to view logs...</div>
         </div>
       </div>
 
@@ -379,6 +567,7 @@
           </div>
           <span class="status stopped" id="client-status">Checking...</span>
         </div>
+        <p class="port-info" id="client-port-info">Port: --</p>
         <div class="btn-group">
           <button class="btn btn-start" id="restart-client" onclick="restartClient()">
             🔄 Restart
@@ -388,7 +577,7 @@
           </button>
         </div>
         <div class="logs" id="client-logs">
-          <div class="log-entry">No logs yet...</div>
+          <div class="log-entry">Select a project to view logs...</div>
         </div>
       </div>
 
@@ -399,55 +588,199 @@
             <div class="icon git">📦</div>
             Git Push Controls
           </div>
+          <button class="btn btn-secondary" style="flex:0; padding: 8px 16px; font-size: 0.85rem;"
+            onclick="showEditProjectModal()">
+            ⚙️ Edit Project
+          </button>
         </div>
         <input type="text" class="commit-input" id="commit-message" placeholder="Enter commit message (optional)...">
         <div class="btn-group">
-          <button class="btn btn-push" onclick="pushAll()">
+          <button class="btn btn-push" onclick="pushChanges()">
             🚀 Push All Changes
           </button>
-          <button class="btn btn-push" onclick="pushServer()">
-            📤 Push Server Only
-          </button>
-          <button class="btn btn-push" onclick="pushClient()">
-            📤 Push Client Only
-          </button>
         </div>
-        <div class="git-status" id="git-status">Loading status...</div>
+        <div class="git-status" id="git-status">Select a project to view git status...</div>
       </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Project Modal -->
+  <div class="modal-overlay" id="project-modal">
+    <div class="modal">
+      <h2 id="modal-title">Add New Project</h2>
+      <form id="project-form" onsubmit="saveProject(event)">
+        <input type="hidden" id="edit-project-id">
+
+        <div class="form-group">
+          <label>Project Name</label>
+          <input type="text" id="project-name" placeholder="My Awesome Project" required>
+        </div>
+
+        <div class="form-group">
+          <label>Root Directory (absolute path)</label>
+          <input type="text" id="project-root" placeholder="/Users/username/projects/my-project" required>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Server Directory</label>
+            <input type="text" id="server-dir" placeholder="server" value="server">
+          </div>
+          <div class="form-group">
+            <label>Server Port</label>
+            <input type="number" id="server-port" placeholder="5000" value="5000">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Server Start Command</label>
+          <input type="text" id="server-cmd" placeholder="npm run dev" value="npm run dev">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Client Directory</label>
+            <input type="text" id="client-dir" placeholder="client" value="client">
+          </div>
+          <div class="form-group">
+            <label>Client Port</label>
+            <input type="number" id="client-port" placeholder="3000" value="3000">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Client Start Command</label>
+          <input type="text" id="client-cmd" placeholder="npm run dev" value="npm run dev">
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+          <button type="button" class="btn btn-danger" id="delete-btn" onclick="deleteProject()"
+            style="display:none">Delete</button>
+          <button type="submit" class="btn btn-push">Save Project</button>
+        </div>
+      </form>
     </div>
   </div>
 
   <div class="toast" id="toast"></div>
 
   <script>
+    let projects = [];
+    let currentProject = null;
+    let allStatuses = {};
+
+    // Load projects
+    async function loadProjects() {
+      try {
+        const res = await fetch('/api/projects');
+        projects = await res.json();
+        renderProjectTabs();
+
+        if (projects.length > 0 && !currentProject) {
+          selectProject(projects[0].id);
+        }
+
+        // Load all statuses for indicators
+        const statusRes = await fetch('/api/all-status');
+        allStatuses = await statusRes.json();
+        updateProjectIndicators();
+      } catch (err) {
+        console.error('Failed to load projects:', err);
+      }
+    }
+
+    // Render project tabs
+    function renderProjectTabs() {
+      const container = document.getElementById('project-tabs');
+      container.innerHTML = projects.map(p => `
+        <button class="project-tab ${currentProject?.id === p.id ? 'active' : ''}" 
+                onclick="selectProject('${p.id}')">
+          <span class="status-dot ${allStatuses[p.id]?.server === 'running' || allStatuses[p.id]?.client === 'running' ? 'running' : ''}" 
+                id="dot-${p.id}"></span>
+          ${p.name}
+        </button>
+      `).join('');
+    }
+
+    // Update project status indicators
+    function updateProjectIndicators() {
+      projects.forEach(p => {
+        const dot = document.getElementById(`dot-${p.id}`);
+        if (dot) {
+          const isRunning = allStatuses[p.id]?.server === 'running' || allStatuses[p.id]?.client === 'running';
+          dot.className = 'status-dot ' + (isRunning ? 'running' : '');
+        }
+      });
+    }
+
+    // Select project
+    function selectProject(projectId) {
+      currentProject = projects.find(p => p.id === projectId);
+      if (!currentProject) return;
+
+      renderProjectTabs();
+      updateQuickLinks();
+      updatePortInfo();
+      updateStatus();
+      updateGitStatus();
+    }
+
+    // Update quick links
+    function updateQuickLinks() {
+      if (!currentProject) return;
+
+      document.getElementById('quick-links').innerHTML = `
+        <a href="http://localhost:${currentProject.client.port}" target="_blank" class="quick-link">
+          🌐 Client (:${currentProject.client.port})
+        </a>
+        <a href="http://localhost:${currentProject.server.port}/api/health" target="_blank" class="quick-link">
+          💓 Server Health (:${currentProject.server.port})
+        </a>
+      `;
+    }
+
+    // Update port info
+    function updatePortInfo() {
+      if (!currentProject) return;
+      document.getElementById('server-port-info').textContent = `Port: ${currentProject.server.port} | Dir: ${currentProject.server.dir}`;
+      document.getElementById('client-port-info').textContent = `Port: ${currentProject.client.port} | Dir: ${currentProject.client.dir}`;
+    }
+
     // Fetch and update status
     async function updateStatus() {
+      if (!currentProject) return;
+
       try {
-        const res = await fetch('/api/status');
+        const res = await fetch(`/api/projects/${currentProject.id}/status`);
         const data = await res.json();
-        
+
         // Update server status
         const serverStatus = document.getElementById('server-status');
         serverStatus.textContent = data.server.charAt(0).toUpperCase() + data.server.slice(1);
         serverStatus.className = 'status ' + data.server;
-        
+
         // Update client status
         const clientStatus = document.getElementById('client-status');
         clientStatus.textContent = data.client.charAt(0).toUpperCase() + data.client.slice(1);
         clientStatus.className = 'status ' + data.client;
-        
+
         // Update logs
         if (data.serverLogs.length > 0) {
           document.getElementById('server-logs').innerHTML = data.serverLogs
             .map(log => `<div class="log-entry"><span class="log-time">${new Date(log.time).toLocaleTimeString()}</span>${log.message}</div>`)
             .join('');
         }
-        
+
         if (data.clientLogs.length > 0) {
           document.getElementById('client-logs').innerHTML = data.clientLogs
             .map(log => `<div class="log-entry"><span class="log-time">${new Date(log.time).toLocaleTimeString()}</span>${log.message}</div>`)
             .join('');
         }
+
+        // Update all statuses for indicators
+        allStatuses[currentProject.id] = { server: data.server, client: data.client };
+        updateProjectIndicators();
       } catch (err) {
         console.error('Failed to fetch status:', err);
       }
@@ -455,8 +788,10 @@
 
     // Update git status
     async function updateGitStatus() {
+      if (!currentProject) return;
+
       try {
-        const res = await fetch('/api/git-status');
+        const res = await fetch(`/api/projects/${currentProject.id}/git-status`);
         const data = await res.json();
         document.getElementById('git-status').textContent = data.status || 'No changes detected';
       } catch (err) {
@@ -474,79 +809,53 @@
       }, 3000);
     }
 
-    // Set button loading state
-    function setLoading(btnId, loading) {
-      const btn = document.getElementById(btnId);
-      if (loading) {
-        btn.disabled = true;
-        btn.innerHTML = '<div class="spinner"></div> Working...';
-      } else {
-        btn.disabled = false;
-      }
-    }
-
-    // Restart Server
+    // API calls
     async function restartServer() {
-      setLoading('restart-server', true);
+      if (!currentProject) return showToast('Select a project first', 'error');
+      showToast('Restarting server...');
       try {
-        const res = await fetch('/api/restart-server', { method: 'POST' });
-        const data = await res.json();
-        showToast(data.message);
+        await fetch(`/api/projects/${currentProject.id}/restart-server`, { method: 'POST' });
       } catch (err) {
         showToast('Failed to restart server', 'error');
       }
-      document.getElementById('restart-server').innerHTML = '🔄 Restart';
-      document.getElementById('restart-server').disabled = false;
     }
 
-    // Stop Server
     async function stopServer() {
-      setLoading('stop-server', true);
+      if (!currentProject) return showToast('Select a project first', 'error');
       try {
-        const res = await fetch('/api/stop-server', { method: 'POST' });
-        const data = await res.json();
-        showToast(data.message);
+        await fetch(`/api/projects/${currentProject.id}/stop-server`, { method: 'POST' });
+        showToast('Server stopped');
       } catch (err) {
         showToast('Failed to stop server', 'error');
       }
-      document.getElementById('stop-server').innerHTML = '⏹️ Stop';
-      document.getElementById('stop-server').disabled = false;
     }
 
-    // Restart Client
     async function restartClient() {
-      setLoading('restart-client', true);
+      if (!currentProject) return showToast('Select a project first', 'error');
+      showToast('Restarting client...');
       try {
-        const res = await fetch('/api/restart-client', { method: 'POST' });
-        const data = await res.json();
-        showToast(data.message);
+        await fetch(`/api/projects/${currentProject.id}/restart-client`, { method: 'POST' });
       } catch (err) {
         showToast('Failed to restart client', 'error');
       }
-      document.getElementById('restart-client').innerHTML = '🔄 Restart';
-      document.getElementById('restart-client').disabled = false;
     }
 
-    // Stop Client
     async function stopClient() {
-      setLoading('stop-client', true);
+      if (!currentProject) return showToast('Select a project first', 'error');
       try {
-        const res = await fetch('/api/stop-client', { method: 'POST' });
-        const data = await res.json();
-        showToast(data.message);
+        await fetch(`/api/projects/${currentProject.id}/stop-client`, { method: 'POST' });
+        showToast('Client stopped');
       } catch (err) {
         showToast('Failed to stop client', 'error');
       }
-      document.getElementById('stop-client').innerHTML = '⏹️ Stop';
-      document.getElementById('stop-client').disabled = false;
     }
 
-    // Push All
-    async function pushAll() {
+    async function pushChanges() {
+      if (!currentProject) return showToast('Select a project first', 'error');
       const message = document.getElementById('commit-message').value;
-      showToast('Pushing changes...', 'success');
+      showToast('Pushing changes...');
       try {
-        const res = await fetch('/api/push-all', {
+        const res = await fetch(`/api/projects/${currentProject.id}/push`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message })
@@ -564,55 +873,111 @@
       updateGitStatus();
     }
 
-    // Push Server
-    async function pushServer() {
-      const message = document.getElementById('commit-message').value;
-      showToast('Pushing server changes...', 'success');
-      try {
-        const res = await fetch('/api/push-server', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast('✅ ' + data.message);
-        } else {
-          showToast('❌ ' + data.error, 'error');
-        }
-      } catch (err) {
-        showToast('Push failed', 'error');
-      }
-      updateGitStatus();
+    // Modal functions
+    function showAddProjectModal() {
+      document.getElementById('modal-title').textContent = 'Add New Project';
+      document.getElementById('project-form').reset();
+      document.getElementById('edit-project-id').value = '';
+      document.getElementById('delete-btn').style.display = 'none';
+      document.getElementById('server-dir').value = 'server';
+      document.getElementById('server-port').value = '5000';
+      document.getElementById('server-cmd').value = 'npm run dev';
+      document.getElementById('client-dir').value = 'client';
+      document.getElementById('client-port').value = '3000';
+      document.getElementById('client-cmd').value = 'npm run dev';
+      document.getElementById('project-modal').classList.add('show');
     }
 
-    // Push Client
-    async function pushClient() {
-      const message = document.getElementById('commit-message').value;
-      showToast('Pushing client changes...', 'success');
-      try {
-        const res = await fetch('/api/push-client', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast('✅ ' + data.message);
-        } else {
-          showToast('❌ ' + data.error, 'error');
+    function showEditProjectModal() {
+      if (!currentProject) return showToast('Select a project first', 'error');
+
+      document.getElementById('modal-title').textContent = 'Edit Project';
+      document.getElementById('edit-project-id').value = currentProject.id;
+      document.getElementById('project-name').value = currentProject.name;
+      document.getElementById('project-root').value = currentProject.rootDir;
+      document.getElementById('server-dir').value = currentProject.server.dir;
+      document.getElementById('server-port').value = currentProject.server.port;
+      document.getElementById('server-cmd').value = currentProject.server.command;
+      document.getElementById('client-dir').value = currentProject.client.dir;
+      document.getElementById('client-port').value = currentProject.client.port;
+      document.getElementById('client-cmd').value = currentProject.client.command;
+      document.getElementById('delete-btn').style.display = 'block';
+      document.getElementById('project-modal').classList.add('show');
+    }
+
+    function closeModal() {
+      document.getElementById('project-modal').classList.remove('show');
+    }
+
+    async function saveProject(e) {
+      e.preventDefault();
+
+      const projectData = {
+        name: document.getElementById('project-name').value,
+        rootDir: document.getElementById('project-root').value,
+        server: {
+          dir: document.getElementById('server-dir').value || 'server',
+          port: parseInt(document.getElementById('server-port').value) || 5000,
+          command: document.getElementById('server-cmd').value || 'npm run dev'
+        },
+        client: {
+          dir: document.getElementById('client-dir').value || 'client',
+          port: parseInt(document.getElementById('client-port').value) || 3000,
+          command: document.getElementById('client-cmd').value || 'npm run dev'
         }
+      };
+
+      const editId = document.getElementById('edit-project-id').value;
+
+      try {
+        if (editId) {
+          await fetch(`/api/projects/${editId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(projectData)
+          });
+          showToast('Project updated!');
+        } else {
+          await fetch('/api/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(projectData)
+          });
+          showToast('Project added!');
+        }
+        closeModal();
+        await loadProjects();
       } catch (err) {
-        showToast('Push failed', 'error');
+        showToast('Failed to save project', 'error');
       }
-      updateGitStatus();
+    }
+
+    async function deleteProject() {
+      if (!currentProject) return;
+
+      if (!confirm(`Delete project "${currentProject.name}"?`)) return;
+
+      try {
+        await fetch(`/api/projects/${currentProject.id}`, { method: 'DELETE' });
+        showToast('Project deleted');
+        currentProject = null;
+        closeModal();
+        await loadProjects();
+      } catch (err) {
+        showToast('Failed to delete project', 'error');
+      }
     }
 
     // Initial load and polling
-    updateStatus();
-    updateGitStatus();
+    loadProjects();
     setInterval(updateStatus, 3000);
     setInterval(updateGitStatus, 10000);
+    setInterval(async () => {
+      const res = await fetch('/api/all-status');
+      allStatuses = await res.json();
+      updateProjectIndicators();
+    }, 5000);
   </script>
 </body>
+
 </html>

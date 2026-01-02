@@ -145,13 +145,22 @@ export default function ImportStudentsPage() {
                 classId: selectedClassId || undefined
             });
 
-            setImportResult(response.data.data);
-            setStep(4);
-            toast.success(response.data.message);
+            // Set loading false first, then update result and step
+            setLoading(false);
+
+            // Ensure we have valid result data
+            const result = response.data?.data || { created: [], failed: [], enrolled: 0 };
+            setImportResult(result);
+
+            // Use setTimeout to ensure state updates are processed
+            setTimeout(() => {
+                setStep(4);
+            }, 100);
+
+            toast.success(response.data?.message || `Successfully imported ${result.created?.length || 0} students`);
         } catch (error) {
             console.error('Import failed:', error);
             toast.error(error.response?.data?.message || 'Import failed');
-        } finally {
             setLoading(false);
         }
     };

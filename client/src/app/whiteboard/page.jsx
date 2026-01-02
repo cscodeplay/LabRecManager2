@@ -3,12 +3,13 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Pencil, Users, Share2 } from 'lucide-react';
+import { ArrowLeft, Pencil, Users, Share2, Video, VideoOff } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import toast from 'react-hot-toast';
 import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
 import WhiteboardShareModal from '@/components/WhiteboardShareModal';
+import CameraOverlay from '@/components/CameraOverlay';
 
 export default function WhiteboardPage() {
     const router = useRouter();
@@ -20,6 +21,9 @@ export default function WhiteboardPage() {
     const [shareTargets, setShareTargets] = useState([]);
     const [sessionId, setSessionId] = useState(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
+
+    // Camera state
+    const [showCamera, setShowCamera] = useState(false);
 
     // Socket ref
     const socketRef = useRef(null);
@@ -149,6 +153,18 @@ export default function WhiteboardPage() {
                     </div>
 
                     <div className="flex items-center gap-3">
+                        {/* Camera toggle button */}
+                        <button
+                            onClick={() => setShowCamera(!showCamera)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${showCamera
+                                    ? 'bg-green-500 hover:bg-green-600 text-white'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                }`}
+                        >
+                            {showCamera ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+                            {showCamera ? 'Camera On' : 'Camera Off'}
+                        </button>
+
                         {/* Share button */}
                         {!isSharing ? (
                             <button
@@ -199,6 +215,15 @@ export default function WhiteboardPage() {
                 currentTargets={shareTargets}
                 onStartSharing={handleStartSharing}
                 onStopSharing={handleStopSharing}
+            />
+
+            {/* Camera Overlay */}
+            <CameraOverlay
+                isOpen={showCamera}
+                onClose={() => setShowCamera(false)}
+                socket={socketRef.current}
+                sessionId={sessionId}
+                isInstructor={true}
             />
         </div>
     );

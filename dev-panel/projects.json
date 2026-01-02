@@ -1,0 +1,18 @@
+[
+  {
+    "id": "labrecmanager",
+    "name": "Lab Record Manager",
+    "rootDir": "/Users/charanpreetsingh/LabRecManagemer",
+    "server": {
+      "dir": "server",
+      "port": 5000,
+      "command": "npm run dev"
+    },
+    "client": {
+      "dir": "client",
+      "port": 3000,
+      "command": "npm run dev"
+    },
+    "active": true
+  }
+]

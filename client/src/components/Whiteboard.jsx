@@ -3,7 +3,9 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import {
     Pencil, Eraser, Circle, Square, Minus, Type, Undo2, Redo2, Trash2, Download, Save,
-    Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2
+    Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2,
+    Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
+    Plus, Video, VideoOff, Mic, MicOff, Camera
 } from 'lucide-react';
 
 const COLORS = [
@@ -11,6 +13,15 @@ const COLORS = [
     '#ef4444', '#f97316', '#eab308',
     '#22c55e', '#3b82f6', '#8b5cf6',
     '#ec4899', '#ffffff', '#94a3b8'
+];
+
+// Highlighter colors with transparency
+const HIGHLIGHTER_COLORS = [
+    'rgba(255, 235, 59, 0.4)',  // Yellow
+    'rgba(76, 175, 80, 0.4)',   // Green
+    'rgba(33, 150, 243, 0.4)',  // Blue
+    'rgba(233, 30, 99, 0.4)',   // Pink
+    'rgba(255, 152, 0, 0.4)',   // Orange
 ];
 
 const STROKE_WIDTHS = [2, 4, 6, 8, 12];
@@ -29,7 +40,13 @@ export default function Whiteboard({
     onStopSharing,
     socket,
     sessionId,
-    isInstructor = false
+    isInstructor = false,
+    // Camera & Mic props
+    showCameraControls = false,
+    onCameraToggle,
+    onMicToggle,
+    isCameraOn = false,
+    isMicOn = false
 }) {
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
@@ -61,6 +78,22 @@ export default function Whiteboard({
     // Selection state
     const [selection, setSelection] = useState(null); // { x, y, width, height }
     const [clipboard, setClipboard] = useState(null); // imageData for copy/paste
+
+    // Multi-page state
+    const [pages, setPages] = useState([null]); // Array of canvas data URLs
+    const [currentPage, setCurrentPage] = useState(0);
+    const [totalPages, setTotalPages] = useState(1);
+
+    // Laser pointer state
+    const [laserPos, setLaserPos] = useState(null);
+    const laserTimeoutRef = useRef(null);
+
+    // Highlighter color
+    const [highlighterColor, setHighlighterColor] = useState(HIGHLIGHTER_COLORS[0]);
+    const [showHighlighterPicker, setShowHighlighterPicker] = useState(false);
+
+    // Image insert
+    const imageInputRef = useRef(null);
 
     // Canvas dimensions - keep fixed to prevent content loss
     const canvasWidth = width;
@@ -283,7 +316,7 @@ export default function Whiteboard({
         setStartPos(pos);
         setCurrentPos(pos);
 
-        if (tool === 'pen' || tool === 'eraser') {
+        if (tool === 'pen' || tool === 'eraser' || tool === 'highlighter') {
             const canvas = canvasRef.current;
             const ctx = canvas.getContext('2d');
             ctx.beginPath();
@@ -295,11 +328,26 @@ export default function Whiteboard({
                 isStart: true,
                 x: pos.x,
                 y: pos.y,
-                color: tool === 'eraser' ? '#ffffff' : color,
-                strokeWidth: tool === 'eraser' ? strokeWidth * 3 : strokeWidth
+                color: tool === 'eraser' ? '#ffffff' : (tool === 'highlighter' ? highlighterColor : color),
+                strokeWidth: tool === 'eraser' ? strokeWidth * 3 : (tool === 'highlighter' ? strokeWidth * 4 : strokeWidth),
+                isHighlighter: tool === 'highlighter'
             });
         }
-    }, [getPosition, tool, color, strokeWidth, emitDrawEvent]);
+
+        // Handle laser pointer
+        if (tool === 'laser') {
+            setLaserPos(pos);
+            if (laserTimeoutRef.current) {
+                clearTimeout(laserTimeoutRef.current);
+            }
+            // Emit laser position
+            emitDrawEvent({
+                type: 'laser',
+                x: pos.x,
+                y: pos.y
+            });
+        }
+    }, [getPosition, tool, color, strokeWidth, highlighterColor, emitDrawEvent]);
 
     // Handle text submission
     const handleTextSubmit = useCallback(() => {
@@ -358,6 +406,26 @@ export default function Whiteboard({
                 color,
                 strokeWidth
             });
+        } else if (tool === 'highlighter') {
+            ctx.strokeStyle = highlighterColor;
+            ctx.lineWidth = strokeWidth * 4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.globalCompositeOperation = 'multiply';
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+            ctx.globalCompositeOperation = 'source-over';
+
+            // Emit highlighter event
+            emitDrawEvent({
+                type: 'path',
+                isStart: false,
+                x: pos.x,
+                y: pos.y,
+                color: highlighterColor,
+                strokeWidth: strokeWidth * 4,
+                isHighlighter: true
+            });
         } else if (tool === 'eraser') {
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = strokeWidth * 3;
@@ -375,8 +443,19 @@ export default function Whiteboard({
                 color: '#ffffff',
                 strokeWidth: strokeWidth * 3
             });
+        } else if (tool === 'laser') {
+            setLaserPos(pos);
+            if (laserTimeoutRef.current) {
+                clearTimeout(laserTimeoutRef.current);
+            }
+            laserTimeoutRef.current = setTimeout(() => setLaserPos(null), 1500);
+            emitDrawEvent({
+                type: 'laser',
+                x: pos.x,
+                y: pos.y
+            });
         }
-    }, [isDrawing, getPosition, tool, color, strokeWidth, emitDrawEvent]);
+    }, [isDrawing, getPosition, tool, color, strokeWidth, highlighterColor, emitDrawEvent]);
 
     // Stop drawing
     const stopDrawing = useCallback((e) => {
@@ -448,6 +527,43 @@ export default function Whiteboard({
                 color,
                 strokeWidth
             });
+        } else if (tool === 'arrow') {
+            // Draw arrow line
+            ctx.strokeStyle = color;
+            ctx.lineWidth = strokeWidth;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(startPos.x, startPos.y);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+
+            // Draw arrowhead
+            const headLength = strokeWidth * 4;
+            const angle = Math.atan2(pos.y - startPos.y, pos.x - startPos.x);
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            ctx.lineTo(
+                pos.x - headLength * Math.cos(angle - Math.PI / 6),
+                pos.y - headLength * Math.sin(angle - Math.PI / 6)
+            );
+            ctx.lineTo(
+                pos.x - headLength * Math.cos(angle + Math.PI / 6),
+                pos.y - headLength * Math.sin(angle + Math.PI / 6)
+            );
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            // Emit arrow event
+            emitDrawEvent({
+                type: 'arrow',
+                startX: startPos.x,
+                startY: startPos.y,
+                endX: pos.x,
+                endY: pos.y,
+                color,
+                strokeWidth
+            });
         } else if (tool === 'select') {
             // Create selection rectangle
             const x = Math.min(startPos.x, pos.x);
@@ -461,7 +577,7 @@ export default function Whiteboard({
         }
 
         setIsDrawing(false);
-        if (tool !== 'select') saveToHistory();
+        if (tool !== 'select' && tool !== 'laser') saveToHistory();
     }, [isDrawing, getPosition, tool, color, strokeWidth, startPos, saveToHistory, emitDrawEvent]);
 
     // Download as image
@@ -508,11 +624,15 @@ export default function Whiteboard({
     const tools = [
         { id: 'select', icon: MousePointer2, label: 'Select' },
         { id: 'pen', icon: Pencil, label: 'Pen' },
+        { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
         { id: 'eraser', icon: Eraser, label: 'Eraser' },
+        { id: 'laser', icon: Pointer, label: 'Laser Pointer' },
         { id: 'line', icon: Minus, label: 'Line' },
+        { id: 'arrow', icon: MoveRight, label: 'Arrow' },
         { id: 'rectangle', icon: Square, label: 'Rectangle' },
         { id: 'circle', icon: Circle, label: 'Circle' },
         { id: 'text', icon: Type, label: 'Text' },
+        { id: 'image', icon: ImageIcon, label: 'Insert Image' },
     ];
 
     // Get cursor based on tool
@@ -520,8 +640,127 @@ export default function Whiteboard({
         if (tool === 'select') return 'default';
         if (tool === 'eraser') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${strokeWidth * 2}" height="${strokeWidth * 2}" viewBox="0 0 ${strokeWidth * 2} ${strokeWidth * 2}"><rect width="${strokeWidth * 2}" height="${strokeWidth * 2}" fill="white" stroke="black" stroke-width="1"/></svg>') ${strokeWidth} ${strokeWidth}, auto`;
         if (tool === 'text') return 'text';
+        if (tool === 'laser') return 'none';
+        if (tool === 'highlighter') return 'crosshair';
         return 'crosshair';
     };
+
+    // Page navigation functions
+    const saveCurrentPage = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const imageData = canvas.toDataURL();
+        setPages(prev => {
+            const newPages = [...prev];
+            newPages[currentPage] = imageData;
+            return newPages;
+        });
+    }, [currentPage]);
+
+    const loadPage = useCallback((pageIndex) => {
+        const canvas = canvasRef.current;
+        if (!canvas || pageIndex < 0 || pageIndex >= totalPages) return;
+
+        saveCurrentPage();
+
+        const ctx = canvas.getContext('2d');
+        if (pages[pageIndex]) {
+            const img = new Image();
+            img.onload = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+            };
+            img.src = pages[pageIndex];
+        } else {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        setCurrentPage(pageIndex);
+    }, [pages, totalPages, saveCurrentPage]);
+
+    const addNewPage = useCallback(() => {
+        saveCurrentPage();
+        const newIndex = totalPages;
+        setPages(prev => [...prev, null]);
+        setTotalPages(prev => prev + 1);
+        setCurrentPage(newIndex);
+
+        const canvas = canvasRef.current;
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        saveToHistory();
+    }, [totalPages, saveCurrentPage, saveToHistory]);
+
+    const goToPrevPage = useCallback(() => {
+        if (currentPage > 0) loadPage(currentPage - 1);
+    }, [currentPage, loadPage]);
+
+    const goToNextPage = useCallback(() => {
+        if (currentPage < totalPages - 1) loadPage(currentPage + 1);
+    }, [currentPage, totalPages, loadPage]);
+
+    // Image insert handler
+    const handleImageInsert = useCallback((e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+
+                // Scale image to fit canvas if too large
+                let imgWidth = img.width;
+                let imgHeight = img.height;
+                const maxWidth = canvas.width * 0.8;
+                const maxHeight = canvas.height * 0.8;
+
+                if (imgWidth > maxWidth) {
+                    const ratio = maxWidth / imgWidth;
+                    imgWidth = maxWidth;
+                    imgHeight *= ratio;
+                }
+                if (imgHeight > maxHeight) {
+                    const ratio = maxHeight / imgHeight;
+                    imgHeight = maxHeight;
+                    imgWidth *= ratio;
+                }
+
+                // Center the image
+                const x = (canvas.width - imgWidth) / 2;
+                const y = (canvas.height - imgHeight) / 2;
+                ctx.drawImage(img, x, y, imgWidth, imgHeight);
+                saveToHistory();
+
+                // Emit image event
+                emitDrawEvent({
+                    type: 'image',
+                    imageData: event.target.result,
+                    x, y, width: imgWidth, height: imgHeight
+                });
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+        e.target.value = ''; // Reset input
+    }, [saveToHistory, emitDrawEvent]);
+
+    // Handle tool click - special handling for image tool
+    const handleToolClick = useCallback((toolId) => {
+        if (toolId === 'image') {
+            imageInputRef.current?.click();
+        } else {
+            setTool(toolId);
+        }
+    }, []);
 
     return (
         <div
@@ -570,7 +809,7 @@ export default function Whiteboard({
                     {tools.map((t) => (
                         <button
                             key={t.id}
-                            onClick={() => setTool(t.id)}
+                            onClick={() => handleToolClick(t.id)}
                             className={`p-2 rounded-md transition ${tool === t.id
                                 ? 'bg-primary-500 text-white shadow'
                                 : 'hover:bg-slate-200 text-slate-600'
@@ -581,6 +820,15 @@ export default function Whiteboard({
                         </button>
                     ))}
                 </div>
+
+                {/* Hidden Image Input */}
+                <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageInsert}
+                    className="hidden"
+                />
 
                 <div className="w-px h-8 bg-slate-200" />
 
@@ -750,6 +998,69 @@ export default function Whiteboard({
                     </button>
                 )}
 
+                <div className="w-px h-8 bg-slate-200" />
+
+                {/* Page Navigation */}
+                <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                    <button
+                        onClick={goToPrevPage}
+                        disabled={currentPage === 0}
+                        className="p-2 hover:bg-slate-200 rounded-md transition disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Previous Page"
+                    >
+                        <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="text-sm font-medium text-slate-600 min-w-[50px] text-center">
+                        {currentPage + 1} / {totalPages}
+                    </span>
+                    <button
+                        onClick={goToNextPage}
+                        disabled={currentPage === totalPages - 1}
+                        className="p-2 hover:bg-slate-200 rounded-md transition disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Next Page"
+                    >
+                        <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <button
+                        onClick={addNewPage}
+                        className="p-2 hover:bg-green-100 text-green-600 rounded-md transition"
+                        title="Add New Page"
+                    >
+                        <Plus className="w-4 h-4" />
+                    </button>
+                </div>
+
+                {/* Highlighter Color Picker (shows when highlighter selected) */}
+                {tool === 'highlighter' && (
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowHighlighterPicker(!showHighlighterPicker)}
+                            className="flex items-center gap-2 p-2 hover:bg-slate-100 rounded-lg transition"
+                            title="Highlighter Color"
+                        >
+                            <div
+                                className="w-5 h-5 rounded border-2 border-slate-300"
+                                style={{ backgroundColor: highlighterColor }}
+                            />
+                            <ChevronDown className="w-3 h-3 text-slate-400" />
+                        </button>
+                        {showHighlighterPicker && (
+                            <div className="absolute top-full left-0 mt-1 p-2 bg-white rounded-lg shadow-lg border border-slate-200 z-10">
+                                <div className="flex gap-1">
+                                    {HIGHLIGHTER_COLORS.map((c) => (
+                                        <button
+                                            key={c}
+                                            onClick={() => { setHighlighterColor(c); setShowHighlighterPicker(false); }}
+                                            className={`w-8 h-8 rounded-lg border-2 ${highlighterColor === c ? 'border-primary-500 ring-2 ring-primary-200' : 'border-slate-200'}`}
+                                            style={{ backgroundColor: c }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 <div className="flex-1" />
 
                 {/* Sharing, Download & Save */}
@@ -824,7 +1135,7 @@ export default function Whiteboard({
                     />
 
                     {/* Live Preview Overlay - Shows dotted shape preview while drawing */}
-                    {isDrawing && (tool === 'line' || tool === 'rectangle' || tool === 'circle' || tool === 'select') && (
+                    {isDrawing && (tool === 'line' || tool === 'arrow' || tool === 'rectangle' || tool === 'circle' || tool === 'select') && (
                         <svg
                             className="absolute top-0 left-0 pointer-events-none"
                             width={canvasWidth}
@@ -846,6 +1157,33 @@ export default function Whiteboard({
                                     strokeDasharray="5,5"
                                     strokeLinecap="round"
                                 />
+                            )}
+                            {tool === 'arrow' && (
+                                <g>
+                                    <line
+                                        x1={startPos.x}
+                                        y1={startPos.y}
+                                        x2={currentPos.x}
+                                        y2={currentPos.y}
+                                        stroke={color}
+                                        strokeWidth={strokeWidth}
+                                        strokeDasharray="5,5"
+                                        strokeLinecap="round"
+                                    />
+                                    {/* Arrow head preview */}
+                                    <polygon
+                                        points={(() => {
+                                            const headLength = strokeWidth * 4;
+                                            const angle = Math.atan2(currentPos.y - startPos.y, currentPos.x - startPos.x);
+                                            const p1 = `${currentPos.x},${currentPos.y}`;
+                                            const p2 = `${currentPos.x - headLength * Math.cos(angle - Math.PI / 6)},${currentPos.y - headLength * Math.sin(angle - Math.PI / 6)}`;
+                                            const p3 = `${currentPos.x - headLength * Math.cos(angle + Math.PI / 6)},${currentPos.y - headLength * Math.sin(angle + Math.PI / 6)}`;
+                                            return `${p1} ${p2} ${p3}`;
+                                        })()}
+                                        fill={color}
+                                        opacity={0.5}
+                                    />
+                                </g>
                             )}
                             {tool === 'rectangle' && (
                                 <rect
@@ -884,6 +1222,22 @@ export default function Whiteboard({
                                 />
                             )}
                         </svg>
+                    )}
+
+                    {/* Laser Pointer Overlay */}
+                    {laserPos && (
+                        <div
+                            className="absolute pointer-events-none z-10"
+                            style={{
+                                left: laserPos.x - 10,
+                                top: laserPos.y - 10,
+                                width: 20,
+                                height: 20,
+                            }}
+                        >
+                            <div className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-75" />
+                            <div className="absolute inset-1 rounded-full bg-red-500 shadow-lg shadow-red-500/50" />
+                        </div>
                     )}
 
                     {/* Text Input Popup - Draggable */}

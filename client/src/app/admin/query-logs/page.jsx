@@ -18,6 +18,8 @@ export default function QueryLogsPage() {
     const [filters, setFilters] = useState({ success: '', model: '', search: '' });
     const [models, setModels] = useState([]);
     const [expandedLog, setExpandedLog] = useState(null);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [deleteTimeRange, setDeleteTimeRange] = useState('7d');
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -61,13 +63,24 @@ export default function QueryLogsPage() {
         }
     };
 
-    const handleClearLogs = async (days = 7) => {
-        if (!confirm(`Clear all logs older than ${days} days?`)) return;
+    const timeRangeOptions = [
+        { value: '1h', label: 'Last hour', days: 0.042 },
+        { value: '24h', label: 'Last 24 hours', days: 1 },
+        { value: '7d', label: 'Last 7 days', days: 7 },
+        { value: '4w', label: 'Last 4 weeks', days: 28 },
+        { value: 'all', label: 'All time', days: 9999 }
+    ];
+
+    const handleClearLogs = async () => {
+        const selected = timeRangeOptions.find(o => o.value === deleteTimeRange);
+        if (!selected) return;
+
+        setShowDeleteModal(false);
         try {
-            const res = await axios.delete(`/api/admin/query-logs/clear?days=${days}`, {
+            const res = await axios.delete(`/api/admin/query-logs/clear?days=${selected.days}`, {
                 headers: { Authorization: `Bearer ${accessToken}` }
             });
-            toast.success(res.data.message);
+            toast.success(res.data.message || `Cleared logs from ${selected.label.toLowerCase()}`);
             loadData();
         } catch (error) {
             toast.error('Failed to clear logs');
@@ -171,8 +184,8 @@ export default function QueryLogsPage() {
                         <button onClick={loadData} className="btn btn-secondary text-sm">
                             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
                         </button>
-                        <button onClick={() => handleClearLogs(7)} className="btn bg-red-500 hover:bg-red-600 text-white text-sm">
-                            <Trash2 className="w-4 h-4" /> Clear Old
+                        <button onClick={() => setShowDeleteModal(true)} className="btn bg-red-500 hover:bg-red-600 text-white text-sm">
+                            <Trash2 className="w-4 h-4" /> Clear Logs
                         </button>
                     </div>
                 </div>
@@ -210,9 +223,9 @@ export default function QueryLogsPage() {
                                             </td>
                                             <td className="px-4 py-3">
                                                 <span className={`px-2 py-1 rounded text-xs ${log.action === 'create' ? 'bg-green-100 text-green-700' :
-                                                        log.action === 'update' ? 'bg-blue-100 text-blue-700' :
-                                                            log.action === 'delete' ? 'bg-red-100 text-red-700' :
-                                                                'bg-slate-100'
+                                                    log.action === 'update' ? 'bg-blue-100 text-blue-700' :
+                                                        log.action === 'delete' ? 'bg-red-100 text-red-700' :
+                                                            'bg-slate-100'
                                                     }`}>
                                                     {log.action || '-'}
                                                 </span>
@@ -289,6 +302,75 @@ export default function QueryLogsPage() {
                     )}
                 </div>
             </main>
+
+            {/* Delete Time Range Modal */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl">
+                        <div className="p-6 border-b border-slate-200">
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center">
+                                    <Trash2 className="w-6 h-6 text-red-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-semibold text-slate-900">Clear Query Logs</h3>
+                                    <p className="text-sm text-slate-500">Select time range to delete</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-6">
+                            <p className="text-sm text-slate-600 mb-4">
+                                Choose the time period of logs you want to delete. This action cannot be undone.
+                            </p>
+
+                            <div className="space-y-2">
+                                {timeRangeOptions.map(option => (
+                                    <label
+                                        key={option.value}
+                                        className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${deleteTimeRange === option.value
+                                                ? 'border-red-500 bg-red-50'
+                                                : 'border-slate-200 hover:border-red-300'
+                                            }`}
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="deleteTimeRange"
+                                            value={option.value}
+                                            checked={deleteTimeRange === option.value}
+                                            onChange={(e) => setDeleteTimeRange(e.target.value)}
+                                            className="w-4 h-4 text-red-500 focus:ring-red-500"
+                                        />
+                                        <div className="flex-1">
+                                            <span className="font-medium text-slate-900">{option.label}</span>
+                                            {option.value === 'all' && (
+                                                <span className="ml-2 text-xs text-red-600 font-medium">⚠️ Deletes everything</span>
+                                            )}
+                                        </div>
+                                        {option.value === '1h' && <Clock className="w-4 h-4 text-slate-400" />}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-4 border-t border-slate-200 flex gap-3 justify-end">
+                            <button
+                                onClick={() => setShowDeleteModal(false)}
+                                className="btn btn-ghost"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleClearLogs}
+                                className="btn bg-red-500 hover:bg-red-600 text-white"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                                Delete Logs
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
