@@ -593,6 +593,11 @@
             ⚙️ Edit Project
           </button>
         </div>
+        <div class="git-remotes" id="git-remotes"
+          style="margin-bottom: 15px; padding: 12px; background: rgba(102, 126, 234, 0.1); border-radius: 12px; border: 1px solid rgba(102, 126, 234, 0.3);">
+          <div style="font-size: 0.85rem; color: #a0aec0;">📡 Pushing to: <span id="remotes-list"
+              style="color: #38ef7d; font-weight: 500;">Loading...</span></div>
+        </div>
         <input type="text" class="commit-input" id="commit-message" placeholder="Enter commit message (optional)...">
         <div class="btn-group">
           <button class="btn btn-push" onclick="pushChanges()">
@@ -724,6 +729,7 @@
       updatePortInfo();
       updateStatus();
       updateGitStatus();
+      updateGitRemotes();
     }
 
     // Update quick links
@@ -796,6 +802,27 @@
         document.getElementById('git-status').textContent = data.status || 'No changes detected';
       } catch (err) {
         document.getElementById('git-status').textContent = 'Failed to fetch git status';
+      }
+    }
+
+    // Update git remotes display
+    async function updateGitRemotes() {
+      if (!currentProject) return;
+
+      try {
+        const res = await fetch(`/api/projects/${currentProject.id}/git-remotes`);
+        const data = await res.json();
+        if (data.success && data.remotes) {
+          const pushRemotes = data.remotes
+            .filter(r => r.type === 'push')
+            .map(r => `${r.name} (${r.url.replace(/https:\/\/github.com\//, '').replace(/\.git$/, '')})`)
+            .join(', ');
+          document.getElementById('remotes-list').textContent = pushRemotes || 'No remotes configured';
+        } else {
+          document.getElementById('remotes-list').textContent = 'No remotes configured';
+        }
+      } catch (err) {
+        document.getElementById('remotes-list').textContent = 'Failed to fetch remotes';
       }
     }
 

@@ -326,6 +326,23 @@ app.post('/api/projects/:id/push', async (req, res) => {
     try {
         const commitMsg = message || `Update - ${new Date().toLocaleString()}`;
 
+        // Get git remotes to show which repos we're pushing to
+        let remotesInfo = '';
+        try {
+            const remotesResult = await runCommand('git remote -v', project.rootDir);
+            const pushRemotes = remotesResult.stdout.split('\n')
+                .filter(line => line.includes('(push)'))
+                .map(line => {
+                    const parts = line.split(/\s+/);
+                    return `${parts[0]}: ${parts[1]}`;
+                });
+            remotesInfo = pushRemotes.join(', ') || 'default';
+            addLog(id, 'server', `📡 Git remotes: ${remotesInfo}`);
+            addLog(id, 'client', `📡 Git remotes: ${remotesInfo}`);
+        } catch (e) {
+            remotesInfo = 'unknown';
+        }
+
         addLog(id, 'server', `📦 Git: Adding all changes...`);
         addLog(id, 'client', `📦 Git: Adding all changes...`);
         await runCommand('git add .', project.rootDir);
@@ -338,22 +355,49 @@ app.post('/api/projects/:id/push', async (req, res) => {
             if (e.stdout && e.stdout.includes('nothing to commit')) {
                 addLog(id, 'server', '✓ Nothing to commit');
                 addLog(id, 'client', '✓ Nothing to commit');
-                return res.json({ success: true, message: 'Nothing to commit' });
+                return res.json({ success: true, message: 'Nothing to commit', remotes: remotesInfo });
             }
         }
 
-        addLog(id, 'server', '🚀 Git: Pushing to remote...');
-        addLog(id, 'client', '🚀 Git: Pushing to remote...');
+        addLog(id, 'server', `🚀 Git: Pushing to ${remotesInfo}...`);
+        addLog(id, 'client', `🚀 Git: Pushing to ${remotesInfo}...`);
         await runCommand('git push', project.rootDir);
         addLog(id, 'server', '✅ Push successful!');
         addLog(id, 'client', '✅ Push successful!');
 
-        res.json({ success: true, message: 'Changes pushed successfully' });
+        res.json({ success: true, message: `Changes pushed to ${remotesInfo}`, remotes: remotesInfo });
     } catch (error) {
         const errMsg = `❌ Push failed: ${error.error || error.message}`;
         addLog(id, 'server', errMsg);
         addLog(id, 'client', errMsg);
         res.status(500).json({ success: false, error: error.error || error.message });
+    }
+});
+
+// Git Remotes for a project
+app.get('/api/projects/:id/git-remotes', async (req, res) => {
+    const { id } = req.params;
+    const project = projects.find(p => p.id === id);
+
+    if (!project) {
+        return res.status(404).json({ success: false, error: 'Project not found' });
+    }
+
+    try {
+        const result = await runCommand('git remote -v', project.rootDir);
+        const remotes = result.stdout.split('\n')
+            .filter(line => line.trim())
+            .map(line => {
+                const parts = line.split(/\s+/);
+                return {
+                    name: parts[0],
+                    url: parts[1],
+                    type: parts[2]?.replace(/[()]/g, '') || 'unknown'
+                };
+            });
+        res.json({ success: true, remotes });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
