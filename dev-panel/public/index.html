@@ -594,14 +594,17 @@
           </button>
         </div>
         <div class="git-remotes" id="git-remotes"
-          style="margin-bottom: 15px; padding: 12px; background: rgba(102, 126, 234, 0.1); border-radius: 12px; border: 1px solid rgba(102, 126, 234, 0.3);">
-          <div style="font-size: 0.85rem; color: #a0aec0;">📡 Pushing to: <span id="remotes-list"
-              style="color: #38ef7d; font-weight: 500;">Loading...</span></div>
+          style="margin-bottom: 15px; padding: 15px; background: rgba(102, 126, 234, 0.1); border-radius: 12px; border: 1px solid rgba(102, 126, 234, 0.3);">
+          <div style="font-size: 0.9rem; color: #fff; margin-bottom: 10px; font-weight: 600;">📡 Select remotes to push:
+          </div>
+          <div id="remotes-checkboxes" style="display: flex; flex-wrap: wrap; gap: 10px;">
+            <span style="color: #a0aec0;">Loading remotes...</span>
+          </div>
         </div>
         <input type="text" class="commit-input" id="commit-message" placeholder="Enter commit message (optional)...">
         <div class="btn-group">
           <button class="btn btn-push" onclick="pushChanges()">
-            🚀 Push All Changes
+            🚀 Push to Selected Remotes
           </button>
         </div>
         <div class="git-status" id="git-status">Select a project to view git status...</div>
@@ -805,25 +808,60 @@
       }
     }
 
-    // Update git remotes display
+    // Store available remotes
+    let availableRemotes = [];
+
+    // Update git remotes display with checkboxes
     async function updateGitRemotes() {
       if (!currentProject) return;
 
       try {
         const res = await fetch(`/api/projects/${currentProject.id}/git-remotes`);
         const data = await res.json();
+        const container = document.getElementById('remotes-checkboxes');
+
         if (data.success && data.remotes) {
-          const pushRemotes = data.remotes
-            .filter(r => r.type === 'push')
-            .map(r => `${r.name} (${r.url.replace(/https:\/\/github.com\//, '').replace(/\.git$/, '')})`)
-            .join(', ');
-          document.getElementById('remotes-list').textContent = pushRemotes || 'No remotes configured';
+          const pushRemotes = data.remotes.filter(r => r.type === 'push');
+          availableRemotes = pushRemotes;
+
+          if (pushRemotes.length === 0) {
+            container.innerHTML = '<span style="color: #ff6b6b;">No push remotes configured</span>';
+            return;
+          }
+
+          container.innerHTML = pushRemotes.map(r => {
+            const shortUrl = r.url
+              .replace(/https:\/\/github\.com\//, '')
+              .replace(/git@github[^:]*:/, '')
+              .replace(/\.git$/, '');
+            return `
+              <label style="display: flex; align-items: center; gap: 8px; padding: 10px 15px; 
+                           background: rgba(255,255,255,0.08); border-radius: 10px; cursor: pointer;
+                           border: 2px solid rgba(255,255,255,0.1); transition: all 0.2s;"
+                     onmouseover="this.style.borderColor='#667eea'" 
+                     onmouseout="this.style.borderColor='rgba(255,255,255,0.1)'">
+                <input type="checkbox" name="remote" value="${r.name}" checked
+                       style="width: 18px; height: 18px; accent-color: #38ef7d; cursor: pointer;">
+                <div>
+                  <div style="font-weight: 600; color: #fff;">${r.name}</div>
+                  <div style="font-size: 0.75rem; color: #a0aec0;">${shortUrl}</div>
+                </div>
+              </label>
+            `;
+          }).join('');
         } else {
-          document.getElementById('remotes-list').textContent = 'No remotes configured';
+          container.innerHTML = '<span style="color: #ff6b6b;">Failed to load remotes</span>';
         }
       } catch (err) {
-        document.getElementById('remotes-list').textContent = 'Failed to fetch remotes';
+        document.getElementById('remotes-checkboxes').innerHTML =
+          '<span style="color: #ff6b6b;">Failed to fetch remotes</span>';
       }
+    }
+
+    // Get selected remotes
+    function getSelectedRemotes() {
+      const checkboxes = document.querySelectorAll('input[name="remote"]:checked');
+      return Array.from(checkboxes).map(cb => cb.value);
     }
 
     // Toast notification
@@ -879,20 +917,26 @@
 
     async function pushChanges() {
       if (!currentProject) return showToast('Select a project first', 'error');
+
+      const selectedRemotes = getSelectedRemotes();
+      if (selectedRemotes.length === 0) {
+        return showToast('Please select at least one remote to push to', 'error');
+      }
+
       const message = document.getElementById('commit-message').value;
-      showToast('Pushing changes...');
+      showToast(`Pushing to ${selectedRemotes.join(', ')}...`);
       try {
         const res = await fetch(`/api/projects/${currentProject.id}/push`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message })
+          body: JSON.stringify({ message, remotes: selectedRemotes })
         });
         const data = await res.json();
         if (data.success) {
           showToast('✅ ' + data.message);
           document.getElementById('commit-message').value = '';
         } else {
-          showToast('❌ ' + data.error, 'error');
+          showToast('❌ ' + (data.error || data.message), 'error');
         }
       } catch (err) {
         showToast('Push failed', 'error');

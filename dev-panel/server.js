@@ -316,7 +316,7 @@ app.post('/api/projects/:id/stop-client', async (req, res) => {
 // Git Push for a project
 app.post('/api/projects/:id/push', async (req, res) => {
     const { id } = req.params;
-    const { message } = req.body;
+    const { message, remotes: selectedRemotes } = req.body;
     const project = projects.find(p => p.id === id);
 
     if (!project) {
@@ -326,8 +326,8 @@ app.post('/api/projects/:id/push', async (req, res) => {
     try {
         const commitMsg = message || `Update - ${new Date().toLocaleString()}`;
 
-        // Get git remotes to show which repos we're pushing to
-        let remoteNames = [];
+        // Get git remotes info
+        let allRemoteNames = [];
         let remotesInfo = '';
         try {
             const remotesResult = await runCommand('git remote -v', project.rootDir);
@@ -337,14 +337,24 @@ app.post('/api/projects/:id/push', async (req, res) => {
                     const parts = line.split(/\s+/);
                     return { name: parts[0], url: parts[1] };
                 });
-            remoteNames = [...new Set(pushRemotes.map(r => r.name))];
+            allRemoteNames = [...new Set(pushRemotes.map(r => r.name))];
             remotesInfo = pushRemotes.map(r => `${r.name}: ${r.url}`).join(', ') || 'default';
-            addLog(id, 'server', `📡 Found ${remoteNames.length} remote(s): ${remoteNames.join(', ')}`);
-            addLog(id, 'client', `📡 Found ${remoteNames.length} remote(s): ${remoteNames.join(', ')}`);
         } catch (e) {
-            remoteNames = ['origin'];
+            allRemoteNames = ['origin'];
             remotesInfo = 'origin (default)';
         }
+
+        // Use selected remotes or fall back to all
+        const remoteNames = (selectedRemotes && selectedRemotes.length > 0)
+            ? selectedRemotes.filter(r => allRemoteNames.includes(r))
+            : allRemoteNames;
+
+        if (remoteNames.length === 0) {
+            return res.status(400).json({ success: false, error: 'No valid remotes selected' });
+        }
+
+        addLog(id, 'server', `📡 Will push to: ${remoteNames.join(', ')}`);
+        addLog(id, 'client', `📡 Will push to: ${remoteNames.join(', ')}`);
 
         addLog(id, 'server', `📦 Git: Adding all changes...`);
         addLog(id, 'client', `📦 Git: Adding all changes...`);
