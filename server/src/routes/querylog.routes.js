@@ -118,21 +118,39 @@ router.get('/stats', authenticate, authorize('admin', 'principal'), asyncHandler
 
 /**
  * @route   DELETE /api/admin/query-logs/clear
- * @desc    Clear old query logs (older than specified days)
+ * @desc    Clear query logs within the specified time range (like Chrome history delete)
  * @access  Admin only
  */
 router.delete('/clear', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
     const { days = 7 } = req.query;
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - parseInt(days));
+    const daysNum = parseFloat(days);
 
-    const result = await prisma.queryLog.deleteMany({
-        where: { createdAt: { lt: cutoffDate } }
-    });
+    // Calculate cutoff date - logs from this time onwards will be deleted
+    const cutoffDate = new Date();
+    cutoffDate.setTime(cutoffDate.getTime() - (daysNum * 24 * 60 * 60 * 1000));
+
+    // Delete logs that are NEWER than cutoff (within the last X days/hours)
+    // If days is very large (like 9999), delete all
+    const where = daysNum >= 9999
+        ? {}
+        : { createdAt: { gte: cutoffDate } };
+
+    const result = await prisma.queryLog.deleteMany({ where });
+
+    // Format message based on time period
+    let timeLabel;
+    if (daysNum >= 9999) {
+        timeLabel = 'all';
+    } else if (daysNum < 1) {
+        const hours = Math.round(daysNum * 24);
+        timeLabel = `from the last ${hours} hour${hours > 1 ? 's' : ''}`;
+    } else {
+        timeLabel = `from the last ${Math.round(daysNum)} day${daysNum > 1 ? 's' : ''}`;
+    }
 
     res.json({
         success: true,
-        message: `Cleared ${result.count} logs older than ${days} days`
+        message: `Cleared ${result.count} logs ${timeLabel}`
     });
 }));
 

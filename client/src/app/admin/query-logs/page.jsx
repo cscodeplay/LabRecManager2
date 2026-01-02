@@ -329,8 +329,8 @@ export default function QueryLogsPage() {
                                     <label
                                         key={option.value}
                                         className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${deleteTimeRange === option.value
-                                                ? 'border-red-500 bg-red-50'
-                                                : 'border-slate-200 hover:border-red-300'
+                                            ? 'border-red-500 bg-red-50'
+                                            : 'border-slate-200 hover:border-red-300'
                                             }`}
                                     >
                                         <input
