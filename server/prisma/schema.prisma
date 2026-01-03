@@ -37,17 +37,18 @@ model School {
   feeCategories         FeeCategory[]
   feeStructures         FeeStructure[]
   gradeScales           GradeScale[]
-  import_history        ImportHistory[]
-  labItems              LabItem[]
-  labs                  Lab[]
-  laptopIssuances       LaptopIssuance[]
-  notificationTemplates NotificationTemplate[]
-  procurementRequests   ProcurementRequest[]
-  reportTemplates       ReportTemplate[]
-  subjects              Subject[]
-  users                 User[]
-  vendors               Vendor[]
-  whiteboardSessions    WhiteboardSession[]
+  import_history          ImportHistory[]
+  labItems                LabItem[]
+  labs                    Lab[]
+  laptopIssuances         LaptopIssuance[]
+  notificationTemplates   NotificationTemplate[]
+  procurementRequests     ProcurementRequest[]
+  reportTemplates         ReportTemplate[]
+  subjects                Subject[]
+  users                   User[]
+  vendors                 Vendor[]
+  whiteboardSessions      WhiteboardSession[]
+  whiteboardRecordings    WhiteboardRecording[]
 
   @@map("schools")
 }
@@ -190,6 +191,7 @@ model User {
   vivaSessionsAsStudent                          VivaSession[]            @relation("VivaStudent")
   whiteboardParticipations                       WhiteboardParticipant[]
   whiteboardSessionsAsHost                       WhiteboardSession[]      @relation("WhiteboardHost")
+  whiteboardRecordings                           WhiteboardRecording[]
   procurementItemsReceived                       ProcurementItem[]        @relation("ProcurementItemReceivedBy")
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
@@ -1711,4 +1713,31 @@ model QueryLog {
   @@index([createdAt])
   @@index([success])
   @@index([model])
+}
+
+// Whiteboard Recording for storing canvas + mic + camera recordings
+model WhiteboardRecording {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  schoolId      String   @map("school_id") @db.Uuid
+  title         String   @db.VarChar(255)
+  description   String?  @db.Text
+  sessionId     String?  @map("session_id") @db.VarChar(100)
+  cloudinaryId  String   @map("cloudinary_id") @db.VarChar(255)
+  cloudinaryUrl String   @map("cloudinary_url") @db.Text
+  thumbnailUrl  String?  @map("thumbnail_url") @db.Text
+  duration      Int?     // seconds
+  fileSize      Int?     @map("file_size") // bytes
+  isPublic      Boolean  @default(true) @map("is_public")
+  shareToken    String?  @unique @map("share_token") @db.VarChar(64)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@map("whiteboard_recordings")
+  @@index([userId])
+  @@index([schoolId])
+  @@index([createdAt])
+  @@index([shareToken])
 }

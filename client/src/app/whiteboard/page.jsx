@@ -157,8 +157,8 @@ export default function WhiteboardPage() {
                         <button
                             onClick={() => setShowCamera(!showCamera)}
                             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${showCamera
-                                    ? 'bg-green-500 hover:bg-green-600 text-white'
-                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                ? 'bg-green-500 hover:bg-green-600 text-white'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                                 }`}
                         >
                             {showCamera ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
@@ -203,6 +203,7 @@ export default function WhiteboardPage() {
                         onStopSharing={handleStopSharing}
                         socket={socketRef.current}
                         sessionId={sessionId}
+                        whiteboardId={user?.id ? `user_${user.id}` : null}
                     />
                 </div>
             </main>

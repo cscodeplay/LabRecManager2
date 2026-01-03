@@ -1860,6 +1860,7 @@ export default function VivaRoomPage() {
                             }}
                             socket={socketRef.current}
                             sessionId={whiteboardSessionId}
+                            whiteboardId={params?.id ? `viva_${params.id}` : null}
                         />
                     </div>
                 </div>

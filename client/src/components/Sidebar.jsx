@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import {
     Home, BookOpen, FileText, Award, Users, GraduationCap,
     Video, BarChart3, Settings, LogOut, Menu, X, ChevronLeft,
-    Beaker, ClipboardList, Activity, ClipboardCheck, Send, ListChecks, UserPlus, Monitor, FolderOpen, Pencil, Ticket, Building
+    Beaker, ClipboardList, Activity, ClipboardCheck, Send, ListChecks, UserPlus, Monitor, FolderOpen, Pencil, Ticket, Building, Film
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import LanguageSelector from './LanguageSelector';
@@ -25,6 +25,7 @@ const navItems = {
         { href: '/grades', labelKey: 'nav.grades', icon: Award },
         { href: '/viva', labelKey: 'nav.viva', icon: Video },
         { href: '/whiteboard', labelKey: 'nav.whiteboard', icon: Pencil },
+        { href: '/recordings', labelKey: 'nav.recordings', icon: Film },
         { href: '/admin/whiteboards', labelKey: 'nav.liveSessions', icon: Video },
         { href: '/activity-logs', labelKey: 'nav.activityLogs', icon: Activity },
         { href: '/tickets', labelKey: 'nav.tickets', icon: Ticket },
@@ -54,6 +55,7 @@ const navItems = {
         { href: '/grades', labelKey: 'nav.grades', icon: Award },
         { href: '/viva', labelKey: 'nav.viva', icon: Video },
         { href: '/whiteboard', labelKey: 'nav.whiteboard', icon: Pencil },
+        { href: '/recordings', labelKey: 'nav.recordings', icon: Film },
         { href: '/activity-logs', labelKey: 'nav.activityLogs', icon: Activity },
         { href: '/tickets', labelKey: 'nav.tickets', icon: Ticket },
         { href: '/reports', labelKey: 'nav.reports', icon: BarChart3 },

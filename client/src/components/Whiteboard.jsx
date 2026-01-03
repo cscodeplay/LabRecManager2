@@ -101,7 +101,9 @@ export default function Whiteboard({
     onCameraToggle,
     onMicToggle,
     isCameraOn = false,
-    isMicOn = false
+    isMicOn = false,
+    // Persistence prop - unique ID for this whiteboard (e.g., `wb_${userId}`)
+    whiteboardId = null
 }) {
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
@@ -222,6 +224,94 @@ export default function Whiteboard({
     // Canvas dimensions - keep fixed to prevent content loss
     const canvasWidth = width;
     const canvasHeight = height;
+
+    // Persistence: track if state has been loaded from localStorage
+    const stateLoadedRef = useRef(false);
+    const saveTimeoutRef = useRef(null);
+    const STORAGE_KEY = whiteboardId ? `whiteboard_${whiteboardId}` : null;
+
+    // Load state from localStorage on mount
+    useEffect(() => {
+        if (!STORAGE_KEY || stateLoadedRef.current) return;
+
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                const state = JSON.parse(saved);
+                // Restore all state
+                if (state.pages) setPages(state.pages);
+                if (state.currentPage !== undefined) setCurrentPage(state.currentPage);
+                if (state.totalPages !== undefined) setTotalPages(state.totalPages);
+                if (state.pageBackgrounds) setPageBackgrounds(state.pageBackgrounds);
+                if (state.pageImageObjects) setPageImageObjects(state.pageImageObjects);
+                if (state.pageTextObjects) setPageTextObjects(state.pageTextObjects);
+                if (state.color) setColor(state.color);
+                if (state.strokeWidth) setStrokeWidth(state.strokeWidth);
+                if (state.eraserSize) setEraserSize(state.eraserSize);
+                if (state.strokeStyle) setStrokeStyle(state.strokeStyle);
+                if (state.tool) setTool(state.tool);
+
+                // Restore canvas content for current page
+                if (state.pages && state.pages[state.currentPage || 0]) {
+                    const canvas = canvasRef.current;
+                    if (canvas) {
+                        const ctx = canvas.getContext('2d');
+                        const img = new Image();
+                        img.onload = () => {
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            ctx.drawImage(img, 0, 0);
+                        };
+                        img.src = state.pages[state.currentPage || 0];
+                    }
+                }
+                console.log('✅ Whiteboard state restored from localStorage');
+            }
+        } catch (e) {
+            console.error('Error loading whiteboard state:', e);
+        }
+        stateLoadedRef.current = true;
+    }, [STORAGE_KEY]);
+
+    // Save state to localStorage on changes (debounced)
+    useEffect(() => {
+        if (!STORAGE_KEY || !stateLoadedRef.current) return;
+
+        // Debounce saves to avoid excessive writes
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+        saveTimeoutRef.current = setTimeout(() => {
+            try {
+                // Save current canvas to pages array
+                const canvas = canvasRef.current;
+                const updatedPages = [...pages];
+                if (canvas) {
+                    updatedPages[currentPage] = canvas.toDataURL('image/png');
+                }
+
+                const state = {
+                    pages: updatedPages,
+                    currentPage,
+                    totalPages,
+                    pageBackgrounds,
+                    pageImageObjects,
+                    pageTextObjects,
+                    color,
+                    strokeWidth,
+                    eraserSize,
+                    strokeStyle,
+                    tool,
+                    savedAt: Date.now()
+                };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            } catch (e) {
+                console.error('Error saving whiteboard state:', e);
+            }
+        }, 1000); // Save 1 second after last change
+
+        return () => {
+            if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+        };
+    }, [STORAGE_KEY, pages, currentPage, totalPages, pageBackgrounds, pageImageObjects, pageTextObjects, color, strokeWidth, eraserSize, strokeStyle, tool]);
 
     // Initialize canvas - keep transparent to show CSS background patterns
     useEffect(() => {
@@ -357,8 +447,8 @@ export default function Whiteboard({
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(selection.x, selection.y, selection.width, selection.height);
+        // Clear selection area (make transparent) to reveal CSS background
+        ctx.clearRect(selection.x, selection.y, selection.width, selection.height);
         setSelection(null);
         saveToHistory();
     }, [selection, handleCopySelection, saveToHistory]);
@@ -384,8 +474,8 @@ export default function Whiteboard({
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(selection.x, selection.y, selection.width, selection.height);
+        // Clear selection area (make transparent) to reveal CSS background
+        ctx.clearRect(selection.x, selection.y, selection.width, selection.height);
         setSelection(null);
         saveToHistory();
     }, [selection, saveToHistory]);
@@ -657,9 +747,10 @@ export default function Whiteboard({
                 isStart: true,
                 x: pos.x,
                 y: pos.y,
-                color: tool === 'eraser' ? '#ffffff' : (tool === 'highlighter' ? highlighterColor : color),
-                strokeWidth: tool === 'eraser' ? strokeWidth * 3 : (tool === 'highlighter' ? strokeWidth * 4 : strokeWidth),
-                isHighlighter: tool === 'highlighter'
+                color: tool === 'eraser' ? 'eraser' : (tool === 'highlighter' ? highlighterColor : color),
+                strokeWidth: tool === 'eraser' ? eraserSize : (tool === 'highlighter' ? strokeWidth * 4 : strokeWidth),
+                isHighlighter: tool === 'highlighter',
+                isEraser: tool === 'eraser'
             });
         }
 
@@ -676,7 +767,7 @@ export default function Whiteboard({
                 y: pos.y
             });
         }
-    }, [getPosition, tool, color, strokeWidth, highlighterColor, emitDrawEvent]);
+    }, [getPosition, tool, color, strokeWidth, eraserSize, highlighterColor, emitDrawEvent]);
 
     // Handle text submission
     const handleTextSubmit = useCallback(() => {
@@ -756,12 +847,15 @@ export default function Whiteboard({
                 isHighlighter: true
             });
         } else if (tool === 'eraser') {
-            ctx.strokeStyle = '#ffffff';
+            // Use destination-out to truly erase (make transparent) - reveals CSS background
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.strokeStyle = 'rgba(0,0,0,1)';
             ctx.lineWidth = eraserSize;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.lineTo(pos.x, pos.y);
             ctx.stroke();
+            ctx.globalCompositeOperation = 'source-over'; // Reset to default
 
             // Emit eraser event
             emitDrawEvent({
@@ -769,8 +863,9 @@ export default function Whiteboard({
                 isStart: false,
                 x: pos.x,
                 y: pos.y,
-                color: '#ffffff',
-                strokeWidth: eraserSize
+                color: 'eraser',
+                strokeWidth: eraserSize,
+                isEraser: true
             });
         } else if (tool === 'laser') {
             setLaserPos(pos);
@@ -784,7 +879,7 @@ export default function Whiteboard({
                 y: pos.y
             });
         }
-    }, [isDrawing, getPosition, tool, color, strokeWidth, highlighterColor, emitDrawEvent]);
+    }, [isDrawing, getPosition, tool, color, strokeWidth, eraserSize, highlighterColor, emitDrawEvent]);
 
     // Stop drawing
     const stopDrawing = useCallback((e) => {
@@ -1028,15 +1123,14 @@ export default function Whiteboard({
         if (pages[pageIndex]) {
             const img = new Image();
             img.onload = () => {
+                // Clear canvas (transparent) for CSS background to show
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.drawImage(img, 0, 0);
             };
             img.src = pages[pageIndex];
         } else {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Just clear (transparent) - no fill - for empty pages
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
         setCurrentPage(pageIndex);
     }, [pages, totalPages, saveCurrentPage]);
@@ -1048,11 +1142,21 @@ export default function Whiteboard({
         setTotalPages(prev => prev + 1);
         setCurrentPage(newIndex);
 
+        // Initialize background for new page
+        setPageBackgrounds(prev => ({
+            ...prev,
+            [newIndex]: { pattern: 'plain', color: '#ffffff' }
+        }));
+
+        // Initialize image/text objects for new page
+        setPageImageObjects(prev => ({ ...prev, [newIndex]: [] }));
+        setPageTextObjects(prev => ({ ...prev, [newIndex]: [] }));
+
         const canvas = canvasRef.current;
         if (canvas) {
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Clear canvas (transparent) to show CSS background
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
         saveToHistory();
     }, [totalPages, saveCurrentPage, saveToHistory]);
@@ -1527,7 +1631,6 @@ export default function Whiteboard({
                                 {[
                                     { id: 'plain', label: 'Plain' },
                                     { id: 'dotted', label: 'Dots' },
-                                    { id: 'dotted', label: 'Dots' },
                                     { id: 'grid', label: 'Grid' },
                                     { id: 'lined', label: 'Lines' }
                                 ].map(p => (
@@ -1558,21 +1661,39 @@ export default function Whiteboard({
                                 ))}
                             </div>
                             <p className="text-xs font-medium text-slate-500 mb-2">Color</p>
-                            <div className="grid grid-cols-5 gap-1">
+                            <div className="grid grid-cols-5 gap-1 mb-2">
                                 {[
-                                    '#ffffff', '#f8fafc', '#f1f5f9', // White shades
-                                    '#fef3c7', '#fef9c3', '#ecfccb', // Warm yellows
-                                    '#dcfce7', '#d1fae5', '#ccfbf1', // Greens
-                                    '#dbeafe', '#e0f2fe', '#e0e7ff', // Blues
-                                    '#fce7f3', '#fae8ff', '#1e293b', // Pinks & dark
-                                ].map(c => (
+                                    '#ffffff', '#f5f5f5', '#e0e0e0', '#9e9e9e', '#424242', // Grays
+                                    '#fff9c4', '#fff176', '#ffeb3b', '#ffc107', '#ff9800', // Yellows/Oranges
+                                    '#c8e6c9', '#81c784', '#4caf50', '#2e7d32', '#1b5e20', // Greens
+                                    '#bbdefb', '#64b5f6', '#2196f3', '#1565c0', '#0d47a1', // Blues
+                                    '#f8bbd0', '#f06292', '#e91e63', '#ad1457', '#880e4f', // Pinks
+                                ].map((c, idx) => (
                                     <button
-                                        key={c}
+                                        key={c + idx}
                                         onClick={() => setBgColor(c)}
-                                        className={`w-6 h-6 rounded border-2 ${bgColor === c ? 'border-primary-500' : 'border-slate-200'}`}
+                                        className={`w-6 h-6 rounded border-2 ${bgColor === c ? 'border-primary-500 ring-2 ring-primary-300' : 'border-slate-200'}`}
                                         style={{ backgroundColor: c }}
+                                        title={c}
                                     />
                                 ))}
+                            </div>
+                            <div className="flex items-center gap-2 mt-2">
+                                <label className="text-xs text-slate-500">Custom:</label>
+                                <input
+                                    type="color"
+                                    value={bgColor}
+                                    onChange={(e) => setBgColor(e.target.value)}
+                                    className="w-8 h-6 rounded cursor-pointer border border-slate-200"
+                                    title="Pick custom color"
+                                />
+                                <input
+                                    type="text"
+                                    value={bgColor}
+                                    onChange={(e) => setBgColor(e.target.value)}
+                                    className="flex-1 text-xs px-2 py-1 border rounded border-slate-200 w-16"
+                                    placeholder="#ffffff"
+                                />
                             </div>
                         </div>
                     )}
@@ -1740,19 +1861,21 @@ export default function Whiteboard({
                             backgroundImage: (() => {
                                 switch (bgPattern) {
                                     case 'dotted':
-                                        return 'radial-gradient(circle, #ccc 1px, transparent 1px)';
+                                        return 'radial-gradient(circle, #999 1.5px, transparent 1.5px)';
                                     case 'grid':
-                                        return 'linear-gradient(#e5e5e5 1px, transparent 1px), linear-gradient(90deg, #e5e5e5 1px, transparent 1px)';
+                                        return 'linear-gradient(#ccc 1px, transparent 1px), linear-gradient(90deg, #ccc 1px, transparent 1px)';
                                     case 'lined':
-                                        return 'linear-gradient(#e5e5e5 1px, transparent 1px)';
+                                        return 'linear-gradient(#ccc 1px, transparent 1px)';
                                     case 'graph':
-                                        return 'linear-gradient(#ddd 1px, transparent 1px), linear-gradient(90deg, #ddd 1px, transparent 1px), linear-gradient(#e8e8e8 0.5px, transparent 0.5px), linear-gradient(90deg, #e8e8e8 0.5px, transparent 0.5px)';
+                                        return 'linear-gradient(#bbb 1px, transparent 1px), linear-gradient(90deg, #bbb 1px, transparent 1px), linear-gradient(#ddd 0.5px, transparent 0.5px), linear-gradient(90deg, #ddd 0.5px, transparent 0.5px)';
                                     case 'music':
-                                        return 'repeating-linear-gradient(transparent, transparent 8px, #ccc 8px, #ccc 9px, transparent 9px, transparent 50px)';
+                                        return 'repeating-linear-gradient(transparent 0px, transparent 7px, #aaa 8px, #aaa 9px)';
                                     case 'iso':
-                                        return 'linear-gradient(30deg, #e5e5e5 12%, transparent 12.5%, transparent 87%, #e5e5e5 87.5%, #e5e5e5), linear-gradient(150deg, #e5e5e5 12%, transparent 12.5%, transparent 87%, #e5e5e5 87.5%, #e5e5e5), linear-gradient(30deg, #e5e5e5 12%, transparent 12.5%, transparent 87%, #e5e5e5 87.5%, #e5e5e5), linear-gradient(150deg, #e5e5e5 12%, transparent 12.5%, transparent 87%, #e5e5e5 87.5%, #e5e5e5)';
+                                        // Isometric grid - triangular pattern
+                                        return 'linear-gradient(60deg, #ccc 1px, transparent 1px), linear-gradient(-60deg, #ccc 1px, transparent 1px), linear-gradient(#ccc 1px, transparent 1px)';
                                     case 'hex':
-                                        return 'radial-gradient(circle farthest-side at 0% 50%, transparent 47%, #e5e5e5 48%, #e5e5e5 52%, transparent 53%), radial-gradient(circle farthest-side at 100% 50%, transparent 47%, #e5e5e5 48%, #e5e5e5 52%, transparent 53%)';
+                                        // Hexagonal pattern using overlapping radial gradients
+                                        return 'radial-gradient(circle, transparent 12px, #ccc 13px, #ccc 14px, transparent 15px), radial-gradient(circle, transparent 12px, #ccc 13px, #ccc 14px, transparent 15px)';
                                     default:
                                         return 'none';
                                 }
@@ -1760,16 +1883,22 @@ export default function Whiteboard({
                             backgroundSize: (() => {
                                 switch (bgPattern) {
                                     case 'dotted': return '20px 20px';
-                                    case 'grid': return '20px 20px';
+                                    case 'grid': return '25px 25px';
                                     case 'lined': return '100% 25px';
                                     case 'graph': return '100px 100px, 100px 100px, 20px 20px, 20px 20px';
-                                    case 'music': return '100% 50px';
-                                    case 'iso': return '40px 70px';
-                                    case 'hex': return '60px 35px';
+                                    case 'music': return '100% 40px';
+                                    case 'iso': return '30px 52px';
+                                    case 'hex': return '60px 52px';
                                     default: return 'auto';
                                 }
                             })(),
-                            backgroundPosition: bgPattern === 'iso' ? '0 0, 20px 35px, 0 0, 20px 35px' : (bgPattern === 'hex' ? '0 0' : undefined),
+                            backgroundPosition: (() => {
+                                switch (bgPattern) {
+                                    case 'iso': return '0 0, 0 0, 0 0';
+                                    case 'hex': return '0 0, 30px 26px';
+                                    default: return undefined;
+                                }
+                            })(),
                             cursor: getCursor(),
                             border: '2px solid #e2e8f0',
                             outline: '1px solid #cbd5e1'
