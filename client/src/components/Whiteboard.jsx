@@ -109,8 +109,11 @@ export default function Whiteboard({
     const [tool, setTool] = useState('pen'); // pen, eraser, line, rectangle, circle, text
     const [color, setColor] = useState('#000000');
     const [strokeWidth, setStrokeWidth] = useState(4);
+    const [eraserSize, setEraserSize] = useState(20); // Separate eraser size
+    const [strokeStyle, setStrokeStyle] = useState('solid'); // solid, dashed, dotted
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [showStrokePicker, setShowStrokePicker] = useState(false);
+    const [showStrokeStylePicker, setShowStrokeStylePicker] = useState(false);
 
     // Multi-page state - must be before anything that uses currentPage
     const [pages, setPages] = useState([null]); // Array of canvas data URLs
@@ -220,14 +223,14 @@ export default function Whiteboard({
     const canvasWidth = width;
     const canvasHeight = height;
 
-    // Initialize canvas
+    // Initialize canvas - keep transparent to show CSS background patterns
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // Clear canvas (transparent) - CSS background will show through
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         // Save initial state
         saveToHistory();
@@ -322,8 +325,8 @@ export default function Whiteboard({
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // Clear canvas (transparent) to show CSS background
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         // Also clear images and text on current page
         setImageObjects([]);
@@ -754,7 +757,7 @@ export default function Whiteboard({
             });
         } else if (tool === 'eraser') {
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = strokeWidth * 3;
+            ctx.lineWidth = eraserSize;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.lineTo(pos.x, pos.y);
@@ -767,7 +770,7 @@ export default function Whiteboard({
                 x: pos.x,
                 y: pos.y,
                 color: '#ffffff',
-                strokeWidth: strokeWidth * 3
+                strokeWidth: eraserSize
             });
         } else if (tool === 'laser') {
             setLaserPos(pos);
@@ -792,15 +795,26 @@ export default function Whiteboard({
         const ctx = canvas.getContext('2d');
         const pos = getPosition(e);
 
+        // Helper to get dash array based on stroke style
+        const getDashArray = () => {
+            switch (strokeStyle) {
+                case 'dashed': return [10, 6];
+                case 'dotted': return [3, 3];
+                default: return [];
+            }
+        };
+
         // Draw shapes on release
         if (tool === 'line') {
             ctx.strokeStyle = color;
             ctx.lineWidth = strokeWidth;
             ctx.lineCap = 'round';
+            ctx.setLineDash(getDashArray());
             ctx.beginPath();
             ctx.moveTo(startPos.x, startPos.y);
             ctx.lineTo(pos.x, pos.y);
             ctx.stroke();
+            ctx.setLineDash([]); // Reset
 
             // Emit line event
             emitDrawEvent({
@@ -810,17 +824,20 @@ export default function Whiteboard({
                 endX: pos.x,
                 endY: pos.y,
                 color,
-                strokeWidth
+                strokeWidth,
+                strokeStyle
             });
         } else if (tool === 'rectangle') {
             ctx.strokeStyle = color;
             ctx.lineWidth = strokeWidth;
+            ctx.setLineDash(getDashArray());
             ctx.strokeRect(
                 startPos.x,
                 startPos.y,
                 pos.x - startPos.x,
                 pos.y - startPos.y
             );
+            ctx.setLineDash([]);
 
             // Emit rectangle event
             emitDrawEvent({
@@ -830,11 +847,13 @@ export default function Whiteboard({
                 width: pos.x - startPos.x,
                 height: pos.y - startPos.y,
                 color,
-                strokeWidth
+                strokeWidth,
+                strokeStyle
             });
         } else if (tool === 'circle') {
             ctx.strokeStyle = color;
             ctx.lineWidth = strokeWidth;
+            ctx.setLineDash(getDashArray());
             const radiusX = Math.abs(pos.x - startPos.x) / 2;
             const radiusY = Math.abs(pos.y - startPos.y) / 2;
             const centerX = startPos.x + (pos.x - startPos.x) / 2;
@@ -842,6 +861,7 @@ export default function Whiteboard({
             ctx.beginPath();
             ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
             ctx.stroke();
+            ctx.setLineDash([]);
 
             // Emit ellipse event
             emitDrawEvent({
@@ -851,7 +871,8 @@ export default function Whiteboard({
                 radiusX,
                 radiusY,
                 color,
-                strokeWidth
+                strokeWidth,
+                strokeStyle
             });
         } else if (tool === 'arrow') {
             // Draw arrow line
@@ -975,7 +996,7 @@ export default function Whiteboard({
     // Get cursor based on tool
     const getCursor = () => {
         if (tool === 'select') return 'default';
-        if (tool === 'eraser') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${strokeWidth * 2}" height="${strokeWidth * 2}" viewBox="0 0 ${strokeWidth * 2} ${strokeWidth * 2}"><rect width="${strokeWidth * 2}" height="${strokeWidth * 2}" fill="white" stroke="black" stroke-width="1"/></svg>') ${strokeWidth} ${strokeWidth}, auto`;
+        if (tool === 'eraser') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${eraserSize}" height="${eraserSize}" viewBox="0 0 ${eraserSize} ${eraserSize}"><rect width="${eraserSize}" height="${eraserSize}" fill="white" stroke="black" stroke-width="1"/></svg>') ${eraserSize / 2} ${eraserSize / 2}, auto`;
         if (tool === 'text') return 'text';
         if (tool === 'laser') return 'none';
         if (tool === 'highlighter') return 'crosshair';
@@ -1423,6 +1444,61 @@ export default function Whiteboard({
                     )}
                 </div>
 
+                {/* Eraser Size Slider */}
+                {tool === 'eraser' && (
+                    <div className="flex items-center gap-2 px-2">
+                        <span className="text-xs text-slate-500 min-w-[50px]">Eraser</span>
+                        <input
+                            type="range"
+                            min="5"
+                            max="100"
+                            value={eraserSize}
+                            onChange={(e) => setEraserSize(Number(e.target.value))}
+                            className="w-24 accent-primary-500"
+                        />
+                        <span className="text-xs text-slate-600 min-w-[32px]">{eraserSize}px</span>
+                    </div>
+                )}
+
+                {/* Stroke Style (Solid/Dashed/Dotted) */}
+                <div className="relative">
+                    <button
+                        onClick={() => { setShowStrokeStylePicker(!showStrokeStylePicker); setShowColorPicker(false); setShowStrokePicker(false); }}
+                        className="flex items-center gap-2 p-2 hover:bg-slate-100 rounded-lg transition"
+                        title="Stroke Style"
+                    >
+                        <div className="w-6 h-4 flex items-center">
+                            {strokeStyle === 'solid' && <div className="w-full h-0.5 bg-slate-700" />}
+                            {strokeStyle === 'dashed' && <div className="w-full h-0.5 bg-slate-700" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #334155 0px, #334155 6px, transparent 6px, transparent 10px)' }} />}
+                            {strokeStyle === 'dotted' && <div className="w-full h-0.5 bg-slate-700" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #334155 0px, #334155 2px, transparent 2px, transparent 6px)' }} />}
+                        </div>
+                        <ChevronDown className="w-3 h-3 text-slate-400" />
+                    </button>
+                    {showStrokeStylePicker && (
+                        <div className="absolute top-full left-0 mt-1 p-2 bg-white rounded-lg shadow-lg border border-slate-200 z-10 min-w-[120px]">
+                            {[
+                                { id: 'solid', label: 'Solid', dash: [] },
+                                { id: 'dashed', label: 'Dashed', dash: [10, 6] },
+                                { id: 'dotted', label: 'Dotted', dash: [3, 3] }
+                            ].map((style) => (
+                                <button
+                                    key={style.id}
+                                    onClick={() => { setStrokeStyle(style.id); setShowStrokeStylePicker(false); }}
+                                    className={`flex items-center gap-3 w-full px-3 py-2 rounded-lg ${strokeStyle === style.id ? 'bg-primary-50 text-primary-600' : 'hover:bg-slate-50'}`}
+                                >
+                                    <div className="w-8 h-3 flex items-center">
+                                        <svg width="32" height="2" viewBox="0 0 32 2">
+                                            <line x1="0" y1="1" x2="32" y2="1" stroke="currentColor" strokeWidth="2"
+                                                strokeDasharray={style.dash.join(',')} />
+                                        </svg>
+                                    </div>
+                                    <span className="text-sm">{style.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
                 {/* Background Options */}
                 <div className="relative">
                     <button
@@ -1829,6 +1905,8 @@ export default function Whiteboard({
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'pointer',
                                     zIndex: isSelected ? 20 : 10,
+                                    // Disable pointer events when select tool is active so selection rectangle can be drawn
+                                    pointerEvents: tool === 'select' && !isSelected ? 'none' : 'auto',
                                 }}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -1985,46 +2063,32 @@ export default function Whiteboard({
                         </div>
                     )}
 
-                    {/* Text Input Popup - Draggable */}
+                    {/* Text Input - Shows in drawn boundary area (MS Paint style) */}
                     {showTextInput && (
                         <div
-                            className="absolute bg-white rounded-lg shadow-xl border-2 border-primary-400 p-2 z-10 cursor-move"
-                            style={{ left: textPos.x, top: textPos.y }}
-                            draggable
-                            onDragStart={(e) => {
-                                e.dataTransfer.setDragImage(new Image(), 0, 0); // Hide default drag image
-                            }}
-                            onDrag={(e) => {
-                                if (e.clientX === 0 && e.clientY === 0) return; // Ignore end event
-                                const canvas = canvasRef.current;
-                                if (!canvas) return;
-                                const rect = canvas.getBoundingClientRect();
-                                const scaleX = canvas.width / rect.width;
-                                const scaleY = canvas.height / rect.height;
-                                const newX = (e.clientX - rect.left) * scaleX;
-                                const newY = (e.clientY - rect.top) * scaleY;
-                                if (newX > 0 && newY > 0) {
-                                    setTextPos({ x: newX, y: newY });
-                                }
+                            className="absolute z-20"
+                            style={{
+                                left: textBoundary ? textBoundary.x : textPos.x,
+                                top: textBoundary ? textBoundary.y : textPos.y,
+                                width: textBoundary ? textBoundary.width : 200,
+                                minHeight: textBoundary ? textBoundary.height : 40,
+                                border: '1px dashed #000',
+                                backgroundColor: 'rgba(255,255,255,0.9)',
                             }}
                         >
-                            <div className="text-xs text-slate-400 mb-1 flex items-center gap-1">
-                                <span>⊞</span> Drag to move
-                            </div>
-                            <input
-                                type="text"
+                            <textarea
                                 value={textValue}
                                 onChange={(e) => setTextValue(e.target.value)}
                                 onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleTextSubmit();
-                                    if (e.key === 'Escape') setShowTextInput(false);
+                                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(); }
+                                    if (e.key === 'Escape') { setShowTextInput(false); setTextBoundary(null); }
                                 }}
                                 placeholder="Type text..."
-                                className="w-48 px-2 py-1 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                                style={{ color, fontSize: `${strokeWidth * 2 + 12}px` }}
+                                className="w-full h-full p-2 bg-transparent border-none resize-none focus:outline-none"
+                                style={{ color, fontSize: `${strokeWidth * 2 + 12}px`, minHeight: textBoundary ? textBoundary.height - 40 : 30 }}
                                 autoFocus
                             />
-                            <div className="flex gap-1 mt-1">
+                            <div className="flex gap-1 p-1 border-t border-dashed border-slate-300">
                                 <button
                                     onClick={handleTextSubmit}
                                     className="flex-1 px-2 py-1 bg-primary-500 text-white text-xs rounded hover:bg-primary-600"
@@ -2032,7 +2096,7 @@ export default function Whiteboard({
                                     Add
                                 </button>
                                 <button
-                                    onClick={() => setShowTextInput(false)}
+                                    onClick={() => { setShowTextInput(false); setTextBoundary(null); }}
                                     className="px-2 py-1 bg-slate-200 text-slate-700 text-xs rounded hover:bg-slate-300"
                                 >
                                     Cancel
