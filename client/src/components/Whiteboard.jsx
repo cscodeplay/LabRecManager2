@@ -191,23 +191,30 @@ export default function Whiteboard({
     const [textInputMode, setTextInputMode] = useState('create'); // 'create' or 'edit'
     const [textBoundary, setTextBoundary] = useState(null); // { x, y, width, height } - dotted boundary while creating
 
-    // Get current page's image objects
+    // Get current page's image objects (derived state)
     const imageObjects = pageImageObjects[currentPage] || [];
+
+    // Get current page's text objects (derived state)
+    const textObjects = pageTextObjects[currentPage] || [];
+
+    // Helper ref to track current page for stable callbacks
+    const currentPageRef = useRef(currentPage);
+    currentPageRef.current = currentPage;
+
+    // Stable setter functions that use ref to get current page
     const setImageObjects = useCallback((updater) => {
         setPageImageObjects(prev => ({
             ...prev,
-            [currentPage]: typeof updater === 'function' ? updater(prev[currentPage] || []) : updater
+            [currentPageRef.current]: typeof updater === 'function' ? updater(prev[currentPageRef.current] || []) : updater
         }));
-    }, [currentPage]);
+    }, []);
 
-    // Get current page's text objects
-    const textObjects = pageTextObjects[currentPage] || [];
     const setTextObjects = useCallback((updater) => {
         setPageTextObjects(prev => ({
             ...prev,
-            [currentPage]: typeof updater === 'function' ? updater(prev[currentPage] || []) : updater
+            [currentPageRef.current]: typeof updater === 'function' ? updater(prev[currentPageRef.current] || []) : updater
         }));
-    }, [currentPage]);
+    }, []);
 
     // Canvas dimensions - keep fixed to prevent content loss
     const canvasWidth = width;
@@ -325,7 +332,7 @@ export default function Whiteboard({
         setSelectedTextId(null);
 
         saveToHistory();
-    }, [saveToHistory, setImageObjects, setTextObjects]);
+    }, [saveToHistory]);
 
     // Copy selection to clipboard
     const handleCopySelection = useCallback(() => {
