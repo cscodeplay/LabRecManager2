@@ -112,6 +112,11 @@ export default function Whiteboard({
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [showStrokePicker, setShowStrokePicker] = useState(false);
 
+    // Multi-page state - must be before anything that uses currentPage
+    const [pages, setPages] = useState([null]); // Array of canvas data URLs
+    const [currentPage, setCurrentPage] = useState(0);
+    const [totalPages, setTotalPages] = useState(1);
+
     // Background options - per page
     const [pageBackgrounds, setPageBackgrounds] = useState({ 0: { pattern: 'plain', color: '#ffffff' } });
     const [showBgPicker, setShowBgPicker] = useState(false);
@@ -151,11 +156,6 @@ export default function Whiteboard({
     // Selection state
     const [selection, setSelection] = useState(null); // { x, y, width, height }
     const [clipboard, setClipboard] = useState(null); // imageData for copy/paste
-
-    // Multi-page state
-    const [pages, setPages] = useState([null]); // Array of canvas data URLs
-    const [currentPage, setCurrentPage] = useState(0);
-    const [totalPages, setTotalPages] = useState(1);
 
     // Laser pointer state
     const [laserPos, setLaserPos] = useState(null);
