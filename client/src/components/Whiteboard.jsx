@@ -672,9 +672,87 @@ export default function Whiteboard({
         };
     }, [imageDragState]);
 
-    // Click on canvas to deselect images
+    // Text manipulation mouse handlers (same pattern as images)
+    useEffect(() => {
+        if (!textDragState) return;
+
+        const handleMouseMove = (e) => {
+            const dx = e.clientX - textDragState.startX;
+            const dy = e.clientY - textDragState.startY;
+            const startObj = textDragState.startObj;
+
+            if (textDragState.action === 'move') {
+                setTextObjects(prev => prev.map(txt =>
+                    txt.id === textDragState.id
+                        ? { ...txt, x: startObj.x + dx, y: startObj.y + dy }
+                        : txt
+                ));
+            } else if (textDragState.action === 'rotate') {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const rect = canvas.getBoundingClientRect();
+                const centerX = startObj.x + startObj.width / 2;
+                const centerY = startObj.y + startObj.height / 2;
+                const canvasCenterX = rect.left + (centerX / canvas.width) * rect.width;
+                const canvasCenterY = rect.top + (centerY / canvas.height) * rect.height;
+
+                const startAngle = Math.atan2(textDragState.startY - canvasCenterY, textDragState.startX - canvasCenterX);
+                const currentAngle = Math.atan2(e.clientY - canvasCenterY, e.clientX - canvasCenterX);
+                const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
+
+                setTextObjects(prev => prev.map(txt =>
+                    txt.id === textDragState.id
+                        ? { ...txt, rotation: (startObj.rotation || 0) + angleDiff }
+                        : txt
+                ));
+            } else if (textDragState.action.startsWith('resize-')) {
+                const handle = textDragState.action.replace('resize-', '');
+                let newX = startObj.x, newY = startObj.y;
+                let newWidth = startObj.width, newHeight = startObj.height;
+                const minSize = 50;
+
+                if (handle.includes('e')) {
+                    newWidth = Math.max(minSize, startObj.width + dx);
+                }
+                if (handle.includes('w')) {
+                    const widthChange = Math.min(dx, startObj.width - minSize);
+                    newX = startObj.x + widthChange;
+                    newWidth = startObj.width - widthChange;
+                }
+                if (handle.includes('s')) {
+                    newHeight = Math.max(minSize, startObj.height + dy);
+                }
+                if (handle.includes('n')) {
+                    const heightChange = Math.min(dy, startObj.height - minSize);
+                    newY = startObj.y + heightChange;
+                    newHeight = startObj.height - heightChange;
+                }
+
+                setTextObjects(prev => prev.map(txt =>
+                    txt.id === textDragState.id
+                        ? { ...txt, x: newX, y: newY, width: newWidth, height: newHeight }
+                        : txt
+                ));
+            }
+        };
+
+        const handleMouseUp = () => {
+            setTextDragState(null);
+            saveToHistory();
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [textDragState, saveToHistory, setTextObjects]);
+
+    // Click on canvas to deselect images and text
     const handleCanvasClick = useCallback(() => {
         setSelectedImageId(null);
+        setSelectedTextId(null);
     }, []);
 
     // Get position from event (works for both mouse and touch)
@@ -769,34 +847,37 @@ export default function Whiteboard({
         }
     }, [getPosition, tool, color, strokeWidth, eraserSize, highlighterColor, emitDrawEvent]);
 
-    // Handle text submission
+    // Handle text submission - creates a text object for manipulation
     const handleTextSubmit = useCallback(() => {
         if (!textValue.trim()) {
             setShowTextInput(false);
+            setTextBoundary(null);
             return;
         }
 
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-
-        ctx.font = `${strokeWidth * 4 + 12}px sans-serif`;
-        ctx.fillStyle = color;
-        ctx.fillText(textValue, textPos.x, textPos.y);
-
-        // Emit text event
-        emitDrawEvent({
-            type: 'text',
-            x: textPos.x,
-            y: textPos.y,
+        // Create a new text object with manipulation properties
+        const newTextObj = {
+            id: Date.now(),
             text: textValue,
-            fontSize: strokeWidth * 4 + 12,
-            color
-        });
+            x: textBoundary ? textBoundary.x : textPos.x,
+            y: textBoundary ? textBoundary.y : textPos.y,
+            width: textBoundary ? Math.max(textBoundary.width, 100) : 200,
+            height: textBoundary ? Math.max(textBoundary.height, 40) : 50,
+            rotation: 0,
+            color: color,
+            fontSize: strokeWidth * 2 + 16,
+            fontWeight: 'normal',
+            fontStyle: 'normal',
+            textAlign: 'left',
+        };
 
+        setTextObjects(prev => [...prev, newTextObj]);
+        setSelectedTextId(newTextObj.id);
         setShowTextInput(false);
         setTextValue('');
+        setTextBoundary(null);
         saveToHistory();
-    }, [textValue, textPos, color, strokeWidth, emitDrawEvent, saveToHistory]);
+    }, [textValue, textPos, textBoundary, color, strokeWidth, saveToHistory, setTextObjects]);
 
     // Draw
     const draw = useCallback((e) => {
@@ -2176,6 +2257,203 @@ export default function Whiteboard({
                         );
                     })}
 
+                    {/* Text Objects Layer - Selectable, Movable, Resizable, Rotatable */}
+                    {textObjects.map((txtObj) => {
+                        const isSelected = selectedTextId === txtObj.id;
+                        const handleSize = 10;
+
+                        return (
+                            <div
+                                key={txtObj.id}
+                                className="absolute"
+                                style={{
+                                    left: txtObj.x,
+                                    top: txtObj.y,
+                                    width: txtObj.width,
+                                    minHeight: txtObj.height,
+                                    transform: `rotate(${txtObj.rotation || 0}deg)`,
+                                    transformOrigin: 'center center',
+                                    cursor: isSelected ? 'move' : 'pointer',
+                                    zIndex: isSelected ? 25 : 15,
+                                    pointerEvents: tool === 'select' && !isSelected ? 'none' : 'auto',
+                                }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedTextId(txtObj.id);
+                                    setSelectedImageId(null);
+                                }}
+                                onMouseDown={(e) => {
+                                    if (!isSelected) {
+                                        setSelectedTextId(txtObj.id);
+                                        setSelectedImageId(null);
+                                        return;
+                                    }
+                                    if (e.target.dataset.handle) return;
+                                    e.stopPropagation();
+                                    setTextDragState({
+                                        id: txtObj.id,
+                                        action: 'move',
+                                        startX: e.clientX,
+                                        startY: e.clientY,
+                                        startObj: { ...txtObj }
+                                    });
+                                }}
+                            >
+                                {/* Text Content */}
+                                <div
+                                    className="w-full h-full p-2 whitespace-pre-wrap break-words select-none"
+                                    style={{
+                                        color: txtObj.color,
+                                        fontSize: `${txtObj.fontSize}px`,
+                                        fontWeight: txtObj.fontWeight || 'normal',
+                                        fontStyle: txtObj.fontStyle || 'normal',
+                                        textAlign: txtObj.textAlign || 'left',
+                                        lineHeight: 1.3,
+                                    }}
+                                >
+                                    {txtObj.text}
+                                </div>
+
+                                {/* Selection Border & Handles */}
+                                {isSelected && (
+                                    <>
+                                        <div className="absolute inset-0 border-2 border-green-500 pointer-events-none" />
+
+                                        {/* Formatting Toolbar */}
+                                        <div
+                                            className="absolute -top-12 left-0 flex items-center gap-1 bg-white rounded-lg shadow-lg border border-slate-200 p-1 pointer-events-auto z-40"
+                                            onClick={e => e.stopPropagation()}
+                                        >
+                                            {/* Color Picker */}
+                                            <div className="relative">
+                                                <input
+                                                    type="color"
+                                                    value={txtObj.color}
+                                                    onChange={(e) => {
+                                                        setTextObjects(prev => prev.map(t =>
+                                                            t.id === txtObj.id ? { ...t, color: e.target.value } : t
+                                                        ));
+                                                    }}
+                                                    className="w-6 h-6 border-0 cursor-pointer rounded"
+                                                    title="Text Color"
+                                                />
+                                            </div>
+                                            {/* Bold */}
+                                            <button
+                                                onClick={() => {
+                                                    setTextObjects(prev => prev.map(t =>
+                                                        t.id === txtObj.id ? { ...t, fontWeight: t.fontWeight === 'bold' ? 'normal' : 'bold' } : t
+                                                    ));
+                                                }}
+                                                className={`w-7 h-7 flex items-center justify-center rounded text-sm font-bold ${txtObj.fontWeight === 'bold' ? 'bg-slate-200' : 'hover:bg-slate-100'}`}
+                                                title="Bold"
+                                            >
+                                                B
+                                            </button>
+                                            {/* Italic */}
+                                            <button
+                                                onClick={() => {
+                                                    setTextObjects(prev => prev.map(t =>
+                                                        t.id === txtObj.id ? { ...t, fontStyle: t.fontStyle === 'italic' ? 'normal' : 'italic' } : t
+                                                    ));
+                                                }}
+                                                className={`w-7 h-7 flex items-center justify-center rounded text-sm italic ${txtObj.fontStyle === 'italic' ? 'bg-slate-200' : 'hover:bg-slate-100'}`}
+                                                title="Italic"
+                                            >
+                                                I
+                                            </button>
+                                            {/* Font Size */}
+                                            <select
+                                                value={txtObj.fontSize}
+                                                onChange={(e) => {
+                                                    setTextObjects(prev => prev.map(t =>
+                                                        t.id === txtObj.id ? { ...t, fontSize: parseInt(e.target.value) } : t
+                                                    ));
+                                                }}
+                                                className="h-7 px-1 text-xs border border-slate-200 rounded bg-white"
+                                                title="Font Size"
+                                            >
+                                                {[12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64].map(size => (
+                                                    <option key={size} value={size}>{size}px</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Corner Resize Handles */}
+                                        {['nw', 'ne', 'sw', 'se'].map(corner => {
+                                            const pos = {
+                                                nw: { left: -handleSize / 2, top: -handleSize / 2, cursor: 'nwse-resize' },
+                                                ne: { right: -handleSize / 2, top: -handleSize / 2, cursor: 'nesw-resize' },
+                                                sw: { left: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nesw-resize' },
+                                                se: { right: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nwse-resize' },
+                                            }[corner];
+
+                                            return (
+                                                <div
+                                                    key={corner}
+                                                    data-handle={corner}
+                                                    className="absolute bg-white border-2 border-green-500 rounded-sm z-30"
+                                                    style={{
+                                                        width: handleSize,
+                                                        height: handleSize,
+                                                        ...pos,
+                                                    }}
+                                                    onMouseDown={(e) => {
+                                                        e.stopPropagation();
+                                                        setTextDragState({
+                                                            id: txtObj.id,
+                                                            action: `resize-${corner}`,
+                                                            startX: e.clientX,
+                                                            startY: e.clientY,
+                                                            startObj: { ...txtObj }
+                                                        });
+                                                    }}
+                                                />
+                                            );
+                                        })}
+
+                                        {/* Rotate Handle */}
+                                        <div
+                                            className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center z-30"
+                                            style={{ bottom: -35 }}
+                                        >
+                                            <div className="w-px h-5 bg-green-500" />
+                                            <div
+                                                data-handle="rotate"
+                                                className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center cursor-grab hover:bg-green-600"
+                                                onMouseDown={(e) => {
+                                                    e.stopPropagation();
+                                                    setTextDragState({
+                                                        id: txtObj.id,
+                                                        action: 'rotate',
+                                                        startX: e.clientX,
+                                                        startY: e.clientY,
+                                                        startObj: { ...txtObj }
+                                                    });
+                                                }}
+                                            >
+                                                <RotateCw className="w-3 h-3 text-white" />
+                                            </div>
+                                        </div>
+
+                                        {/* Delete Button */}
+                                        <button
+                                            className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setTextObjects(prev => prev.filter(t => t.id !== txtObj.id));
+                                                setSelectedTextId(null);
+                                                saveToHistory();
+                                            }}
+                                        >
+                                            <X className="w-3 h-3 text-white" />
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        );
+                    })}
+
                     {/* Laser Pointer Overlay */}
                     {laserPos && (
                         <div
@@ -2192,45 +2470,50 @@ export default function Whiteboard({
                         </div>
                     )}
 
-                    {/* Text Input - Shows in drawn boundary area (MS Paint style) */}
+                    {/* Text Input - Inline typing, commits on blur or Enter */}
                     {showTextInput && (
                         <div
                             className="absolute z-20"
                             style={{
                                 left: textBoundary ? textBoundary.x : textPos.x,
                                 top: textBoundary ? textBoundary.y : textPos.y,
-                                width: textBoundary ? textBoundary.width : 200,
-                                minHeight: textBoundary ? textBoundary.height : 40,
-                                border: '1px dashed #000',
-                                backgroundColor: 'rgba(255,255,255,0.9)',
+                                width: textBoundary ? Math.max(textBoundary.width, 100) : 200,
+                                minHeight: textBoundary ? Math.max(textBoundary.height, 40) : 40,
                             }}
                         >
                             <textarea
                                 value={textValue}
                                 onChange={(e) => setTextValue(e.target.value)}
                                 onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(); }
-                                    if (e.key === 'Escape') { setShowTextInput(false); setTextBoundary(null); }
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleTextSubmit();
+                                    }
+                                    if (e.key === 'Escape') {
+                                        setShowTextInput(false);
+                                        setTextBoundary(null);
+                                        setTextValue('');
+                                    }
                                 }}
-                                placeholder="Type text..."
-                                className="w-full h-full p-2 bg-transparent border-none resize-none focus:outline-none"
-                                style={{ color, fontSize: `${strokeWidth * 2 + 12}px`, minHeight: textBoundary ? textBoundary.height - 40 : 30 }}
+                                onBlur={() => {
+                                    // Commit text on blur (clicking outside)
+                                    if (textValue.trim()) {
+                                        handleTextSubmit();
+                                    } else {
+                                        setShowTextInput(false);
+                                        setTextBoundary(null);
+                                    }
+                                }}
+                                placeholder="Type here..."
+                                className="w-full h-full p-2 bg-transparent border-2 border-dashed border-blue-400 rounded resize-none focus:outline-none focus:border-blue-500"
+                                style={{
+                                    color,
+                                    fontSize: `${strokeWidth * 2 + 16}px`,
+                                    minHeight: textBoundary ? Math.max(textBoundary.height, 40) : 40,
+                                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                }}
                                 autoFocus
                             />
-                            <div className="flex gap-1 p-1 border-t border-dashed border-slate-300">
-                                <button
-                                    onClick={handleTextSubmit}
-                                    className="flex-1 px-2 py-1 bg-primary-500 text-white text-xs rounded hover:bg-primary-600"
-                                >
-                                    Add
-                                </button>
-                                <button
-                                    onClick={() => { setShowTextInput(false); setTextBoundary(null); }}
-                                    className="px-2 py-1 bg-slate-200 text-slate-700 text-xs rounded hover:bg-slate-300"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
                         </div>
                     )}
                     {/* Selection Overlay */}
