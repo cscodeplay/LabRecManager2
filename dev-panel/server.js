@@ -700,82 +700,111 @@ app.post('/api/projects/:projectId/translations/import-csv', express.text({ type
 
         // Parse rows - handle quoted values with commas
         const translations = [];
+        const parseErrors = [];
+
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i];
             const values = [];
             let current = '';
             let inQuotes = false;
 
-            for (let j = 0; j < line.length; j++) {
-                const char = line[j];
-                if (char === '"') {
-                    if (inQuotes && line[j + 1] === '"') {
-                        current += '"';
-                        j++;
+            try {
+                for (let j = 0; j < line.length; j++) {
+                    const char = line[j];
+                    if (char === '"') {
+                        if (inQuotes && line[j + 1] === '"') {
+                            current += '"';
+                            j++;
+                        } else {
+                            inQuotes = !inQuotes;
+                        }
+                    } else if (char === ',' && !inQuotes) {
+                        values.push(current.trim());
+                        current = '';
                     } else {
-                        inQuotes = !inQuotes;
+                        current += char;
                     }
-                } else if (char === ',' && !inQuotes) {
-                    values.push(current.trim());
-                    current = '';
-                } else {
-                    current += char;
                 }
-            }
-            values.push(current.trim());
+                values.push(current.trim());
 
-            const key = values[0];
-            if (!key) continue;
-
-            for (let j = 0; j < langCodes.length; j++) {
-                const value = values[j + 1] || '';
-                if (value) {
-                    translations.push({ key, languageCode: langCodes[j], value });
+                const key = values[0];
+                if (!key) {
+                    parseErrors.push({ row: i + 1, error: 'Empty key' });
+                    continue;
                 }
+
+                for (let j = 0; j < langCodes.length; j++) {
+                    const value = values[j + 1] || '';
+                    if (value) {
+                        translations.push({ key, languageCode: langCodes[j], value });
+                    }
+                }
+            } catch (parseErr) {
+                parseErrors.push({ row: i + 1, error: parseErr.message });
             }
         }
 
-        // Upsert to database
+        // Upsert to database with detailed tracking
         const prisma = getPrisma(paths.serverDir);
         if (!prisma) {
             return res.status(500).json({ success: false, error: 'Failed to connect to project database' });
         }
 
-        let updated = 0, created = 0;
+        const stats = { created: 0, updated: 0, unchanged: 0, errors: [] };
 
         for (const t of translations) {
-            const existing = await prisma.translation.findUnique({
-                where: { key_languageCode: { key: t.key, languageCode: t.languageCode } }
-            });
+            try {
+                const existing = await prisma.translation.findUnique({
+                    where: { key_languageCode: { key: t.key, languageCode: t.languageCode } }
+                });
 
-            if (existing) {
-                if (existing.value !== t.value) {
-                    await prisma.translation.update({
-                        where: { id: existing.id },
-                        data: { value: t.value }
-                    });
-                    updated++;
+                if (existing) {
+                    if (existing.value !== t.value) {
+                        await prisma.translation.update({
+                            where: { id: existing.id },
+                            data: { value: t.value }
+                        });
+                        stats.updated++;
+                    } else {
+                        stats.unchanged++;
+                    }
+                } else {
+                    await prisma.translation.create({ data: t });
+                    stats.created++;
                 }
-            } else {
-                await prisma.translation.create({ data: t });
-                created++;
+            } catch (dbErr) {
+                stats.errors.push({ key: t.key, lang: t.languageCode, error: dbErr.message });
             }
         }
 
         await prisma.$disconnect();
 
+        const totalProcessed = stats.created + stats.updated + stats.unchanged;
+        const message = [
+            `✅ Processed ${totalProcessed} translations`,
+            `Created: ${stats.created}`,
+            `Updated: ${stats.updated}`,
+            `Unchanged: ${stats.unchanged}`,
+            stats.errors.length > 0 ? `Errors: ${stats.errors.length}` : null,
+            parseErrors.length > 0 ? `Parse errors: ${parseErrors.length}` : null
+        ].filter(Boolean).join(' | ');
+
         res.json({
             success: true,
-            message: `Imported ${translations.length} translations (${created} created, ${updated} updated)`,
-            created,
-            updated,
-            total: translations.length
+            message,
+            stats: {
+                ...stats,
+                parseErrors,
+                totalProcessed,
+                totalInCsv: translations.length
+            }
         });
     } catch (error) {
         console.error('Import CSV error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 
 // Seed database from existing JSON files for a project
 app.post('/api/projects/:projectId/translations/seed-from-json', async (req, res) => {
@@ -886,7 +915,15 @@ app.get('/api/projects/:projectId/translations/stats', async (req, res) => {
             return res.status(500).json({ success: false, error: 'Failed to connect to project database' });
         }
 
+        // Get total count and unique keys
         const totalCount = await prisma.translation.count();
+        const uniqueKeys = await prisma.translation.groupBy({
+            by: ['key'],
+            _count: { id: true }
+        });
+        const totalKeys = uniqueKeys.length;
+
+        // Get count per language
         const byLanguage = await prisma.translation.groupBy({
             by: ['languageCode'],
             _count: { id: true }
@@ -894,12 +931,25 @@ app.get('/api/projects/:projectId/translations/stats', async (req, res) => {
 
         await prisma.$disconnect();
 
+        // Calculate coverage for each language
+        const coverage = {};
+        SUPPORTED_LANGUAGES.forEach(lang => {
+            const langData = byLanguage.find(item => item.languageCode === lang);
+            const count = langData ? langData._count.id : 0;
+            const percentage = totalKeys > 0 ? Math.round((count / totalKeys) * 100) : 0;
+            coverage[lang] = {
+                count,
+                total: totalKeys,
+                percentage,
+                missing: totalKeys - count
+            };
+        });
+
         const stats = {
             total: totalCount,
-            languages: byLanguage.reduce((acc, item) => {
-                acc[item.languageCode] = item._count.id;
-                return acc;
-            }, {})
+            uniqueKeys: totalKeys,
+            expectedTotal: totalKeys * SUPPORTED_LANGUAGES.length,
+            coverage
         };
 
         res.json({ success: true, stats });
@@ -908,6 +958,7 @@ app.get('/api/projects/:projectId/translations/stats', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 
 
 app.listen(PORT, () => {

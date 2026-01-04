@@ -617,10 +617,17 @@
             <div class="icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">🌐</div>
             Translation Management
           </div>
-          <span class="status" id="translation-status"
-            style="background: rgba(102, 126, 234, 0.3); color: #667eea; border: 1px solid #667eea;">
-            Ready
-          </span>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <span class="status" id="db-status"
+              style="background: rgba(255, 107, 107, 0.3); color: #ff6b6b; border: 1px solid #ff6b6b; cursor: pointer;"
+              onclick="checkDbStatus()">
+              🔴 DB: Checking...
+            </span>
+            <span class="status" id="translation-status"
+              style="background: rgba(102, 126, 234, 0.3); color: #667eea; border: 1px solid #667eea;">
+              Ready
+            </span>
+          </div>
         </div>
 
         <div
@@ -658,6 +665,18 @@
           <button class="btn btn-secondary" onclick="getTranslationStats()">
             📊 View Stats
           </button>
+        </div>
+
+        <!-- Coverage Chart -->
+        <div id="coverage-chart"
+          style="margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.3); border-radius: 12px; display: none;">
+          <div style="font-weight: 600; margin-bottom: 10px; color: #fff;">📊 Translation Coverage by Language</div>
+          <div id="coverage-bars" style="display: flex; flex-direction: column; gap: 6px;">
+            <!-- Bars rendered by JS -->
+          </div>
+          <div style="margin-top: 10px; font-size: 0.8rem; color: #a0aec0;">
+            <span id="coverage-summary"></span>
+          </div>
         </div>
 
         <div class="git-status" id="translation-log" style="margin-top: 15px;">
@@ -788,6 +807,7 @@
       updateStatus();
       updateGitStatus();
       updateGitRemotes();
+      checkDbStatus(); // Check DB connectivity for translations
     }
 
     // Update quick links
@@ -1108,6 +1128,48 @@
     // TRANSLATION MANAGEMENT FUNCTIONS
     // ==========================================
 
+    let dbConnected = false;
+
+    async function checkDbStatus() {
+      if (!currentProject) {
+        updateDbStatusIndicator(false, 'No project');
+        return;
+      }
+
+      const dbStatusEl = document.getElementById('db-status');
+      dbStatusEl.textContent = '⏳ DB: Checking...';
+      dbStatusEl.style.background = 'rgba(102, 126, 234, 0.3)';
+      dbStatusEl.style.color = '#667eea';
+      dbStatusEl.style.borderColor = '#667eea';
+
+      try {
+        const response = await fetch(`/api/projects/${currentProject.id}/translations/db-status`);
+        const data = await response.json();
+
+        dbConnected = data.connected;
+        updateDbStatusIndicator(data.connected, data.error);
+      } catch (err) {
+        dbConnected = false;
+        updateDbStatusIndicator(false, 'Check failed');
+      }
+    }
+
+    function updateDbStatusIndicator(connected, error = null) {
+      const dbStatusEl = document.getElementById('db-status');
+
+      if (connected) {
+        dbStatusEl.innerHTML = '🟢 DB: Connected';
+        dbStatusEl.style.background = 'rgba(56, 239, 125, 0.3)';
+        dbStatusEl.style.color = '#38ef7d';
+        dbStatusEl.style.borderColor = '#38ef7d';
+      } else {
+        dbStatusEl.innerHTML = `🔴 DB: ${error || 'Disconnected'}`;
+        dbStatusEl.style.background = 'rgba(255, 107, 107, 0.3)';
+        dbStatusEl.style.color = '#ff6b6b';
+        dbStatusEl.style.borderColor = '#ff6b6b';
+      }
+    }
+
     function updateTranslationLog(message, isError = false) {
       const log = document.getElementById('translation-log');
       const time = new Date().toLocaleTimeString();
@@ -1191,16 +1253,33 @@
           throw new Error(data.error || 'Import failed');
         }
 
-        updateTranslationStatus('Imported');
-        updateTranslationLog(`✅ ${data.message}`);
-        showToast(data.message);
+        const stats = data.stats;
+
+        // Build detailed log message
+        let logMsg = `✅ Import complete: <strong>${stats.created}</strong> created, <strong>${stats.updated}</strong> updated, <strong>${stats.unchanged}</strong> unchanged`;
+
+        if (stats.errors && stats.errors.length > 0) {
+          logMsg += `<br>⚠️ ${stats.errors.length} DB errors: ${stats.errors.slice(0, 3).map(e => `${e.key}/${e.lang}`).join(', ')}${stats.errors.length > 3 ? '...' : ''}`;
+        }
+
+        if (stats.parseErrors && stats.parseErrors.length > 0) {
+          logMsg += `<br>⚠️ ${stats.parseErrors.length} parse errors at rows: ${stats.parseErrors.slice(0, 5).map(e => e.row).join(', ')}${stats.parseErrors.length > 5 ? '...' : ''}`;
+        }
+
+        updateTranslationStatus(stats.errors?.length > 0 ? 'Imported (with errors)' : 'Imported');
+        updateTranslationLog(logMsg);
+        showToast(`Imported: ${stats.created} new, ${stats.updated} updated`);
         fileInput.value = '';
+
+        // Refresh stats after import
+        setTimeout(() => getTranslationStats(), 1000);
       } catch (err) {
         updateTranslationStatus('Error', true);
         updateTranslationLog('❌ Import failed: ' + err.message, true);
         showToast('Import failed: ' + err.message, 'error');
       }
     }
+
 
     async function seedFromJson() {
       if (!currentProject) return showToast('Select a project first', 'error');
@@ -1273,19 +1352,57 @@
         }
 
         const stats = data.stats;
-        const langStats = Object.entries(stats.languages)
-          .map(([lang, count]) => `${lang}: ${count}`)
-          .join(', ');
+
+        // Show and render coverage chart
+        const chartContainer = document.getElementById('coverage-chart');
+        const barsContainer = document.getElementById('coverage-bars');
+        const summaryEl = document.getElementById('coverage-summary');
+
+        chartContainer.style.display = 'block';
+
+        // Render bars for each language
+        const langNames = {
+          en: 'English', hi: 'Hindi', bn: 'Bengali', te: 'Telugu',
+          mr: 'Marathi', ta: 'Tamil', gu: 'Gujarati', kn: 'Kannada',
+          ml: 'Malayalam', or: 'Odia', pa: 'Punjabi', as: 'Assamese',
+          sa: 'Sanskrit', ur: 'Urdu', ne: 'Nepali', fr: 'French', es: 'Spanish'
+        };
+
+        barsContainer.innerHTML = Object.entries(stats.coverage)
+          .sort((a, b) => b[1].percentage - a[1].percentage)
+          .map(([lang, data]) => {
+            const pct = data.percentage;
+            let barColor = '#38ef7d'; // green for 100%
+            if (pct < 100) barColor = '#ffd93d'; // yellow for partial
+            if (pct < 50) barColor = '#ff6b6b'; // red for low
+
+            return `
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 80px; font-size: 0.8rem; color: #a0aec0;">${langNames[lang] || lang}</div>
+                <div style="flex: 1; background: rgba(255,255,255,0.1); border-radius: 4px; height: 20px; overflow: hidden;">
+                  <div style="width: ${pct}%; height: 100%; background: ${barColor}; transition: width 0.3s;"></div>
+                </div>
+                <div style="width: 60px; font-size: 0.8rem; color: ${pct === 100 ? '#38ef7d' : '#a0aec0'}; text-align: right;">
+                  ${pct}% (${data.missing > 0 ? '-' + data.missing : '✓'})
+                </div>
+              </div>
+            `;
+          }).join('');
+
+        // Summary
+        const complete = Object.values(stats.coverage).filter(c => c.percentage === 100).length;
+        summaryEl.innerHTML = `<strong>${stats.uniqueKeys}</strong> keys | <strong>${stats.total}</strong> total translations | <strong>${complete}/17</strong> languages complete`;
 
         updateTranslationStatus('Ready');
-        updateTranslationLog(`📊 Total: ${stats.total} translations | ${langStats}`);
-        showToast(`Total: ${stats.total} translations across ${Object.keys(stats.languages).length} languages`);
+        updateTranslationLog(`📊 Coverage loaded: ${complete}/17 languages at 100%`);
+        showToast(`Loaded translation coverage for ${Object.keys(stats.coverage).length} languages`);
       } catch (err) {
         updateTranslationStatus('Error', true);
         updateTranslationLog('❌ Stats failed: ' + err.message, true);
         showToast('Failed to get stats: ' + err.message, 'error');
       }
     }
+
   </script>
 </body>
 
