@@ -497,7 +497,421 @@ app.get('/api/all-status', async (req, res) => {
     res.json(statuses);
 });
 
+// ==========================================
+// TRANSLATION MANAGEMENT APIs
+// ==========================================
+
+// Supported languages (same as in client i18n.js)
+const SUPPORTED_LANGUAGES = ['en', 'hi', 'bn', 'te', 'mr', 'ta', 'gu', 'kn', 'ml', 'or', 'pa', 'as', 'sa', 'ur', 'ne', 'fr', 'es'];
+
+// Helper: Get project paths
+const getProjectPaths = (projectId) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return null;
+    return {
+        localesDir: path.join(project.rootDir, project.client.dir, 'public', 'locales'),
+        serverDir: path.join(project.rootDir, project.server.dir)
+    };
+};
+
+// Helper: Flatten nested JSON to dot notation
+const flattenObject = (obj, parentKey = '', result = {}) => {
+    for (const key in obj) {
+        const newKey = parentKey ? `${parentKey}.${key}` : key;
+        if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+            flattenObject(obj[key], newKey, result);
+        } else {
+            result[newKey] = obj[key];
+        }
+    }
+    return result;
+};
+
+// Helper: Unflatten dot notation to nested JSON
+const unflattenObject = (obj) => {
+    const result = {};
+    for (const key in obj) {
+        const keys = key.split('.');
+        let current = result;
+        for (let i = 0; i < keys.length; i++) {
+            const k = keys[i];
+            if (i === keys.length - 1) {
+                current[k] = obj[key];
+            } else {
+                current[k] = current[k] || {};
+                current = current[k];
+            }
+        }
+    }
+    return result;
+};
+
+// Helper: Read translation JSON file for a language
+const readLanguageFile = (localesDir, langCode) => {
+    const filePath = path.join(localesDir, langCode, 'common.json');
+    try {
+        const data = fs.readFileSync(filePath, 'utf8');
+        return JSON.parse(data);
+    } catch (err) {
+        console.error(`Error reading ${langCode} translations:`, err.message);
+        return {};
+    }
+};
+
+// Helper: Write translation JSON file for a language
+const writeLanguageFile = (localesDir, langCode, data) => {
+    const dirPath = path.join(localesDir, langCode);
+    const filePath = path.join(dirPath, 'common.json');
+    try {
+        if (!fs.existsSync(dirPath)) {
+            fs.mkdirSync(dirPath, { recursive: true });
+        }
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+        return true;
+    } catch (err) {
+        console.error(`Error writing ${langCode} translations:`, err.message);
+        return false;
+    }
+};
+
+// Helper: Get Prisma client for a project
+const getPrisma = (serverDir) => {
+    try {
+        const { PrismaClient } = require(path.join(serverDir, 'node_modules', '@prisma/client'));
+        return new PrismaClient();
+    } catch (err) {
+        console.error('Failed to load Prisma client:', err.message);
+        return null;
+    }
+};
+
+// Check database connectivity for a project
+app.get('/api/projects/:projectId/translations/db-status', async (req, res) => {
+    const { projectId } = req.params;
+    const paths = getProjectPaths(projectId);
+
+    if (!paths) {
+        return res.json({ success: false, connected: false, error: 'Project not found' });
+    }
+
+    try {
+        const prisma = getPrisma(paths.serverDir);
+        if (!prisma) {
+            return res.json({ success: false, connected: false, error: 'Failed to initialize Prisma' });
+        }
+
+        // Try a simple query to check connectivity
+        await prisma.$queryRaw`SELECT 1`;
+        await prisma.$disconnect();
+
+        res.json({ success: true, connected: true });
+    } catch (error) {
+        console.error('DB connectivity check failed:', error.message);
+        res.json({
+            success: false,
+            connected: false,
+            error: error.message.includes("Can't reach") ? 'Database unreachable' : error.message
+        });
+    }
+});
+
+
+// Export all translations as CSV for a project
+app.get('/api/projects/:projectId/translations/export-csv', async (req, res) => {
+    const { projectId } = req.params;
+    const paths = getProjectPaths(projectId);
+
+    if (!paths) {
+        return res.status(404).json({ success: false, error: 'Project not found' });
+    }
+
+    try {
+        const prisma = getPrisma(paths.serverDir);
+        if (!prisma) {
+            return res.status(500).json({ success: false, error: 'Failed to connect to project database' });
+        }
+
+        const translations = await prisma.translation.findMany();
+        await prisma.$disconnect();
+
+        // Group by key
+        const translationMap = {};
+        translations.forEach(t => {
+            if (!translationMap[t.key]) {
+                translationMap[t.key] = {};
+            }
+            translationMap[t.key][t.languageCode] = t.value;
+        });
+
+        // Create CSV header
+        const header = ['key', ...SUPPORTED_LANGUAGES].join(',');
+
+        // Create CSV rows
+        const rows = Object.keys(translationMap).sort().map(key => {
+            const values = [key];
+            SUPPORTED_LANGUAGES.forEach(lang => {
+                const value = translationMap[key][lang] || '';
+                // Escape quotes and wrap in quotes if contains comma or newline
+                const escaped = value.replace(/"/g, '""');
+                values.push(`"${escaped}"`);
+            });
+            return values.join(',');
+        });
+
+        const csv = [header, ...rows].join('\n');
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=translations.csv');
+        res.send(csv);
+    } catch (error) {
+        console.error('Export CSV error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Import CSV and update database for a project
+app.post('/api/projects/:projectId/translations/import-csv', express.text({ type: 'text/csv', limit: '10mb' }), async (req, res) => {
+    const { projectId } = req.params;
+    const paths = getProjectPaths(projectId);
+
+    if (!paths) {
+        return res.status(404).json({ success: false, error: 'Project not found' });
+    }
+
+    try {
+        const csvText = req.body;
+        const lines = csvText.split('\n').filter(line => line.trim());
+
+        if (lines.length < 2) {
+            return res.status(400).json({ success: false, error: 'CSV must have header and at least one row' });
+        }
+
+        // Parse header
+        const header = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+        if (header[0] !== 'key') {
+            return res.status(400).json({ success: false, error: 'First column must be "key"' });
+        }
+
+        const langCodes = header.slice(1);
+        const invalidLangs = langCodes.filter(l => !SUPPORTED_LANGUAGES.includes(l));
+        if (invalidLangs.length > 0) {
+            return res.status(400).json({ success: false, error: `Invalid language codes: ${invalidLangs.join(', ')}` });
+        }
+
+        // Parse rows - handle quoted values with commas
+        const translations = [];
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            const values = [];
+            let current = '';
+            let inQuotes = false;
+
+            for (let j = 0; j < line.length; j++) {
+                const char = line[j];
+                if (char === '"') {
+                    if (inQuotes && line[j + 1] === '"') {
+                        current += '"';
+                        j++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    values.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            values.push(current.trim());
+
+            const key = values[0];
+            if (!key) continue;
+
+            for (let j = 0; j < langCodes.length; j++) {
+                const value = values[j + 1] || '';
+                if (value) {
+                    translations.push({ key, languageCode: langCodes[j], value });
+                }
+            }
+        }
+
+        // Upsert to database
+        const prisma = getPrisma(paths.serverDir);
+        if (!prisma) {
+            return res.status(500).json({ success: false, error: 'Failed to connect to project database' });
+        }
+
+        let updated = 0, created = 0;
+
+        for (const t of translations) {
+            const existing = await prisma.translation.findUnique({
+                where: { key_languageCode: { key: t.key, languageCode: t.languageCode } }
+            });
+
+            if (existing) {
+                if (existing.value !== t.value) {
+                    await prisma.translation.update({
+                        where: { id: existing.id },
+                        data: { value: t.value }
+                    });
+                    updated++;
+                }
+            } else {
+                await prisma.translation.create({ data: t });
+                created++;
+            }
+        }
+
+        await prisma.$disconnect();
+
+        res.json({
+            success: true,
+            message: `Imported ${translations.length} translations (${created} created, ${updated} updated)`,
+            created,
+            updated,
+            total: translations.length
+        });
+    } catch (error) {
+        console.error('Import CSV error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Seed database from existing JSON files for a project
+app.post('/api/projects/:projectId/translations/seed-from-json', async (req, res) => {
+    const { projectId } = req.params;
+    const paths = getProjectPaths(projectId);
+
+    if (!paths) {
+        return res.status(404).json({ success: false, error: 'Project not found' });
+    }
+
+    try {
+        const prisma = getPrisma(paths.serverDir);
+        if (!prisma) {
+            return res.status(500).json({ success: false, error: 'Failed to connect to project database' });
+        }
+
+        let total = 0;
+
+        for (const langCode of SUPPORTED_LANGUAGES) {
+            const jsonData = readLanguageFile(paths.localesDir, langCode);
+            const flattened = flattenObject(jsonData);
+
+            for (const [key, value] of Object.entries(flattened)) {
+                if (typeof value !== 'string') continue;
+
+                await prisma.translation.upsert({
+                    where: { key_languageCode: { key, languageCode: langCode } },
+                    create: { key, languageCode: langCode, value },
+                    update: { value }
+                });
+                total++;
+            }
+        }
+
+        await prisma.$disconnect();
+
+        res.json({
+            success: true,
+            message: `Seeded ${total} translations from JSON files`,
+            total
+        });
+    } catch (error) {
+        console.error('Seed from JSON error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Generate JSON files from database for a project
+app.post('/api/projects/:projectId/translations/generate-json', async (req, res) => {
+    const { projectId } = req.params;
+    const paths = getProjectPaths(projectId);
+
+    if (!paths) {
+        return res.status(404).json({ success: false, error: 'Project not found' });
+    }
+
+    try {
+        const prisma = getPrisma(paths.serverDir);
+        if (!prisma) {
+            return res.status(500).json({ success: false, error: 'Failed to connect to project database' });
+        }
+
+        const translations = await prisma.translation.findMany();
+        await prisma.$disconnect();
+
+        // Group by language
+        const byLanguage = {};
+        SUPPORTED_LANGUAGES.forEach(lang => { byLanguage[lang] = {}; });
+
+        translations.forEach(t => {
+            if (!byLanguage[t.languageCode]) {
+                byLanguage[t.languageCode] = {};
+            }
+            byLanguage[t.languageCode][t.key] = t.value;
+        });
+
+        // Write each language file
+        const results = {};
+        for (const [langCode, flatTranslations] of Object.entries(byLanguage)) {
+            const nestedData = unflattenObject(flatTranslations);
+            const success = writeLanguageFile(paths.localesDir, langCode, nestedData);
+            results[langCode] = success ? Object.keys(flatTranslations).length : 'error';
+        }
+
+        res.json({
+            success: true,
+            message: 'Generated JSON files from database',
+            results
+        });
+    } catch (error) {
+        console.error('Generate JSON error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Get translation stats for a project
+app.get('/api/projects/:projectId/translations/stats', async (req, res) => {
+    const { projectId } = req.params;
+    const paths = getProjectPaths(projectId);
+
+    if (!paths) {
+        return res.status(404).json({ success: false, error: 'Project not found' });
+    }
+
+    try {
+        const prisma = getPrisma(paths.serverDir);
+        if (!prisma) {
+            return res.status(500).json({ success: false, error: 'Failed to connect to project database' });
+        }
+
+        const totalCount = await prisma.translation.count();
+        const byLanguage = await prisma.translation.groupBy({
+            by: ['languageCode'],
+            _count: { id: true }
+        });
+
+        await prisma.$disconnect();
+
+        const stats = {
+            total: totalCount,
+            languages: byLanguage.reduce((acc, item) => {
+                acc[item.languageCode] = item._count.id;
+                return acc;
+            }, {})
+        };
+
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('Stats error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+
 app.listen(PORT, () => {
+
     console.log(`\n🎛️  Multi-Project Dev Control Panel running at:`);
     console.log(`   http://localhost:${PORT}`);
     console.log(`\n📁 Managing ${projects.length} project(s):`);

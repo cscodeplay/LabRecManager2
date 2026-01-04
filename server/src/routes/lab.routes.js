@@ -1104,6 +1104,14 @@ router.post('/shift-requests', authenticate, authorize('admin', 'principal', 'la
         return res.status(404).json({ success: false, message: 'Item not found' });
     }
 
+    // Check if item is currently assigned to a lab
+    if (!item.labId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Item is not currently assigned to any lab. Please assign it to a lab first.'
+        });
+    }
+
     // Verify destination lab exists
     const toLab = await prisma.lab.findFirst({
         where: { id: toLabId, schoolId: req.user.schoolId }
@@ -1146,6 +1154,87 @@ router.post('/shift-requests', authenticate, authorize('admin', 'principal', 'la
         success: true,
         message: 'Shift request created successfully',
         data: { shiftRequest }
+    });
+}));
+
+/**
+ * @route   POST /api/labs/shift-requests/bulk
+ * @desc    Create bulk equipment shift requests
+ * @access  Private (Admin, Lab Assistant)
+ */
+router.post('/shift-requests/bulk', authenticate, authorize('admin', 'principal', 'lab_assistant'), [
+    body('itemIds').isArray({ min: 1 }).withMessage('At least one item ID required'),
+    body('toLabId').isUUID().withMessage('Valid destination lab ID required'),
+    body('reason').trim().notEmpty().withMessage('Reason for shift is required')
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { itemIds, toLabId, reason } = req.body;
+
+    // Verify destination lab exists
+    const toLab = await prisma.lab.findFirst({
+        where: { id: toLabId, schoolId: req.user.schoolId }
+    });
+
+    if (!toLab) {
+        return res.status(404).json({ success: false, message: 'Destination lab not found' });
+    }
+
+    // Get all items
+    const items = await prisma.labItem.findMany({
+        where: { id: { in: itemIds }, schoolId: req.user.schoolId },
+        include: { lab: { select: { id: true, name: true } } }
+    });
+
+    const results = { created: [], skipped: [], errors: [] };
+
+    for (const item of items) {
+        // Validate item
+        if (!item.labId) {
+            results.errors.push({ itemId: item.id, itemNumber: item.itemNumber, error: 'Item not assigned to any lab' });
+            continue;
+        }
+        if (item.labId === toLabId) {
+            results.skipped.push({ itemId: item.id, itemNumber: item.itemNumber, reason: 'Already in destination lab' });
+            continue;
+        }
+
+        // Check for existing pending request
+        const existing = await prisma.equipmentShiftRequest.findFirst({
+            where: { itemId: item.id, status: 'pending' }
+        });
+        if (existing) {
+            results.skipped.push({ itemId: item.id, itemNumber: item.itemNumber, reason: 'Pending request exists' });
+            continue;
+        }
+
+        // Create shift request
+        try {
+            const shiftRequest = await prisma.equipmentShiftRequest.create({
+                data: {
+                    itemId: item.id,
+                    fromLabId: item.labId,
+                    toLabId,
+                    requestedById: req.user.id,
+                    reason
+                }
+            });
+            results.created.push({ itemId: item.id, itemNumber: item.itemNumber, requestId: shiftRequest.id });
+        } catch (error) {
+            results.errors.push({ itemId: item.id, itemNumber: item.itemNumber, error: error.message });
+        }
+    }
+
+    const notFound = itemIds.filter(id => !items.find(i => i.id === id));
+    notFound.forEach(id => results.errors.push({ itemId: id, error: 'Item not found' }));
+
+    res.status(201).json({
+        success: true,
+        message: `Created ${results.created.length} shift request(s)`,
+        data: results
     });
 }));
 

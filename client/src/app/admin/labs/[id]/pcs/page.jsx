@@ -86,6 +86,13 @@ export default function LabInventoryPage() {
     const [shiftToLab, setShiftToLab] = useState('');
     const [shiftReason, setShiftReason] = useState('');
     const [shiftLoading, setShiftLoading] = useState(false);
+
+    // Bulk shift modal state
+    const [bulkShiftModal, setBulkShiftModal] = useState(false);
+    const [bulkShiftToLab, setBulkShiftToLab] = useState('');
+    const [bulkShiftReason, setBulkShiftReason] = useState('');
+    const [bulkShiftLoading, setBulkShiftLoading] = useState(false);
+
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!isAuthenticated) { router.push('/login'); return; }
@@ -568,9 +575,17 @@ export default function LabInventoryPage() {
                             />
                         </div>
                         {selectedItems.size > 0 && (
-                            <button onClick={handleBulkDelete} className="btn bg-red-500 hover:bg-red-600 text-white">
-                                <Trash2 className="w-4 h-4" /> Delete {selectedItems.size} Selected
-                            </button>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => { setBulkShiftModal(true); setBulkShiftToLab(''); setBulkShiftReason(''); }}
+                                    className="btn bg-amber-500 hover:bg-amber-600 text-white"
+                                >
+                                    <ArrowRightLeft className="w-4 h-4" /> Shift {selectedItems.size} Selected
+                                </button>
+                                <button onClick={handleBulkDelete} className="btn bg-red-500 hover:bg-red-600 text-white">
+                                    <Trash2 className="w-4 h-4" /> Delete {selectedItems.size} Selected
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -1262,6 +1277,107 @@ export default function LabInventoryPage() {
                                 className="btn btn-primary flex-1"
                             >
                                 {shiftLoading ? 'Submitting...' : 'Submit Request'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Bulk Shift Modal */}
+            {bulkShiftModal && selectedItems.size > 0 && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full">
+                        <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                                    <ArrowRightLeft className="w-5 h-5 text-amber-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-slate-900">Bulk Move Equipment</h3>
+                                    <p className="text-sm text-slate-500">{selectedItems.size} items selected</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setBulkShiftModal(false)} className="text-slate-400 hover:text-slate-600">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Current Lab</label>
+                                <p className="text-slate-600 bg-slate-50 px-3 py-2 rounded-lg">{lab?.name}</p>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Move to Lab *</label>
+                                <select
+                                    value={bulkShiftToLab}
+                                    onChange={(e) => setBulkShiftToLab(e.target.value)}
+                                    className="input"
+                                    required
+                                >
+                                    <option value="">Select destination lab...</option>
+                                    {availableLabs.map(l => (
+                                        <option key={l.id} value={l.id}>{l.name}{l.roomNumber ? ` (${l.roomNumber})` : ''}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Reason for Transfer *</label>
+                                <textarea
+                                    value={bulkShiftReason}
+                                    onChange={(e) => setBulkShiftReason(e.target.value)}
+                                    className="input min-h-[80px]"
+                                    placeholder="Why do these items need to be moved?"
+                                    required
+                                />
+                            </div>
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                <p className="text-sm text-amber-700">
+                                    <strong>Note:</strong> All shift requests will need admin approval before items are moved.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-slate-200 flex gap-3">
+                            <button
+                                onClick={() => setBulkShiftModal(false)}
+                                className="btn btn-secondary flex-1"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    if (!bulkShiftToLab || !bulkShiftReason.trim()) {
+                                        toast.error('Please select destination and provide reason');
+                                        return;
+                                    }
+                                    setBulkShiftLoading(true);
+                                    try {
+                                        const res = await labsAPI.bulkShiftRequest(
+                                            Array.from(selectedItems),
+                                            bulkShiftToLab,
+                                            bulkShiftReason
+                                        );
+                                        const data = res.data.data;
+                                        if (data.created.length > 0) {
+                                            toast.success(`Created ${data.created.length} shift request(s)`);
+                                        }
+                                        if (data.skipped.length > 0) {
+                                            toast.info(`Skipped ${data.skipped.length} item(s) (already pending or in destination)`);
+                                        }
+                                        if (data.errors.length > 0) {
+                                            toast.error(`${data.errors.length} item(s) had errors`);
+                                        }
+                                        setBulkShiftModal(false);
+                                        setSelectedItems(new Set());
+                                    } catch (error) {
+                                        toast.error(error.response?.data?.message || 'Failed to create bulk shift requests');
+                                    } finally {
+                                        setBulkShiftLoading(false);
+                                    }
+                                }}
+                                disabled={bulkShiftLoading || !bulkShiftToLab || !bulkShiftReason.trim()}
+                                className="btn btn-primary flex-1"
+                            >
+                                {bulkShiftLoading ? 'Submitting...' : `Submit ${selectedItems.size} Request(s)`}
                             </button>
                         </div>
                     </div>

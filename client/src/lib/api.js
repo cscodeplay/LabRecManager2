@@ -266,6 +266,7 @@ export const labsAPI = {
     assignPcToGroup: (groupId, pcId) => api.put(`/labs/groups/${groupId}/assign-pc`, { pcId }),
     // Equipment Shifting
     createShiftRequest: (itemId, toLabId, reason) => api.post('/labs/shift-requests', { itemId, toLabId, reason }),
+    bulkShiftRequest: (itemIds, toLabId, reason) => api.post('/labs/shift-requests/bulk', { itemIds, toLabId, reason }),
     getShiftRequests: (params) => api.get('/labs/shift-requests', { params }),
     approveShiftRequest: (requestId, adminNotes) => api.put(`/labs/shift-requests/${requestId}/approve`, { adminNotes }),
     rejectShiftRequest: (requestId, adminNotes) => api.put(`/labs/shift-requests/${requestId}/reject`, { adminNotes }),

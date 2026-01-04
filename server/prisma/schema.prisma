@@ -1104,14 +1104,15 @@ model GeneratedReport {
 }
 
 model Translation {
-  id           String   @id @default(uuid())
-  entityType   String   @map("entity_type")
-  entityKey    String   @map("entity_key")
-  languageCode String   @map("language_code")
-  translation  String
-  createdAt    DateTime @default(now()) @map("created_at")
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key          String    @db.VarChar(255)
+  languageCode String    @map("language_code") @db.VarChar(10)
+  value        String
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt    DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
 
-  @@unique([entityType, entityKey, languageCode])
+  @@unique([key, languageCode])
+  @@index([languageCode])
   @@map("translations")
 }
 

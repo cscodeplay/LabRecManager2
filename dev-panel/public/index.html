@@ -609,6 +609,61 @@
         </div>
         <div class="git-status" id="git-status">Select a project to view git status...</div>
       </div>
+
+      <!-- Translation Management Section -->
+      <div class="card git-section">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">🌐</div>
+            Translation Management
+          </div>
+          <span class="status" id="translation-status"
+            style="background: rgba(102, 126, 234, 0.3); color: #667eea; border: 1px solid #667eea;">
+            Ready
+          </span>
+        </div>
+
+        <div
+          style="margin-bottom: 15px; padding: 12px; background: rgba(102, 126, 234, 0.1); border-radius: 10px; font-size: 0.85rem; color: #a0aec0;">
+          📋 <strong>Workflow:</strong> Seed from JSON → Export CSV → Translate externally → Import CSV → Generate JSON
+        </div>
+
+        <div class="btn-group" style="margin-bottom: 15px;">
+          <button class="btn" onclick="seedFromJson()"
+            style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: #000;">
+            📥 Seed from JSON
+          </button>
+          <button class="btn btn-push" onclick="exportTranslationsCSV()">
+            📤 Export CSV
+          </button>
+        </div>
+
+        <div
+          style="margin-bottom: 15px; padding: 15px; background: rgba(0, 0, 0, 0.2); border-radius: 12px; border: 2px dashed rgba(255,255,255,0.2);">
+          <label style="display: block; margin-bottom: 10px; color: #a0aec0; font-weight: 500;">
+            📂 Import Translated CSV:
+          </label>
+          <input type="file" id="csv-file-input" accept=".csv"
+            style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #fff;">
+          <button class="btn btn-start" onclick="importTranslationsCSV()" style="width: 100%; margin-top: 10px;">
+            📤 Upload & Import CSV
+          </button>
+        </div>
+
+        <div class="btn-group">
+          <button class="btn" onclick="generateJsonFiles()"
+            style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: #000;">
+            🔄 Generate JSON Files
+          </button>
+          <button class="btn btn-secondary" onclick="getTranslationStats()">
+            📊 View Stats
+          </button>
+        </div>
+
+        <div class="git-status" id="translation-log" style="margin-top: 15px;">
+          Select a project and use the buttons above to manage translations...
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1048,6 +1103,189 @@
       allStatuses = await res.json();
       updateProjectIndicators();
     }, 5000);
+
+    // ==========================================
+    // TRANSLATION MANAGEMENT FUNCTIONS
+    // ==========================================
+
+    function updateTranslationLog(message, isError = false) {
+      const log = document.getElementById('translation-log');
+      const time = new Date().toLocaleTimeString();
+      const color = isError ? '#ff6b6b' : '#38ef7d';
+      log.innerHTML = `<span style="color: ${color};">[${time}]</span> ${message}`;
+    }
+
+    function updateTranslationStatus(status, isError = false) {
+      const statusEl = document.getElementById('translation-status');
+      statusEl.textContent = status;
+      if (isError) {
+        statusEl.style.background = 'rgba(255, 107, 107, 0.3)';
+        statusEl.style.color = '#ff6b6b';
+        statusEl.style.borderColor = '#ff6b6b';
+      } else {
+        statusEl.style.background = 'rgba(56, 239, 125, 0.3)';
+        statusEl.style.color = '#38ef7d';
+        statusEl.style.borderColor = '#38ef7d';
+      }
+    }
+
+    async function exportTranslationsCSV() {
+      if (!currentProject) return showToast('Select a project first', 'error');
+
+      updateTranslationStatus('Exporting...');
+      updateTranslationLog('Exporting translations to CSV...');
+
+      try {
+        const response = await fetch(`/api/projects/${currentProject.id}/translations/export-csv`);
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Export failed');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `translations-${currentProject.id}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+
+        updateTranslationStatus('Exported');
+        updateTranslationLog('✅ CSV downloaded successfully!');
+        showToast('CSV exported successfully!');
+      } catch (err) {
+        updateTranslationStatus('Error', true);
+        updateTranslationLog('❌ Export failed: ' + err.message, true);
+        showToast('Export failed: ' + err.message, 'error');
+      }
+    }
+
+    async function importTranslationsCSV() {
+      if (!currentProject) return showToast('Select a project first', 'error');
+
+      const fileInput = document.getElementById('csv-file-input');
+      const file = fileInput.files[0];
+
+      if (!file) {
+        return showToast('Please select a CSV file first', 'error');
+      }
+
+      updateTranslationStatus('Importing...');
+      updateTranslationLog('Importing translations from CSV...');
+
+      try {
+        const csvText = await file.text();
+
+        const response = await fetch(`/api/projects/${currentProject.id}/translations/import-csv`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/csv' },
+          body: csvText
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Import failed');
+        }
+
+        updateTranslationStatus('Imported');
+        updateTranslationLog(`✅ ${data.message}`);
+        showToast(data.message);
+        fileInput.value = '';
+      } catch (err) {
+        updateTranslationStatus('Error', true);
+        updateTranslationLog('❌ Import failed: ' + err.message, true);
+        showToast('Import failed: ' + err.message, 'error');
+      }
+    }
+
+    async function seedFromJson() {
+      if (!currentProject) return showToast('Select a project first', 'error');
+
+      if (!confirm('This will populate the database from existing JSON files. Continue?')) return;
+
+      updateTranslationStatus('Seeding...');
+      updateTranslationLog('Seeding database from JSON files...');
+
+      try {
+        const response = await fetch(`/api/projects/${currentProject.id}/translations/seed-from-json`, {
+          method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Seed failed');
+        }
+
+        updateTranslationStatus('Seeded');
+        updateTranslationLog(`✅ ${data.message}`);
+        showToast(data.message);
+      } catch (err) {
+        updateTranslationStatus('Error', true);
+        updateTranslationLog('❌ Seed failed: ' + err.message, true);
+        showToast('Seed failed: ' + err.message, 'error');
+      }
+    }
+
+    async function generateJsonFiles() {
+      if (!currentProject) return showToast('Select a project first', 'error');
+
+      updateTranslationStatus('Generating...');
+      updateTranslationLog('Generating JSON files from database...');
+
+      try {
+        const response = await fetch(`/api/projects/${currentProject.id}/translations/generate-json`, {
+          method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Generation failed');
+        }
+
+        const langCount = Object.keys(data.results).length;
+        updateTranslationStatus('Generated');
+        updateTranslationLog(`✅ Generated JSON files for ${langCount} languages!`);
+        showToast(`Generated JSON files for ${langCount} languages!`);
+      } catch (err) {
+        updateTranslationStatus('Error', true);
+        updateTranslationLog('❌ Generation failed: ' + err.message, true);
+        showToast('Generation failed: ' + err.message, 'error');
+      }
+    }
+
+    async function getTranslationStats() {
+      if (!currentProject) return showToast('Select a project first', 'error');
+
+      updateTranslationStatus('Loading...');
+
+      try {
+        const response = await fetch(`/api/projects/${currentProject.id}/translations/stats`);
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to get stats');
+        }
+
+        const stats = data.stats;
+        const langStats = Object.entries(stats.languages)
+          .map(([lang, count]) => `${lang}: ${count}`)
+          .join(', ');
+
+        updateTranslationStatus('Ready');
+        updateTranslationLog(`📊 Total: ${stats.total} translations | ${langStats}`);
+        showToast(`Total: ${stats.total} translations across ${Object.keys(stats.languages).length} languages`);
+      } catch (err) {
+        updateTranslationStatus('Error', true);
+        updateTranslationLog('❌ Stats failed: ' + err.message, true);
+        showToast('Failed to get stats: ' + err.message, 'error');
+      }
+    }
   </script>
 </body>
 
