@@ -45,7 +45,8 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             where: { folderId, deletedAt: null },
             _sum: { fileSize: true }
         });
-        let totalSize = directDocs._sum.fileSize || 0;
+        // Handle BigInt - convert to Number
+        let totalSize = Number(directDocs._sum.fileSize || 0);
 
         // Get child folders and calculate their sizes recursively
         const childFolders = await prisma.documentFolder.findMany({

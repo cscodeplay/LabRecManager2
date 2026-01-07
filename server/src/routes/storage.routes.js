@@ -179,4 +179,151 @@ router.post('/recalculate', authenticate, asyncHandler(async (req, res) => {
     });
 }));
 
+// Default quotas by role (in MB)
+const DEFAULT_QUOTAS = {
+    student: 100,      // 100 MB
+    instructor: 1024,  // 1 GB
+    lab_assistant: 1024, // 1 GB
+    principal: 5120,   // 5 GB
+    admin: 10240       // 10 GB
+};
+
+/**
+ * @route   GET /api/storage/defaults
+ * @desc    Get default storage quotas by role
+ * @access  Private (Admin/Principal)
+ */
+router.get('/defaults', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    res.json({
+        success: true,
+        data: {
+            defaults: Object.entries(DEFAULT_QUOTAS).map(([role, quotaMb]) => ({
+                role,
+                quotaMb,
+                quotaFormatted: quotaMb >= 1024 ? `${(quotaMb / 1024).toFixed(1)} GB` : `${quotaMb} MB`
+            }))
+        }
+    });
+}));
+
+/**
+ * @route   PUT /api/storage/defaults
+ * @desc    Update default storage quota for a role
+ * @access  Private (Admin/Principal)
+ */
+router.put('/defaults', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { role, quotaMb } = req.body;
+
+    if (!role || !['student', 'instructor', 'lab_assistant', 'principal', 'admin'].includes(role)) {
+        return res.status(400).json({ success: false, message: 'Invalid role' });
+    }
+
+    if (!quotaMb || quotaMb < 0) {
+        return res.status(400).json({ success: false, message: 'Invalid quota value' });
+    }
+
+    // Store in database settings or update users directly
+    // For now, update all existing users with that role who have the old default
+    const oldDefault = DEFAULT_QUOTAS[role];
+
+    // Update all users with the specified role
+    const result = await prisma.user.updateMany({
+        where: {
+            schoolId: req.user.schoolId,
+            role: role
+        },
+        data: { storageQuotaMb: parseInt(quotaMb) }
+    });
+
+    res.json({
+        success: true,
+        message: `Updated quota to ${quotaMb} MB for ${result.count} ${role}(s)`
+    });
+}));
+
+/**
+ * @route   POST /api/storage/apply-defaults
+ * @desc    Apply default quotas to all users based on their role
+ * @access  Private (Admin/Principal)
+ */
+router.post('/apply-defaults', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { studentQuotaMb, instructorQuotaMb } = req.body;
+
+    const studentQuota = studentQuotaMb || DEFAULT_QUOTAS.student;
+    const instructorQuota = instructorQuotaMb || DEFAULT_QUOTAS.instructor;
+
+    // Update students
+    const studentResult = await prisma.user.updateMany({
+        where: {
+            schoolId: req.user.schoolId,
+            role: 'student'
+        },
+        data: { storageQuotaMb: parseInt(studentQuota) }
+    });
+
+    // Update instructors
+    const instructorResult = await prisma.user.updateMany({
+        where: {
+            schoolId: req.user.schoolId,
+            role: 'instructor'
+        },
+        data: { storageQuotaMb: parseInt(instructorQuota) }
+    });
+
+    // Update lab assistants (same as instructors)
+    const labAssistantResult = await prisma.user.updateMany({
+        where: {
+            schoolId: req.user.schoolId,
+            role: 'lab_assistant'
+        },
+        data: { storageQuotaMb: parseInt(instructorQuota) }
+    });
+
+    res.json({
+        success: true,
+        message: 'Default quotas applied',
+        data: {
+            students: { count: studentResult.count, quotaMb: studentQuota },
+            instructors: { count: instructorResult.count, quotaMb: instructorQuota },
+            labAssistants: { count: labAssistantResult.count, quotaMb: instructorQuota }
+        }
+    });
+}));
+
+/**
+ * @route   GET /api/storage/summary
+ * @desc    Get storage summary by role
+ * @access  Private (Admin/Principal)
+ */
+router.get('/summary', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const roles = ['student', 'instructor', 'lab_assistant', 'principal', 'admin'];
+    const summary = [];
+
+    for (const role of roles) {
+        const users = await prisma.user.findMany({
+            where: { schoolId: req.user.schoolId, role },
+            select: { storageQuotaMb: true, storageUsedBytes: true }
+        });
+
+        const totalUsers = users.length;
+        const totalUsedBytes = users.reduce((sum, u) => sum + Number(u.storageUsedBytes || 0), 0);
+        const totalQuotaBytes = users.reduce((sum, u) => sum + ((u.storageQuotaMb || DEFAULT_QUOTAS[role]) * 1024 * 1024), 0);
+
+        summary.push({
+            role,
+            userCount: totalUsers,
+            totalUsedBytes,
+            totalUsedFormatted: formatBytes(totalUsedBytes),
+            totalQuotaBytes,
+            averageQuotaMb: totalUsers > 0 ? Math.round(users.reduce((sum, u) => sum + (u.storageQuotaMb || DEFAULT_QUOTAS[role]), 0) / totalUsers) : DEFAULT_QUOTAS[role],
+            percentUsed: totalQuotaBytes > 0 ? Math.round((totalUsedBytes / totalQuotaBytes) * 100) : 0
+        });
+    }
+
+    res.json({
+        success: true,
+        data: { summary }
+    });
+}));
+
 module.exports = router;

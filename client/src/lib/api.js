@@ -118,6 +118,11 @@ export const storageAPI = {
     setQuota: (userId, quotaMb) => api.put(`/storage/users/${userId}/quota`, { quotaMb }),
     setBulkQuota: (data) => api.put('/storage/users/bulk-quota', data),
     recalculate: () => api.post('/storage/recalculate'),
+    // Default quotas by role
+    getDefaults: () => api.get('/storage/defaults'),
+    setDefaultForRole: (role, quotaMb) => api.put('/storage/defaults', { role, quotaMb }),
+    applyDefaults: (studentQuotaMb, instructorQuotaMb) => api.post('/storage/apply-defaults', { studentQuotaMb, instructorQuotaMb }),
+    getSummary: () => api.get('/storage/summary'),
 };
 
 // Folders API - Document folder management
