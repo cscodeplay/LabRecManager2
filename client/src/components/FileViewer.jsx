@@ -1,28 +1,23 @@
+'use client';
+
 import { useEffect, useRef, useState } from 'react';
 import * as docx from 'docx-preview';
-import jspreadsheet from 'jspreadsheet-ce';
 import * as xlsx from 'xlsx';
 
-// Import styles if possible, otherwise we might need CDN links or global css
-// Typically jspreadsheet comes with css
-try {
-    require('jspreadsheet-ce/dist/jspreadsheet.css');
-    require('jsuites/dist/jsuites.css');
-} catch (e) {
-    // If CSS import fails (next.js sometimes picky), we fall back to CDN in render
-    console.warn('Could not import jspreadsheet css', e);
-}
-
-export default function FileViewer({ url, fileType }) {
+export default function FileViewer({ url, fileType, name }) {
     const containerRef = useRef(null);
-    const spreadsheetRef = useRef(null); // Reference to the spreadsheet instance
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [sheetData, setSheetData] = useState(null);
+    const [sheets, setSheets] = useState([]);
+    const [activeSheet, setActiveSheet] = useState(0);
 
     useEffect(() => {
         if (!url || !containerRef.current) return;
         setLoading(true);
         setError(null);
+        setSheetData(null);
+        setSheets([]);
 
         let active = true;
 
@@ -36,48 +31,42 @@ export default function FileViewer({ url, fileType }) {
 
                 if (fileType === 'docx') {
                     // DOCX Preview
-                    // Clear container
                     containerRef.current.innerHTML = '';
                     await docx.renderAsync(blob, containerRef.current, containerRef.current, {
                         className: 'docx-viewer',
                         inWrapper: true
                     });
+                    setLoading(false);
                 }
                 else if (['xlsx', 'xls', 'csv'].includes(fileType)) {
-                    // Excel/CSV using Jspreadsheet
+                    // Excel/CSV using SheetJS only - convert to HTML table
                     const data = await blob.arrayBuffer();
-                    let jsonData = [];
+                    let allSheets = [];
 
                     if (fileType === 'csv') {
-                        // For CSV, we can just read text or use xlsx
+                        // For CSV
                         const text = await new Response(blob).text();
-                        jsonData = jspreadsheet.helpers.parseCSV(text);
+                        const rows = text.split('\n').map(row =>
+                            row.split(',').map(cell => cell.trim().replace(/^"|"$/g, ''))
+                        );
+                        allSheets = [{ name: 'Sheet1', data: rows }];
                     } else {
-                        // For Excel, use SheetJS to convert to array
+                        // For Excel, use SheetJS
                         const workbook = xlsx.read(data, { type: 'array' });
-                        const firstSheetName = workbook.SheetNames[0];
-                        const worksheet = workbook.Sheets[firstSheetName];
-                        jsonData = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+                        allSheets = workbook.SheetNames.map(sheetName => {
+                            const worksheet = workbook.Sheets[sheetName];
+                            const jsonData = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+                            return { name: sheetName, data: jsonData };
+                        });
                     }
 
                     if (!active) return;
 
-                    containerRef.current.innerHTML = '';
-                    // Create wrapper for spreadsheet to control size
-                    const spreadDiv = document.createElement('div');
-                    containerRef.current.appendChild(spreadDiv);
-
-                    spreadsheetRef.current = jspreadsheet(spreadDiv, {
-                        data: jsonData,
-                        search: true,
-                        pagination: 20,
-                        tableOverflow: true,
-                        tableWidth: '100%',
-                        tableHeight: '600px',
-                        defaultColWidth: 100,
-                    });
+                    setSheets(allSheets);
+                    setSheetData(allSheets[0]?.data || []);
+                    setActiveSheet(0);
+                    setLoading(false);
                 }
-                setLoading(false);
             } catch (err) {
                 console.error(err);
                 if (active) {
@@ -91,22 +80,52 @@ export default function FileViewer({ url, fileType }) {
 
         return () => {
             active = false;
-            if (spreadsheetRef.current) {
-                jspreadsheet.destroy(spreadsheetRef.current);
-                spreadsheetRef.current = null;
-            }
             if (containerRef.current) {
                 containerRef.current.innerHTML = '';
             }
         };
     }, [url, fileType]);
 
+    const handleSheetChange = (index) => {
+        setActiveSheet(index);
+        setSheetData(sheets[index]?.data || []);
+    };
+
+    // Render spreadsheet as HTML table
+    const renderSpreadsheet = () => {
+        if (!sheetData || sheetData.length === 0) {
+            return <p className="text-slate-500 text-center py-8">No data in this sheet</p>;
+        }
+
+        return (
+            <div className="overflow-auto max-h-[500px]">
+                <table className="w-full border-collapse text-sm">
+                    <tbody>
+                        {sheetData.map((row, rowIndex) => (
+                            <tr key={rowIndex} className={rowIndex === 0 ? 'bg-slate-100 font-semibold sticky top-0' : 'hover:bg-slate-50'}>
+                                {/* Row number */}
+                                <td className="px-2 py-1 border border-slate-200 bg-slate-50 text-slate-500 text-xs text-center w-10">
+                                    {rowIndex + 1}
+                                </td>
+                                {(Array.isArray(row) ? row : [row]).map((cell, cellIndex) => (
+                                    <td
+                                        key={cellIndex}
+                                        className="px-2 py-1 border border-slate-200 max-w-xs truncate"
+                                        title={String(cell ?? '')}
+                                    >
+                                        {cell ?? ''}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        );
+    };
+
     return (
         <div className="relative w-full h-full min-h-[500px] bg-white rounded-lg border border-slate-200 overflow-hidden flex flex-col">
-            {/* Fallback CSS if import failed */}
-            <link rel="stylesheet" href="https://bossanova.uk/jspreadsheet/v4/jexcel.css" type="text/css" />
-            <link rel="stylesheet" href="https://jsuites.net/v4/jsuites.css" type="text/css" />
-
             {loading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-white z-10">
                     <div className="flex flex-col items-center">
@@ -122,7 +141,29 @@ export default function FileViewer({ url, fileType }) {
                 </div>
             )}
 
-            <div className="flex-1 overflow-auto bg-slate-50 p-4" ref={containerRef}></div>
+            {/* Sheet tabs for Excel files with multiple sheets */}
+            {sheets.length > 1 && !loading && (
+                <div className="flex gap-1 p-2 bg-slate-100 border-b overflow-x-auto">
+                    {sheets.map((sheet, index) => (
+                        <button
+                            key={index}
+                            onClick={() => handleSheetChange(index)}
+                            className={`px-3 py-1.5 text-sm rounded-md whitespace-nowrap transition-colors ${activeSheet === index
+                                    ? 'bg-white shadow text-primary-600 font-medium'
+                                    : 'text-slate-600 hover:bg-white/50'
+                                }`}
+                        >
+                            {sheet.name}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {/* Content area */}
+            <div className="flex-1 overflow-auto bg-slate-50 p-4" ref={containerRef}>
+                {/* Render spreadsheet data as table for Excel/CSV */}
+                {['xlsx', 'xls', 'csv'].includes(fileType) && !loading && !error && renderSpreadsheet()}
+            </div>
         </div>
     );
 }
