@@ -78,15 +78,20 @@ export const filesAPI = {
 export const documentsAPI = {
     getAll: (params) => api.get('/documents', { params }),
     getById: (id) => api.get(`/documents/${id}`),
-    upload: (file, data) => {
+    upload: (file, data, onProgress) => {
         const formData = new FormData();
         formData.append('file', file);
         if (data.name) formData.append('name', data.name);
         if (data.description) formData.append('description', data.description);
         if (data.category) formData.append('category', data.category);
         if (data.isPublic) formData.append('isPublic', data.isPublic);
+        if (data.folderId) formData.append('folderId', data.folderId);
         return api.post('/documents', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
+            headers: { 'Content-Type': 'multipart/form-data' },
+            onUploadProgress: onProgress ? (progressEvent) => {
+                const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                onProgress(percent, progressEvent.loaded, progressEvent.total);
+            } : undefined
         });
     },
     update: (id, data) => api.put(`/documents/${id}`, data),
@@ -129,6 +134,8 @@ export const foldersAPI = {
     update: (id, data) => api.put(`/folders/${id}`, data),
     delete: (id) => api.delete(`/folders/${id}`),
     moveDocuments: (folderId, documentIds) => api.post(`/folders/${folderId}/move-documents`, { documentIds }),
+    copy: (folderId, targetFolderId) => api.post(`/folders/${folderId}/copy`, { targetFolderId }),
+    bulkMove: (folderIds, targetFolderId) => api.post('/folders/bulk-move', { folderIds, targetFolderId }),
 };
 
 // Devices API - for camera, mic, speaker testing

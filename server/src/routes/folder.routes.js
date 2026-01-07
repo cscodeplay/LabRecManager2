@@ -38,14 +38,53 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         orderBy: { name: 'asc' }
     });
 
+    // Helper function to recursively calculate folder size
+    const calculateFolderSize = async (folderId) => {
+        // Get direct documents size
+        const directDocs = await prisma.document.aggregate({
+            where: { folderId, deletedAt: null },
+            _sum: { fileSize: true }
+        });
+        let totalSize = directDocs._sum.fileSize || 0;
+
+        // Get child folders and calculate their sizes recursively
+        const childFolders = await prisma.documentFolder.findMany({
+            where: { parentId: folderId, deletedAt: null },
+            select: { id: true }
+        });
+
+        for (const child of childFolders) {
+            totalSize += await calculateFolderSize(child.id);
+        }
+
+        return totalSize;
+    };
+
+    // Format file size helper
+    const formatSize = (bytes) => {
+        if (!bytes || bytes === 0) return '-';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    };
+
+    // Calculate sizes for all folders
+    const foldersWithSize = await Promise.all(folders.map(async (f) => {
+        const totalSize = await calculateFolderSize(f.id);
+        return {
+            ...f,
+            documentCount: f._count.documents,
+            subfolderCount: f._count.children,
+            totalSize,
+            totalSizeFormatted: formatSize(totalSize)
+        };
+    }));
+
     res.json({
         success: true,
         data: {
-            folders: folders.map(f => ({
-                ...f,
-                documentCount: f._count.documents,
-                subfolderCount: f._count.children
-            }))
+            folders: foldersWithSize
         }
     });
 }));
@@ -257,6 +296,159 @@ router.post('/:id/move-documents', authenticate, authorize('admin', 'principal',
         success: true,
         message: `Moved ${result.count} document(s)`,
         data: { movedCount: result.count }
+    });
+}));
+
+/**
+ * @route   POST /api/folders/:id/copy
+ * @desc    Copy a folder and its contents to a target folder
+ * @access  Private (Admin/Principal/Lab Assistant/Instructor)
+ */
+router.post('/:id/copy', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+    const { targetFolderId } = req.body;
+    const sourceFolderId = req.params.id;
+
+    // Get source folder
+    const sourceFolder = await prisma.documentFolder.findFirst({
+        where: { id: sourceFolderId, schoolId: req.user.schoolId, deletedAt: null }
+    });
+
+    if (!sourceFolder) {
+        return res.status(404).json({ success: false, message: 'Source folder not found' });
+    }
+
+    // Validate target (null = root)
+    const targetId = targetFolderId === 'root' ? null : targetFolderId;
+    if (targetId) {
+        const targetFolder = await prisma.documentFolder.findFirst({
+            where: { id: targetId, schoolId: req.user.schoolId, deletedAt: null }
+        });
+        if (!targetFolder) {
+            return res.status(404).json({ success: false, message: 'Target folder not found' });
+        }
+        // Prevent copying into itself or its descendants
+        if (targetId === sourceFolderId) {
+            return res.status(400).json({ success: false, message: 'Cannot copy folder into itself' });
+        }
+    }
+
+    // Recursive copy function
+    const copyFolder = async (folderId, newParentId) => {
+        const folder = await prisma.documentFolder.findUnique({ where: { id: folderId } });
+        if (!folder) return null;
+
+        // Create new folder
+        const newFolder = await prisma.documentFolder.create({
+            data: {
+                schoolId: req.user.schoolId,
+                createdById: req.user.id,
+                name: `${folder.name} (Copy)`,
+                parentId: newParentId
+            }
+        });
+
+        // Copy documents in this folder
+        const documents = await prisma.document.findMany({
+            where: { folderId: folder.id, deletedAt: null }
+        });
+
+        for (const doc of documents) {
+            await prisma.document.create({
+                data: {
+                    schoolId: req.user.schoolId,
+                    folderId: newFolder.id,
+                    name: doc.name,
+                    description: doc.description,
+                    fileType: doc.fileType,
+                    fileSize: doc.fileSize,
+                    url: doc.url,
+                    publicId: doc.publicId,
+                    category: doc.category,
+                    isPublic: doc.isPublic,
+                    uploadedById: req.user.id
+                }
+            });
+        }
+
+        // Recursively copy child folders
+        const childFolders = await prisma.documentFolder.findMany({
+            where: { parentId: folder.id, deletedAt: null }
+        });
+
+        for (const child of childFolders) {
+            await copyFolder(child.id, newFolder.id);
+        }
+
+        return newFolder;
+    };
+
+    const copiedFolder = await copyFolder(sourceFolderId, targetId);
+
+    res.json({
+        success: true,
+        message: 'Folder copied successfully',
+        data: { folder: copiedFolder }
+    });
+}));
+
+/**
+ * @route   POST /api/folders/bulk-move
+ * @desc    Move multiple folders to a target folder
+ * @access  Private (Admin/Principal/Lab Assistant/Instructor)
+ */
+router.post('/bulk-move', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+    const { folderIds, targetFolderId } = req.body;
+
+    if (!folderIds || !Array.isArray(folderIds) || folderIds.length === 0) {
+        return res.status(400).json({ success: false, message: 'Folder IDs required' });
+    }
+
+    const targetId = targetFolderId === 'root' ? null : targetFolderId;
+
+    // Validate target folder
+    if (targetId) {
+        const targetFolder = await prisma.documentFolder.findFirst({
+            where: { id: targetId, schoolId: req.user.schoolId, deletedAt: null }
+        });
+        if (!targetFolder) {
+            return res.status(404).json({ success: false, message: 'Target folder not found' });
+        }
+    }
+
+    // Move each folder (skip if trying to move into itself or its descendants)
+    let movedCount = 0;
+    for (const folderId of folderIds) {
+        // Skip if trying to move to itself
+        if (folderId === targetId) continue;
+
+        // Check for circular reference
+        let isDescendant = false;
+        let checkId = targetId;
+        while (checkId) {
+            const checkFolder = await prisma.documentFolder.findUnique({
+                where: { id: checkId },
+                select: { parentId: true }
+            });
+            if (checkFolder?.parentId === folderId) {
+                isDescendant = true;
+                break;
+            }
+            checkId = checkFolder?.parentId;
+        }
+
+        if (isDescendant) continue;
+
+        await prisma.documentFolder.update({
+            where: { id: folderId },
+            data: { parentId: targetId }
+        });
+        movedCount++;
+    }
+
+    res.json({
+        success: true,
+        message: `Moved ${movedCount} folder(s)`,
+        data: { movedCount }
     });
 }));
 

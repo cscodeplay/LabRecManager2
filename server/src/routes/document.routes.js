@@ -208,7 +208,17 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant'),
         });
     }
 
-    const { name, description, category, isPublic } = req.body;
+    const { name, description, category, isPublic, folderId } = req.body;
+
+    // Validate folder if provided
+    if (folderId && folderId !== 'null' && folderId !== 'undefined') {
+        const folder = await prisma.documentFolder.findFirst({
+            where: { id: folderId, schoolId: req.user.schoolId, deletedAt: null }
+        });
+        if (!folder) {
+            return res.status(404).json({ success: false, message: 'Target folder not found' });
+        }
+    }
 
     // Upload to Cloudinary
     const result = await cloudinary.uploadFile(
@@ -222,6 +232,7 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant'),
         data: {
             schoolId: req.user.schoolId,
             uploadedById: req.user.id,
+            folderId: (folderId && folderId !== 'null' && folderId !== 'undefined') ? folderId : null,
             name: name || req.file.originalname.replace(/\.[^.]+$/, ''),
             description: description || null,
             fileName: req.file.originalname,

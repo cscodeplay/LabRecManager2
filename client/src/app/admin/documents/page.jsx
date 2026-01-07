@@ -62,6 +62,8 @@ export default function DocumentsPage() {
     const [uploadFile, setUploadFile] = useState(null);
     const [uploadData, setUploadData] = useState({ name: '', description: '', category: '', isPublic: false });
     const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [uploadStartTime, setUploadStartTime] = useState(null);
 
     // Create Folder modal
     const [showCreateFolder, setShowCreateFolder] = useState(false);
@@ -330,18 +332,45 @@ export default function DocumentsPage() {
         if (!uploadData.name) { toast.error('Name is required'); return; }
 
         setUploading(true);
+        setUploadProgress(0);
+        setUploadStartTime(Date.now());
+
         try {
-            await documentsAPI.upload(uploadFile, uploadData);
+            const dataWithFolder = {
+                ...uploadData,
+                folderId: currentFolder ? currentFolder.id : null
+            };
+
+            await documentsAPI.upload(uploadFile, dataWithFolder, (percent, loaded, total) => {
+                setUploadProgress(percent);
+            });
+
             toast.success('Document uploaded!');
             setShowUpload(false);
             setUploadFile(null);
             setUploadData({ name: '', description: '', category: '', isPublic: false });
+            setUploadProgress(0);
+            setUploadStartTime(null);
             loadDocuments();
+            loadStorage();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Upload failed');
         } finally {
             setUploading(false);
+            setUploadProgress(0);
+            setUploadStartTime(null);
         }
+    };
+
+    // Calculate time remaining for upload
+    const getUploadTimeRemaining = () => {
+        if (!uploadStartTime || uploadProgress === 0) return '';
+        const elapsed = Date.now() - uploadStartTime;
+        const totalEstimated = (elapsed / uploadProgress) * 100;
+        const remaining = totalEstimated - elapsed;
+        if (remaining < 1000) return 'Almost done...';
+        if (remaining < 60000) return `${Math.ceil(remaining / 1000)}s remaining`;
+        return `${Math.ceil(remaining / 60000)}m remaining`;
     };
 
     const handleEdit = (doc) => {
@@ -523,12 +552,23 @@ export default function DocumentsPage() {
 
     const handleSelectAll = (e) => {
         if (e.target.checked) {
-            setSelectedDocs(new Set(sortedDocuments.map(d => activeTab === 'my' ? d.id : d.document.id)));
+            // Select all documents
+            const allDocIds = sortedDocuments.map(d => activeTab === 'my' ? d.id : d.document?.id).filter(Boolean);
+            setSelectedDocs(new Set(allDocIds));
+            // Select all folders
             setSelectedFolders(new Set(folders.map(f => f.id)));
         } else {
             setSelectedDocs(new Set());
             setSelectedFolders(new Set());
         }
+    };
+
+    // Check if all items are selected
+    const isAllSelected = () => {
+        const totalDocs = sortedDocuments.length;
+        const totalFolders = folders.length;
+        if (totalDocs + totalFolders === 0) return false;
+        return selectedDocs.size === totalDocs && selectedFolders.size === totalFolders;
     };
 
     const handleBulkCopy = (mode) => {
@@ -555,26 +595,22 @@ export default function DocumentsPage() {
                 if (mode === 'copy') {
                     await documentsAPI.bulkCopy(docIds, targetFolderId);
                 } else {
-                    // Move
-                    await foldersAPI.moveDocuments(targetFolderId === 'root' ? 'root' : targetFolderId, docIds);
+                    // Move (cut)
+                    await foldersAPI.moveDocuments(targetFolderId, docIds);
                 }
             }
 
-            // Handle Folders (Move only implemented properly for now, copy is manual)
-            // Note: We don't have bulk folder move/copy in API yet.
-            // Loop for now.
+            // Handle Folders
             if (folderIds.length > 0) {
-                if (mode === 'move') {
+                if (mode === 'copy') {
+                    // Copy each folder recursively
                     for (const fid of folderIds) {
-                        // Don't move into self
-                        if (fid === targetFolderId) continue;
-                        await foldersAPI.update(fid, { parentId: targetFolderId === 'root' ? null : targetFolderId });
+                        if (fid === targetFolderId) continue; // Can't copy into self
+                        await foldersAPI.copy(fid, targetFolderId);
                     }
                 } else {
-                    // Copy Folders - NOT IMPLEMENTED BACKEND
-                    // Skipping folder copy for now or implementing shallow creation?
-                    // Let's notify user
-                    if (folderIds.length > 0) toast('Folder copy not supported yet', { icon: '⚠️' });
+                    // Move (cut) using bulk move
+                    await foldersAPI.bulkMove(folderIds, targetFolderId);
                 }
             }
 
@@ -582,6 +618,7 @@ export default function DocumentsPage() {
             setClipboard(null);
             loadDocuments();
             loadFolders();
+            loadStorage(); // Refresh storage after copy
         } catch (err) {
             console.error(err);
             toast.error('Failed to paste items');
@@ -983,7 +1020,10 @@ export default function DocumentsPage() {
                                         <Folder className="w-10 h-10 text-yellow-400 fill-yellow-100" />
                                         <div className="overflow-hidden">
                                             <h3 className="font-semibold text-slate-800 truncate" title={folder.name}>{folder.name}</h3>
-                                            <p className="text-xs text-slate-500">{folder.documentCount || 0} files • {folder.subfolderCount || 0} folders</p>
+                                            <p className="text-xs text-slate-500">
+                                                {folder.documentCount || 0} files • {folder.subfolderCount || 0} folders
+                                                {folder.totalSizeFormatted && folder.totalSizeFormatted !== '-' && ` • ${folder.totalSizeFormatted}`}
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
@@ -1099,11 +1139,11 @@ export default function DocumentsPage() {
                             <thead className="bg-slate-50 border-b border-slate-200">
                                 <tr>
                                     {activeTab === 'my' && (
-                                        <th className="w-8 p-3">
+                                        <th className="w-10 p-3">
                                             <input
                                                 type="checkbox"
                                                 onChange={handleSelectAll}
-                                                checked={sortedDocuments.length > 0 && selectedDocs.size === sortedDocuments.length + folders.length && selectedFolders.size === folders.length}
+                                                checked={isAllSelected()}
                                                 className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                                             />
                                         </th>
@@ -1166,7 +1206,7 @@ export default function DocumentsPage() {
                                             </div>
                                         </td>
                                         <td className="p-3 text-sm text-slate-600 hidden md:table-cell">Folder</td>
-                                        <td className="p-3 text-sm text-slate-600 hidden md:table-cell">-</td>
+                                        <td className="p-3 text-sm text-slate-600 hidden md:table-cell">{folder.totalSizeFormatted || '-'}</td>
                                         {activeTab === 'my' && (
                                             <>
                                                 <td className="p-3 hidden lg:table-cell">
@@ -1189,7 +1229,17 @@ export default function DocumentsPage() {
                                     const shareInfo = activeTab === 'shared' ? item : null;
                                     if (!doc) return null;
                                     return (
-                                        <tr key={doc.id + (shareInfo?.shareId || '')} className="border-b border-slate-100 hover:bg-slate-50">
+                                        <tr key={doc.id + (shareInfo?.shareId || '')} className={`border-b border-slate-100 hover:bg-slate-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}>
+                                            {activeTab === 'my' && (
+                                                <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedDocs.has(doc.id)}
+                                                        onChange={() => toggleDocSelection(doc.id)}
+                                                        className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                                    />
+                                                </td>
+                                            )}
                                             <td className="p-3">
                                                 <div className="flex items-center gap-3">
                                                     <span className="text-xl">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
@@ -1319,11 +1369,44 @@ export default function DocumentsPage() {
                                 </label>
 
                                 <div className="flex gap-3 pt-2">
-                                    <button onClick={() => setShowUpload(false)} className="btn btn-secondary flex-1">Cancel</button>
-                                    <button onClick={handleUpload} disabled={uploading} className="btn btn-primary flex-1">
-                                        {uploading ? 'Uploading...' : 'Upload'}
+                                    <button onClick={() => setShowUpload(false)} disabled={uploading} className="btn btn-secondary flex-1">Cancel</button>
+                                    <button onClick={handleUpload} disabled={uploading || !uploadFile} className="btn btn-primary flex-1 relative overflow-hidden">
+                                        {uploading ? (
+                                            <div className="flex items-center justify-center gap-2">
+                                                {/* Circular Progress */}
+                                                <div className="relative w-5 h-5">
+                                                    <svg className="w-5 h-5 transform -rotate-90" viewBox="0 0 20 20">
+                                                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-20" />
+                                                        <circle
+                                                            cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2"
+                                                            strokeDasharray={`${uploadProgress * 0.5} 50`}
+                                                            className="transition-all duration-300"
+                                                        />
+                                                    </svg>
+                                                </div>
+                                                <span>{uploadProgress}%</span>
+                                                {getUploadTimeRemaining() && (
+                                                    <span className="text-xs opacity-75">• {getUploadTimeRemaining()}</span>
+                                                )}
+                                            </div>
+                                        ) : 'Upload'}
                                     </button>
                                 </div>
+
+                                {/* Progress Bar */}
+                                {uploading && (
+                                    <div className="mt-2">
+                                        <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-primary-600 transition-all duration-300 ease-out"
+                                                style={{ width: `${uploadProgress}%` }}
+                                            />
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-1 text-center">
+                                            Uploading... {uploadProgress}% {getUploadTimeRemaining()}
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
