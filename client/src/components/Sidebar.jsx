@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import {
     Home, BookOpen, FileText, Award, Users, GraduationCap,
     Video, BarChart3, Settings, LogOut, Menu, X, ChevronLeft,
-    Beaker, ClipboardList, Activity, ClipboardCheck, Send, ListChecks, UserPlus, Monitor, FolderOpen, Pencil, Ticket, Building, Film
+    Beaker, ClipboardList, Activity, ClipboardCheck, Send, ListChecks, UserPlus, Monitor, FolderOpen, Pencil, Ticket, Building, Film, HardDrive
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import LanguageSelector from './LanguageSelector';
@@ -22,6 +22,7 @@ const navItems = {
         { href: '/assigned-work', labelKey: 'nav.assignedWork', icon: ListChecks },
         { href: '/submissions', labelKey: 'nav.reviewSubmissions', icon: ClipboardList },
         { href: '/admin/documents', labelKey: 'nav.documents', icon: FolderOpen },
+        { href: '/admin/storage', labelKey: 'nav.storage', icon: HardDrive },
         { href: '/grades', labelKey: 'nav.grades', icon: Award },
         { href: '/viva', labelKey: 'nav.viva', icon: Video },
         { href: '/whiteboard', labelKey: 'nav.whiteboard', icon: Pencil },
@@ -38,6 +39,7 @@ const navItems = {
         { href: '/classes', labelKey: 'nav.classes', icon: Users },
         { href: '/users', labelKey: 'nav.manageUsers', icon: UserPlus },
         { href: '/admin/documents', labelKey: 'nav.documents', icon: FolderOpen },
+        { href: '/admin/storage', labelKey: 'nav.storage', icon: HardDrive },
         { href: '/grades', labelKey: 'nav.grades', icon: Award },
         { href: '/activity-logs', labelKey: 'nav.activityLogs', icon: Activity },
         { href: '/tickets', labelKey: 'nav.tickets', icon: Ticket },
