@@ -141,6 +141,10 @@ export const foldersAPI = {
     moveDocuments: (folderId, documentIds) => api.post(`/folders/${folderId}/move-documents`, { documentIds }),
     copy: (folderId, targetFolderId) => api.post(`/folders/${folderId}/copy`, { targetFolderId }),
     bulkMove: (folderIds, targetFolderId) => api.post('/folders/bulk-move', { folderIds, targetFolderId }),
+    // Folder sharing
+    share: (id, targets, message) => api.post(`/folders/${id}/share`, { targets, message }),
+    getShares: (id) => api.get(`/folders/${id}/shares`),
+    removeShare: (id, shareId) => api.delete(`/folders/${id}/shares/${shareId}`),
 };
 
 // Devices API - for camera, mic, speaker testing

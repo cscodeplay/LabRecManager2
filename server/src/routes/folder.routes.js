@@ -453,4 +453,161 @@ router.post('/bulk-move', authenticate, authorize('admin', 'principal', 'lab_ass
     });
 }));
 
+/**
+ * @route   POST /api/folders/:id/share
+ * @desc    Share a folder with classes, groups, or users
+ * @access  Private (admin, principal, lab_assistant, instructor)
+ */
+router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+    const { targets, message } = req.body;
+    // targets: [{ type: 'class'|'group'|'instructor'|'admin'|'student', id: 'uuid' }]
+
+    if (!targets || !Array.isArray(targets) || targets.length === 0) {
+        return res.status(400).json({ success: false, message: 'At least one target is required' });
+    }
+
+    const folder = await prisma.documentFolder.findFirst({
+        where: { id: req.params.id, schoolId: req.user.schoolId, deletedAt: null }
+    });
+
+    if (!folder) {
+        return res.status(404).json({ success: false, message: 'Folder not found' });
+    }
+
+    const shares = [];
+    const notifications = [];
+    const VALID_TYPES = ['class', 'group', 'instructor', 'admin', 'student'];
+
+    for (const target of targets) {
+        if (!VALID_TYPES.includes(target.type)) {
+            return res.status(400).json({ success: false, message: `Invalid target type: ${target.type}` });
+        }
+
+        let shareData = {
+            folderId: folder.id,
+            sharedById: req.user.id,
+            targetType: target.type,
+            message: message || null
+        };
+
+        if (target.type === 'class') {
+            shareData.targetClassId = target.id;
+
+            // Notify students in the class
+            const enrollments = await prisma.classEnrollment.findMany({
+                where: { classId: target.id, status: 'active' },
+                select: { studentId: true }
+            });
+            enrollments.forEach(e => {
+                if (!notifications.find(n => n.userId === e.studentId)) {
+                    notifications.push({
+                        userId: e.studentId,
+                        title: 'Folder Shared with You',
+                        message: `Folder "${folder.name}" has been shared with your class.`
+                    });
+                }
+            });
+        } else if (target.type === 'group') {
+            shareData.targetGroupId = target.id;
+
+            // Notify group members
+            const members = await prisma.groupMember.findMany({
+                where: { groupId: target.id },
+                select: { studentId: true }
+            });
+            members.forEach(m => {
+                if (!notifications.find(n => n.userId === m.studentId)) {
+                    notifications.push({
+                        userId: m.studentId,
+                        title: 'Folder Shared with You',
+                        message: `Folder "${folder.name}" has been shared with your group.`
+                    });
+                }
+            });
+        } else if (['instructor', 'admin', 'student'].includes(target.type)) {
+            shareData.targetUserId = target.id;
+            notifications.push({
+                userId: target.id,
+                title: 'Folder Shared with You',
+                message: `Folder "${folder.name}" has been shared with you by ${req.user.firstName} ${req.user.lastName}.`
+            });
+        }
+
+        shares.push(shareData);
+    }
+
+    try {
+        const createdShares = await prisma.folderShare.createMany({ data: shares });
+
+        if (notifications.length > 0) {
+            await prisma.notification.createMany({ data: notifications });
+        }
+
+        res.status(201).json({
+            success: true,
+            message: `Folder shared with ${targets.length} target(s)`,
+            data: { sharesCreated: createdShares.count }
+        });
+    } catch (dbError) {
+        console.error('Folder share error:', dbError);
+        return res.status(500).json({
+            success: false,
+            message: dbError.message || 'Failed to share folder'
+        });
+    }
+}));
+
+/**
+ * @route   GET /api/folders/:id/shares
+ * @desc    Get all shares for a folder
+ * @access  Private
+ */
+router.get('/:id/shares', authenticate, asyncHandler(async (req, res) => {
+    const folder = await prisma.documentFolder.findFirst({
+        where: { id: req.params.id, schoolId: req.user.schoolId, deletedAt: null }
+    });
+
+    if (!folder) {
+        return res.status(404).json({ success: false, message: 'Folder not found' });
+    }
+
+    const shares = await prisma.folderShare.findMany({
+        where: { folderId: req.params.id },
+        include: {
+            sharedBy: { select: { id: true, firstName: true, lastName: true } },
+            targetClass: { select: { id: true, name: true } },
+            targetGroup: { select: { id: true, name: true } },
+            targetUser: { select: { id: true, firstName: true, lastName: true, role: true } }
+        },
+        orderBy: { sharedAt: 'desc' }
+    });
+
+    res.json({ success: true, data: { shares } });
+}));
+
+/**
+ * @route   DELETE /api/folders/:id/shares/:shareId
+ * @desc    Remove a share from a folder
+ * @access  Private
+ */
+router.delete('/:id/shares/:shareId', authenticate, asyncHandler(async (req, res) => {
+    const share = await prisma.folderShare.findFirst({
+        where: { id: req.params.shareId, folderId: req.params.id },
+        include: { folder: true }
+    });
+
+    if (!share) {
+        return res.status(404).json({ success: false, message: 'Share not found' });
+    }
+
+    // Only allow folder creator, share creator, or admin to remove
+    if (share.folder.createdById !== req.user.id && share.sharedById !== req.user.id && !['admin', 'principal'].includes(req.user.role)) {
+        return res.status(403).json({ success: false, message: 'Not authorized to remove this share' });
+    }
+
+    await prisma.folderShare.delete({ where: { id: req.params.shareId } });
+
+    res.json({ success: true, message: 'Share removed' });
+}));
+
 module.exports = router;

@@ -154,6 +154,8 @@ model User {
   documents                                      Document[]               @relation("DocumentUploadedBy")
   documentsDeleted                               Document[]               @relation("DocumentDeletedBy")
   foldersCreated                                 DocumentFolder[]         @relation("FolderCreatedBy")
+  folderSharesSent                               FolderShare[]            @relation("FolderSharedBy")
+  folderSharesReceived                           FolderShare[]            @relation("FolderSharedToUser")
   shiftHistoryApproved                           EquipmentShiftHistory[]  @relation("ShiftHistoryApprovedBy")
   shiftHistoryPerformed                          EquipmentShiftHistory[]  @relation("ShiftedBy")
   shiftRequestsApproved                          EquipmentShiftRequest[]  @relation("ShiftApprovedBy")
@@ -267,6 +269,7 @@ model Class {
   classTeacher       User?               @relation("ClassTeacher", fields: [classTeacherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   documentShares     DocumentShare[]
+  folderShares       FolderShare[]
   feeStructures      FeeStructure[]
   finalLabMarks      FinalLabMarks[]
   labAttendance      LabAttendance[]
@@ -307,6 +310,7 @@ model StudentGroup {
   assignedPcId       String?             @map("assigned_pc_id") @db.Uuid
   targets            AssignmentTarget[]
   documentShares     DocumentShare[]
+  folderShares       FolderShare[]
   members            GroupMember[]
   assignedPc         LabItem?            @relation(fields: [assignedPcId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   class              Class               @relation(fields: [classId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -621,10 +625,36 @@ model DocumentFolder {
   parent       DocumentFolder?  @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   children     DocumentFolder[] @relation("FolderHierarchy")
   documents    Document[]
+  shares       FolderShare[]
 
   @@index([schoolId], map: "idx_document_folders_school_id")
   @@index([parentId], map: "idx_document_folders_parent_id")
   @@map("document_folders")
+}
+
+model FolderShare {
+  id            String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  folderId      String                     @map("folder_id") @db.Uuid
+  sharedById    String                     @map("shared_by_id") @db.Uuid
+  targetType    document_share_target_type @map("target_type")
+  targetClassId String?                    @map("target_class_id") @db.Uuid
+  targetGroupId String?                    @map("target_group_id") @db.Uuid
+  targetUserId  String?                    @map("target_user_id") @db.Uuid
+  message       String?
+  sharedAt      DateTime?                  @default(now()) @map("shared_at") @db.Timestamp(6)
+  expiresAt     DateTime?                  @map("expires_at") @db.Timestamp(6)
+  folder        DocumentFolder             @relation(fields: [folderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sharedBy      User                       @relation("FolderSharedBy", fields: [sharedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  targetClass   Class?                     @relation(fields: [targetClassId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  targetGroup   StudentGroup?              @relation(fields: [targetGroupId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  targetUser    User?                      @relation("FolderSharedToUser", fields: [targetUserId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([targetClassId], map: "idx_folder_shares_class")
+  @@index([folderId], map: "idx_folder_shares_folder")
+  @@index([targetGroupId], map: "idx_folder_shares_group")
+  @@index([sharedAt], map: "idx_folder_shares_shared_at")
+  @@index([targetUserId], map: "idx_folder_shares_user")
+  @@map("folder_shares")
 }
 
 

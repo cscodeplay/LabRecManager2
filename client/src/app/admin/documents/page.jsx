@@ -90,6 +90,7 @@ export default function DocumentsPage() {
 
     // Share modal - advanced
     const [sharingDoc, setSharingDoc] = useState(null);
+    const [sharingFolder, setSharingFolder] = useState(null); // For folder sharing
     const [qrCodeUrl, setQrCodeUrl] = useState('');
     const [copied, setCopied] = useState(false);
     const [shareMode, setShareMode] = useState('link'); // 'link' or 'target'
@@ -514,6 +515,7 @@ export default function DocumentsPage() {
 
     const handleShare = async (doc) => {
         setSharingDoc(doc);
+        setSharingFolder(null);
         setShareMode('target'); // Default to target sharing mode
         setShareTargetType(''); // Reset to show type selection first
         setShareMessage('');
@@ -533,6 +535,17 @@ export default function DocumentsPage() {
         } catch { }
     };
 
+    // Share folder handler
+    const handleShareFolder = async (folder) => {
+        setSharingFolder(folder);
+        setSharingDoc(null);
+        setShareMode('target');
+        setShareTargetType('');
+        setShareMessage('');
+        setShareTargets([]);
+        setQrCodeUrl('');
+    };
+
     const handleShareSubmit = async () => {
         if (shareTargets.length === 0) {
             toast.error('Select at least one target');
@@ -540,16 +553,24 @@ export default function DocumentsPage() {
         }
         setSharingLoading(true);
         try {
-            await documentsAPI.share(sharingDoc.id, {
-                targets: shareTargets,
-                message: shareMessage
-            });
-            toast.success('Document shared successfully!');
-            setSharingDoc(null);
+            if (sharingDoc) {
+                // Document sharing
+                await documentsAPI.share(sharingDoc.id, {
+                    targets: shareTargets,
+                    message: shareMessage
+                });
+                toast.success('Document shared successfully!');
+                setSharingDoc(null);
+            } else if (sharingFolder) {
+                // Folder sharing
+                await foldersAPI.share(sharingFolder.id, shareTargets, shareMessage);
+                toast.success('Folder shared successfully!');
+                setSharingFolder(null);
+            }
             setShareTargets([]);
             setShareMessage('');
         } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to share document');
+            toast.error(err.response?.data?.message || 'Failed to share');
         } finally {
             setSharingLoading(false);
         }
@@ -1158,6 +1179,12 @@ export default function DocumentsPage() {
                                 {/* Folder Actions */}
                                 <div className="flex gap-1 mt-3 pt-3 border-t border-slate-100">
                                     <button
+                                        onClick={(e) => { e.stopPropagation(); handleShareFolder(folder); }}
+                                        className="flex-1 p-1.5 text-xs text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded flex items-center justify-center gap-1"
+                                    >
+                                        <Share2 className="w-3 h-3" /> Share
+                                    </button>
+                                    <button
                                         onClick={(e) => { e.stopPropagation(); handleOpenFolderMoveDialog(folder); }}
                                         className="flex-1 p-1.5 text-xs text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded flex items-center justify-center gap-1"
                                     >
@@ -1363,6 +1390,13 @@ export default function DocumentsPage() {
                                         <td className="p-3 text-sm text-slate-600 hidden lg:table-cell">{formatDate(folder.createdAt)}</td>
                                         <td className="p-3">
                                             <div className="flex gap-1">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleShareFolder(folder); }}
+                                                    className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded"
+                                                    title="Share"
+                                                >
+                                                    <Share2 className="w-4 h-4" />
+                                                </button>
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleOpenFolderMoveDialog(folder); }}
                                                     className="p-1.5 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded"
@@ -1757,22 +1791,24 @@ export default function DocumentsPage() {
 
             {/* Share Modal */}
             {
-                sharingDoc && (
+                (sharingDoc || sharingFolder) && (
                     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                         <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col">
                             <div className="p-6 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
-                                <h3 className="text-xl font-semibold">Share Document</h3>
-                                <button onClick={() => setSharingDoc(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                                <h3 className="text-xl font-semibold">Share {sharingFolder ? 'Folder' : 'Document'}</h3>
+                                <button onClick={() => { setSharingDoc(null); setSharingFolder(null); }} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
                             </div>
 
-                            {/* Share Mode Tabs */}
+                            {/* Share Mode Tabs - Only show link tab for documents */}
                             <div className="flex border-b border-slate-200 px-6">
-                                <button
-                                    onClick={() => setShareMode('link')}
-                                    className={`py-3 px-4 text-sm font-medium border-b-2 transition ${shareMode === 'link' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500'}`}
-                                >
-                                    <QrCode className="w-4 h-4 inline mr-2" />Public Link
-                                </button>
+                                {sharingDoc && (
+                                    <button
+                                        onClick={() => setShareMode('link')}
+                                        className={`py-3 px-4 text-sm font-medium border-b-2 transition ${shareMode === 'link' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500'}`}
+                                    >
+                                        <QrCode className="w-4 h-4 inline mr-2" />Public Link
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => { setShareMode('target'); setShareTargetType(''); setShareSearch(''); }}
                                     className={`py-3 px-4 text-sm font-medium border-b-2 transition ${shareMode === 'target' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500'}`}
@@ -1782,9 +1818,9 @@ export default function DocumentsPage() {
                             </div>
 
                             <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                                {shareMode === 'link' ? (
+                                {shareMode === 'link' && sharingDoc ? (
                                     <>
-                                        {!sharingDoc.isPublic ? (
+                                        {!sharingDoc?.isPublic ? (
                                             <div className="text-center py-4 text-amber-600 bg-amber-50 rounded-lg">
                                                 <p className="font-medium">Document is not public</p>
                                                 <p className="text-sm mt-1">Enable "publicly shareable" in edit to share via link</p>
@@ -1799,7 +1835,7 @@ export default function DocumentsPage() {
                                                 <div className="flex gap-2">
                                                     <input
                                                         type="text"
-                                                        value={`${window.location.origin}/view-document/${sharingDoc.id}`}
+                                                        value={`${window.location.origin}/view-document/${sharingDoc?.id}`}
                                                         readOnly
                                                         className="input flex-1 text-sm"
                                                     />
@@ -1808,7 +1844,7 @@ export default function DocumentsPage() {
                                                     </button>
                                                 </div>
                                                 <a
-                                                    href={sharingDoc.url}
+                                                    href={sharingDoc?.url}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="btn btn-secondary w-full"
