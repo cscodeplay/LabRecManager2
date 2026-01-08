@@ -112,6 +112,9 @@ export default function DocumentsPage() {
     const [selectedFolders, setSelectedFolders] = useState(new Set());
     const [clipboard, setClipboard] = useState(null); // { mode: 'copy' | 'cut', documents: [], folders: [] }
 
+    // Folder Preview Modal
+    const [folderPreview, setFolderPreview] = useState(null); // { folder, documents: [], subfolders: [] }
+
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!isAuthenticated) { router.push('/login'); return; }
@@ -705,6 +708,28 @@ export default function DocumentsPage() {
         }
     };
 
+    // Preview folder contents
+    const handlePreviewFolder = async (folder) => {
+        try {
+            // Load documents in this folder
+            const docsRes = await documentsAPI.getAll({ folderId: folder.id });
+            const docs = docsRes.data.data.documents || [];
+
+            // Load subfolders
+            const foldersRes = await foldersAPI.getAll(folder.id);
+            const subfolders = foldersRes.data.data.folders || [];
+
+            setFolderPreview({
+                folder,
+                documents: docs,
+                subfolders
+            });
+        } catch (err) {
+            console.error('Failed to load folder contents:', err);
+            toast.error('Failed to load folder contents');
+        }
+    };
+
     // --- Bulk & Clipboard Logic ---
     const toggleDocSelection = (id) => {
         const newSet = new Set(selectedDocs);
@@ -1194,23 +1219,27 @@ export default function DocumentsPage() {
                                                 {folder.documentCount || 0} files • {folder.subfolderCount || 0} folders
                                                 {folder.totalSizeFormatted && folder.totalSizeFormatted !== '-' && ` • ${folder.totalSizeFormatted}`}
                                             </p>
-                                            {/* Share info badges */}
+                                            {/* Share info count */}
                                             {folder.shareInfo && folder.shareInfo.length > 0 && (
-                                                <div className="mt-1 flex flex-wrap gap-1 items-center">
-                                                    <Share2 className="w-3 h-3 text-emerald-500" />
-                                                    {folder.shareInfo.slice(0, 3).map((share, i) => (
-                                                        <span key={i} className="text-xs px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded">{share.name}</span>
-                                                    ))}
-                                                    {folder.shareInfo.length > 3 && (
-                                                        <span className="text-xs text-emerald-500">+{folder.shareInfo.length - 3} more</span>
-                                                    )}
-                                                </div>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setShareInfoModal(folder); }}
+                                                    className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 px-1.5 py-0.5 rounded transition"
+                                                >
+                                                    <Users className="w-3 h-3" />
+                                                    Shared with {folder.shareInfo.length}
+                                                </button>
                                             )}
                                         </div>
                                     </div>
                                 </div>
                                 {/* Folder Actions */}
                                 <div className="flex gap-1 mt-3 pt-3 border-t border-slate-100">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handlePreviewFolder(folder); }}
+                                        className="flex-1 p-1.5 text-xs text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded flex items-center justify-center gap-1"
+                                    >
+                                        <Eye className="w-3 h-3" /> View
+                                    </button>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); handleShareFolder(folder); }}
                                         className="flex-1 p-1.5 text-xs text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded flex items-center justify-center gap-1"
@@ -1419,16 +1448,15 @@ export default function DocumentsPage() {
                                                 </td>
                                                 <td className="p-3 hidden lg:table-cell">
                                                     {folder.shareInfo && folder.shareInfo.length > 0 ? (
-                                                        <div className="flex flex-wrap gap-1 items-center">
-                                                            {folder.shareInfo.slice(0, 2).map((share, i) => (
-                                                                <span key={i} className="text-xs px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded">{share.name}</span>
-                                                            ))}
-                                                            {folder.shareInfo.length > 2 && (
-                                                                <span className="text-xs text-emerald-500">+{folder.shareInfo.length - 2}</span>
-                                                            )}
-                                                        </div>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setShareInfoModal(folder); }}
+                                                            className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 px-2 py-1 rounded transition"
+                                                        >
+                                                            <Users className="w-3 h-3" />
+                                                            {folder.shareInfo.length}
+                                                        </button>
                                                     ) : (
-                                                        <span className="text-sm text-slate-400">-</span>
+                                                        <span className="text-xs text-slate-400">—</span>
                                                     )}
                                                 </td>
                                             </>
@@ -1436,6 +1464,13 @@ export default function DocumentsPage() {
                                         <td className="p-3 text-sm text-slate-600 hidden lg:table-cell">{formatDate(folder.createdAt)}</td>
                                         <td className="p-3">
                                             <div className="flex gap-1">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handlePreviewFolder(folder); }}
+                                                    className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"
+                                                    title="View Contents"
+                                                >
+                                                    <Eye className="w-4 h-4" />
+                                                </button>
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleShareFolder(folder); }}
                                                     className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded"
@@ -2154,7 +2189,7 @@ export default function DocumentsPage() {
                                                 {share.type === 'class' ? '📚' : share.type === 'group' ? '👥' : '👤'}
                                             </span>
                                             <div className="flex-1">
-                                                <p className="text-sm font-medium text-slate-900">{share.targetName}</p>
+                                                <p className="text-sm font-medium text-slate-900">{share.name || share.targetName}</p>
                                                 <p className="text-xs text-slate-500 capitalize">{share.type}</p>
                                             </div>
                                         </div>
@@ -2165,8 +2200,89 @@ export default function DocumentsPage() {
                                 </div>
                             </div>
                             <div className="p-4 border-t border-slate-200 bg-slate-50">
-                                <button onClick={() => { setShareInfoModal(null); handleShare(shareInfoModal); }} className="btn btn-primary w-full text-sm">
+                                <button onClick={() => {
+                                    setShareInfoModal(null);
+                                    // Check if this is a folder (has shareInfo array directly from folder query) or document
+                                    if (shareInfoModal.documentCount !== undefined || shareInfoModal.subfolderCount !== undefined) {
+                                        handleShareFolder(shareInfoModal);
+                                    } else {
+                                        handleShare(shareInfoModal);
+                                    }
+                                }} className="btn btn-primary w-full text-sm">
                                     <Share2 className="w-4 h-4" /> Edit Sharing
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Folder Preview Modal */}
+            {
+                folderPreview && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setFolderPreview(null)}>
+                        <div className="bg-white rounded-2xl max-w-lg w-full max-h-[70vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                            <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                                <div className="flex items-center gap-3">
+                                    <Folder className="w-6 h-6 text-yellow-400 fill-yellow-100" />
+                                    <div>
+                                        <h3 className="text-lg font-semibold">{folderPreview.folder.name}</h3>
+                                        <p className="text-xs text-slate-500">
+                                            {folderPreview.documents.length} files • {folderPreview.subfolders.length} folders
+                                        </p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setFolderPreview(null)} className="text-slate-400 hover:text-slate-600">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div className="p-4 overflow-y-auto max-h-[calc(70vh-140px)]">
+                                {/* Subfolders */}
+                                {folderPreview.subfolders.length > 0 && (
+                                    <div className="mb-4">
+                                        <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Folders</p>
+                                        <div className="space-y-1">
+                                            {folderPreview.subfolders.map(subfolder => (
+                                                <div key={subfolder.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg hover:bg-slate-100 cursor-pointer"
+                                                    onClick={() => { setFolderPreview(null); handleFolderClick(subfolder); }}
+                                                >
+                                                    <Folder className="w-5 h-5 text-yellow-400 fill-yellow-100" />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium text-slate-900 truncate">{subfolder.name}</p>
+                                                        <p className="text-xs text-slate-500">{subfolder.documentCount || 0} files</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {/* Documents */}
+                                {folderPreview.documents.length > 0 && (
+                                    <div>
+                                        <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Files</p>
+                                        <div className="space-y-1">
+                                            {folderPreview.documents.map(doc => (
+                                                <div key={doc.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg hover:bg-slate-100 cursor-pointer"
+                                                    onClick={() => { setFolderPreview(null); setViewingDoc(doc); }}
+                                                >
+                                                    <span className="text-xl">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium text-slate-900 truncate">{doc.name}</p>
+                                                        <p className="text-xs text-slate-500">{doc.fileType?.toUpperCase()} • {doc.fileSizeFormatted || ''}</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {/* Empty state */}
+                                {folderPreview.subfolders.length === 0 && folderPreview.documents.length === 0 && (
+                                    <p className="text-sm text-slate-400 text-center py-8">This folder is empty</p>
+                                )}
+                            </div>
+                            <div className="p-4 border-t border-slate-200 bg-slate-50">
+                                <button onClick={() => { setFolderPreview(null); handleFolderClick(folderPreview.folder); }} className="btn btn-primary w-full text-sm">
+                                    <Folder className="w-4 h-4" /> Open Folder
                                 </button>
                             </div>
                         </div>
