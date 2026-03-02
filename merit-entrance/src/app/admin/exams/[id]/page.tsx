@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/lib/store';
@@ -83,7 +83,7 @@ export default function EditExamPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle');
-    const [activeTab, setActiveTab] = useState<'details' | 'instructions' | 'sections' | 'composition' | 'original_pdf'>('details');
+    const [activeTab, setActiveTab] = useState<'sections' | 'details' | 'instructions' | 'composition' | 'original_pdf' | 'blueprint'>('sections');
 
     // Section Tabs Logic
     const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
@@ -140,6 +140,25 @@ export default function EditExamPage() {
     // Dynamic Original PDF combining
     const [combinedPdfUrl, setCombinedPdfUrl] = useState<string | null>(null);
     const [isCombiningPdf, setIsCombiningPdf] = useState(false);
+
+    const hasBlueprintId = useMemo(() => {
+        if (!exam?.description) return false;
+        if (typeof exam.description === 'object' && (exam.description as any)?.blueprint_id) return true;
+        if (typeof exam.description === 'string') {
+            try { return !!JSON.parse(exam.description).blueprint_id; }
+            catch { return false; }
+        }
+        return false;
+    }, [exam?.description]);
+
+    const [pdfViewerOptions, setPdfViewerOptions] = useState({
+        showAnswers: true,
+        showExplanations: true,
+        showMarks: true,
+        twoColumn: false,
+        showDateTime: true,
+        compactSpacing: false
+    });
 
     // Download PDF Generation Modal
     const [showDownloadPdfModal, setShowDownloadPdfModal] = useState(false);
@@ -1061,6 +1080,17 @@ export default function EditExamPage() {
                                     <FileText className="w-4 h-4 inline mr-1" /> Original PDF
                                 </button>
                             )}
+                            {hasBlueprintId && (
+                                <button
+                                    onClick={() => setActiveTab('blueprint')}
+                                    className={`px-4 py-2 rounded-t-lg text-sm font-medium flex-shrink-0 ${activeTab === 'blueprint'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                        }`}
+                                >
+                                    Blueprint
+                                </button>
+                            )}
                         </div>
                     </div>
                 </header>
@@ -1671,8 +1701,7 @@ export default function EditExamPage() {
                                                 >
                                                     <Upload className="w-4 h-4" /> Import CSV
                                                 </Link>
-                                                {(typeof exam?.description === 'object' && (exam.description as any)?.blueprint_id) ||
-                                                    (typeof exam?.description === 'string' && (() => { try { return JSON.parse(exam.description).blueprint_id } catch { return null } })()) ? (
+                                                {hasBlueprintId ? (
                                                     <button
                                                         onClick={() => handleGenerateMissingAi()}
                                                         disabled={isGeneratingMissing}

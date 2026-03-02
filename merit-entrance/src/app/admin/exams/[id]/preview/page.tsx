@@ -71,9 +71,21 @@ export default function ExamPreviewPage() {
     const [questionStatus, setQuestionStatus] = useState<Record<string, QuestionStatus>>({});
     const [showPalette, setShowPalette] = useState(true);
     const [examStarted, setExamStarted] = useState(false);
+    const [showBlueprintModal, setShowBlueprintModal] = useState(false);
 
     // Sidebar collapse state
     const [collapsedSections, setCollapsedSections] = useState<Set<number>>(new Set());
+
+    // Safely check for blueprint ID
+    const hasBlueprintId = (() => {
+        if (!exam?.description) return false;
+        if (typeof exam.description === 'object' && (exam.description as any)?.blueprint_id) return true;
+        if (typeof exam.description === 'string') {
+            try { return !!JSON.parse(exam.description).blueprint_id; }
+            catch { return false; }
+        }
+        return false;
+    })();
 
 
     const loadExam = useCallback(async () => {
@@ -365,6 +377,16 @@ export default function ExamPreviewPage() {
                         </div>
 
                         <div className="flex items-center gap-2">
+                            {hasBlueprintId && (
+                                <button
+                                    onClick={() => setShowBlueprintModal(true)}
+                                    className="px-3 py-1.5 bg-purple-100 text-purple-700 font-medium text-sm rounded-lg hover:bg-purple-200 flex items-center gap-2"
+                                    title="View Generation Blueprint"
+                                >
+                                    <BookOpen className="w-4 h-4" />
+                                    Blueprint
+                                </button>
+                            )}
                             <button
                                 onClick={() => setLanguage(language === 'en' ? 'pa' : 'en')}
                                 className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50"
@@ -735,6 +757,44 @@ export default function ExamPreviewPage() {
                     </aside>
                 </div>
             </div>
+
+            {/* Blueprint Modal */}
+            {showBlueprintModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+                    <div className="bg-white rounded-xl shadow-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+                        <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                                    <BookOpen className="w-5 h-5 text-purple-600" />
+                                    Exam Generation Blueprint
+                                </h3>
+                                <p className="text-sm text-gray-500 mt-1">Mathematical sequence configuration used for this exam.</p>
+                            </div>
+                            <button
+                                onClick={() => setShowBlueprintModal(false)}
+                                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-200"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto bg-gray-50 flex-1 font-mono text-sm">
+                            <pre className="text-gray-800 break-words whitespace-pre-wrap">
+                                {JSON.stringify(typeof exam?.description === 'string' ? (() => { try { return JSON.parse(exam.description) } catch { return exam.description } })() : exam?.description, null, 2)}
+                            </pre>
+                        </div>
+
+                        <div className="p-4 border-t bg-gray-50 rounded-b-xl flex justify-end gap-3">
+                            <button
+                                onClick={() => setShowBlueprintModal(false)}
+                                className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-gray-100"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </MathJaxProvider>
     );
 }
