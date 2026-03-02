@@ -158,6 +158,52 @@ export async function POST(request: Request) {
                 const selectedIds: string[] = [];
                 const tagIds = topicTags ? topicTags.map((t: any) => t.id) : [];
 
+                const whereClause: any = {
+                    type: questionType,
+                };
+
+                if (topicTags && topicTags.length > 0) {
+                    whereClause.tags = { some: { tagId: { in: tagIds } } };
+                }
+                if (difficulty) {
+                    whereClause.difficulty = difficulty;
+                }
+
+                const matchingIds = await prisma.question.findMany({
+                    where: whereClause,
+                    select: { id: true },
+                });
+
+                // Only throw shortage if AI generation is explicitly disabled and missing is not allowed
+                if (
+                    !allowMissingQuestions &&
+                    blueprint.generationMethod !== "generate_novel" &&
+                    !allowAiGenerationForMissing &&
+                    matchingIds.length < numberOfQuestions
+                ) {
+                    const tagNames =
+                        topicTags && topicTags.length > 0
+                            ? topicTags.map((t: any) => t.name).join(", ")
+                            : "Any";
+                    return NextResponse.json(
+                        {
+                            success: false,
+                            error: `Not enough unique questions available for Rule (Type: ${questionType}, Tags: ${tagNames}). Needed ${numberOfQuestions}, Found ${matchingIds.length}.`,
+                        },
+                        { status: 400 },
+                    );
+                }
+
+                // For non-novel exams, assign existing questions from the bank up to the number needed
+                if (blueprint.generationMethod !== "generate_novel") {
+                    const shuffled = matchingIds.sort(() => 0.5 - Math.random());
+                    const sliceEnd = Math.min(numberOfQuestions, matchingIds.length);
+                    selectedIds.push(
+                        ...shuffled.slice(0, sliceEnd).map((q) => q.id),
+                    );
+                }
+
+                // Now parse AI Generation gaps if enabled
                 if (
                     blueprint.generationMethod === "generate_novel" ||
                     (totalMissingQuestionsFound > 0 && allowAiGenerationForMissing)
@@ -169,31 +215,11 @@ export async function POST(request: Request) {
 
                     // Determine how many strictly need generating.
                     let numberToGenerate = numberOfQuestions;
-                    const existingQuestionsFound = await prisma.question.findMany({
-                        where: {
-                            type: questionType,
-                            difficulty: difficulty || undefined,
-                            ...(topicTags && topicTags.length > 0
-                                ? { tags: { some: { tagId: { in: tagIds } } } }
-                                : {}),
-                        },
-                        take: numberOfQuestions,
-                        select: { id: true },
-                    });
 
-                    // If we're filling gaps, only generate the missing amount
-                    if (
-                        blueprint.generationMethod !== "generate_novel" &&
-                        totalMissingQuestionsFound > 0 &&
-                        allowAiGenerationForMissing
-                    ) {
-                        numberToGenerate =
-                            numberOfQuestions - existingQuestionsFound.length;
-
-                        // Add the existing ones we DO have first
-                        for (const q of existingQuestionsFound) {
-                            selectedIds.push(q.id);
-                        }
+                    if (blueprint.generationMethod !== "generate_novel") {
+                        // If we're filling gaps, only generate the mathematical difference
+                        const existingBoundCount = matchingIds.length > numberOfQuestions ? numberOfQuestions : matchingIds.length;
+                        numberToGenerate = numberOfQuestions - existingBoundCount;
                     }
 
                     if (numberToGenerate > 0) {
@@ -210,13 +236,12 @@ export async function POST(request: Request) {
                             const materialIds = blueprint.materials.map((m: any) => `'${m.id}'`).join(',');
                             const contextFilter = `WHERE reference_material_id IN (${materialIds})`;
 
-                            // Execute raw vector search with material filter
                             const contextChunks = await prisma.$queryRawUnsafe<any[]>(
                                 `SELECT chunk_text, 1 - (embedding <=> '[${aiPromptVector.embedding.values.join(",")}]') as similarity 
-                                FROM "DocumentChunk" 
-                                ${contextFilter}
-                                ORDER BY similarity DESC 
-                                LIMIT 15`,
+                                    FROM "DocumentChunk" 
+                                    ${contextFilter}
+                                    ORDER BY similarity DESC 
+                                    LIMIT 15`,
                             );
 
                             contextMap = contextChunks
@@ -227,29 +252,29 @@ export async function POST(request: Request) {
                         const generatorModel = genAI.getGenerativeModel({
                             model: "gemini-2.5-flash",
                             systemInstruction: `You are an expert exam question author. Generate exactly ${numberToGenerate} highly original, novel questions.
-                            
-                            Topic requirements:
-                            ${tagNames}
-                            Type: ${questionType}
-                            Difficulty: ${difficulty || "medium"}
-                            
-                            Use the provided reference context if available to fact-check your work, but output novel questions not directly copied.
-                            
-                            CRITICAL: Return the questions inside a strict valid JSON array matching this interface:
-                            [
-                            {
-                                "text": "The question text, use HTML exclusively for formatting math or sub/superscripts.",
-                                "type": "${questionType === "mcq" ? "mcq" : "paragraph"}",
-                                "options": ["Option A", "Option B", "Option C", "Option D"], // Only if MCQ, exactly 4.
-                                "correctOption": 1, // The 0-indexed correct option (e.g. 1 means Option B). Only if MCQ.
-                                "difficulty": ${difficulty || 3},
-                                "explanation": "Detailed explanation of why the answer is correct.",
-                                "paragraphText": "" // Only if type is paragraph
-                            }
-                            ]
-                            
-                            DO NOT return markdown codeblocks. Return pure raw JSON ONLY.
-                            `,
+                                
+                                Topic requirements:
+                                ${tagNames}
+                                Type: ${questionType}
+                                Difficulty: ${difficulty || "medium"}
+                                
+                                Use the provided reference context if available to fact-check your work, but output novel questions not directly copied.
+                                
+                                CRITICAL: Return the questions inside a strict valid JSON array matching this interface:
+                                [
+                                {
+                                    "text": "The question text, use HTML exclusively for formatting math or sub/superscripts.",
+                                    "type": "${questionType === "mcq" ? "mcq" : "paragraph"}",
+                                    "options": ["Option A", "Option B", "Option C", "Option D"], // Only if MCQ, exactly 4.
+                                    "correctOption": 1, // The 0-indexed correct option (e.g. 1 means Option B). Only if MCQ.
+                                    "difficulty": ${difficulty || 3},
+                                    "explanation": "Detailed explanation of why the answer is correct.",
+                                    "paragraphText": "" // Only if type is paragraph
+                                }
+                                ]
+                                
+                                DO NOT return markdown codeblocks. Return pure raw JSON ONLY.
+                                `,
                         });
 
                         try {
@@ -262,30 +287,21 @@ export async function POST(request: Request) {
                             let generatedArray = [];
                             try {
                                 const rawText = response.response.text().trim();
-                                // strip possible markdown formatting
                                 const cleanText = rawText
                                     .replace(/^```json/i, "")
                                     .replace(/```$/i, "")
                                     .trim();
                                 generatedArray = JSON.parse(cleanText);
                             } catch (e) {
-                                console.error(
-                                    "Failed to parse AI question generation",
-                                    response.response.text(),
-                                );
-                                throw new Error(
-                                    "AI failed to return valid JSON for generated questions.",
-                                );
+                                console.error("Failed to parse AI question generation", response.response.text());
+                                throw new Error("AI failed to return valid JSON for generated questions.");
                             }
 
-                            // Save the generated questions to DB
                             for (const generatedQ of generatedArray) {
                                 let paragraphId = null;
                                 if (generatedQ.type === 'paragraph' && generatedQ.paragraphText) {
                                     const p = await prisma.paragraph.create({
-                                        data: {
-                                            text: { en: generatedQ.paragraphText }
-                                        }
+                                        data: { text: { en: generatedQ.paragraphText } }
                                     });
                                     paragraphId = p.id;
                                 }
@@ -318,25 +334,9 @@ export async function POST(request: Request) {
                                     }
                                 }
                                 selectedIds.push(dbQuestion.id);
-
-                                // Fetch full question so it matches the expected array format downstream
-                                const fullQuestion = await prisma.question.findUnique({
-                                    where: { id: dbQuestion.id },
-                                    include: { tags: true },
-                                });
-
-                                sectionMarks += Number(marksPerQuestion);
-                                collectedQuestions.push({
-                                    original: fullQuestion,
-                                    marks: Number(marksPerQuestion),
-                                    negativeMarks: negativeMarks ? Number(negativeMarks) : null,
-                                });
                             }
                         } catch (err: any) {
-                            console.error(
-                                `RAG Generation failed for 1 question in rule ${tagNames}:`,
-                                err.message,
-                            );
+                            console.error(`RAG Generation failed for 1 question in rule ${tagNames}:`, err.message);
                             return NextResponse.json(
                                 {
                                     success: false,
@@ -346,63 +346,24 @@ export async function POST(request: Request) {
                             );
                         }
                     }
-                } else {
-                    // --- STATIC EXISTING QUESTION FETCH --- //
-                    const whereClause: any = {
-                        type: questionType,
-                    };
-
-                    if (topicTags && topicTags.length > 0) {
-                        whereClause.tags = { some: { tagId: { in: tagIds } } };
-                    }
-                    if (difficulty) {
-                        whereClause.difficulty = difficulty;
-                    }
-
-                    const matchingIds = await prisma.question.findMany({
-                        where: whereClause,
-                        select: { id: true },
-                    });
-
-                    if (!allowMissingQuestions && matchingIds.length < numberOfQuestions) {
-                        const tagNames =
-                            topicTags && topicTags.length > 0
-                                ? topicTags.map((t: any) => t.name).join(", ")
-                                : "Any";
-                        return NextResponse.json(
-                            {
-                                success: false,
-                                error: `Not enough unique questions available for Rule (Type: ${questionType}, Tags: ${tagNames}). Needed ${numberOfQuestions}, Found ${matchingIds.length}.`,
-                            },
-                            { status: 400 },
-                        );
-                    }
-
-                    // Shuffle in JS
-                    const shuffled = matchingIds.sort(() => 0.5 - Math.random());
-                    // If allowMissingQuestions is true, we just cap the length at what we found
-                    const sliceEnd = Math.min(numberOfQuestions, matchingIds.length);
-                    selectedIds.push(
-                        ...shuffled.slice(0, sliceEnd).map((q) => q.id),
-                    );
-
-                    // Fetch full questions to copy
-                    const questions = await prisma.question.findMany({
-                        where: { id: { in: selectedIds } },
-                        include: { tags: true },
-                    });
-
-                    for (let i = 0; i < questions.length; i++) {
-                        const q = questions[i];
-                        sectionMarks += Number(marksPerQuestion);
-                        collectedQuestions.push({
-                            original: q,
-                            marks: Number(marksPerQuestion),
-                            negativeMarks: negativeMarks ? Number(negativeMarks) : null,
-                        });
-                    }
                 }
-            }
+
+                // Fetch all merged full questions to copy
+                const questions = await prisma.question.findMany({
+                    where: { id: { in: selectedIds } },
+                    include: { tags: true },
+                });
+
+                for (let i = 0; i < questions.length; i++) {
+                    const q = questions[i];
+                    sectionMarks += Number(marksPerQuestion);
+                    collectedQuestions.push({
+                        original: q,
+                        marks: Number(marksPerQuestion),
+                        negativeMarks: negativeMarks ? Number(negativeMarks) : null,
+                    });
+                }
+            } // End rules loop
 
             totalMarks += sectionMarks;
             examSectionsToCreate.push({
@@ -410,7 +371,7 @@ export async function POST(request: Request) {
                 order: blueprintSection.order,
                 questions: collectedQuestions,
             });
-        }
+        } // End sections loop
 
         // Store expected question count and blueprint ID in description JSON for publish lock validation and AI generation
         const examDescription = typeof description === 'object' && description !== null
