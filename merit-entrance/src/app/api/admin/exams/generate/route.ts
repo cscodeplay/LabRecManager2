@@ -308,12 +308,14 @@ export async function POST(request: Request) {
 
                                 const dbQuestion = await prisma.question.create({
                                     data: {
-                                        text: generatedQ.text,
+                                        text: { en: generatedQ.text },
                                         type: generatedQ.type,
                                         difficulty: generatedQ.difficulty || difficulty || 3,
-                                        explanation: generatedQ.explanation || "",
-                                        options: generatedQ.options || [],
-                                        correctAnswer: generatedQ.correctOption?.toString() || "",
+                                        explanation: { en: generatedQ.explanation || "" },
+                                        options: (generatedQ.options || []).map((opt: string) => ({ en: opt })),
+                                        correctAnswer: generatedQ.correctOption !== undefined && generatedQ.correctOption !== null
+                                            ? [generatedQ.correctOption.toString()]
+                                            : [],
                                         paragraphId: paragraphId,
                                         isAiGenerated: true,
                                         citation: {
