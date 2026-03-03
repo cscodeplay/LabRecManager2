@@ -196,11 +196,36 @@ export async function POST(request: Request) {
 
                 // For non-novel exams, assign existing questions from the bank up to the number needed
                 if (blueprint.generationMethod !== "generate_novel") {
-                    const shuffled = matchingIds.sort(() => 0.5 - Math.random());
-                    const sliceEnd = Math.min(numberOfQuestions, matchingIds.length);
+                    // Find questions already used in OTHER exams from the same blueprint
+                    const usedQuestionRows = await prisma.$queryRawUnsafe<{ question_id: string; use_count: number }[]>(`
+                        SELECT sq.question_id, COUNT(DISTINCT e.id)::int as use_count
+                        FROM section_questions sq
+                        JOIN sections s ON s.id = sq.section_id
+                        JOIN exams e ON e.id = s.exam_id
+                        WHERE e.description::jsonb->>'blueprint_id' = $1
+                        GROUP BY sq.question_id
+                    `, blueprintId);
+
+                    const usedQuestionIds = new Set(usedQuestionRows.map(r => r.question_id));
+
+                    // Separate into unused (preferred) and used (fallback)
+                    const unusedPool = matchingIds.filter(q => !usedQuestionIds.has(q.id));
+                    const usedPool = matchingIds.filter(q => usedQuestionIds.has(q.id));
+
+                    // Shuffle both pools
+                    const shuffledUnused = unusedPool.sort(() => 0.5 - Math.random());
+                    const shuffledUsed = usedPool.sort(() => 0.5 - Math.random());
+
+                    // Prefer unused questions, fall back to used if not enough unique ones exist
+                    const combined = [...shuffledUnused, ...shuffledUsed];
+                    const sliceEnd = Math.min(numberOfQuestions, combined.length);
                     selectedIds.push(
-                        ...shuffled.slice(0, sliceEnd).map((q) => q.id),
+                        ...combined.slice(0, sliceEnd).map((q) => q.id),
                     );
+
+                    if (unusedPool.length < numberOfQuestions && usedPool.length > 0) {
+                        console.log(`⚠️ Rule "${questionType}" reusing ${sliceEnd - unusedPool.length} questions already in other exams (not enough unique ones in bank)`);
+                    }
                 }
 
                 // Now parse AI Generation gaps if enabled
