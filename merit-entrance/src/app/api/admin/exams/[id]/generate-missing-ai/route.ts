@@ -28,12 +28,14 @@ export async function POST(
         let boardContext = 'PSEB';
         let classLevel = '12th';
         let subjectContext = '';
+        let repeatPercent = 30;
         try {
             const body = await request.json();
             if (body.model) selectedModel = body.model;
             if (body.board) boardContext = body.board;
             if (body.class) classLevel = body.class;
             if (body.subject) subjectContext = body.subject;
+            if (body.repeatPercent !== undefined) repeatPercent = Math.max(0, Math.min(100, Number(body.repeatPercent)));
         } catch { /* no body, use defaults */ }
         const provider = getProvider(selectedModel);
 
@@ -146,6 +148,71 @@ export async function POST(
                     const budgetRemaining = generationLimit - totalGenerated;
                     if (budgetRemaining <= 0) { limitReached = true; break; }
                     let remainingToGenerate = Math.min(numberToGenerate, budgetRemaining);
+
+                    // ===== REPEAT % LOGIC =====
+                    const repeatCount = Math.round(remainingToGenerate * repeatPercent / 100);
+                    let freshCount = remainingToGenerate - repeatCount;
+                    let repeatedSoFar = 0;
+
+                    if (repeatCount > 0) {
+                        // Query questions used in ANY exam that match this rule's criteria
+                        // Exclude questions already in THIS exam's section
+                        const currentQuestionIds = allSectionQuestions.map((sq: any) => sq.question.id);
+                        const excludeClause = currentQuestionIds.length > 0
+                            ? `AND q.id NOT IN (${currentQuestionIds.map((id: string) => `'${id}'`).join(',')})`
+                            : '';
+
+                        let tagFilter = '';
+                        if (tagIds.length > 0) {
+                            tagFilter = `AND EXISTS (SELECT 1 FROM question_tags qt WHERE qt.question_id = q.id AND qt.tag_id IN (${tagIds.map((id: string) => `'${id}'`).join(',')}))`;
+                        }
+
+                        let diffFilter = '';
+                        if (difficulty) {
+                            diffFilter = `AND q.difficulty = ${difficulty}`;
+                        }
+
+                        // Pull random matching questions that exist in other exams
+                        const reusableQuestions = await prisma.$queryRawUnsafe<any[]>(`
+                            SELECT q.id
+                            FROM questions q
+                            WHERE q.type = '${questionType}'
+                            AND EXISTS (SELECT 1 FROM section_questions sq WHERE sq.question_id = q.id)
+                            ${excludeClause}
+                            ${tagFilter}
+                            ${diffFilter}
+                            ORDER BY RANDOM()
+                            LIMIT ${repeatCount}
+                        `);
+
+                        console.log(`🔄 Repeat pool: found ${reusableQuestions.length}/${repeatCount} reusable questions for ${questionType}`);
+
+                        // Link reusable questions to this exam section
+                        for (const rq of reusableQuestions) {
+                            await prisma.sectionQuestion.create({
+                                data: {
+                                    sectionId: examSection.id,
+                                    questionId: rq.id,
+                                    marks: rule.marksPerQuestion ? Number(rule.marksPerQuestion) : 1,
+                                    negativeMarks: rule.negativeMarks ? Number(rule.negativeMarks) : 0,
+                                    order: 999
+                                }
+                            });
+                            totalGenerated++;
+                            repeatedSoFar++;
+                        }
+
+                        // If we couldn't find enough to repeat, add shortfall to fresh
+                        const repeatShortfall = repeatCount - reusableQuestions.length;
+                        if (repeatShortfall > 0) {
+                            freshCount += repeatShortfall;
+                            console.log(`📝 ${repeatShortfall} repeat shortfall → adding to fresh generation`);
+                        }
+                    }
+
+                    // ===== FRESH GENERATION (AI) =====
+                    remainingToGenerate = freshCount;
+                    if (remainingToGenerate <= 0) continue;
 
                     while (remainingToGenerate > 0 && totalGenerated < generationLimit) {
                         const batchSize = Math.min(remainingToGenerate, 5);

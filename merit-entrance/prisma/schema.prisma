@@ -88,6 +88,7 @@ model Exam {
   source               String?             @default("admin") @db.VarChar(20)
   type                 String?             @db.VarChar(50)
   sourcePdfUrl         String?             @map("source_pdf_url")
+  generatedPdfUrl      String?             @map("generated_pdf_url")
   assignmentLogs       ExamAssignmentLog[]
   assignments          ExamAssignment[]
   attempts             ExamAttempt[]

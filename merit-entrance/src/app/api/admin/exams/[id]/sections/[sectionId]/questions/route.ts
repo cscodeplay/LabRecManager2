@@ -72,6 +72,11 @@ export async function GET(
                 explanation: q.explanation ? safeParse(q.explanation) : null,
                 paragraph_text: q.paragraph_text ? safeParse(q.paragraph_text) : null,
                 tags: q.tags || [],
+                // Metadata for admin display
+                createdAt: q.created_at,
+                updatedAt: q.updated_at,
+                isAiGenerated: q.is_ai_generated,
+                citation: q.citation,
             })),
         });
     } catch (error) {

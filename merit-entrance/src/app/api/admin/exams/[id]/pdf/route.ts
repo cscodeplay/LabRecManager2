@@ -321,10 +321,10 @@ window.MathJax = {
             for (const q of allQuestions) {
                 let answerText = '';
                 const ca = q.data.correct_answer;
-                const opts = typeof q.data.options === 'string' ? JSON.parse(q.data.options) : q.data.options;
+                const opts = typeof q.data.options === 'string' ? safeJsonParse(q.data.options, []) : q.data.options;
 
                 if (ca) {
-                    const answers = Array.isArray(ca) ? ca : (typeof ca === 'string' ? JSON.parse(ca) : [ca]);
+                    const answers = Array.isArray(ca) ? ca : (typeof ca === 'string' ? safeJsonParse(ca, [ca]) : [ca]);
                     answerText = answers.map((a: string) => {
                         if (opts && Array.isArray(opts)) {
                             const idx = opts.findIndex((o: any) => o.id === a);
@@ -391,6 +391,14 @@ function buildFooter(showDateTime: boolean, showPageNumbers: boolean, extra: str
     return html;
 }
 
+function safeJsonParse(str: string, fallback: any) {
+    try {
+        return JSON.parse(str);
+    } catch {
+        return fallback;
+    }
+}
+
 function renderItem(item: { type: string; data: any }, qCount: number, compactSpacing: boolean): string {
     if (item.type === 'section-header') {
         return `<div class="section-title">${extractText(item.data.name)}</div>`;
@@ -403,12 +411,14 @@ function renderItem(item: { type: string; data: any }, qCount: number, compactSp
         let paraHtml = '';
         if (paraContent) {
             if (typeof paraContent === 'string') {
-                try { paraContent = JSON.parse(paraContent); } catch { paraHtml = paraContent; }
+                paraContent = safeJsonParse(paraContent, paraContent);
             }
             if (typeof paraContent === 'object' && paraContent !== null) {
                 if (paraContent.en) paraHtml += `<div>${paraContent.en}</div>`;
                 if (paraContent.pa && paraContent.pa !== paraContent.en) paraHtml += `<div class="punjabi">${paraContent.pa}</div>`;
                 if (!paraHtml) paraHtml = JSON.stringify(paraContent);
+            } else {
+                paraHtml = String(paraContent);
             }
         }
 
@@ -417,10 +427,12 @@ function renderItem(item: { type: string; data: any }, qCount: number, compactSp
         let titleHtml = '';
         if (titleText) {
             if (typeof titleText === 'string') {
-                try { titleText = JSON.parse(titleText); } catch { titleHtml = titleText; }
+                titleText = safeJsonParse(titleText, titleText);
             }
             if (typeof titleText === 'object' && titleText !== null) {
                 titleHtml = titleText.en || titleText.pa || '';
+            } else {
+                titleHtml = String(titleText);
             }
         }
 
@@ -450,7 +462,7 @@ function renderItem(item: { type: string; data: any }, qCount: number, compactSp
             html += `<div class="q-img"><img src="${q.image_url}" alt="" /></div>`;
         }
 
-        const options = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
+        const options = typeof q.options === 'string' ? safeJsonParse(q.options, []) : q.options;
         if (options && Array.isArray(options) && options.length > 0) {
             const hasLongText = options.some((o: any) => {
                 const t = o.text?.en || o.text || '';
@@ -496,7 +508,18 @@ export async function GET(request: Request, { params }: { params: { id: string }
         }
         const exam = exams[0];
 
-        const examTitleText = typeof exam.title === 'string' ? JSON.parse(exam.title)?.en || 'Exam' : (exam.title as any)?.en || 'Exam';
+        let examTitleText = 'Exam';
+        if (typeof exam.title === 'string') {
+            try {
+                const parsed = JSON.parse(exam.title);
+                examTitleText = parsed?.en || parsed?.pa || exam.title || 'Exam';
+            } catch {
+                // title is a plain string, not JSON
+                examTitleText = exam.title || 'Exam';
+            }
+        } else if (exam.title && typeof exam.title === 'object') {
+            examTitleText = (exam.title as any)?.en || (exam.title as any)?.pa || 'Exam';
+        }
         const finalExamName = examNameOption || examTitleText;
 
         const sections = await sql`

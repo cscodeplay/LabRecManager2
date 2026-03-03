@@ -18,6 +18,10 @@ import MasterImportModal from '@/components/MasterImportModal';
 import RichTextEditor from '@/components/RichTextEditor';
 import Modal from '@/components/ui/Modal';
 import QuestionEditor, { QuestionFormData } from '@/components/admin/QuestionEditor';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, BorderStyle } from 'docx';
+import { saveAs } from 'file-saver';
 import QuestionBankPicker from '@/components/admin/QuestionBankPicker';
 import { MathText } from '@/components/MathText';
 import { MathJaxProvider } from '@/components/providers/MathJaxProvider';
@@ -49,6 +53,10 @@ interface Question {
     order?: number;
     paragraph_text?: Record<string, string>;
     subQuestions?: any[];
+    createdAt?: string;
+    updatedAt?: string;
+    isAiGenerated?: boolean;
+    citation?: string;
 }
 
 interface Exam {
@@ -65,6 +73,7 @@ interface Exam {
     security_mode?: boolean;
     status: string;
     source_pdf_url?: string;
+    generated_pdf_url?: string;
     type?: string;
     sections: Section[];
     schedules: { id: string; start_time: string; end_time: string }[];
@@ -83,7 +92,11 @@ export default function EditExamPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle');
-    const [activeTab, setActiveTab] = useState<'sections' | 'details' | 'instructions' | 'composition' | 'original_pdf' | 'blueprint'>('sections');
+    const [activeTab, setActiveTab] = useState<'sections' | 'details' | 'instructions' | 'composition' | 'original_pdf' | 'blueprint' | 'exam_paper'>('sections');
+
+    // Exam Paper PDF/Word State
+    const [isGeneratingPaper, setIsGeneratingPaper] = useState(false);
+    const [isDownloadingWord, setIsDownloadingWord] = useState(false);
 
     // Section Tabs Logic
     const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
@@ -130,6 +143,7 @@ export default function EditExamPage() {
     const [boardName, setBoardName] = useState('PSEB');
     const [className, setClassName] = useState('12th');
     const [subjectName, setSubjectName] = useState('');
+    const [repeatPercent, setRepeatPercent] = useState(30);
 
     // Bulk selection
     const [selectedQuestions, setSelectedQuestions] = useState<Set<string>>(new Set());
@@ -194,6 +208,9 @@ export default function EditExamPage() {
     });
     const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
     const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+    const [showPdfSettings, setShowPdfSettings] = useState(false);
+    const [downloadFormats, setDownloadFormats] = useState({ pdf: true, word: false });
+    const [showDownloadDropdown, setShowDownloadDropdown] = useState(false);
 
     // Refs for auto-save debouncing
     const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -708,7 +725,7 @@ export default function EditExamPage() {
             const res = await fetch(postUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: selectedModel, board: boardName, class: className, subject: subjectName })
+                body: JSON.stringify({ model: selectedModel, board: boardName, class: className, subject: subjectName, repeatPercent })
             });
             const data = await res.json();
             if (res.ok && data.success) {
@@ -986,6 +1003,13 @@ export default function EditExamPage() {
     };
 
 
+    // Auto-load PDF if tab is selected
+    useEffect(() => {
+        if (activeTab === 'exam_paper' && exam && !exam.generated_pdf_url && !isGeneratingPaper) {
+            generateExamPaperPdf();
+        }
+    }, [activeTab]);
+
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -1005,9 +1029,180 @@ export default function EditExamPage() {
     // Calculate totals
     const totalQuestions = sections.reduce((a, s) => a + (Number(s.question_count) || 0), 0);
 
+    // ==========================================
+    // EXAM PAPER GENERATION (PDF & WORD)
+    // ==========================================
+
+    const cleanHtml = (htmlStr: string) => {
+        if (!htmlStr) return '';
+        // Very basic cleaner for PDF/Word
+        return htmlStr
+            .replace(/<[^>]+>/g, '') // remove HTML tags
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'");
+    };
+
+    const getFullQuestionList = async () => {
+        // Fetch all questions for all sections to build the paper
+        const allQs: { section: Section, questions: Question[] }[] = [];
+        for (const sec of sections) {
+            try {
+                const res = await fetch(`/api/admin/exams/${examId}/sections/${sec.id}/questions`);
+                if (res.ok) {
+                    const data = await res.json();
+                    allQs.push({ section: sec, questions: data.questions || [] });
+                }
+            } catch (e) {
+                console.error("Failed to fetch questions for section", sec.id);
+            }
+        }
+        return allQs;
+    };
+
+    const generateExamPaperPdf = async (forceRegenerate = false) => {
+        if (!exam) return;
+        setIsGeneratingPaper(true);
+        try {
+            if (forceRegenerate) {
+                // Clear cached PDF if forcing regeneration
+                await fetch(`/api/admin/exams/${examId}/paper-pdf`, { method: 'DELETE' });
+            }
+
+            // Use the server-side HTML preview endpoint which properly renders
+            // MathJax, images, HTML content, and bilingual text
+            const params = new URLSearchParams({
+                schoolName: pdfSettings.schoolName,
+                examNameOption: pdfSettings.examNameOption,
+                showPageNumbers: pdfSettings.showPageNumbers.toString(),
+                showDateTime: pdfSettings.showDateTime.toString(),
+                compactSpacing: pdfSettings.compactSpacing.toString(),
+                preview: 'true'
+            });
+
+            const previewUrl = `/api/admin/exams/${examId}/pdf?${params.toString()}`;
+            setExam({ ...exam, generated_pdf_url: previewUrl });
+
+        } catch (error) {
+            console.error(error);
+            toast.error('Failed to load exam paper preview');
+        } finally {
+            setIsGeneratingPaper(false);
+        }
+    };
+
+
+
+    const generateExamPaperWord = async () => {
+        setIsDownloadingWord(true);
+        try {
+            const allData = await getFullQuestionList();
+
+            const docChildren: any[] = [];
+
+            // Header
+            docChildren.push(
+                new Paragraph({ text: getText(exam?.title, 'en') || 'Exam Paper', heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }),
+                new Paragraph({ text: `Duration: ${exam?.duration || 0} mins  |  Total Marks: ${exam?.total_marks || 0}`, alignment: AlignmentType.CENTER })
+            );
+
+            docChildren.push(new Paragraph({ text: "", spacing: { after: 200 } }));
+
+            // Instructions
+            if (exam?.instructions) {
+                docChildren.push(
+                    new Paragraph({ text: "General Instructions:", heading: HeadingLevel.HEADING_3 }),
+                    new Paragraph({ text: cleanHtml(getText(exam.instructions, 'en')) })
+                );
+                docChildren.push(new Paragraph({ text: "", spacing: { after: 300 } }));
+            }
+
+            let globalQNum = 1;
+
+            // Sections
+            for (const { section, questions } of allData) {
+                docChildren.push(
+                    new Paragraph({ text: getText(section.name, 'en') || 'Section', heading: HeadingLevel.HEADING_2 })
+                );
+
+                for (const q of questions) {
+                    const qText = `${globalQNum}. ${cleanHtml(getText(q.text, 'en'))} [${q.marks} m]`;
+                    docChildren.push(
+                        new Paragraph({
+                            children: [new TextRun({ text: qText, bold: true })],
+                            spacing: { before: 200, after: 100 }
+                        })
+                    );
+
+                    // Options — 2-column grid for MCQ
+                    if (q.type === 'mcq_single' || q.type === 'mcq_multiple') {
+                        if (q.options && q.options.length > 0) {
+                            const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+                            const borders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
+                            const rows: TableRow[] = [];
+                            for (let i = 0; i < q.options.length; i += 2) {
+                                const cells: TableCell[] = [];
+                                const letter1 = String.fromCharCode(65 + i);
+                                cells.push(new TableCell({
+                                    children: [new Paragraph({ text: `${letter1}) ${cleanHtml(getText(q.options[i].text, 'en'))}` })],
+                                    width: { size: 50, type: WidthType.PERCENTAGE },
+                                    borders
+                                }));
+                                if (i + 1 < q.options.length) {
+                                    const letter2 = String.fromCharCode(65 + i + 1);
+                                    cells.push(new TableCell({
+                                        children: [new Paragraph({ text: `${letter2}) ${cleanHtml(getText(q.options[i + 1].text, 'en'))}` })],
+                                        width: { size: 50, type: WidthType.PERCENTAGE },
+                                        borders
+                                    }));
+                                } else {
+                                    cells.push(new TableCell({ children: [new Paragraph({ text: '' })], width: { size: 50, type: WidthType.PERCENTAGE }, borders }));
+                                }
+                                rows.push(new TableRow({ children: cells }));
+                            }
+                            docChildren.push(new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }));
+                        }
+                    } else if (q.type === 'short_answer' || q.type === 'long_answer') {
+                        // Compact spacing for answer area instead of blank lines
+                        const spacingAfter = q.type === 'short_answer' ? 400 : 800;
+                        docChildren.push(new Paragraph({
+                            text: 'Ans: ___________________________________________',
+                            spacing: { before: 100, after: spacingAfter },
+                            indent: { left: 360 }
+                        }));
+                    }
+
+                    globalQNum++;
+                }
+
+                // Add page break after section? (Optional, skipping for now)
+                docChildren.push(new Paragraph({ text: "", spacing: { after: 400 } }));
+            }
+
+            const doc = new Document({
+                sections: [{ properties: {}, children: docChildren }]
+            });
+
+            const blob = await Packer.toBlob(doc);
+            saveAs(blob, `${getText(exam?.title, 'en') || 'exam_paper'}.docx`);
+            toast.success('Word document downloaded successfully');
+
+        } catch (error) {
+            console.error(error);
+            toast.error('Failed to generate Word document');
+        } finally {
+            setIsDownloadingWord(false);
+        }
+    };
+
+
+
     return (
-        <MathJaxProvider>
-            <div className="min-h-screen bg-gray-50">
+        <>
+            <div className="min-h-screen bg-gray-50 flex flex-col">
                 <DialogComponent />
 
                 {/* Custom AI Generation Modal with editable count */}
@@ -1084,7 +1279,39 @@ export default function EditExamPage() {
                                         />
                                     </div>
                                 </div>
-                                <p className="text-[10px] text-gray-400 -mt-3 mb-3">ℹ️ Board context is set in the blueprint. Edit the blueprint to change.</p>
+                                <p className="text-[10px] text-gray-400 -mt-3 mb-3">{"\u2139\uFE0F"} Board context is set in the blueprint. Edit the blueprint to change.</p>
+
+                                {/* Repeat % Slider */}
+                                <div className="mb-4 p-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label className="text-sm font-medium text-amber-900">{"\uD83D\uDD04"} Repeat from Previous Exams</label>
+                                        <span className="text-sm font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">{repeatPercent}%</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={100}
+                                        step={5}
+                                        value={repeatPercent}
+                                        onChange={(e) => setRepeatPercent(Number(e.target.value))}
+                                        className="w-full accent-amber-500"
+                                    />
+                                    <div className="flex justify-between text-[10px] text-amber-600 mt-1">
+                                        <span>0% - All fresh</span>
+                                        <span>100% - All from past exams</span>
+                                    </div>
+                                    <p className="text-[10px] text-amber-700 mt-1">
+                                        {repeatPercent === 0
+                                            ? 'All questions will be newly generated (AI + unused bank)'
+                                            : repeatPercent <= 30
+                                                ? `~${repeatPercent}% reused from past exams, ~${100 - repeatPercent}% freshly generated`
+                                                : repeatPercent <= 70
+                                                    ? `Mix of ~${repeatPercent}% previously used and ~${100 - repeatPercent}% new questions`
+                                                    : repeatPercent === 100
+                                                        ? 'All questions pulled from past exams (if available)'
+                                                        : `Mostly reused (~${repeatPercent}%) with some new (~${100 - repeatPercent}%)`}
+                                    </p>
+                                </div>
 
                                 {/* Model Selector */}
                                 <div className="mb-4">
@@ -1211,13 +1438,7 @@ export default function EditExamPage() {
                                     <Upload className="w-4 h-4" />
                                     Master Import
                                 </button>
-                                <button
-                                    onClick={() => setShowDownloadPdfModal(true)}
-                                    className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100"
-                                >
-                                    <Download className="w-4 h-4" />
-                                    Download PDF
-                                </button>
+
                                 <Link
                                     href={`/admin/exams/${examId}/preview`}
                                     className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -1322,6 +1543,15 @@ export default function EditExamPage() {
                                     Blueprint
                                 </button>
                             )}
+                            <button
+                                onClick={() => setActiveTab('exam_paper')}
+                                className={`px-4 py-2 rounded-t-lg text-sm font-medium flex-shrink-0 ${activeTab === 'exam_paper'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                    }`}
+                            >
+                                Exam Paper
+                            </button>
                         </div>
                     </div>
                 </header>
@@ -2127,6 +2357,18 @@ export default function EditExamPage() {
                                                                                     </p>
                                                                                 </div>
                                                                             )}
+                                                                            {/* Question Metadata */}
+                                                                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-gray-400">
+                                                                                {q.createdAt && (
+                                                                                    <span title="Created">Created: {new Date(q.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                                                                                )}
+                                                                                {q.updatedAt && q.updatedAt !== q.createdAt && (
+                                                                                    <span title="Updated">Updated: {new Date(q.updatedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                                                                                )}
+                                                                                {q.isAiGenerated && (
+                                                                                    <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium" title={q.citation || 'AI Generated'}>AI{q.citation ? (' - ' + q.citation) : ''}</span>
+                                                                                )}
+                                                                            </div>
                                                                         </div>
                                                                     </div>
 
@@ -2322,401 +2564,429 @@ export default function EditExamPage() {
                                 )}
                             </div>
                         </div>
-                    ) : null}
-                </main>
-
-                {/* Add Section Modal */}
-                <Modal
-                    isOpen={showAddSection}
-                    onClose={() => setShowAddSection(false)}
-                    title="Add New Section"
-                    maxWidth="sm"
-                >
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Name (English)</label>
-                            <input
-                                type="text"
-                                value={newSection.nameEn}
-                                onChange={(e) => setNewSection({ ...newSection, nameEn: e.target.value })}
-                                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="e.g. Physics"
-                                autoFocus
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Name (Punjabi)</label>
-                            <input
-                                type="text"
-                                value={newSection.namePa}
-                                onChange={(e) => setNewSection({ ...newSection, namePa: e.target.value })}
-                                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="e.g. ਭੌਤਿਕ ਵਿਗਿਆਨ"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Duration (Optional)</label>
-                            <input
-                                type="number"
-                                value={newSection.duration}
-                                onChange={(e) => setNewSection({ ...newSection, duration: e.target.value })}
-                                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="Minutes"
-                            />
-                        </div>
-                        <div className="flex gap-3 pt-2">
-                            <button onClick={() => setShowAddSection(false)} className="flex-1 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-                            <button onClick={handleAddSection} className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Section</button>
-                        </div>
-                    </div>
-                </Modal>
-
-                {/* Question Editor Modal */}
-                <Modal
-                    isOpen={showQuestionModal}
-                    onClose={() => setShowQuestionModal(false)}
-                    title={editingQuestion ? 'Edit Question' : 'Add Question'}
-                    maxWidth="4xl"
-                >
-                    <QuestionEditor
-                        initialData={getInitialFormData(editingQuestion)}
-                        tags={tags}
-                        onSave={handleQuestionSave}
-                        onCancel={() => setShowQuestionModal(false)}
-                        isSaving={isSavingQuestion}
-                        availableParagraphs={(sectionQuestions[activeSectionId || ''] || [])
-                            .filter(q => q.type === 'paragraph' && q.id !== editingQuestion?.id)
-                            .map(q => ({
-                                id: q.id,
-                                textEn: typeof q.text === 'object' ? (q.text as any).en || '' : String(q.text || '')
-                            }))}
-                    />
-                </Modal>
-
-                {/* Question Picker Modal */}
-                <Modal
-                    isOpen={showPickerModal}
-                    onClose={() => setShowPickerModal(false)}
-                    title="Import Questions from Bank"
-                    maxWidth="4xl"
-                >
-                    <QuestionBankPicker
-                        onImport={handleImportQuestions}
-                        onCancel={() => setShowPickerModal(false)}
-                        excludeIds={sectionQuestions[activeSectionId || '']?.map(q => q.id) || []}
-                        excludeQuestions={sectionQuestions[activeSectionId || ''] || []}
-                    />
-                </Modal>
-
-                {/* Section Edit Modal */}
-                <Modal isOpen={!!editingSection} onClose={() => setEditingSection(null)} title="Edit Section" maxWidth="md">
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Name (English) *</label>
-                            <input
-                                type="text"
-                                value={editSectionData.nameEn}
-                                onChange={(e) => setEditSectionData({ ...editSectionData, nameEn: e.target.value })}
-                                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Name (Punjabi)</label>
-                            <input
-                                type="text"
-                                value={editSectionData.namePa}
-                                onChange={(e) => setEditSectionData({ ...editSectionData, namePa: e.target.value })}
-                                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes)</label>
-                            <input
-                                type="number"
-                                value={editSectionData.duration}
-                                onChange={(e) => setEditSectionData({ ...editSectionData, duration: e.target.value })}
-                                className="w-full px-4 py-2 border rounded-lg"
-                                placeholder="Leave blank to use exam duration"
-                            />
-                        </div>
-                        <div className="flex justify-end gap-3 pt-2">
-                            <button onClick={() => setEditingSection(null)} className="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-50">Cancel</button>
-                            <button onClick={handleSaveSection} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
-                        </div>
-                    </div>
-                </Modal>
-
-                {/* Bulk Marks Update Modal */}
-                <Modal isOpen={showBulkMarksModal} onClose={() => setShowBulkMarksModal(false)} title={`Update Marks (${selectedQuestions.size} questions)`} maxWidth="sm">
-                    <div className="p-6 space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Marks (Optional)</label>
-                            <input
-                                type="number"
-                                className="w-full px-3 py-2 border rounded"
-                                placeholder="Leave blank to keep unchanged"
-                                value={bulkMarks.marks}
-                                onChange={(e) => setBulkMarks({ ...bulkMarks, marks: e.target.value })}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Negative Marks (Optional)</label>
-                            <input
-                                type="number"
-                                step="0.25"
-                                className="w-full px-3 py-2 border rounded"
-                                placeholder="Leave blank to keep unchanged"
-                                value={bulkMarks.negativeMarks}
-                                onChange={(e) => setBulkMarks({ ...bulkMarks, negativeMarks: e.target.value })}
-                            />
-                        </div>
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button onClick={() => setShowBulkMarksModal(false)} className="px-4 py-2 border rounded">Cancel</button>
-                            <button onClick={handleBulkMarksUpdate} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Update</button>
-                        </div>
-                    </div>
-                </Modal>
-
-                <Modal isOpen={showBulkMoveModal} onClose={() => setShowBulkMoveModal(false)} title={`Move ${selectedQuestions.size} question(s) to Section`} maxWidth="sm">
-                    <div className="p-6 space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Select Target Section</label>
-                            <select
-                                className="w-full px-3 py-2 border rounded-lg"
-                                value={bulkMoveTargetSectionId}
-                                onChange={(e) => setBulkMoveTargetSectionId(e.target.value)}
-                            >
-                                <option value="">-- Select Section --</option>
-                                {sections.filter(s => s.id !== activeSectionId).map((s, i) => (
-                                    <option key={s.id} value={s.id}>{getText(s.name, language) || `Section ${i + 1}`}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button onClick={() => { setShowBulkMoveModal(false); setBulkMoveTargetSectionId(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                            <button
-                                onClick={handleBulkMove}
-                                disabled={!bulkMoveTargetSectionId}
-                                className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
-                            >
-                                Move Questions
-                            </button>
-                        </div>
-                    </div>
-                </Modal>
-
-                {/* PDF Instructions Extraction Modal */}
-                <Modal isOpen={showInstructionsPdfModal} onClose={() => !isExtractingInstructions && setShowInstructionsPdfModal(false)} title="Extract Instructions from PDF" maxWidth="4xl">
-                    <div className="p-6">
-                        {pdfPages.length > 0 ? (
-                            <div className="space-y-6">
-                                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm text-blue-800 flex items-start gap-2">
-                                    <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                                    <p>Select the page(s) that contain the general instructions or rules. Do NOT select pages with actual questions, as they will be ignored by the extraction prompt.</p>
+                    ) : activeTab === 'exam_paper' ? (
+                        <div className="bg-white rounded-xl shadow-sm border flex flex-col h-[850px]">
+                            {/* Top Bar */}
+                            <div className="flex justify-between items-center px-6 py-4 border-b">
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-800">Exam Paper</h2>
+                                    <p className="text-sm text-gray-500">Preview and download the formatted exam paper.</p>
                                 </div>
+                                <div className="flex items-center gap-2">
+                                    {/* Settings Toggle */}
+                                    <button
+                                        onClick={() => setShowPdfSettings(!showPdfSettings)}
+                                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${showPdfSettings ? 'bg-gray-200 text-gray-800' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+                                    >
+                                        <Settings className="w-4 h-4" /> Settings
+                                    </button>
 
-                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 max-h-[50vh] overflow-y-auto p-2 border rounded-lg bg-gray-50">
-                                    {pdfPages.map((pageImage, index) => (
-                                        <div
-                                            key={index}
-                                            onClick={() => {
-                                                if (isExtractingInstructions) return;
-                                                setSelectedPageIndices(prev =>
-                                                    prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index].sort((a, b) => a - b)
-                                                );
-                                            }}
-                                            className={`relative cursor-pointer transition-all ${selectedPageIndices.includes(index) ? 'ring-2 ring-indigo-500 rounded-lg shadow-md scale-[1.02]' : 'hover:shadow-lg opacity-70 hover:opacity-100'}`}
+                                    {/* Regenerate */}
+                                    <button
+                                        onClick={async () => await generateExamPaperPdf(true)}
+                                        disabled={isGeneratingPaper || isDownloadingWord}
+                                        className="flex items-center gap-2 px-3 py-2 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                                    >
+                                        {isGeneratingPaper ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                                        Regenerate
+                                    </button>
+
+                                    {/* Unified Download Button */}
+                                    <div className="relative">
+                                        <button
+                                            onClick={() => setShowDownloadDropdown(!showDownloadDropdown)}
+                                            disabled={isDownloadingWord || isGeneratingPaper || isDownloadingPdf}
+                                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                                         >
-                                            <div className="aspect-[1/1.4] relative bg-white border border-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
-                                                <img src={pageImage} alt={`Page ${index + 1}`} className="max-w-full max-h-full object-contain" />
-                                                <div className="absolute bottom-2 right-2 bg-gray-900/70 text-white px-2 py-0.5 rounded text-xs">
-                                                    Pg {index + 1}
+                                            {(isDownloadingWord || isDownloadingPdf) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                                            Download
+                                            <ChevronDown className="w-3 h-3" />
+                                        </button>
+                                        {showDownloadDropdown && (
+                                            <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-xl shadow-xl border p-4 z-20">
+                                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Select format(s)</p>
+                                                <label className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                                                        checked={downloadFormats.pdf}
+                                                        onChange={e => setDownloadFormats({ ...downloadFormats, pdf: e.target.checked })}
+                                                    />
+                                                    <div>
+                                                        <span className="text-sm font-medium text-gray-800">PDF</span>
+                                                        <p className="text-xs text-gray-400">Portable Document Format</p>
+                                                    </div>
+                                                </label>
+                                                <label className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                                                        checked={downloadFormats.word}
+                                                        onChange={e => setDownloadFormats({ ...downloadFormats, word: e.target.checked })}
+                                                    />
+                                                    <div>
+                                                        <span className="text-sm font-medium text-gray-800">Word (.docx)</span>
+                                                        <p className="text-xs text-gray-400">Microsoft Word Document</p>
+                                                    </div>
+                                                </label>
+                                                <div className="border-t mt-3 pt-3">
+                                                    <button
+                                                        disabled={(!downloadFormats.pdf && !downloadFormats.word) || isDownloadingPdf || isDownloadingWord}
+                                                        onClick={async () => {
+                                                            setShowDownloadDropdown(false);
+                                                            if (downloadFormats.pdf) {
+                                                                setIsDownloadingPdf(true);
+                                                                const params = new URLSearchParams({
+                                                                    schoolName: pdfSettings.schoolName,
+                                                                    examNameOption: pdfSettings.examNameOption,
+                                                                    showPageNumbers: pdfSettings.showPageNumbers.toString(),
+                                                                    showDateTime: pdfSettings.showDateTime.toString(),
+                                                                    compactSpacing: pdfSettings.compactSpacing.toString()
+                                                                });
+                                                                window.location.href = `/api/admin/exams/${examId}/pdf?${params.toString()}`;
+                                                                setTimeout(() => setIsDownloadingPdf(false), 3000);
+                                                            }
+                                                            if (downloadFormats.word) {
+                                                                await generateExamPaperWord();
+                                                            }
+                                                        }}
+                                                        className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                                                    >
+                                                        <Download className="w-4 h-4" />
+                                                        Download {downloadFormats.pdf && downloadFormats.word ? 'Both' : downloadFormats.pdf ? 'PDF' : downloadFormats.word ? 'Word' : 'Selected'}
+                                                    </button>
                                                 </div>
                                             </div>
-                                            {selectedPageIndices.includes(index) && (
-                                                <div className="absolute -top-2 -right-2 bg-indigo-600 text-white rounded-full p-1 shadow-md">
-                                                    <Check className="w-4 h-4" />
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <div className="flex items-center justify-between border-t pt-4">
-                                    <div className="text-sm font-medium text-gray-700">
-                                        {selectedPageIndices.length} page(s) selected
-                                    </div>
-                                    <div className="flex gap-3">
-                                        <button
-                                            onClick={() => setShowInstructionsPdfModal(false)}
-                                            disabled={isExtractingInstructions}
-                                            className="px-4 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            onClick={() => extractInstructionsFromPdf('English')}
-                                            disabled={isExtractingInstructions || selectedPageIndices.length === 0}
-                                            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
-                                        >
-                                            {isExtractingInstructions ? <><Loader2 className="w-4 h-4 animate-spin" /> Extracting...</> : 'Extract English'}
-                                        </button>
-                                        <button
-                                            onClick={() => extractInstructionsFromPdf('Punjabi')}
-                                            disabled={isExtractingInstructions || selectedPageIndices.length === 0}
-                                            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
-                                        >
-                                            {isExtractingInstructions ? <><Loader2 className="w-4 h-4 animate-spin" /> Extracting...</> : 'Extract Punjabi'}
-                                        </button>
+                                        )}
                                     </div>
                                 </div>
                             </div>
-                        ) : (
-                            <div className="flex justify-center p-12">
-                                <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-                            </div>
-                        )}
-                    </div>
-                </Modal>
 
-                {/* Download PDF Settings Modal */}
-                {showDownloadPdfModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                        <div className={`bg-white rounded-xl ${pdfPreviewUrl ? 'w-full max-w-5xl h-[90vh]' : 'w-full max-w-md'} p-6 flex flex-col`}>
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-lg font-bold">
-                                    {pdfPreviewUrl ? 'PDF Preview' : 'Download Exam PDF'}
-                                </h3>
-                                <button onClick={() => { setShowDownloadPdfModal(false); setPdfPreviewUrl(null); }} className="text-gray-500 hover:bg-gray-100 p-2 rounded-lg">
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-
-                            {pdfPreviewUrl ? (
-                                <>
-                                    {/* Preview iframe */}
-                                    <div className="flex-1 border rounded-lg overflow-hidden mb-4">
-                                        <iframe
-                                            src={pdfPreviewUrl}
-                                            className="w-full h-full"
-                                            title="PDF Preview"
-                                        />
-                                    </div>
-                                    <div className="flex justify-between pt-4 border-t">
-                                        <button
-                                            onClick={() => setPdfPreviewUrl(null)}
-                                            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                                        >
-                                            <ChevronLeft className="w-4 h-4" /> Back to Settings
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                setIsDownloadingPdf(true);
-                                                const params = new URLSearchParams({
-                                                    schoolName: pdfSettings.schoolName,
-                                                    examNameOption: pdfSettings.examNameOption,
-                                                    showPageNumbers: pdfSettings.showPageNumbers.toString(),
-                                                    showDateTime: pdfSettings.showDateTime.toString(),
-                                                    compactSpacing: pdfSettings.compactSpacing.toString()
-                                                });
-                                                window.location.href = `/api/admin/exams/${examId}/pdf?${params.toString()}`;
-                                                setTimeout(() => {
-                                                    setIsDownloadingPdf(false);
-                                                    setShowDownloadPdfModal(false);
-                                                    setPdfPreviewUrl(null);
-                                                }, 3000);
-                                            }}
-                                            disabled={isDownloadingPdf}
-                                            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
-                                        >
-                                            {isDownloadingPdf ? 'Generating...' : <><Download className="w-4 h-4" /> Download PDF</>}
-                                        </button>
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <div className="space-y-4">
+                            {/* Collapsible Settings Panel */}
+                            {showPdfSettings && (
+                                <div className="px-6 py-4 border-b bg-gray-50/70">
+                                    <div className="grid grid-cols-2 gap-4 max-w-2xl">
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">School / Organization Name</label>
+                                            <label className="block text-xs font-medium text-gray-600 mb-1">School / Org Name</label>
                                             <input
                                                 type="text"
                                                 value={pdfSettings.schoolName}
                                                 onChange={e => setPdfSettings({ ...pdfSettings, schoolName: e.target.value })}
-                                                className="w-full border rounded-lg p-2"
+                                                className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Exam Name (Optional overrides original)</label>
+                                            <label className="block text-xs font-medium text-gray-600 mb-1">Exam Name (Override)</label>
                                             <input
                                                 type="text"
                                                 value={pdfSettings.examNameOption}
                                                 onChange={e => setPdfSettings({ ...pdfSettings, examNameOption: e.target.value })}
                                                 placeholder={typeof exam?.title === 'string' ? exam?.title : exam?.title?.en || 'Exam Title'}
-                                                className="w-full border rounded-lg p-2"
+                                                className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                                             />
                                         </div>
-
-                                        <div className="flex items-center justify-between pt-2">
-                                            <label className="text-sm font-medium text-gray-700">Compact Spacing Layout</label>
-                                            <input
-                                                type="checkbox"
-                                                className="w-4 h-4"
-                                                checked={pdfSettings.compactSpacing}
-                                                onChange={e => setPdfSettings({ ...pdfSettings, compactSpacing: e.target.checked })}
-                                            />
-                                        </div>
-                                        <div className="flex items-center justify-between pt-2">
-                                            <label className="text-sm font-medium text-gray-700">Show Page Numbers</label>
-                                            <input
-                                                type="checkbox"
-                                                className="w-4 h-4"
-                                                checked={pdfSettings.showPageNumbers}
-                                                onChange={e => setPdfSettings({ ...pdfSettings, showPageNumbers: e.target.checked })}
-                                            />
-                                        </div>
-                                        <div className="flex items-center justify-between pt-2">
-                                            <label className="text-sm font-medium text-gray-700">Show Date/Time in Footer</label>
-                                            <input
-                                                type="checkbox"
-                                                className="w-4 h-4"
-                                                checked={pdfSettings.showDateTime}
-                                                onChange={e => setPdfSettings({ ...pdfSettings, showDateTime: e.target.checked })}
-                                            />
-                                        </div>
-
                                     </div>
-
-                                    <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-                                        <button
-                                            onClick={() => setShowDownloadPdfModal(false)}
-                                            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                const params = new URLSearchParams({
-                                                    schoolName: pdfSettings.schoolName,
-                                                    examNameOption: pdfSettings.examNameOption,
-                                                    showPageNumbers: pdfSettings.showPageNumbers.toString(),
-                                                    showDateTime: pdfSettings.showDateTime.toString(),
-                                                    compactSpacing: pdfSettings.compactSpacing.toString(),
-                                                    preview: 'true'
-                                                });
-                                                setPdfPreviewUrl(`/api/admin/exams/${examId}/pdf?${params.toString()}`);
-                                            }}
-                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-                                        >
-                                            <Eye className="w-4 h-4" /> Preview
-                                        </button>
+                                    <div className="flex flex-wrap gap-6 mt-3">
+                                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                            <input type="checkbox" className="w-4 h-4 rounded text-indigo-600" checked={pdfSettings.compactSpacing} onChange={e => setPdfSettings({ ...pdfSettings, compactSpacing: e.target.checked })} />
+                                            Compact Spacing
+                                        </label>
+                                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                            <input type="checkbox" className="w-4 h-4 rounded text-indigo-600" checked={pdfSettings.showPageNumbers} onChange={e => setPdfSettings({ ...pdfSettings, showPageNumbers: e.target.checked })} />
+                                            Page Numbers
+                                        </label>
+                                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                            <input type="checkbox" className="w-4 h-4 rounded text-indigo-600" checked={pdfSettings.showDateTime} onChange={e => setPdfSettings({ ...pdfSettings, showDateTime: e.target.checked })} />
+                                            Date/Time in Footer
+                                        </label>
                                     </div>
-                                </>
+                                </div>
                             )}
-                        </div>
-                    </div>
-                )}
 
-            </div >
-        </MathJaxProvider >
+                            {/* PDF Preview Area */}
+                            <div className="flex-1 overflow-hidden bg-gray-50 flex items-center justify-center">
+                                {isGeneratingPaper ? (
+                                    <div className="text-center text-gray-500">
+                                        <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4 text-indigo-600" />
+                                        <p className="font-medium">Generating PDF Exam Paper...</p>
+                                        <p className="text-xs text-gray-400 mt-1">This may take a moment</p>
+                                    </div>
+                                ) : exam?.generated_pdf_url ? (
+                                    <iframe src={exam.generated_pdf_url} className="w-full h-full" title="Generated Exam Paper" />
+                                ) : (
+                                    <div className="text-center text-gray-400">
+                                        <FileText className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                                        <p className="font-medium text-gray-500">No PDF generated yet</p>
+                                        <p className="text-xs mt-1">The PDF will be generated automatically, or click below.</p>
+                                        <button
+                                            onClick={() => generateExamPaperPdf()}
+                                            className="mt-4 px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium transition-colors"
+                                        >
+                                            Generate Now
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ) : null}
+                </main>
+            </div>
+
+            {/* Add Section Modal */}
+            <Modal
+                isOpen={showAddSection}
+                onClose={() => setShowAddSection(false)}
+                title="Add New Section"
+                maxWidth="sm"
+            >
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Name (English)</label>
+                        <input
+                            type="text"
+                            value={newSection.nameEn}
+                            onChange={(e) => setNewSection({ ...newSection, nameEn: e.target.value })}
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder="e.g. Physics"
+                            autoFocus
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Name (Punjabi)</label>
+                        <input
+                            type="text"
+                            value={newSection.namePa}
+                            onChange={(e) => setNewSection({ ...newSection, namePa: e.target.value })}
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder="e.g. ਭੌਤਿਕ ਵਿਗਿਆਨ"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Duration (Optional)</label>
+                        <input
+                            type="number"
+                            value={newSection.duration}
+                            onChange={(e) => setNewSection({ ...newSection, duration: e.target.value })}
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder="Minutes"
+                        />
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                        <button onClick={() => setShowAddSection(false)} className="flex-1 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+                        <button onClick={handleAddSection} className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Section</button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* Question Editor Modal */}
+            <Modal
+                isOpen={showQuestionModal}
+                onClose={() => setShowQuestionModal(false)}
+                title={editingQuestion ? 'Edit Question' : 'Add Question'}
+                maxWidth="4xl"
+            >
+                <QuestionEditor
+                    initialData={getInitialFormData(editingQuestion)}
+                    tags={tags}
+                    onSave={handleQuestionSave}
+                    onCancel={() => setShowQuestionModal(false)}
+                    isSaving={isSavingQuestion}
+                    availableParagraphs={(sectionQuestions[activeSectionId || ''] || [])
+                        .filter(q => q.type === 'paragraph' && q.id !== editingQuestion?.id)
+                        .map(q => ({
+                            id: q.id,
+                            textEn: typeof q.text === 'object' ? (q.text as any).en || '' : String(q.text || '')
+                        }))}
+                />
+            </Modal>
+
+            {/* Question Picker Modal */}
+            <Modal
+                isOpen={showPickerModal}
+                onClose={() => setShowPickerModal(false)}
+                title="Import Questions from Bank"
+                maxWidth="4xl"
+            >
+                <QuestionBankPicker
+                    onImport={handleImportQuestions}
+                    onCancel={() => setShowPickerModal(false)}
+                    excludeIds={sectionQuestions[activeSectionId || '']?.map(q => q.id) || []}
+                    excludeQuestions={sectionQuestions[activeSectionId || ''] || []}
+                />
+            </Modal>
+
+            {/* Section Edit Modal */}
+            <Modal isOpen={!!editingSection} onClose={() => setEditingSection(null)} title="Edit Section" maxWidth="md" >
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Name (English) *</label>
+                        <input
+                            type="text"
+                            value={editSectionData.nameEn}
+                            onChange={(e) => setEditSectionData({ ...editSectionData, nameEn: e.target.value })}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Name (Punjabi)</label>
+                        <input
+                            type="text"
+                            value={editSectionData.namePa}
+                            onChange={(e) => setEditSectionData({ ...editSectionData, namePa: e.target.value })}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes)</label>
+                        <input
+                            type="number"
+                            value={editSectionData.duration}
+                            onChange={(e) => setEditSectionData({ ...editSectionData, duration: e.target.value })}
+                            className="w-full px-4 py-2 border rounded-lg"
+                            placeholder="Leave blank to use exam duration"
+                        />
+                    </div>
+                    <div className="flex justify-end gap-3 pt-2">
+                        <button onClick={() => setEditingSection(null)} className="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-50">Cancel</button>
+                        <button onClick={handleSaveSection} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* Bulk Marks Update Modal */}
+            <Modal isOpen={showBulkMarksModal} onClose={() => setShowBulkMarksModal(false)} title={`Update Marks (${selectedQuestions.size} questions)`} maxWidth="sm" >
+                <div className="p-6 space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Marks (Optional)</label>
+                        <input
+                            type="number"
+                            className="w-full px-3 py-2 border rounded"
+                            placeholder="Leave blank to keep unchanged"
+                            value={bulkMarks.marks}
+                            onChange={(e) => setBulkMarks({ ...bulkMarks, marks: e.target.value })}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Negative Marks (Optional)</label>
+                        <input
+                            type="number"
+                            step="0.25"
+                            className="w-full px-3 py-2 border rounded"
+                            placeholder="Leave blank to keep unchanged"
+                            value={bulkMarks.negativeMarks}
+                            onChange={(e) => setBulkMarks({ ...bulkMarks, negativeMarks: e.target.value })}
+                        />
+                    </div>
+                    <div className="flex justify-end gap-3 mt-6">
+                        <button onClick={() => setShowBulkMarksModal(false)} className="px-4 py-2 border rounded">Cancel</button>
+                        <button onClick={handleBulkMarksUpdate} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Update</button>
+                    </div>
+                </div>
+            </Modal>
+
+            <Modal isOpen={showBulkMoveModal} onClose={() => setShowBulkMoveModal(false)} title={`Move ${selectedQuestions.size} question(s) to Section`} maxWidth="sm">
+                <div className="p-6 space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Select Target Section</label>
+                        <select
+                            className="w-full px-3 py-2 border rounded-lg"
+                            value={bulkMoveTargetSectionId}
+                            onChange={(e) => setBulkMoveTargetSectionId(e.target.value)}
+                        >
+                            <option value="">-- Select Section --</option>
+                            {sections.filter(s => s.id !== activeSectionId).map((s, i) => (
+                                <option key={s.id} value={s.id}>{getText(s.name, language) || `Section ${i + 1}`}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="flex justify-end gap-3 mt-6">
+                        <button onClick={() => { setShowBulkMoveModal(false); setBulkMoveTargetSectionId(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                        <button
+                            onClick={handleBulkMove}
+                            disabled={!bulkMoveTargetSectionId}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                            Move Questions
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* PDF Instructions Extraction Modal */}
+            <Modal isOpen={showInstructionsPdfModal} onClose={() => !isExtractingInstructions && setShowInstructionsPdfModal(false)} title="Extract Instructions from PDF" maxWidth="4xl">
+                <div className="p-6">
+                    {pdfPages.length > 0 ? (
+                        <div className="space-y-6">
+                            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm text-blue-800 flex items-start gap-2">
+                                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                                <p>Select the page(s) that contain the general instructions or rules. Do NOT select pages with actual questions, as they will be ignored by the extraction prompt.</p>
+                            </div>
+
+                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 max-h-[50vh] overflow-y-auto p-2 border rounded-lg bg-gray-50">
+                                {pdfPages.map((pageImage, index) => (
+                                    <div
+                                        key={index}
+                                        onClick={() => {
+                                            if (isExtractingInstructions) return;
+                                            setSelectedPageIndices(prev =>
+                                                prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index].sort((a, b) => a - b)
+                                            );
+                                        }}
+                                        className={`relative cursor-pointer transition-all ${selectedPageIndices.includes(index) ? 'ring-2 ring-indigo-500 rounded-lg shadow-md scale-[1.02]' : 'hover:shadow-lg opacity-70 hover:opacity-100'}`}
+                                    >
+                                        <div className="aspect-[1/1.4] relative bg-white border border-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
+                                            <img src={pageImage} alt={`Page ${index + 1}`} className="max-w-full max-h-full object-contain" />
+                                            <div className="absolute bottom-2 right-2 bg-gray-900/70 text-white px-2 py-0.5 rounded text-xs">
+                                                Pg {index + 1}
+                                            </div>
+                                        </div>
+                                        {selectedPageIndices.includes(index) && (
+                                            <div className="absolute -top-2 -right-2 bg-indigo-600 text-white rounded-full p-1 shadow-md">
+                                                <Check className="w-4 h-4" />
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex items-center justify-between border-t pt-4">
+                                <div className="text-sm font-medium text-gray-700">
+                                    {selectedPageIndices.length} page(s) selected
+                                </div>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setShowInstructionsPdfModal(false)}
+                                        disabled={isExtractingInstructions}
+                                        className="px-4 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={() => extractInstructionsFromPdf('English')}
+                                        disabled={isExtractingInstructions || selectedPageIndices.length === 0}
+                                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                        {isExtractingInstructions ? <><Loader2 className="w-4 h-4 animate-spin" /> Extracting...</> : 'Extract English'}
+                                    </button>
+                                    <button
+                                        onClick={() => extractInstructionsFromPdf('Punjabi')}
+                                        disabled={isExtractingInstructions || selectedPageIndices.length === 0}
+                                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                        {isExtractingInstructions ? <><Loader2 className="w-4 h-4 animate-spin" /> Extracting...</> : 'Extract Punjabi'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex justify-center p-12">
+                            <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                        </div>
+                    )}
+                </div>
+            </Modal>
+
+
+        </>
     );
 }
