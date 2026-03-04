@@ -104,8 +104,8 @@ export default function AdminSettingsPage() {
 
         if (!file) return;
 
-        if (file.size > 2 * 1024 * 1024) {
-            toast.error('Logo file is too large. Please upload an image smaller than 2MB.');
+        if (file.size > 5 * 1024 * 1024) {
+            toast.error('Logo file is too large. Please upload an image smaller than 5MB.');
             return;
         }
 
