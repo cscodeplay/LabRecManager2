@@ -3,6 +3,16 @@ import { getSession } from '@/lib/auth';
 import { neon } from '@neondatabase/serverless';
 import { v2 as cloudinary } from 'cloudinary';
 
+// Configure NextJS Serverless limits
+export const maxDuration = 60; // 60 seconds
+export const config = {
+    api: {
+        bodyParser: {
+            sizeLimit: '10mb',
+        },
+    },
+};
+
 // Configure Cloudinary
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -56,18 +66,26 @@ export async function POST(request: NextRequest) {
 
         console.log('Uploading file:', { name: file.name, size: file.size, type: file.type, folder });
 
-        // Convert file to base64
+        // Convert file to buffer
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
-        const base64Data = buffer.toString('base64');
-        const mimeType = file.type;
-        const dataUri = `data:${mimeType};base64,${base64Data}`;
 
-        // Upload to Cloudinary
-        const result = await cloudinary.uploader.upload(dataUri, {
-            folder: folder,
-            resource_type: 'auto',
-            timeout: 120000, // 120 seconds timeout for large PDFs
+        // Upload to Cloudinary via stream wrapper mapped to a Promise
+        const result: any = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+                {
+                    folder: folder,
+                    resource_type: 'auto',
+                    timeout: 120000,
+                },
+                (error, result) => {
+                    if (error) reject(error);
+                    else resolve(result);
+                }
+            );
+
+            // Write the memory buffer directly to cloudinary to prevent NodeJS string limits
+            uploadStream.end(buffer);
         });
 
         console.log('Upload successful:', result.secure_url);
