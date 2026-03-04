@@ -125,3 +125,52 @@ export const useExamStore = create<ExamState>()(
         }
     )
 );
+
+// Settings state
+interface SettingsState {
+    siteName: string;
+    siteLogoUrl: string;
+    isLoaded: boolean;
+    _hasHydrated: boolean;
+    setHasHydrated: (state: boolean) => void;
+    fetchSettings: () => Promise<void>;
+    updateSettings: (siteName: string, siteLogoUrl: string) => void;
+}
+
+export const useSettingsStore = create<SettingsState>()(
+    persist(
+        (set) => ({
+            siteName: 'Merit Entrance',
+            siteLogoUrl: '/default-logo.png',
+            isLoaded: false,
+            _hasHydrated: false,
+            setHasHydrated: (state) => set({ _hasHydrated: state }),
+            fetchSettings: async () => {
+                try {
+                    const res = await fetch('/api/settings', { cache: 'no-store' });
+                    const data = await res.json();
+                    if (data.success && data.settings) {
+                        set({
+                            siteName: data.settings.siteName || 'Merit Entrance',
+                            siteLogoUrl: data.settings.siteLogoUrl || '/default-logo.png',
+                            isLoaded: true
+                        });
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch public settings:', err);
+                }
+            },
+            updateSettings: (siteName, siteLogoUrl) => set({ siteName, siteLogoUrl })
+        }),
+        {
+            name: 'merit-settings-storage',
+            partialize: (state) => ({
+                siteName: state.siteName,
+                siteLogoUrl: state.siteLogoUrl,
+            }),
+            onRehydrateStorage: () => (state) => {
+                state?.setHasHydrated(true);
+            },
+        }
+    )
+);

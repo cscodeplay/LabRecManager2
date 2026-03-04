@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useSettingsStore } from '@/lib/store';
 import {
     ChevronLeft, Settings, Globe, Bell, Shield, Database,
-    Save, Eye, EyeOff, RefreshCw, Trash2, AlertTriangle, Activity, Server
+    Save, Eye, EyeOff, RefreshCw, Trash2, AlertTriangle, Activity, Server,
+    Upload, Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ActivityLogViewer from './activity/ActivityLogViewer';
@@ -14,6 +15,7 @@ import BackupSettings from './backups/BackupSettings';
 
 interface AppSettings {
     siteName: string;
+    siteLogoUrl: string;
     defaultLanguage: 'en' | 'pa';
     allowStudentRegistration: boolean;
     examWarningMinutes: number;
@@ -40,6 +42,7 @@ const AI_MODELS = [
 export default function AdminSettingsPage() {
     const router = useRouter();
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { fetchSettings, updateSettings } = useSettingsStore();
     const [activeTab, setActiveTab] = useState<'general' | 'security'>('general');
 
     const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -47,6 +50,7 @@ export default function AdminSettingsPage() {
 
     const [settings, setSettings] = useState<AppSettings>({
         siteName: 'Merit Entrance',
+        siteLogoUrl: '/default-logo.png',
         defaultLanguage: 'en',
         allowStudentRegistration: false,
         examWarningMinutes: 5,
@@ -60,6 +64,7 @@ export default function AdminSettingsPage() {
 
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [uploadingLogo, setUploadingLogo] = useState(false);
     const [showDangerZone, setShowDangerZone] = useState(false);
 
     useEffect(() => {
@@ -90,6 +95,37 @@ export default function AdminSettingsPage() {
         }
     };
 
+    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setUploadingLogo(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('folder', 'merit-entrance/logos');
+
+            const res = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await res.json();
+            if (res.ok && data.url) {
+                setSettings(prev => ({ ...prev, siteLogoUrl: data.url }));
+                toast.success('Logo uploaded! Click Save Changes to apply.');
+            } else {
+                toast.error(data.error || 'Failed to upload logo');
+            }
+        } catch (err) {
+            toast.error('Upload failed');
+            console.error(err);
+        } finally {
+            setUploadingLogo(false);
+            if (e.target) e.target.value = ''; // Reset input
+        }
+    };
+
     const handleSave = async () => {
         setSaving(true);
         try {
@@ -101,6 +137,8 @@ export default function AdminSettingsPage() {
 
             if (response.ok) {
                 toast.success('Settings saved successfully!');
+                updateSettings(settings.siteName, settings.siteLogoUrl);
+                await fetchSettings();
             } else {
                 toast.error('Failed to save settings');
             }
@@ -246,6 +284,56 @@ export default function AdminSettingsPage() {
                                             onChange={(e) => setSettings({ ...settings, siteName: e.target.value })}
                                             className="w-full px-3 py-2 border rounded-lg"
                                         />
+                                    </div>
+
+                                    <div className="md:col-span-2">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Site Logo
+                                        </label>
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex gap-4 items-start">
+                                                <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center shrink-0 border overflow-hidden relative group">
+                                                    {settings.siteLogoUrl ? (
+                                                        <img src={settings.siteLogoUrl} alt="Logo Preview" className="max-w-full max-h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).src = '/default-logo.png'; }} />
+                                                    ) : (
+                                                        <Globe className="w-8 h-8 text-gray-400" />
+                                                    )}
+                                                    <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
+                                                        <Upload className="w-6 h-6 text-white" />
+                                                        <input
+                                                            type="file"
+                                                            className="hidden"
+                                                            accept="image/*"
+                                                            onChange={handleLogoUpload}
+                                                            disabled={uploadingLogo}
+                                                        />
+                                                    </label>
+                                                </div>
+                                                <div className="flex-1 space-y-2">
+                                                    <div className="flex flex-col sm:flex-row gap-2">
+                                                        <input
+                                                            type="text"
+                                                            value={settings.siteLogoUrl || ''}
+                                                            onChange={(e) => setSettings({ ...settings, siteLogoUrl: e.target.value })}
+                                                            placeholder="/default-logo.png or https://example.com/logo.png"
+                                                            className="flex-1 px-3 py-2 border rounded-lg"
+                                                        />
+                                                        <label className="px-4 py-2 bg-gray-100 border text-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 flex flex-shrink-0 items-center justify-center gap-2 transition-colors">
+                                                            {uploadingLogo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                                                            {uploadingLogo ? 'Uploading...' : 'Upload Image'}
+                                                            <input
+                                                                type="file"
+                                                                className="hidden"
+                                                                accept="image/*"
+                                                                onChange={handleLogoUpload}
+                                                                disabled={uploadingLogo}
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                    <p className="text-xs text-gray-500">Upload a PNG/JPG file or provide an external image URL. Max size depends on your upload limits.</p>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <div>
