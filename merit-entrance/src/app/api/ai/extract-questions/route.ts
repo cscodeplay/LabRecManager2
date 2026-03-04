@@ -6,6 +6,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 const geminiKeys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean);
 const openaiKeys = (process.env.OPENAI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean);
 const groqKeys = (process.env.GROQ_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean);
+const anthropicKeys = (process.env.ANTHROPIC_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean);
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -191,6 +192,78 @@ async function generateGroq(modelName: string, systemPrompt: string, imageBase64
     throw new Error('Groq: All retries failed.');
 }
 
+// Provider: Anthropic (Claude)
+async function generateAnthropic(modelName: string, systemPrompt: string, imageBase64: string, keyIndex: number): Promise<{ text: string, nextKeyIndex: number }> {
+    let attempts = 0;
+    let currentKeyIndex = keyIndex;
+
+    while (attempts < (anthropicKeys.length * 2)) {
+        try {
+            attempts++;
+            const { key } = getNextKey(anthropicKeys, currentKeyIndex);
+
+            // Extract pure base64 without prefix if it exists
+            const pureBase64 = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+            const mediaType = imageBase64.includes('image/png') ? 'image/png' :
+                imageBase64.includes('image/webp') ? 'image/webp' :
+                    'image/jpeg';
+
+            const response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': key,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify({
+                    model: modelName,
+                    max_tokens: 8192,
+                    system: systemPrompt,
+                    messages: [
+                        {
+                            role: "user",
+                            content: [
+                                {
+                                    type: "image",
+                                    source: {
+                                        type: "base64",
+                                        media_type: mediaType,
+                                        data: pureBase64
+                                    }
+                                },
+                                {
+                                    type: "text",
+                                    text: "Analyze this image and extract questions according to the system instructions. Return ONLY valid JSON."
+                                }
+                            ]
+                        }
+                    ]
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`Anthropic Error ${response.status}: ${errorData.error?.message || response.statusText}`);
+            }
+
+            const data = await response.json();
+            const text = data.content[0].text;
+            await delay(1000);
+            return { text, nextKeyIndex: currentKeyIndex };
+
+        } catch (err: any) {
+            console.error(`Anthropic Attempt ${attempts} failed:`, err.message);
+            if (err.message.includes('429') || err.message.includes('529') || err.message.includes('500') || err.message.includes('Overloaded')) {
+                currentKeyIndex = (currentKeyIndex + 1) % anthropicKeys.length;
+                if (currentKeyIndex === 0) await delay(2000); else await delay(500);
+            } else {
+                throw err;
+            }
+        }
+    }
+    throw new Error('Anthropic: All retries failed.');
+}
+
 
 export async function POST(req: NextRequest) {
     try {
@@ -209,6 +282,9 @@ export async function POST(req: NextRequest) {
         } else if (selectedModel.startsWith('gpt-')) {
             provider = 'openai';
             modelName = selectedModel;
+        } else if (selectedModel.startsWith('claude-')) {
+            provider = 'anthropic';
+            modelName = selectedModel;
         } else if (selectedModel.startsWith('llama-') || selectedModel.startsWith('mixtral-') || selectedModel.startsWith('meta-llama/')) {
             provider = 'groq';
             modelName = selectedModel;
@@ -225,6 +301,7 @@ export async function POST(req: NextRequest) {
         }
         if (provider === 'openai' && openaiKeys.length === 0) return NextResponse.json({ success: false, error: 'OpenAI API Key missing.' }, { status: 500 });
         if (provider === 'groq' && groqKeys.length === 0) return NextResponse.json({ success: false, error: 'Groq API Key missing.' }, { status: 500 });
+        if (provider === 'anthropic' && anthropicKeys.length === 0) return NextResponse.json({ success: false, error: 'Anthropic API Key missing.' }, { status: 500 });
 
         if (!images || !Array.isArray(images) || images.length === 0) {
             return NextResponse.json(
@@ -413,6 +490,8 @@ export async function POST(req: NextRequest) {
                     result = await generateOpenAI(modelName, finalPrompt, base64Image, currentKeyIndex);
                 } else if (provider === 'groq') {
                     result = await generateGroq(modelName, finalPrompt, base64Image, currentKeyIndex);
+                } else if (provider === 'anthropic') {
+                    result = await generateAnthropic(modelName, finalPrompt, base64Image, currentKeyIndex);
                 }
 
                 if (result) {

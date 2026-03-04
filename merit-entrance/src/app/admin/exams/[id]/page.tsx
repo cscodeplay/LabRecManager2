@@ -1336,13 +1336,19 @@ export default function EditExamPage() {
                                         <optgroup label="🤖 OpenAI">
                                             <option value="gpt-4o">GPT-4o</option>
                                         </optgroup>
+                                        <optgroup label="🧠 Anthropic (Claude)">
+                                            <option value="claude-3-7-sonnet-20250219">Claude 3.7 Sonnet (Advanced)</option>
+                                            <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast)</option>
+                                        </optgroup>
                                     </select>
                                     <p className="text-xs text-gray-400 mt-1">
                                         {selectedModel.includes('llama') || selectedModel.includes('meta-llama')
                                             ? '🟢 Groq offers generous free tier — recommended to avoid quota issues'
                                             : selectedModel.includes('gemini')
                                                 ? '⚠️ Gemini free tier has daily quota limits'
-                                                : '⚠️ OpenAI requires paid API key'}
+                                                : selectedModel.includes('claude')
+                                                    ? '⚠️ Claude requires paid Anthropic API key'
+                                                    : '⚠️ OpenAI requires paid API key'}
                                     </p>
                                 </div>
 

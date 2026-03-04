@@ -30,6 +30,8 @@ const AI_MODELS = [
     { id: 'gemini-2.0-flash-lite-preview-02-05', name: 'Gemini 2.0 Flash Lite (Preview)' },
     { id: 'gemini-2.0-flash-thinking-exp-01-21', name: 'Gemini 2.0 Flash Thinking (Experimental)' },
     { id: 'gpt-4o', name: 'GPT-4o (OpenAI)' },
+    { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet (Anthropic)' },
+    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku (Fast)' },
     { id: 'llama-3.2-90b-vision-preview', name: 'Llama 3.2 Vision (Groq)' },
     { id: 'meta-llama/llama-4-scout-17b-16e-instruct', name: 'Llama 4 Scout 17B (Fast Vision)' },
     { id: 'meta-llama/llama-4-maverick-17b-128e-instruct', name: 'Llama 4 Maverick 17B (High Context)' },

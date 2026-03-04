@@ -1294,6 +1294,10 @@ export default function ImportExamPage() {
                                                     <option value="gpt-4o">GPT-4o (Best Quality)</option>
                                                     <option value="gpt-4o-mini">GPT-4o Mini (Fast & Cheap)</option>
                                                 </optgroup>
+                                                <optgroup label="Anthropic (Claude)">
+                                                    <option value="claude-3-7-sonnet-20250219">Claude 3.7 Sonnet (Advanced)</option>
+                                                    <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast)</option>
+                                                </optgroup>
                                                 <optgroup label="Groq (Llama 4 Vision)">
                                                     <option value="meta-llama/llama-4-scout-17b-16e-instruct">Llama 4 Scout 17B (Fast Vision)</option>
                                                     <option value="meta-llama/llama-4-maverick-17b-128e-instruct">Llama 4 Maverick 17B (High Context)</option>
@@ -1306,8 +1310,9 @@ export default function ImportExamPage() {
                                             <a
                                                 href={
                                                     selectedModel.startsWith('gpt') ? "https://platform.openai.com/usage" :
-                                                        (selectedModel.startsWith('llama') || selectedModel.startsWith('mixtral') || selectedModel.startsWith('meta-llama')) ? "https://console.groq.com/settings/limits" :
-                                                            "https://aistudio.google.com/app/plan_information"
+                                                        selectedModel.startsWith('claude') ? "https://console.anthropic.com/settings/billing" :
+                                                            (selectedModel.startsWith('llama') || selectedModel.startsWith('mixtral') || selectedModel.startsWith('meta-llama')) ? "https://console.groq.com/settings/limits" :
+                                                                "https://aistudio.google.com/app/plan_information"
                                                 }
                                                 target="_blank"
                                                 rel="noopener noreferrer"
@@ -1320,11 +1325,13 @@ export default function ImportExamPage() {
                                     <div className="text-xs text-blue-600 max-w-md">
                                         {selectedModel.startsWith('gpt') ?
                                             "OpenAI usage is billed. Check your meaningful credit balance." :
-                                            (selectedModel.startsWith('llama') || selectedModel.startsWith('mixtral') || selectedModel.startsWith('meta-llama')) ?
-                                                "Groq offers free tiers for Llama models. Check rate limits." :
-                                                selectedModel.includes('gemini-2.0') ?
-                                                    "Gemini 2.0 models are currently free in public preview." :
-                                                    "Tip: Gemini 1.5 Flash allows ~1,500 pages/day. Use Pro only for complex reasoning (50/day)."
+                                            selectedModel.startsWith('claude') ?
+                                                "Anthropic API is billed asynchronously. Vision demands credits." :
+                                                (selectedModel.startsWith('llama') || selectedModel.startsWith('mixtral') || selectedModel.startsWith('meta-llama')) ?
+                                                    "Groq offers free tiers for Llama models. Check rate limits." :
+                                                    selectedModel.includes('gemini-2.0') ?
+                                                        "Gemini 2.0 models are currently free in public preview." :
+                                                        "Tip: Gemini 1.5 Flash allows ~1,500 pages/day. Use Pro only for complex reasoning (50/day)."
                                         }
                                     </div>
                                 </div>
