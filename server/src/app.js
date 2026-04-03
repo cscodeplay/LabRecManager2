@@ -40,6 +40,7 @@ const queryLogRoutes = require('./routes/querylog.routes');
 const recordingRoutes = require('./routes/recording.routes');
 const storageRoutes = require('./routes/storage.routes');
 const timetableRoutes = require('./routes/timetable.routes');
+const teachingRoutes = require('./routes/teaching.routes');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -108,6 +109,7 @@ app.use('/api/recordings', recordingRoutes);
 app.use('/api/storage', storageRoutes);
 app.use('/api/folders', require('./routes/folder.routes'));
 app.use('/api/timetable', timetableRoutes);
+app.use('/api/teaching', teachingRoutes);
 
 const prisma = require('./config/database');
 
@@ -292,7 +294,9 @@ app.use(errorHandler);
 
 // Start server
 // Initialize cron jobs
-require('./services/cron.service').initCronJobs();
+const cronService = require('./services/cron.service');
+cronService.setSocketIO(io);
+cronService.initCronJobs();
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

@@ -578,5 +578,31 @@ export const calendarAPI = {
     seedPunjabHolidays: (data) => api.post('/timetable/calendar/seed-punjab', data),
 };
 
-export default api;
+// Teaching API
+export const teachingAPI = {
+    // Lecture Plans
+    getPlans: (params) => api.get('/teaching/plans', { params }),
+    createPlan: (data) => api.post('/teaching/plans', data),
+    updatePlan: (id, data) => api.put(`/teaching/plans/${id}`, data),
+    deletePlan: (id) => api.delete(`/teaching/plans/${id}`),
+    
+    // Live Sessions
+    startSession: (planId) => api.post(`/teaching/plans/${planId}/start`),
+    getSession: (sessionId) => api.get(`/teaching/sessions/${sessionId}`),
+    endSession: (sessionId, data) => api.put(`/teaching/sessions/${sessionId}/end`, data),
+    
+    // Resources
+    attachResource: (planId, data) => api.post(`/teaching/plans/${planId}/resources`, data),
+    uploadSessionResource: (sessionId, data) => api.post(`/teaching/sessions/${sessionId}/upload`, data),
+    
+    // Attendance
+    getAttendance: (sessionId) => api.get(`/teaching/sessions/${sessionId}/attendance`),
+    markAttendance: (sessionId, data) => api.post(`/teaching/sessions/${sessionId}/attendance`, data),
+    
+    // Polls
+    createPoll: (sessionId, data) => api.post(`/teaching/sessions/${sessionId}/polls`, data),
+    endPoll: (pollId) => api.put(`/teaching/polls/${pollId}/end`),
+    respondToPoll: (pollId, data) => api.post(`/teaching/polls/${pollId}/respond`, data)
+};
 
+export default api;

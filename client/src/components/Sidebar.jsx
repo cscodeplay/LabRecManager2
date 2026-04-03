@@ -8,7 +8,7 @@ import {
     Home, BookOpen, FileText, Award, Users, GraduationCap,
     Video, BarChart3, Settings, LogOut, Menu, X, ChevronLeft,
     Beaker, ClipboardList, Activity, ClipboardCheck, Send, ListChecks, UserPlus, Monitor, FolderOpen, Pencil, Ticket, Building, Film, HardDrive,
-    Clock, CalendarDays
+    Clock, CalendarDays, Presentation, BookMarked
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import LanguageSelector from './LanguageSelector';
@@ -55,6 +55,8 @@ const navItems = {
     instructor: [
         { href: '/dashboard', labelKey: 'nav.dashboard', icon: Home },
         { href: '/classes', labelKey: 'nav.myClasses', icon: Users },
+        { href: '/teaching', labelKey: 'nav.teachingDashboard', icon: Presentation },
+        { href: '/teaching/plans', labelKey: 'nav.lecturePlans', icon: BookMarked },
         { href: '/assignments', labelKey: 'nav.assignments', icon: BookOpen },
         { href: '/assigned-work', labelKey: 'nav.assignedWork', icon: ListChecks },
         { href: '/submissions', labelKey: 'nav.review', icon: ClipboardList },
@@ -167,6 +169,12 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                         <div>
                             <h1 className="font-bold text-slate-900 dark:text-slate-100 text-lg leading-none truncate max-w-[150px]" title={schoolInfo.name}>{schoolInfo.name}</h1>
                             <p className="text-xs text-slate-500 dark:text-slate-400">{t('sidebar.unifiedLabRecords')}</p>
+                            {process.env.NEXT_PUBLIC_COMMIT_HASH && (
+                                <p className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-0.5 flex items-center gap-1">
+                                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                    {process.env.NEXT_PUBLIC_COMMIT_HASH}
+                                </p>
+                            )}
                         </div>
                     </Link>
                 )}

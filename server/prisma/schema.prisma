@@ -52,6 +52,7 @@ model School {
   documentFolders         DocumentFolder[]
   timetables              Timetable[]
   schoolCalendar          SchoolCalendar[]
+  lecturePlans            LecturePlan[]
 
   @@map("schools")
 }
@@ -114,6 +115,7 @@ model AcademicYear {
   studentFees   StudentFee[]
   timetables    Timetable[]
   schoolCalendar SchoolCalendar[]
+  lecturePlans   LecturePlan[]
 
   @@map("academic_years")
 }
@@ -209,6 +211,10 @@ model User {
   labEventsAsNewIncharge                         LabEventHistory[]        @relation("LabEventNewIncharge")
   timetableSlots                                 TimetableSlot[]          @relation("TimetableInstructor")
   calendarEventsCreated                          SchoolCalendar[]         @relation("CalendarCreatedBy")
+  lecturePlans                                   LecturePlan[]            @relation("LecturePlanInstructor")
+  lectureAttendance                              LectureAttendance[]      @relation("LectureAttendanceStudent")
+  lectureResourcesUploaded                       LectureResource[]        @relation("ResourceUploader")
+  lecturePollResponses                           LecturePollResponse[]    @relation("PollResponseStudent")
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")
@@ -282,6 +288,7 @@ model Class {
   groups             StudentGroup[]
   whiteboardSessions WhiteboardSession[]
   timetables         Timetable[]
+  lecturePlans       LecturePlan[]
 
   @@unique([schoolId, name], name: "unique_class_name_per_school")
   @@index([academicYearId])
@@ -361,6 +368,7 @@ model Subject {
   school             School          @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   vivaQuestions      VivaQuestion[]
   timetableSlots     TimetableSlot[]
+  lecturePlans       LecturePlan[]
 
   @@map("subjects")
 }
@@ -1902,6 +1910,7 @@ model TimetableSlot {
   timetable       Timetable       @relation(fields: [timetableId], references: [id], onDelete: Cascade)
   subject         Subject?        @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   instructor      User?           @relation("TimetableInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
+  lecturePlans    LecturePlan[]
 
   @@unique([timetableId, dayOfWeek, periodNumber], name: "unique_slot_per_day_period")
   @@index([timetableId])
@@ -1972,4 +1981,182 @@ enum CalendarSource {
   admin_custom
 
   @@map("calendar_source")
+}
+
+// =========================================================================
+// PHASE 1: TEACHING MODULE
+// =========================================================================
+
+enum LectureType {
+  theory
+  practical
+  demo
+  revision
+  assessment
+
+  @@map("lecture_type")
+}
+
+enum LecturePlanStatus {
+  planned
+  in_progress
+  completed
+  cancelled
+
+  @@map("lecture_plan_status")
+}
+
+enum LectureSessionStatus {
+  active
+  completed
+  interrupted
+
+  @@map("lecture_session_status")
+}
+
+
+enum ResourceType {
+  slide
+  pdf
+  video
+  code_sample
+  external_link
+  image
+
+  @@map("resource_type")
+}
+
+model LecturePlan {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId          String            @map("school_id") @db.Uuid
+  instructorId      String            @map("instructor_id") @db.Uuid
+  subjectId         String            @map("subject_id") @db.Uuid
+  classId           String            @map("class_id") @db.Uuid
+  timetableSlotId   String?           @map("timetable_slot_id") @db.Uuid
+  academicYearId    String            @map("academic_year_id") @db.Uuid
+  title             String            @db.VarChar(500)
+  titleHindi        String?           @map("title_hindi") @db.VarChar(500)
+  description       String?           @db.Text
+  lectureNumber     Int               @map("lecture_number")
+  scheduledDate     DateTime          @map("scheduled_date") @db.Date
+  scheduledDuration Int               @default(40) @map("scheduled_duration")
+  lectureType       LectureType       @default(theory) @map("lecture_type")
+  status            LecturePlanStatus @default(planned)
+  notes             String?           @db.Text
+  notesHindi        String?           @map("notes_hindi") @db.Text
+  homeworkDescription String?         @map("homework_description") @db.Text
+  createdAt         DateTime?         @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt         DateTime?         @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  // Relations
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  instructor        User              @relation("LecturePlanInstructor", fields: [instructorId], references: [id], onDelete: Cascade)
+  subject           Subject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  class             Class             @relation(fields: [classId], references: [id], onDelete: Cascade)
+  timetableSlot     TimetableSlot?    @relation(fields: [timetableSlotId], references: [id], onDelete: SetNull)
+  academicYear      AcademicYear      @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  sessions          LectureSession[]
+  resources         LectureResource[] @relation("PlanResources")
+
+  @@index([schoolId])
+  @@index([instructorId])
+  @@index([classId, subjectId])
+  @@index([scheduledDate])
+  @@map("lecture_plans")
+}
+
+model LectureSession {
+  id                String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  lecturePlanId     String               @map("lecture_plan_id") @db.Uuid
+  startedAt         DateTime             @default(now()) @map("started_at") @db.Timestamp(6)
+  endedAt           DateTime?            @map("ended_at") @db.Timestamp(6)
+  actualDuration    Int?                 @map("actual_duration")
+  attendanceCount   Int                  @default(0) @map("attendance_count")
+  topicsCovered     Json?                @map("topics_covered")
+  instructorRemarks String?              @map("instructor_remarks") @db.Text
+  recordingUrl      String?              @map("recording_url") @db.VarChar(1000)
+  status            LectureSessionStatus @default(active)
+
+  // Relations
+  lecturePlan       LecturePlan          @relation(fields: [lecturePlanId], references: [id], onDelete: Cascade)
+  attendance        LectureAttendance[]
+  resources         LectureResource[]    @relation("SessionResources")
+  polls             LecturePoll[]
+
+  @@index([lecturePlanId])
+  @@index([startedAt])
+  @@map("lecture_sessions")
+}
+
+model LectureAttendance {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  lectureSessionId  String           @map("lecture_session_id") @db.Uuid
+  studentId         String           @map("student_id") @db.Uuid
+  status            AttendanceStatus @default(present)
+  joinedAt          DateTime         @default(now()) @map("joined_at") @db.Timestamp(6)
+  leftAt            DateTime?        @map("left_at") @db.Timestamp(6)
+  engagementScore   Int?             @map("engagement_score")
+
+  // Relations
+  lectureSession    LectureSession   @relation(fields: [lectureSessionId], references: [id], onDelete: Cascade)
+  student           User             @relation("LectureAttendanceStudent", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([lectureSessionId, studentId])
+  @@index([studentId])
+  @@map("lecture_attendance")
+}
+
+model LectureResource {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  lecturePlanId     String?          @map("lecture_plan_id") @db.Uuid
+  lectureSessionId  String?          @map("lecture_session_id") @db.Uuid
+  title             String           @db.VarChar(500)
+  type              ResourceType     @default(pdf)
+  url               String           @db.VarChar(1000)
+  fileSize          BigInt?          @map("file_size")
+  mimeType          String?          @map("mime_type") @db.VarChar(100)
+  uploadedById      String           @map("uploaded_by_id") @db.Uuid
+  sequenceOrder     Int              @default(0) @map("sequence_order")
+  createdAt         DateTime?        @default(now()) @map("created_at") @db.Timestamp(6)
+
+  // Relations
+  lecturePlan       LecturePlan?     @relation("PlanResources", fields: [lecturePlanId], references: [id], onDelete: Cascade)
+  lectureSession    LectureSession?  @relation("SessionResources", fields: [lectureSessionId], references: [id], onDelete: Cascade)
+  uploadedBy        User             @relation("ResourceUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([lecturePlanId])
+  @@index([lectureSessionId])
+  @@map("lecture_resources")
+}
+
+model LecturePoll {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  lectureSessionId  String              @map("lecture_session_id") @db.Uuid
+  question          String              @db.Text
+  options           Json
+  correctOption     Int?                @map("correct_option")
+  isActive          Boolean             @default(true) @map("is_active")
+  createdAt         DateTime?           @default(now()) @map("created_at") @db.Timestamp(6)
+
+  // Relations
+  lectureSession    LectureSession      @relation(fields: [lectureSessionId], references: [id], onDelete: Cascade)
+  responses         LecturePollResponse[]
+
+  @@index([lectureSessionId])
+  @@map("lecture_polls")
+}
+
+model LecturePollResponse {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pollId          String       @map("poll_id") @db.Uuid
+  studentId       String       @map("student_id") @db.Uuid
+  selectedOption  Int          @map("selected_option")
+  answeredAt      DateTime     @default(now()) @map("answered_at") @db.Timestamp(6)
+
+  // Relations
+  poll            LecturePoll  @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  student         User         @relation("PollResponseStudent", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, studentId])
+  @@map("lecture_poll_responses")
 }

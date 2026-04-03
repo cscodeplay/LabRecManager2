@@ -28,7 +28,9 @@
     "reviewSubmissions": "प्रस्तुतियाँ समीक्षा करें",
     "timetable": "समय सारणी",
     "calendar": "कैलेंडर",
-    "myTimetable": "मेरा समय सारणी"
+    "myTimetable": "मेरा समय सारणी",
+    "teachingDashboard": "शिक्षण",
+    "lecturePlans": "व्याख्यान योजनाएं"
   },
   "common": {
     "filter": "फ़िल्टर",

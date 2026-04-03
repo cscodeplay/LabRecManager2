@@ -29,7 +29,9 @@
     "myWork": "Assigned Work",
     "timetable": "Timetable",
     "calendar": "Calendar",
-    "myTimetable": "My Timetable"
+    "myTimetable": "My Timetable",
+    "teachingDashboard": "Teaching",
+    "lecturePlans": "Lecture Plans"
   },
   "common": {
     "save": "Save",

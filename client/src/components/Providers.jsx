@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import AppLayout from './AppLayout';
 import { useThemeStore, useLanguageStore } from '@/lib/store';
 import WhiteboardNotificationListener from './WhiteboardNotificationListener';
+import TimetableNotificationListener from './TimetableNotificationListener';
 import '@/lib/i18n'; // Initialize i18n
 
 function LanguageInitializer() {
@@ -69,6 +70,7 @@ export function Providers({ children }) {
                 {children}
             </AppLayout>
             <WhiteboardNotificationListener />
+            <TimetableNotificationListener />
         </QueryClientProvider>
     );
 }
