@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
 import { trainingAPI } from '@/lib/api';
 import PageHeader from '@/components/PageHeader';
@@ -9,14 +10,19 @@ import Link from 'next/link';
 import toast from 'react-hot-toast';
 
 export default function TrainingModulesPage() {
-    const { user } = useAuthStore();
+    const router = useRouter();
+    const { user, isAuthenticated, _hasHydrated } = useAuthStore();
     const [modules, setModules] = useState([]);
     const [loading, setLoading] = useState(true);
     const [progressMap, setProgressMap] = useState({});
 
-    // Fetch modules. For a student, the backend returns everything for their school right now.
-    // In the future, this is scoped by class.
     useEffect(() => {
+        if (!_hasHydrated) return;
+        if (!isAuthenticated) {
+            router.push('/login');
+            return;
+        }
+
         const fetchModules = async () => {
             try {
                 // If API allows, we can fetch progress separately.
@@ -37,7 +43,7 @@ export default function TrainingModulesPage() {
         };
 
         fetchModules();
-    }, []);
+    }, [_hasHydrated, isAuthenticated, router]);
 
     // Helper to calculate completion percentage for display (mock for now for student scope until bulk progress route exists)
     const getModuleProgress = (moduleId) => {
