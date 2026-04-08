@@ -25,6 +25,18 @@ export default function SessionSelector() {
         }
     }, [isAuthenticated]);
 
+    // Expose refreshSessions globally so settings page can trigger reload after creating a new session
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            window.__refreshSessions = loadSessions;
+        }
+        return () => {
+            if (typeof window !== 'undefined') {
+                delete window.__refreshSessions;
+            }
+        };
+    }, []);
+
     const loadSessions = async () => {
         try {
             setLoading(true);
@@ -34,7 +46,9 @@ export default function SessionSelector() {
 
             // Auto-select current session if none selected
             if (!selectedSession && sessions.length > 0) {
-                const current = sessions.find(s => s.isCurrent) || sessions[0];
+                // Prefer session marked isCurrent, then latest by startDate
+                const current = sessions.find(s => s.isCurrent)
+                    || sessions.sort((a, b) => new Date(b.startDate) - new Date(a.startDate))[0];
                 setSession(current);
             }
         } catch (error) {
@@ -47,6 +61,11 @@ export default function SessionSelector() {
     const handleSelectSession = (session) => {
         setSession(session);
         setIsOpen(false);
+
+        // Dispatch custom event so all pages can re-fetch their data
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('session-changed', { detail: { sessionId: session.id } }));
+        }
     };
 
     if (!isAuthenticated || loading) {

@@ -13,6 +13,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
     const { page = 1, limit = 20, status, submissionId } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sessionId = req.headers['x-academic-session'];
 
     let where = {};
 
@@ -28,6 +29,14 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
 
     if (submissionId) {
         where.submissionId = submissionId;
+    }
+
+    // Filter by academic session through submission -> assignment
+    if (sessionId) {
+        where.submission = {
+            ...where.submission,
+            assignment: { academicYearId: sessionId }
+        };
     }
 
     const [sessions, total] = await Promise.all([

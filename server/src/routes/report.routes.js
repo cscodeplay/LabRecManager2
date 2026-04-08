@@ -12,6 +12,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 router.get('/analytics', authenticate, authorize('admin', 'instructor', 'principal'), asyncHandler(async (req, res) => {
     const { dateRange = 'month', classId } = req.query;
     const schoolId = req.user.schoolId;
+    const sessionId = req.headers['x-academic-session'];
 
     // Calculate date filter
     let dateFilter = {};
@@ -56,6 +57,7 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
     let assignmentFilter = {
         schoolId,
         status: 'published',
+        ...(sessionId && { academicYearId: sessionId }),
         ...(dateRange !== 'all' && { createdAt: dateFilter })
     };
 
@@ -76,7 +78,7 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
 
     // Build submission filter
     let submissionFilter = {
-        assignment: { schoolId },
+        assignment: { schoolId, ...(sessionId && { academicYearId: sessionId }) },
         ...(dateRange !== 'all' && { submittedAt: dateFilter })
     };
 
@@ -99,7 +101,8 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
 
     // Build grade filter for other grade-related queries
     let gradeFilter = {
-        submission: { assignment: { schoolId } },
+        submission: { assignment: { schoolId, ...(sessionId && { academicYearId: sessionId }) } },
+        ...(sessionId && { academicYearId: sessionId }),
         ...(dateRange !== 'all' && { gradedAt: dateFilter })
     };
 
@@ -214,7 +217,8 @@ router.get('/export', authenticate, authorize('admin', 'instructor', 'principal'
     const grades = await prisma.grade.findMany({
         where: {
             submission: { assignment: { schoolId } },
-            isPublished: true
+            isPublished: true,
+            ...(req.headers['x-academic-session'] && { academicYearId: req.headers['x-academic-session'] })
         },
         include: {
             submission: {
@@ -293,7 +297,10 @@ router.get('/student-progress/:studentId', authenticate, asyncHandler(async (req
     }
 
     const submissions = await prisma.submission.findMany({
-        where: { studentId },
+        where: {
+            studentId,
+            ...(req.headers['x-academic-session'] && { assignment: { academicYearId: req.headers['x-academic-session'] } })
+        },
         include: {
             assignment: { include: { subject: true } },
             grade: true

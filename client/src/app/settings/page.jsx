@@ -9,7 +9,7 @@ import {
     Volume2, Play, Square
 } from 'lucide-react';
 import { useAuthStore, useThemeStore, useLanguageStore } from '@/lib/store';
-import { authAPI, gradeScalesAPI, devicesAPI } from '@/lib/api';
+import { authAPI, gradeScalesAPI, devicesAPI, academicYearsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -64,6 +64,16 @@ export default function SettingsPage() {
     // Video element ref to prevent flickering
     const videoRef = useRef(null);
 
+    // Academic Sessions state
+    const [sessionsList, setSessionsList] = useState([]);
+    const [loadingSessions, setLoadingSessions] = useState(false);
+    const [savingSession, setSavingSession] = useState(false);
+    const [showCreateSession, setShowCreateSession] = useState(false);
+    const [editingSession, setEditingSession] = useState(null);
+    const [newSession, setNewSession] = useState({
+        startDate: `${new Date().getFullYear()}-04-01`
+    });
+
     const isAdmin = user?.role === 'admin' || user?.role === 'principal';
 
     useEffect(() => {
@@ -78,6 +88,9 @@ export default function SettingsPage() {
     useEffect(() => {
         if (activeTab === 'grading' && isAdmin) {
             loadGradeScales();
+        }
+        if (activeTab === 'sessions' && isAdmin) {
+            loadSessionsList();
         }
     }, [activeTab, isAdmin]);
 
@@ -267,6 +280,104 @@ export default function SettingsPage() {
         }
     };
 
+    // --- Academic Sessions Handlers ---
+    const loadSessionsList = async () => {
+        setLoadingSessions(true);
+        try {
+            const res = await academicYearsAPI.getAll();
+            setSessionsList(res.data.data.academicYears || []);
+        } catch (error) {
+            console.error('Error loading sessions:', error);
+            toast.error('Failed to load academic sessions');
+        } finally {
+            setLoadingSessions(false);
+        }
+    };
+
+    const handleCreateSession = async () => {
+        setSavingSession(true);
+        try {
+            await academicYearsAPI.create({
+                startDate: newSession.startDate
+            });
+            toast.success('Academic session created!');
+            setShowCreateSession(false);
+            setNewSession({ startDate: `${new Date().getFullYear()}-04-01` });
+            loadSessionsList();
+            // Trigger global session selector refresh
+            if (typeof window !== 'undefined' && window.__refreshSessions) {
+                window.__refreshSessions();
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to create session');
+        } finally {
+            setSavingSession(false);
+        }
+    };
+
+    const handleUpdateSession = async (id) => {
+        if (!editingSession) return;
+        setSavingSession(true);
+        try {
+            await academicYearsAPI.update(id, {
+                startDate: editingSession.startDate
+            });
+            toast.success('Session updated!');
+            setEditingSession(null);
+            loadSessionsList();
+            if (typeof window !== 'undefined' && window.__refreshSessions) {
+                window.__refreshSessions();
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to update session');
+        } finally {
+            setSavingSession(false);
+        }
+    };
+
+    const handleDeleteSession = async (id) => {
+        if (!confirm('Are you sure you want to delete this session? This cannot be undone.')) return;
+        try {
+            await academicYearsAPI.delete(id);
+            toast.success('Session deleted');
+            loadSessionsList();
+            if (typeof window !== 'undefined' && window.__refreshSessions) {
+                window.__refreshSessions();
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to delete session');
+        }
+    };
+
+    const handleSetCurrentSession = async (id) => {
+        try {
+            await academicYearsAPI.setCurrent(id);
+            toast.success('Session set as current');
+            loadSessionsList();
+            if (typeof window !== 'undefined' && window.__refreshSessions) {
+                window.__refreshSessions();
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to set current session');
+        }
+    };
+
+    // Compute preview for new session
+    const sessionPreview = useMemo(() => {
+        if (!newSession.startDate) return null;
+        const start = new Date(newSession.startDate);
+        const end = new Date(start);
+        end.setFullYear(end.getFullYear() + 1);
+        end.setDate(end.getDate() - 1);
+        const startYear = start.getFullYear();
+        const endYear = end.getFullYear();
+        return {
+            yearLabel: `${startYear}-${String(endYear).slice(-2)}`,
+            startDate: start.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+            endDate: end.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+        };
+    }, [newSession.startDate]);
+
     const tabs = [
         { id: 'profile', icon: User, label: 'Profile' },
         { id: 'devices', icon: Video, label: 'Devices' },
@@ -274,6 +385,7 @@ export default function SettingsPage() {
         { id: 'appearance', icon: Palette, label: 'Appearance' },
         { id: 'security', icon: Shield, label: 'Security' },
         ...(isAdmin ? [
+            { id: 'sessions', icon: Calendar, label: 'Sessions' },
             { id: 'grading', icon: GraduationCap, label: 'Grading' },
             { id: 'database', icon: SettingsIcon, label: 'SQL Console' }
         ] : [])
@@ -1014,6 +1126,208 @@ export default function SettingsPage() {
                                             </table>
                                         </div>
                                     )}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'sessions' && isAdmin && (
+                            <div className="space-y-6">
+                                {/* Header with Create Button */}
+                                <div className="card p-6">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div>
+                                            <h2 className="text-lg font-semibold text-slate-900">Academic Sessions</h2>
+                                            <p className="text-sm text-slate-500 mt-1">Manage academic year sessions. Sessions run from start date for exactly one year.</p>
+                                        </div>
+                                        <button
+                                            onClick={() => setShowCreateSession(!showCreateSession)}
+                                            className="btn btn-primary"
+                                        >
+                                            <Plus className="w-4 h-4" />
+                                            New Session
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Create Session Form */}
+                                {showCreateSession && (
+                                    <div className="card p-6 border-2 border-primary-200 bg-primary-50/30">
+                                        <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                                            <Calendar className="w-5 h-5 text-primary-600" />
+                                            Create New Academic Session
+                                        </h3>
+                                        <div className="grid md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="label">Start Date</label>
+                                                <input
+                                                    type="date"
+                                                    className="input"
+                                                    value={newSession.startDate}
+                                                    onChange={(e) => setNewSession({ ...newSession, startDate: e.target.value })}
+                                                />
+                                                <p className="text-xs text-slate-500 mt-1">End date is auto-calculated (start + 1 year − 1 day)</p>
+                                            </div>
+                                            <div>
+                                                {sessionPreview && (
+                                                    <div className="bg-white rounded-xl p-4 border border-slate-200">
+                                                        <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Preview</p>
+                                                        <p className="text-lg font-bold text-primary-700">{sessionPreview.yearLabel}</p>
+                                                        <p className="text-sm text-slate-600">{sessionPreview.startDate} → {sessionPreview.endDate}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-3 mt-4">
+                                            <button
+                                                onClick={handleCreateSession}
+                                                disabled={savingSession || !newSession.startDate}
+                                                className="btn btn-primary"
+                                            >
+                                                <Save className="w-4 h-4" />
+                                                {savingSession ? 'Creating...' : 'Create Session'}
+                                            </button>
+                                            <button
+                                                onClick={() => setShowCreateSession(false)}
+                                                className="btn btn-secondary"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Sessions List */}
+                                <div className="card p-6">
+                                    <h3 className="font-semibold text-slate-900 mb-4">All Sessions</h3>
+                                    {loadingSessions ? (
+                                        <div className="flex items-center justify-center py-8">
+                                            <div className="animate-spin w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full"></div>
+                                        </div>
+                                    ) : sessionsList.length === 0 ? (
+                                        <div className="text-center py-8 text-slate-500">
+                                            <Calendar className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                                            <p>No academic sessions found</p>
+                                            <p className="text-sm">Click "New Session" to create one</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {sessionsList.map((session) => (
+                                                <div
+                                                    key={session.id}
+                                                    className={`rounded-xl border-2 p-4 transition-all ${
+                                                        session.isCurrent
+                                                            ? 'border-emerald-300 bg-emerald-50/50'
+                                                            : 'border-slate-200 bg-white hover:border-slate-300'
+                                                    }`}
+                                                >
+                                                    {editingSession?.id === session.id ? (
+                                                        /* Edit Mode */
+                                                        <div className="space-y-3">
+                                                            <div className="grid md:grid-cols-2 gap-4">
+                                                                <div>
+                                                                    <label className="label text-sm">Start Date</label>
+                                                                    <input
+                                                                        type="date"
+                                                                        className="input"
+                                                                        value={editingSession.startDate}
+                                                                        onChange={(e) => setEditingSession({ ...editingSession, startDate: e.target.value })}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    onClick={() => handleUpdateSession(session.id)}
+                                                                    disabled={savingSession}
+                                                                    className="btn btn-primary text-sm"
+                                                                >
+                                                                    <Save className="w-3 h-3" />
+                                                                    {savingSession ? 'Saving...' : 'Save'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setEditingSession(null)}
+                                                                    className="btn btn-secondary text-sm"
+                                                                >
+                                                                    Cancel
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        /* View Mode */
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-4">
+                                                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                                                                    session.isCurrent
+                                                                        ? 'bg-emerald-100 text-emerald-700'
+                                                                        : 'bg-slate-100 text-slate-500'
+                                                                }`}>
+                                                                    <Calendar className="w-5 h-5" />
+                                                                </div>
+                                                                <div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <p className="font-semibold text-slate-900">{session.yearLabel}</p>
+                                                                        {session.isCurrent && (
+                                                                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full font-medium">
+                                                                                Current
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <p className="text-sm text-slate-500">
+                                                                        {new Date(session.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                        {' → '}
+                                                                        {new Date(session.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                {!session.isCurrent && (
+                                                                    <button
+                                                                        onClick={() => handleSetCurrentSession(session.id)}
+                                                                        className="px-3 py-1.5 text-xs font-medium bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition"
+                                                                        title="Set as Current"
+                                                                    >
+                                                                        Set Current
+                                                                    </button>
+                                                                )}
+                                                                <button
+                                                                    onClick={() => setEditingSession({
+                                                                        id: session.id,
+                                                                        startDate: new Date(session.startDate).toISOString().split('T')[0]
+                                                                    })}
+                                                                    className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition"
+                                                                    title="Edit"
+                                                                >
+                                                                    <SettingsIcon className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeleteSession(session.id)}
+                                                                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition"
+                                                                    title="Delete"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Info Box */}
+                                <div className="card p-4 bg-blue-50 border border-blue-200">
+                                    <div className="flex items-start gap-3 text-sm text-blue-800">
+                                        <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0 text-blue-600" />
+                                        <div>
+                                            <p className="font-medium">How sessions work</p>
+                                            <ul className="mt-2 space-y-1 text-blue-700">
+                                                <li>• Sessions auto-create on server startup (April 1 → March 31)</li>
+                                                <li>• The "Current" session is automatically rotated at midnight</li>
+                                                <li>• All data (classes, assignments, grades) is scoped to the selected session</li>
+                                                <li>• Sessions with linked data (classes, assignments) cannot be deleted</li>
+                                            </ul>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}

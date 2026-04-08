@@ -16,12 +16,13 @@ const { asyncHandler } = require('../middleware/errorHandler');
 router.get('/', authenticate, asyncHandler(async (req, res) => {
     const { classId, dayOfWeek } = req.query;
     const schoolId = req.user.schoolId;
+    const sessionId = req.headers['x-academic-session'];
 
     if (!classId) {
         return res.status(400).json({ success: false, message: 'classId is required' });
     }
 
-    const where = { schoolId, classId, isActive: true };
+    const where = { schoolId, classId, isActive: true, ...(sessionId && { academicYearId: sessionId }) };
 
     const timetable = await prisma.timetable.findFirst({
         where,
@@ -44,6 +45,31 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     }
 
     res.json({ success: true, data: { timetable } });
+}));
+
+/**
+ * @route   GET /api/timetable/all
+ * @desc    Get all timetables for a class (including inactive ones)
+ * @access  Private
+ */
+router.get('/all', authenticate, asyncHandler(async (req, res) => {
+    const { classId } = req.query;
+    const schoolId = req.user.schoolId;
+
+    if (!classId) {
+        return res.status(400).json({ success: false, message: 'classId is required' });
+    }
+
+    const timetables = await prisma.timetable.findMany({
+        where: { schoolId, classId },
+        orderBy: { effectiveFrom: 'asc' },
+        include: {
+            class: { select: { id: true, name: true, gradeLevel: true, section: true } },
+            academicYear: { select: { id: true, yearLabel: true } }
+        }
+    });
+
+    res.json({ success: true, data: { timetables } });
 }));
 
 /**

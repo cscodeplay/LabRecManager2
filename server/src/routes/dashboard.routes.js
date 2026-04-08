@@ -7,6 +7,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 // Dashboard stats based on user role
 router.get('/stats', authenticate, asyncHandler(async (req, res) => {
     const { role, schoolId, id: userId } = req.user;
+    const sessionId = req.headers['x-academic-session'];
     let stats = {};
 
     if (role === 'student') {
@@ -23,16 +24,18 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
                     OR: [
                         { targetStudentId: userId },
                         { targetClassId: { in: classIds } }
-                    ]
+                    ],
+                    ...(sessionId && { assignment: { academicYearId: sessionId } })
                 }
             }),
-            prisma.submission.count({ where: { studentId: userId } }),
+            prisma.submission.count({ where: { studentId: userId, ...(sessionId && { assignment: { academicYearId: sessionId } }) } }),
             prisma.vivaSession.count({ where: { studentId: userId, status: { in: ['scheduled', 'in_progress'] } } }),
             // Get grades for avg score calculation
             prisma.grade.findMany({
                 where: {
-                    submission: { studentId: userId },
-                    isPublished: true
+                    submission: { studentId: userId, ...(sessionId && { assignment: { academicYearId: sessionId } }) },
+                    isPublished: true,
+                    ...(sessionId && { academicYearId: sessionId })
                 },
                 select: { finalMarks: true, maxMarks: true }
             })
@@ -56,10 +59,10 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
         };
     } else if (role === 'instructor' || role === 'lab_assistant') {
         const [assignmentCount, pendingGrading, scheduledVivas, totalStudents] = await Promise.all([
-            prisma.assignment.count({ where: { createdById: userId } }),
+            prisma.assignment.count({ where: { createdById: userId, ...(sessionId && { academicYearId: sessionId }) } }),
             prisma.submission.count({
                 where: {
-                    assignment: { createdById: userId },
+                    assignment: { createdById: userId, ...(sessionId && { academicYearId: sessionId }) },
                     status: { in: ['submitted', 'under_review'] }
                 }
             }),
@@ -89,10 +92,10 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
             prisma.user.count({ where: { schoolId, isActive: true } }),
             prisma.user.count({ where: { schoolId, role: 'student', isActive: true } }),
             prisma.user.count({ where: { schoolId, role: 'instructor', isActive: true } }),
-            prisma.class.count({ where: { schoolId } }),
-            prisma.assignment.count(),
-            prisma.submission.count(),
-            prisma.vivaSession.count(),
+            prisma.class.count({ where: { schoolId, ...(sessionId && { academicYearId: sessionId }) } }),
+            prisma.assignment.count({ where: { schoolId, ...(sessionId && { academicYearId: sessionId }) } }),
+            prisma.submission.count({ where: { ...(sessionId && { assignment: { academicYearId: sessionId } }) } }),
+            prisma.vivaSession.count({ where: { ...(sessionId && { submission: { assignment: { academicYearId: sessionId } } }) } }),
             prisma.lab.count({ where: { schoolId, status: 'active' } }),
             prisma.lab.count({ where: { schoolId, status: 'maintenance' } })
         ]);
@@ -106,7 +109,7 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
             totalVivas,
             activeLabs,
             maintenanceLabs,
-            pendingGrading: await prisma.submission.count({ where: { status: { in: ['submitted', 'under_review'] } } })
+            pendingGrading: await prisma.submission.count({ where: { status: { in: ['submitted', 'under_review'] }, ...(sessionId && { assignment: { academicYearId: sessionId } }) } })
         };
     }
 
@@ -128,6 +131,7 @@ router.get('/deadlines', authenticate, asyncHandler(async (req, res) => {
     const now = new Date();
     const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const { role, id: userId } = req.user;
+    const sessionId = req.headers['x-academic-session'];
 
     // Get the user's class enrollments if student
     let classIds = [];
@@ -143,7 +147,7 @@ router.get('/deadlines', authenticate, asyncHandler(async (req, res) => {
     const targets = await prisma.assignmentTarget.findMany({
         where: {
             dueDate: { gte: now, lte: nextWeek },
-            assignment: { status: 'published' },
+            assignment: { status: 'published', ...(sessionId && { academicYearId: sessionId }) },
             ...(role === 'student' && {
                 OR: [
                     { targetStudentId: userId },
@@ -208,6 +212,7 @@ router.get('/deadlines', authenticate, asyncHandler(async (req, res) => {
 router.get('/calendar', authenticate, asyncHandler(async (req, res) => {
     const { role, id: userId } = req.user;
     const { month, year } = req.query;
+    const sessionId = req.headers['x-academic-session'];
 
     // Calculate date range (current month or specified month)
     const now = new Date();
@@ -231,7 +236,7 @@ router.get('/calendar', authenticate, asyncHandler(async (req, res) => {
     const targets = await prisma.assignmentTarget.findMany({
         where: {
             dueDate: { gte: startOfMonth, lte: endOfMonth },
-            assignment: { status: 'published' },
+            assignment: { status: 'published', ...(sessionId && { academicYearId: sessionId }) },
             ...(role === 'student' && classIds.length > 0 && {
                 OR: [
                     { targetStudentId: userId },

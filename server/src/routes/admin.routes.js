@@ -420,6 +420,7 @@ Jane,Smith,jane.smith@school.edu,2024002,9876543211,11,B,Commerce,female,2008-07
  */
 router.get('/stats', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
     const schoolId = req.user.schoolId;
+    const sessionId = req.headers['x-academic-session'];
 
     const [
         totalStudents,
@@ -429,7 +430,7 @@ router.get('/stats', authenticate, authorize('admin', 'principal'), asyncHandler
     ] = await Promise.all([
         prisma.user.count({ where: { schoolId, role: 'student' } }),
         prisma.user.count({ where: { schoolId, role: 'student', isActive: true } }),
-        prisma.class.count({ where: { schoolId } }),
+        prisma.class.count({ where: { schoolId, ...(sessionId && { academicYearId: sessionId }) } }),
         prisma.user.count({ where: { schoolId, role: 'instructor' } })
     ]);
 

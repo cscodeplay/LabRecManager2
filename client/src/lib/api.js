@@ -396,11 +396,12 @@ export const gradeScalesAPI = {
 
 // Academic Years API
 export const academicYearsAPI = {
-    getAll: (params) => api.get('/schools/academic-years', { params }),
-    getCurrent: () => api.get('/schools/academic-years/current'),
-    create: (data) => api.post('/schools/academic-years', data),
-    update: (id, data) => api.put(`/schools/academic-years/${id}`, data),
-    setCurrent: (id) => api.put(`/schools/academic-years/${id}/set-current`),
+    getAll: (params) => api.get('/academic-years', { params }),
+    getCurrent: () => api.get('/academic-years/current'),
+    create: (data) => api.post('/academic-years', data),
+    update: (id, data) => api.put(`/academic-years/${id}`, data),
+    delete: (id) => api.delete(`/academic-years/${id}`),
+    setCurrent: (id) => api.put(`/academic-years/${id}/set-current`),
 };
 
 // Admin API (Student import/export)

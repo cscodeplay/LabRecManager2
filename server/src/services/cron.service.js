@@ -8,7 +8,92 @@ const setSocketIO = (io) => {
     ioInstance = io;
 };
 
+/**
+ * Ensure every school has a current academic session.
+ * If no session covers today's date, auto-create one (Apr 1 → Mar 31).
+ * Also rotates the isCurrent flag when a new academic year starts.
+ */
+const ensureCurrentSession = async () => {
+    try {
+        const schools = await prisma.school.findMany({ select: { id: true, name: true, academicYearStart: true } });
+
+        for (const school of schools) {
+            const now = new Date();
+            const startMonth = school.academicYearStart || 4; // Default April
+
+            // Calculate current academic year boundaries
+            let yearStart, yearEnd;
+            if (now.getMonth() + 1 >= startMonth) {
+                // We are in the academic year that started this calendar year
+                yearStart = new Date(now.getFullYear(), startMonth - 1, 1);
+                yearEnd = new Date(now.getFullYear() + 1, startMonth - 1, 0); // Last day of month before startMonth next year
+            } else {
+                // We are in the academic year that started last calendar year
+                yearStart = new Date(now.getFullYear() - 1, startMonth - 1, 1);
+                yearEnd = new Date(now.getFullYear(), startMonth - 1, 0);
+            }
+
+            // Generate year label (e.g., "2026-27")
+            const startYear = yearStart.getFullYear();
+            const endYear = yearEnd.getFullYear();
+            const yearLabel = `${startYear}-${String(endYear).slice(-2)}`;
+
+            // Check if this session already exists
+            const existingSession = await prisma.academicYear.findFirst({
+                where: {
+                    schoolId: school.id,
+                    yearLabel
+                }
+            });
+
+            if (!existingSession) {
+                // Create the session
+                await prisma.academicYear.create({
+                    data: {
+                        schoolId: school.id,
+                        yearLabel,
+                        startDate: yearStart,
+                        endDate: yearEnd,
+                        isCurrent: true
+                    }
+                });
+                logger.info(`[Session] Auto-created session ${yearLabel} for school "${school.name}"`);
+            }
+
+            // Ensure only the correct session is marked as current
+            // First, find the session that covers today
+            const currentSession = await prisma.academicYear.findFirst({
+                where: {
+                    schoolId: school.id,
+                    startDate: { lte: now },
+                    endDate: { gte: now }
+                }
+            });
+
+            if (currentSession) {
+                // Set all others to not current
+                await prisma.academicYear.updateMany({
+                    where: { schoolId: school.id, id: { not: currentSession.id }, isCurrent: true },
+                    data: { isCurrent: false }
+                });
+                // Ensure this one is current
+                if (!currentSession.isCurrent) {
+                    await prisma.academicYear.update({
+                        where: { id: currentSession.id },
+                        data: { isCurrent: true }
+                    });
+                    logger.info(`[Session] Rotated current session to ${currentSession.yearLabel} for school "${school.name}"`);
+                }
+            }
+        }
+    } catch (error) {
+        logger.error('[Session] Error in ensureCurrentSession:', error.message);
+    }
+};
+
 const initCronJobs = () => {
+    // Run session check on startup
+    ensureCurrentSession();
     // Run every day at midnight
     cron.schedule('0 0 * * *', async () => {
         logger.info('Running cron job: Cleaning up trash items older than 30 days');
@@ -68,6 +153,9 @@ const initCronJobs = () => {
         } catch (error) {
             logger.error('Error running trash cleanup cron job:', error);
         }
+
+        // Also check/rotate academic sessions at midnight
+        await ensureCurrentSession();
     });
 
     // Keep-alive ping every 4 minutes to prevent Neon DB cold starts
@@ -183,4 +271,4 @@ const initCronJobs = () => {
     logger.info('Cron jobs initialized (with DB keep-alive + timetable notifications)');
 };
 
-module.exports = { initCronJobs, setSocketIO };
+module.exports = { initCronJobs, setSocketIO, ensureCurrentSession };

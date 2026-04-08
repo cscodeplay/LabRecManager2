@@ -173,11 +173,15 @@ export default function LoginPage() {
                 setSchoolInfo(res.data.data.school);
             }
             setAcademicYears(years);
+
+            // Default to current session, then latest by startDate
             const currentYear = years.find(y => y.isCurrent);
             if (currentYear) {
                 setSelectedYear(currentYear.id);
             } else if (years.length > 0) {
-                setSelectedYear(years[0].id);
+                // Sort by startDate desc and pick the latest one
+                const sorted = [...years].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+                setSelectedYear(sorted[0].id);
             }
         } catch (error) {
             console.error('Could not load academic years:', error.message);
@@ -187,7 +191,8 @@ export default function LoginPage() {
     };
 
     const onSubmit = async (data) => {
-        if (!selectedYear) {
+        // Only require session selection if sessions are available
+        if (academicYears.length > 0 && !selectedYear) {
             toast.error(t('auth.academicSession'));
             return;
         }

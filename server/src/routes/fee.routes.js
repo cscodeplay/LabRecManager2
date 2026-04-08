@@ -55,9 +55,10 @@ router.post('/categories', authenticate, authorize('admin', 'principal', 'accoun
  */
 router.get('/structure', authenticate, asyncHandler(async (req, res) => {
     const { academicYearId, classId, subjectId } = req.query;
+    const sessionId = academicYearId || req.headers['x-academic-session'];
 
     let where = { schoolId: req.user.schoolId };
-    if (academicYearId) where.academicYearId = academicYearId;
+    if (sessionId) where.academicYearId = sessionId;
     if (classId) where.classId = classId;
     if (subjectId) where.subjectId = subjectId;
 
@@ -142,7 +143,10 @@ router.get('/student/:studentId', authenticate, asyncHandler(async (req, res) =>
     }
 
     const fees = await prisma.studentFee.findMany({
-        where: { studentId: req.params.studentId },
+        where: {
+            studentId: req.params.studentId,
+            ...(req.headers['x-academic-session'] && { academicYearId: req.headers['x-academic-session'] })
+        },
         include: {
             feeStructure: {
                 include: {

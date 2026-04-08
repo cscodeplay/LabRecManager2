@@ -12,11 +12,12 @@ const { asyncHandler } = require('../middleware/errorHandler');
  */
 router.get('/', authenticate, asyncHandler(async (req, res) => {
     const { subjectId, classId, academicYearId } = req.query;
+    const sessionId = academicYearId || req.headers['x-academic-session'];
 
     let where = { schoolId: req.user.schoolId };
     if (subjectId) where.subjectId = subjectId;
     if (classId) where.classId = classId;
-    if (academicYearId) where.academicYearId = academicYearId;
+    if (sessionId) where.academicYearId = sessionId;
 
     const syllabi = await prisma.syllabus.findMany({
         where,

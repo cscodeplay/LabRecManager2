@@ -11,7 +11,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
  */
 router.get('/academic-years', asyncHandler(async (req, res) => {
     // Get academic years across all schools (or filter by school if needed)
-    const academicYears = await prisma.academicYear.findMany({
+    let academicYears = await prisma.academicYear.findMany({
         orderBy: { startDate: 'desc' },
         select: {
             id: true,
@@ -21,6 +21,27 @@ router.get('/academic-years', asyncHandler(async (req, res) => {
             isCurrent: true
         }
     });
+
+    // Auto-create session if none exist
+    if (academicYears.length === 0) {
+        try {
+            const { ensureCurrentSession } = require('../services/cron.service');
+            await ensureCurrentSession();
+            // Re-fetch after creation
+            academicYears = await prisma.academicYear.findMany({
+                orderBy: { startDate: 'desc' },
+                select: {
+                    id: true,
+                    yearLabel: true,
+                    startDate: true,
+                    endDate: true,
+                    isCurrent: true
+                }
+            });
+        } catch (err) {
+            console.warn('[academic-years] Auto-create failed:', err.message);
+        }
+    }
 
     // Get default school info for login page
     const school = await prisma.school.findFirst({
