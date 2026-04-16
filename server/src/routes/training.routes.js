@@ -504,7 +504,7 @@ router.post('/exercises/:id/submit', authenticate, [
                 schoolId: req.user.schoolId,
                 uploadedById: req.user.id,
                 folderId: folder.id,
-                name: \`Solution - \${exercise.title}\`,
+                name: `Solution - ${exercise.title}`,
                 fileName: fileName,
                 fileType: fileExt,
                 mimeType: language === 'html' ? 'text/html' : 'text/x-python',
