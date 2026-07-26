@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Users, GraduationCap, ArrowLeft, UserPlus, UsersRound, Plus, Search, Mail, Phone, Calendar, Lock, ChevronLeft, ChevronRight, Shuffle, Trash2, UserMinus, X, ChevronDown, ChevronUp, Monitor } from 'lucide-react';
+import { Users, GraduationCap, ArrowLeft, UserPlus, UsersRound, Plus, Search, Mail, Phone, Calendar, Lock, ChevronLeft, ChevronRight, Shuffle, Trash2, UserMinus, X, ChevronDown, ChevronUp, Monitor, Edit2, Upload, Download } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import { classesAPI, labsAPI, trainingAPI } from '@/lib/api';
+import { classesAPI, labsAPI, trainingAPI, usersAPI } from '@/lib/api';
+import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -21,6 +22,32 @@ export default function ClassDetailPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('students');
     const [initialSessionId, setInitialSessionId] = useState(null);
+
+    // Add Student modal state
+    const [showAddStudentModal, setShowAddStudentModal] = useState(false);
+    const [newStudent, setNewStudent] = useState({
+        firstName: '',
+        lastName: '',
+        studentId: '',
+        email: '',
+        phone: '',
+        rollNumber: ''
+    });
+
+    // Edit Student modal state
+    const [editingStudent, setEditingStudent] = useState(null);
+    const [editStudentData, setEditStudentData] = useState({
+        firstName: '',
+        lastName: '',
+        studentId: '',
+        email: '',
+        phone: '',
+        rollNumber: ''
+    });
+
+    // Delete Student modal state
+    const [deletingStudent, setDeletingStudent] = useState(null);
+    const [submitting, setSubmitting] = useState(false);
 
     // Training analytics
     const [trainingAnalytics, setTrainingAnalytics] = useState(null);
@@ -221,6 +248,130 @@ export default function ClassDetailPage() {
         }
     };
 
+    // --- Student Management Handlers ---
+
+    // Create single student and enroll in class
+    const handleCreateStudent = async (e) => {
+        e.preventDefault();
+        if (!newStudent.firstName.trim() || !newStudent.lastName.trim()) {
+            toast.error('First and Last name are required');
+            return;
+        }
+
+        setSubmitting(true);
+        try {
+            const emailToUse = newStudent.email.trim() || `${newStudent.firstName.toLowerCase().trim()}.${newStudent.lastName.toLowerCase().trim()}@student.school.edu`;
+            await api.post('/users/bulk', {
+                users: [{
+                    firstName: newStudent.firstName.trim(),
+                    lastName: newStudent.lastName.trim(),
+                    studentId: newStudent.studentId.trim() || undefined,
+                    admissionNumber: newStudent.studentId.trim() || undefined,
+                    email: emailToUse,
+                    phone: newStudent.phone.trim() || undefined,
+                    rollNumber: newStudent.rollNumber ? parseInt(newStudent.rollNumber) : undefined,
+                    role: 'student'
+                }],
+                classId: params.id
+            });
+
+            toast.success('Student added successfully!');
+            setShowAddStudentModal(false);
+            setNewStudent({ firstName: '', lastName: '', studentId: '', email: '', phone: '', rollNumber: '' });
+            loadClassData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to add student');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    // Open Edit Modal
+    const handleOpenEditModal = (student) => {
+        setEditingStudent(student);
+        setEditStudentData({
+            firstName: student.firstName || '',
+            lastName: student.lastName || '',
+            studentId: student.studentId || student.admissionNumber || '',
+            email: student.email || '',
+            phone: student.phone || '',
+            rollNumber: student.rollNumber ? String(student.rollNumber) : ''
+        });
+    };
+
+    // Save Edited Student
+    const handleUpdateStudent = async (e) => {
+        e.preventDefault();
+        if (!editStudentData.firstName.trim() || !editStudentData.lastName.trim()) {
+            toast.error('First and Last name are required');
+            return;
+        }
+
+        setSubmitting(true);
+        try {
+            await usersAPI.update(editingStudent.id, {
+                firstName: editStudentData.firstName.trim(),
+                lastName: editStudentData.lastName.trim(),
+                email: editStudentData.email.trim(),
+                phone: editStudentData.phone.trim() || null,
+                studentId: editStudentData.studentId.trim() || null,
+                admissionNumber: editStudentData.studentId.trim() || null
+            });
+
+            toast.success('Student updated successfully!');
+            setEditingStudent(null);
+            loadClassData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to update student');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    // Delete Student
+    const handleDeleteStudent = async () => {
+        if (!deletingStudent) return;
+        setSubmitting(true);
+        try {
+            await usersAPI.delete(deletingStudent.id);
+            toast.success('Student deleted successfully!');
+            setDeletingStudent(null);
+            loadClassData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to delete student');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    // Export CSV
+    const handleExportCSV = () => {
+        if (students.length === 0) {
+            toast.error('No students to export');
+            return;
+        }
+
+        const headers = ['Roll Number', 'First Name', 'Last Name', 'Student ID', 'Email', 'Phone'];
+        const rows = students.map((s, idx) => [
+            s.rollNumber || (idx + 1),
+            `"${s.firstName || ''}"`,
+            `"${s.lastName || ''}"`,
+            `"${s.studentId || s.admissionNumber || ''}"`,
+            `"${s.email || ''}"`,
+            `"${s.phone || ''}"`
+        ]);
+
+        const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement('a');
+        link.setAttribute('href', encodedUri);
+        link.setAttribute('download', `${classData?.name || 'Class'}_Students.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success('CSV exported successfully!');
+    };
+
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -285,9 +436,30 @@ export default function ClassDetailPage() {
                                 </div>
                             </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             {(isAdmin || isInstructor) && (
                                 <>
+                                    <button
+                                        onClick={() => setShowAddStudentModal(true)}
+                                        className="btn btn-primary"
+                                    >
+                                        <UserPlus className="w-4 h-4" />
+                                        Add Student
+                                    </button>
+                                    <Link
+                                        href={`/admin/students/import?classId=${params.id}`}
+                                        className="btn btn-secondary"
+                                    >
+                                        <Upload className="w-4 h-4" />
+                                        Import Students
+                                    </Link>
+                                    <button
+                                        onClick={handleExportCSV}
+                                        className="btn btn-secondary"
+                                    >
+                                        <Download className="w-4 h-4" />
+                                        Export CSV
+                                    </button>
                                     <Link
                                         href={`/classes/${params.id}/groups/create`}
                                         className="btn btn-secondary"
@@ -388,6 +560,9 @@ export default function ClassDetailPage() {
                                             <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Student ID</th>
                                             <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Email</th>
                                             <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Contact</th>
+                                            {(isAdmin || isInstructor) && (
+                                                <th className="text-right px-6 py-3 text-sm font-medium text-slate-600">Actions</th>
+                                            )}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
@@ -432,6 +607,26 @@ export default function ClassDetailPage() {
                                                         </a>
                                                     ) : '-'}
                                                 </td>
+                                                {(isAdmin || isInstructor) && (
+                                                    <td className="px-6 py-4 text-right">
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            <button
+                                                                onClick={() => handleOpenEditModal(student)}
+                                                                className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-slate-100 rounded-lg transition"
+                                                                title="Edit Student"
+                                                            >
+                                                                <Edit2 className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setDeletingStudent(student)}
+                                                                className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                                                                title="Delete Student"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                )}
                                             </tr>
                                         ))}
                                     </tbody>
@@ -797,6 +992,253 @@ export default function ClassDetailPage() {
                                 </div>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Add Student Modal */}
+                {showAddStudentModal && (
+                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+                            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center text-primary-600">
+                                        <UserPlus className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 text-lg">Add Student to {classData.name}</h3>
+                                        <p className="text-xs text-slate-500">Student will be enrolled directly in this class</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowAddStudentModal(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <form onSubmit={handleCreateStudent} className="space-y-4 mt-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">First Name *</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={newStudent.firstName}
+                                            onChange={(e) => setNewStudent({ ...newStudent, firstName: e.target.value })}
+                                            className="input w-full"
+                                            placeholder="e.g. Rahul"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Last Name *</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={newStudent.lastName}
+                                            onChange={(e) => setNewStudent({ ...newStudent, lastName: e.target.value })}
+                                            className="input w-full"
+                                            placeholder="e.g. Sharma"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Student / Admission ID</label>
+                                        <input
+                                            type="text"
+                                            value={newStudent.studentId}
+                                            onChange={(e) => setNewStudent({ ...newStudent, studentId: e.target.value })}
+                                            className="input w-full font-mono text-sm"
+                                            placeholder="e.g. STU1001"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Roll Number</label>
+                                        <input
+                                            type="number"
+                                            value={newStudent.rollNumber}
+                                            onChange={(e) => setNewStudent({ ...newStudent, rollNumber: e.target.value })}
+                                            className="input w-full"
+                                            placeholder="e.g. 1"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                                    <input
+                                        type="email"
+                                        value={newStudent.email}
+                                        onChange={(e) => setNewStudent({ ...newStudent, email: e.target.value })}
+                                        className="input w-full"
+                                        placeholder="Leave blank to auto-generate"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
+                                    <input
+                                        type="tel"
+                                        value={newStudent.phone}
+                                        onChange={(e) => setNewStudent({ ...newStudent, phone: e.target.value })}
+                                        className="input w-full"
+                                        placeholder="e.g. +91 9876543210"
+                                    />
+                                </div>
+
+                                <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAddStudentModal(false)}
+                                        className="btn btn-ghost"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={submitting}
+                                        className="btn btn-primary"
+                                    >
+                                        {submitting ? 'Adding...' : 'Add Student'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Edit Student Modal */}
+                {editingStudent && (
+                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+                            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center text-primary-600">
+                                        <Edit2 className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 text-lg">Edit Student Details</h3>
+                                        <p className="text-xs text-slate-500">{editingStudent.firstName} {editingStudent.lastName}</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setEditingStudent(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <form onSubmit={handleUpdateStudent} className="space-y-4 mt-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">First Name *</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={editStudentData.firstName}
+                                            onChange={(e) => setEditStudentData({ ...editStudentData, firstName: e.target.value })}
+                                            className="input w-full"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Last Name *</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={editStudentData.lastName}
+                                            onChange={(e) => setEditStudentData({ ...editStudentData, lastName: e.target.value })}
+                                            className="input w-full"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Student / Admission ID</label>
+                                        <input
+                                            type="text"
+                                            value={editStudentData.studentId}
+                                            onChange={(e) => setEditStudentData({ ...editStudentData, studentId: e.target.value })}
+                                            className="input w-full font-mono text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Roll Number</label>
+                                        <input
+                                            type="number"
+                                            value={editStudentData.rollNumber}
+                                            onChange={(e) => setEditStudentData({ ...editStudentData, rollNumber: e.target.value })}
+                                            className="input w-full"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
+                                    <input
+                                        type="email"
+                                        required
+                                        value={editStudentData.email}
+                                        onChange={(e) => setEditStudentData({ ...editStudentData, email: e.target.value })}
+                                        className="input w-full"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
+                                    <input
+                                        type="tel"
+                                        value={editStudentData.phone}
+                                        onChange={(e) => setEditStudentData({ ...editStudentData, phone: e.target.value })}
+                                        className="input w-full"
+                                    />
+                                </div>
+
+                                <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditingStudent(null)}
+                                        className="btn btn-ghost"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={submitting}
+                                        className="btn btn-primary"
+                                    >
+                                        {submitting ? 'Saving...' : 'Save Changes'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Delete Confirmation Modal */}
+                {deletingStudent && (
+                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+                            <div className="flex items-center gap-3 text-red-600 mb-4">
+                                <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+                                    <Trash2 className="w-5 h-5" />
+                                </div>
+                                <h3 className="font-bold text-lg text-slate-900">Delete Student Record</h3>
+                            </div>
+                            <p className="text-slate-600 text-sm mb-6">
+                                Are you sure you want to delete <strong className="text-slate-900">{deletingStudent.firstName} {deletingStudent.lastName}</strong>? This action cannot be undone.
+                            </p>
+                            <div className="flex justify-end gap-3">
+                                <button
+                                    onClick={() => setDeletingStudent(null)}
+                                    className="btn btn-ghost"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleDeleteStudent}
+                                    disabled={submitting}
+                                    className="btn bg-red-600 hover:bg-red-700 text-white"
+                                >
+                                    {submitting ? 'Deleting...' : 'Delete Student'}
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
             </main>

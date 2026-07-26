@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Upload, FileSpreadsheet, Download, Check, X, AlertCircle, Users, GraduationCap } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
@@ -11,11 +11,13 @@ import PageHeader from '@/components/PageHeader';
 
 export default function ImportStudentsPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const classIdFromQuery = searchParams.get('classId') || '';
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
     const [loading, setLoading] = useState(false);
     const [classes, setClasses] = useState([]);
-    const [selectedClassId, setSelectedClassId] = useState('');
-    const [step, setStep] = useState(1); // 1: Select Class, 2: Upload, 3: Preview, 4: Result
+    const [selectedClassId, setSelectedClassId] = useState(classIdFromQuery);
+    const [step, setStep] = useState(classIdFromQuery ? 2 : 1); // 1: Select Class, 2: Upload, 3: Preview, 4: Result
     const [csvData, setCsvData] = useState([]);
     const [importResult, setImportResult] = useState(null);
     const fileInputRef = useRef(null);
