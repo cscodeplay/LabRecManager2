@@ -79,11 +79,11 @@ export default function ClassStudentsPage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                            <button onClick={loadData} className="btn btn-secondary">
+                            <button onClick={loadData} className="btn btn-secondary p-2.5" title="Refresh Roster">
                                 <RefreshCw className="w-4 h-4" />
                             </button>
-                            <Link href="/admin/students" className="btn btn-primary">
-                                <UserPlus className="w-4 h-4" /> Manage Students
+                            <Link href={`/classes/${params.id}`} className="btn btn-primary p-2.5" title="Open Class Roster & Management">
+                                <UserPlus className="w-4 h-4" />
                             </Link>
                         </div>
                     </div>

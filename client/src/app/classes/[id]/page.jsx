@@ -261,7 +261,7 @@ export default function ClassDetailPage() {
         setSubmitting(true);
         try {
             const emailToUse = newStudent.email.trim() || `${newStudent.firstName.toLowerCase().trim()}.${newStudent.lastName.toLowerCase().trim()}@student.school.edu`;
-            await api.post('/users/bulk', {
+            const res = await api.post('/users/bulk', {
                 users: [{
                     firstName: newStudent.firstName.trim(),
                     lastName: newStudent.lastName.trim(),
@@ -275,10 +275,15 @@ export default function ClassDetailPage() {
                 classId: params.id
             });
 
-            toast.success('Student added successfully!');
-            setShowAddStudentModal(false);
-            setNewStudent({ firstName: '', lastName: '', studentId: '', email: '', phone: '', rollNumber: '' });
-            loadClassData();
+            const failedList = res.data.data?.failed || [];
+            if (failedList.length > 0) {
+                toast.error(`Failed to add student: ${failedList[0].reason || 'Unknown error'}`);
+            } else {
+                toast.success('Student added successfully!');
+                setShowAddStudentModal(false);
+                setNewStudent({ firstName: '', lastName: '', studentId: '', email: '', phone: '', rollNumber: '' });
+                loadClassData();
+            }
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to add student');
         } finally {
@@ -436,51 +441,51 @@ export default function ClassDetailPage() {
                                 </div>
                             </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             {(isAdmin || isInstructor) && (
                                 <>
                                     <button
                                         onClick={() => setShowAddStudentModal(true)}
-                                        className="btn btn-primary"
+                                        className="btn btn-primary p-2.5"
+                                        title="Add Student"
                                     >
-                                        <UserPlus className="w-4 h-4" />
-                                        Add Student
+                                        <UserPlus className="w-5 h-5" />
                                     </button>
                                     <Link
                                         href={`/admin/students/import?classId=${params.id}`}
-                                        className="btn btn-secondary"
+                                        className="btn btn-secondary p-2.5"
+                                        title="Import Students CSV"
                                     >
-                                        <Upload className="w-4 h-4" />
-                                        Import Students
+                                        <Upload className="w-5 h-5" />
                                     </Link>
                                     <button
                                         onClick={handleExportCSV}
-                                        className="btn btn-secondary"
+                                        className="btn btn-secondary p-2.5"
+                                        title="Export Students CSV"
                                     >
-                                        <Download className="w-4 h-4" />
-                                        Export CSV
+                                        <Download className="w-5 h-5" />
                                     </button>
                                     <Link
                                         href={`/classes/${params.id}/groups/create`}
-                                        className="btn btn-secondary"
+                                        className="btn btn-secondary p-2.5"
+                                        title="Create Group"
                                     >
-                                        <UsersRound className="w-4 h-4" />
-                                        Create Group
+                                        <UsersRound className="w-5 h-5" />
                                     </Link>
                                     <button
                                         onClick={handleAutoGenerateGroups}
                                         disabled={autoGrouping || students.length < 2}
-                                        className="btn btn-secondary"
+                                        className="btn btn-secondary p-2.5"
+                                        title="Auto Generate Groups"
                                     >
-                                        <Shuffle className="w-4 h-4" />
-                                        {autoGrouping ? 'Creating...' : 'Auto Groups'}
+                                        <Shuffle className="w-5 h-5" />
                                     </button>
                                     <Link
                                         href={`/assignments/assign?classId=${params.id}`}
-                                        className="btn btn-primary"
+                                        className="btn btn-primary p-2.5"
+                                        title="Assign Work"
                                     >
-                                        <Plus className="w-4 h-4" />
-                                        Assign Work
+                                        <Plus className="w-5 h-5" />
                                     </Link>
                                 </>
                             )}

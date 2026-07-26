@@ -446,6 +446,7 @@ router.post('/bulk', authenticate, authorize('admin', 'principal'), asyncHandler
                         data: {
                             studentId: user.id,
                             classId: enrollClassId,
+                            rollNumber: userData.rollNumber ? parseInt(userData.rollNumber) : undefined,
                             status: 'active'
                         }
                     });

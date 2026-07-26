@@ -110,6 +110,7 @@ router.get('/:id/students', authenticate, asyncHandler(async (req, res) => {
                     lastNameHindi: true,
                     email: true,
                     phone: true,
+                    studentId: true,
                     admissionNumber: true,
                     profileImageUrl: true
                 }

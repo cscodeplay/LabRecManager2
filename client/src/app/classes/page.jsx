@@ -167,15 +167,17 @@ export default function ClassesPage() {
                                 <div className="flex gap-2 pt-4 border-t border-slate-100">
                                     <Link
                                         href={`/classes/${cls.id}`}
-                                        className="btn btn-ghost flex-1 text-sm"
+                                        className="btn btn-secondary flex-1 text-sm flex items-center justify-center gap-1"
+                                        title="View Class Details & Analytics"
                                     >
                                         <Eye className="w-4 h-4" />
                                         {t('classes.view')}
                                     </Link>
                                     {isAdmin && (
                                         <Link
-                                            href={`/classes/${cls.id}/students`}
-                                            className="btn btn-primary flex-1 text-sm"
+                                            href={`/classes/${cls.id}`}
+                                            className="btn btn-primary flex-1 text-sm flex items-center justify-center gap-1"
+                                            title="Manage Class Students & Roster"
                                         >
                                             <UserPlus className="w-4 h-4" />
                                             {t('classes.students')}
