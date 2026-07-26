@@ -104,21 +104,21 @@ export default function ImportStudentsPage() {
                 return '';
             };
 
-            const rawName = getVal('first_name', 'firstname', 'name', 'student_name', 'full_name');
+            const rawName = getVal('student_name', 'name', 'first_name', 'firstname', 'candidate_name', 'studentname');
             let firstName = rawName;
-            let lastName = getVal('last_name', 'lastname', 'surname');
+            let lastName = getVal('last_name', 'lastname', 'surname', 'father_name');
 
-            if (!lastName && rawName.includes(' ')) {
+            if (!getVal('last_name', 'lastname', 'surname') && rawName.includes(' ')) {
                 const parts = rawName.split(' ');
                 firstName = parts[0];
                 lastName = parts.slice(1).join(' ');
             }
             if (!lastName) lastName = 'Student';
 
-            const studentId = getVal('student_id', 'studentid', 'admission_number', 'admission_no', 'reg_no');
-            const rollNo = getVal('roll_number', 'roll_no', 'roll');
-            const email = getVal('email', 'email_address') || `${firstName.toLowerCase().replace(/[^a-z0-9]/g, '')}.${lastName.toLowerCase().replace(/[^a-z0-9]/g, '')}@student.school.edu`;
-            const phone = getVal('phone', 'mobile', 'contact');
+            const studentId = getVal('epunjab_id', 'student_id', 'studentid', 'admission_number', 'admission_no', 'reg_no');
+            const rollNo = getVal('class_roll_no', 'roll_number', 'roll_no', 'roll', 'sr_no');
+            const email = getVal('email', 'email_address') || (studentId ? `${studentId}@epunjab.edu` : `${firstName.toLowerCase().replace(/[^a-z0-9]/g, '')}.${lastName.toLowerCase().replace(/[^a-z0-9]/g, '')}@student.school.edu`);
+            const phone = getVal('phone', 'mobile', 'mobile_no', 'contact', 'contact_no');
 
             return {
                 firstName,

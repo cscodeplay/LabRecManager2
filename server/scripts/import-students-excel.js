@@ -6,6 +6,36 @@ const fs = require('fs');
 const path = require('path');
 
 /**
+ * Helper to normalize ePunjab and custom class names to canonical system names.
+ * Examples:
+ * - "12th Non Medical A", "12-NM-A", "XII NM A" -> "XII NM-A"
+ * - "11th Commerce B", "11-COM-B", "XI COM B" -> "XI COM-B"
+ * - "12th Medical A", "12-MED-A", "XII MED A" -> "XII MED-A"
+ */
+function normalizeClassName(rawClass, rawStream, rawSection) {
+    const text = `${rawClass} ${rawStream || ''} ${rawSection || ''}`.toLowerCase().trim();
+    if (!text) return '';
+
+    let grade = '';
+    if (text.includes('12') || text.includes('xii')) grade = 'XII';
+    else if (text.includes('11') || text.includes('xi')) grade = 'XI';
+
+    let stream = '';
+    if (text.includes('non') || text.includes('nm')) stream = 'NM';
+    else if (text.includes('com')) stream = 'COM';
+    else if (text.includes('med')) stream = 'MED';
+
+    let section = 'A';
+    const secMatch = text.match(/\b([a-f])\b/i);
+    if (secMatch) section = secMatch[1].toUpperCase();
+
+    if (grade && stream) {
+        return `${grade} ${stream}-${section}`;
+    }
+    return rawClass.trim();
+}
+
+/**
  * Script to import students from an Excel (.xlsx / .xls) or CSV file.
  * 
  * Expected columns in Excel (flexible case-insensitive headers):
@@ -36,7 +66,7 @@ async function importStudents() {
         process.exit(1);
     }
 
-    console.log(`Reading Excel file: ${absolutePath}...`);
+    console.log(`Reading Excel/ePunjab file: ${absolutePath}...`);
     const workbook = XLSX.readFile(absolutePath);
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
@@ -75,15 +105,18 @@ async function importStudents() {
     let successCount = 0;
     let failCount = 0;
 
+    console.log('\n--- ePunjab / Excel Intelligent Preview & Mapping ---');
+
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         
-        // Helper to get field by possible column names
+        // Helper to get field by possible column names (including ePunjab format)
         const getVal = (...keys) => {
             for (const key of Object.keys(row)) {
-                const cleanKey = key.toLowerCase().trim();
+                const cleanKey = key.toLowerCase().trim().replace(/[\s-]/g, '_');
                 for (const target of keys) {
-                    if (cleanKey === target.toLowerCase()) {
+                    const cleanTarget = target.toLowerCase().trim().replace(/[\s-]/g, '_');
+                    if (cleanKey === cleanTarget) {
                         return String(row[key]).trim();
                     }
                 }
@@ -91,11 +124,11 @@ async function importStudents() {
             return '';
         };
 
-        const rawName = getVal('First Name', 'FirstName', 'Name', 'Student Name', 'Full Name');
+        const rawName = getVal('student_name', 'name', 'first_name', 'firstname', 'candidate_name', 'studentname');
         let firstName = rawName;
-        let lastName = getVal('Last Name', 'LastName', 'Surname');
+        let lastName = getVal('last_name', 'lastname', 'surname', 'father_name');
 
-        if (!lastName && rawName.includes(' ')) {
+        if (!getVal('last_name', 'lastname', 'surname') && rawName.includes(' ')) {
             const parts = rawName.split(' ');
             firstName = parts[0];
             lastName = parts.slice(1).join(' ');
@@ -103,24 +136,29 @@ async function importStudents() {
         if (!lastName) lastName = 'Student';
 
         if (!firstName) {
-            console.log(`Row ${i + 2}: Skipped (Missing Name)`);
+            console.log(`Row ${i + 2}: Skipped (Missing Student Name)`);
             failCount++;
             continue;
         }
 
-        const rollNoRaw = getVal('Roll Number', 'Roll No', 'Roll', 'RollNo');
-        const rollNumber = rollNoRaw ? parseInt(rollNoRaw) : undefined;
-        const studentId = getVal('Student ID', 'StudentID', 'Admission No', 'Admission Number', 'Adm No', 'Reg No');
-        const phone = getVal('Phone', 'Mobile', 'Contact', 'Phone Number');
-        const classNameRaw = getVal('Class', 'Class Name', 'ClassName', 'Grade', 'Section') || defaultClassName || '';
+        const rollNoRaw = getVal('roll_no', 'class_roll_no', 'roll', 'roll_number', 'sr_no', 'sn');
+        const rollNumber = rollNoRaw ? parseInt(rollNoRaw) : (i + 1);
+        const studentId = getVal('epunjab_id', 'student_id', 'studentid', 'admission_no', 'admission_number', 'reg_no');
+        const phone = getVal('mobile', 'phone', 'contact', 'mobile_no', 'contact_no');
+        
+        const rawClass = getVal('class', 'class_name', 'grade');
+        const rawStream = getVal('stream');
+        const rawSection = getVal('section');
+        
+        const normalizedClassName = normalizeClassName(rawClass, rawStream, rawSection) || defaultClassName || '';
 
-        // Match Class
+        // Match Class in DB
         let targetClass = null;
-        if (classNameRaw) {
-            targetClass = classMap.get(classNameRaw.toLowerCase().trim());
+        if (normalizedClassName) {
+            targetClass = classMap.get(normalizedClassName.toLowerCase().trim());
         }
 
-        const email = getVal('Email', 'Email Address') || `${firstName.toLowerCase().replace(/[^a-z0-9]/g, '')}.${lastName.toLowerCase().replace(/[^a-z0-9]/g, '')}@student.school.edu`;
+        const email = getVal('email', 'email_address') || (studentId ? `${studentId}@epunjab.edu` : `${firstName.toLowerCase().replace(/[^a-z0-9]/g, '')}.${lastName.toLowerCase().replace(/[^a-z0-9]/g, '')}@student.school.edu`);
 
         try {
             // Check if user already exists
