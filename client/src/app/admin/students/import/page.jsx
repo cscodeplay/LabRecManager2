@@ -9,6 +9,8 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 
+import * as XLSX from 'xlsx';
+
 export default function ImportStudentsPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -50,17 +52,93 @@ export default function ImportStudentsPage() {
         const file = e.target.files[0];
         if (!file) return;
 
-        if (!file.name.endsWith('.csv')) {
-            toast.error('Please upload a CSV file');
+        const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+        const isCsv = file.name.endsWith('.csv');
+
+        if (!isExcel && !isCsv) {
+            toast.error('Please upload an Excel (.xlsx, .xls) or CSV file');
             return;
         }
 
         const reader = new FileReader();
-        reader.onload = (event) => {
-            const text = event.target.result;
-            parseCSV(text);
+        if (isExcel) {
+            reader.onload = (event) => {
+                try {
+                    const data = new Uint8Array(event.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+                    parseExcelJSON(json);
+                } catch (err) {
+                    toast.error('Failed to read Excel file');
+                    console.error(err);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        } else {
+            reader.onload = (event) => {
+                const text = event.target.result;
+                parseCSV(text);
+            };
+            reader.readAsText(file);
         };
-        reader.readAsText(file);
+    };
+
+    const parseExcelJSON = (rows) => {
+        if (!rows || rows.length === 0) {
+            toast.error('Excel file is empty or has no data rows');
+            return;
+        }
+
+        const parsed = rows.map((row) => {
+            const getVal = (...keys) => {
+                for (const key of Object.keys(row)) {
+                    const cleanKey = key.toLowerCase().trim().replace(/[\s-]/g, '_');
+                    for (const target of keys) {
+                        if (cleanKey === target.toLowerCase()) {
+                            return String(row[key]).trim();
+                        }
+                    }
+                }
+                return '';
+            };
+
+            const rawName = getVal('first_name', 'firstname', 'name', 'student_name', 'full_name');
+            let firstName = rawName;
+            let lastName = getVal('last_name', 'lastname', 'surname');
+
+            if (!lastName && rawName.includes(' ')) {
+                const parts = rawName.split(' ');
+                firstName = parts[0];
+                lastName = parts.slice(1).join(' ');
+            }
+            if (!lastName) lastName = 'Student';
+
+            const studentId = getVal('student_id', 'studentid', 'admission_number', 'admission_no', 'reg_no');
+            const rollNo = getVal('roll_number', 'roll_no', 'roll');
+            const email = getVal('email', 'email_address') || `${firstName.toLowerCase().replace(/[^a-z0-9]/g, '')}.${lastName.toLowerCase().replace(/[^a-z0-9]/g, '')}@student.school.edu`;
+            const phone = getVal('phone', 'mobile', 'contact');
+
+            return {
+                firstName,
+                lastName,
+                studentId: studentId || `STU${Math.floor(1000 + Math.random() * 9000)}`,
+                admissionNumber: studentId || `ADM${Math.floor(1000 + Math.random() * 9000)}`,
+                email,
+                phone,
+                rollNumber: rollNo ? parseInt(rollNo) : undefined,
+                role: 'student'
+            };
+        }).filter(s => s.firstName);
+
+        if (parsed.length === 0) {
+            toast.error('No valid student rows found in Excel file');
+            return;
+        }
+
+        setCsvData(parsed);
+        setStep(3);
     };
 
     const parseCSV = (text) => {
@@ -262,7 +340,7 @@ export default function ImportStudentsPage() {
                                 <Upload className="w-6 h-6 text-blue-600" />
                             </div>
                             <div>
-                                <h2 className="text-lg font-semibold text-slate-900">Upload CSV File</h2>
+                                <h2 className="text-lg font-semibold text-slate-900">Upload Excel or CSV File</h2>
                                 <p className="text-sm text-slate-500">
                                     {selectedClass ? `Importing to: ${selectedClass.name}` : 'Importing without class enrollment'}
                                 </p>
@@ -284,12 +362,12 @@ export default function ImportStudentsPage() {
                             className="border-2 border-dashed border-slate-300 rounded-xl p-12 text-center cursor-pointer hover:border-primary-500 hover:bg-primary-50 transition"
                         >
                             <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-slate-400" />
-                            <p className="text-lg font-medium text-slate-700 mb-2">Click to upload CSV</p>
-                            <p className="text-sm text-slate-500">or drag and drop</p>
+                            <p className="text-lg font-medium text-slate-700 mb-2">Click to upload Excel (.xlsx, .xls) or CSV</p>
+                            <p className="text-sm text-slate-500">or drag and drop your student records</p>
                             <input
                                 ref={fileInputRef}
                                 type="file"
-                                accept=".csv"
+                                accept=".xlsx,.xls,.csv"
                                 onChange={handleFileUpload}
                                 className="hidden"
                             />
