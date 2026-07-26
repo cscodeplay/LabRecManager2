@@ -575,25 +575,18 @@ router.put('/:id', authenticate, authorize('instructor', 'lab_assistant', 'admin
             'aim', 'aimHindi', 'theory', 'theoryHindi', 'procedure', 'procedureHindi',
             'expectedOutput', 'referenceCode', 'programmingLanguage',
             'maxMarks', 'passingMarks', 'vivaMarks', 'practicalMarks', 'outputMarks',
-            'lateSubmissionAllowed', 'latePenaltyPercent', 'status', 'trainingModuleId'
+            'lateSubmissionAllowed', 'latePenaltyPercent', 'status',
+            'subjectId', 'labId', 'trainingModuleId'
         ];
 
         for (const field of allowedFields) {
             if (req.body[field] !== undefined) {
-                if (field === 'trainingModuleId' && req.body[field] === "") {
+                if ((field === 'trainingModuleId' || field === 'labId') && req.body[field] === "") {
                     updateData[field] = null;
                 } else {
                     updateData[field] = req.body[field];
                 }
             }
-        }
-
-        // Handle relation field (subjectId connects to subject relation)
-        if (req.body.subjectId) {
-            updateData.subject = { connect: { id: req.body.subjectId } };
-        }
-        if (req.body.labId) {
-            updateData.lab = { connect: { id: req.body.labId } };
         }
 
         // Handle date fields - use snake_case as per schema
