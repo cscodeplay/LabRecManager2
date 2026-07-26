@@ -507,7 +507,7 @@ router.post('/', authenticate, authorize('instructor', 'lab_assistant', 'admin',
             lateSubmissionAllowed: lateSubmissionAllowed !== false,
             latePenaltyPercent: latePenaltyPercent || 10,
             status: status || 'draft',
-            trainingModuleId
+            trainingModuleId: trainingModuleId === "" ? null : trainingModuleId
         },
         include: {
             subject: true,
@@ -580,7 +580,11 @@ router.put('/:id', authenticate, authorize('instructor', 'lab_assistant', 'admin
 
         for (const field of allowedFields) {
             if (req.body[field] !== undefined) {
-                updateData[field] = req.body[field];
+                if (field === 'trainingModuleId' && req.body[field] === "") {
+                    updateData[field] = null;
+                } else {
+                    updateData[field] = req.body[field];
+                }
             }
         }
 
