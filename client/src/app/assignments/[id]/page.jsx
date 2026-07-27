@@ -242,7 +242,56 @@ export default function AssignmentDetailPage() {
                                                 <Download className="w-4 h-4" /> Download
                                             </a>
                                         </div>
-                                    </div>
+                        {/* Assigned Targets / Class & Group Members */}
+                        {assignment.targets?.length > 0 && (
+                            <div className="card p-6 border border-slate-200">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <UsersRound className="w-5 h-5 text-primary-600" />
+                                    <h3 className="font-semibold text-slate-900 text-base">Assigned Target Groups & Classes ({assignment.targets.length})</h3>
+                                </div>
+                                <div className="space-y-4">
+                                    {assignment.targets.map((t, idx) => (
+                                        <div key={t.id || idx} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="px-2.5 py-1 bg-primary-100 text-primary-800 font-semibold text-xs rounded-lg uppercase">
+                                                        {t.targetType}
+                                                    </span>
+                                                    <span className="font-bold text-slate-900 text-sm">
+                                                        {t.targetType === 'group'
+                                                            ? (t.targetGroup?.name || 'Group Target')
+                                                            : t.targetType === 'class'
+                                                            ? (t.targetClass?.name || 'Class Target')
+                                                            : (t.targetStudent ? `${t.targetStudent.firstName} ${t.targetStudent.lastName}` : 'Student')}
+                                                    </span>
+                                                </div>
+                                                {(t.targetClass?.name || t.targetGroup?.className) && (
+                                                    <span className="px-2.5 py-0.5 bg-slate-200 text-slate-700 text-xs rounded-md font-medium">
+                                                        Class: {t.targetGroup?.className || t.targetClass?.name}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Render Group Members if target is a group */}
+                                            {t.targetType === 'group' && t.targetGroup?.members?.length > 0 && (
+                                                <div className="pt-2 border-t border-slate-200">
+                                                    <p className="text-xs font-semibold text-slate-500 mb-2">GROUP MEMBERS ({t.targetGroup.members.length}):</p>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        {t.targetGroup.members.map(m => (
+                                                            <div key={m.id} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-100 text-xs">
+                                                                <span className="font-medium text-slate-800">
+                                                                    {m.rollNumber ? `#${m.rollNumber} ` : ''}{m.firstName} {m.lastName}
+                                                                </span>
+                                                                <span className={`px-1.5 py-0.5 text-[10px] rounded font-semibold ${m.gender === 'female' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                                    {m.gender === 'female' ? 'Girl' : 'Boy'}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         )}

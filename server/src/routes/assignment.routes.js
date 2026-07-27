@@ -124,7 +124,14 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         include.targets = {
             include: {
                 targetGroup: {
-                    select: { id: true, name: true }
+                    include: {
+                        class: { select: { id: true, name: true, gradeLevel: true, section: true } },
+                        members: {
+                            include: {
+                                student: { select: { id: true, firstName: true, lastName: true, rollNumber: true, gender: true, email: true } }
+                            }
+                        }
+                    }
                 },
                 assignedBy: {
                     select: { id: true, firstName: true, lastName: true }
@@ -383,36 +390,61 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
         });
     }
 
-    // For instructors/admins, enrich targets with class/student info
+    // For instructors/admins, enrich targets with class/group/student info
     if (req.user.role !== 'student' && assignment.targets?.length > 0) {
-        // Collect class and student IDs that need lookup
-        const classIds = assignment.targets.filter(t => t.targetType === 'class' && t.targetClassId).map(t => t.targetClassId);
+        // Collect class, group, and student IDs that need lookup
+        const classIds = assignment.targets.filter(t => t.targetClassId).map(t => t.targetClassId);
+        const groupIds = assignment.targets.filter(t => t.targetType === 'group' && t.targetGroupId).map(t => t.targetGroupId);
         const studentIds = assignment.targets.filter(t => t.targetType === 'student' && t.targetStudentId).map(t => t.targetStudentId);
 
         // Batch lookup
-        const [classes, students] = await Promise.all([
+        const [classes, groups, students] = await Promise.all([
             classIds.length > 0 ? prisma.class.findMany({
                 where: { id: { in: classIds } },
                 select: { id: true, name: true, gradeLevel: true, section: true }
             }) : [],
+            groupIds.length > 0 ? prisma.studentGroup.findMany({
+                where: { id: { in: groupIds } },
+                include: {
+                    class: { select: { id: true, name: true, gradeLevel: true, section: true } },
+                    members: {
+                        include: {
+                            student: { select: { id: true, firstName: true, lastName: true, rollNumber: true, gender: true, email: true } }
+                        }
+                    }
+                }
+            }) : [],
             studentIds.length > 0 ? prisma.user.findMany({
                 where: { id: { in: studentIds } },
-                select: { id: true, firstName: true, lastName: true, admissionNumber: true }
+                select: { id: true, firstName: true, lastName: true, admissionNumber: true, email: true }
             }) : []
         ]);
 
         // Create lookup maps
         const classMap = {};
         classes.forEach(c => { classMap[c.id] = c; });
+        const groupMap = {};
+        groups.forEach(g => { groupMap[g.id] = g; });
         const studentMap = {};
         students.forEach(s => { studentMap[s.id] = s; });
 
         // Enrich targets
-        assignment.targets = assignment.targets.map(target => ({
-            ...target,
-            targetClass: target.targetClassId ? classMap[target.targetClassId] : null,
-            targetStudent: target.targetStudentId ? studentMap[target.targetStudentId] : null
-        }));
+        assignment.targets = assignment.targets.map(target => {
+            const group = target.targetGroupId ? groupMap[target.targetGroupId] : null;
+            const cls = target.targetClassId ? classMap[target.targetClassId] : (group?.class || null);
+
+            return {
+                ...target,
+                targetClass: cls,
+                targetGroup: group ? {
+                    id: group.id,
+                    name: group.name,
+                    className: group.class?.name || cls?.name || '',
+                    members: group.members.map(m => m.student)
+                } : (target.targetGroup || null),
+                targetStudent: target.targetStudentId ? studentMap[target.targetStudentId] : null
+            };
+        });
     }
 
     // Get student's submission if exists
