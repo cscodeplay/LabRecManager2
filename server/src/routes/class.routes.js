@@ -347,10 +347,38 @@ router.post('/:id/groups/auto-generate', authenticate, authorize('admin', 'princ
     const classId = req.params.id;
 
     // Get all enrolled students
+/**
+ * Helper to infer student gender
+ */
+function inferGender(student) {
+    if (student.gender) {
+        const g = String(student.gender).toLowerCase().trim();
+        if (g === 'female' || g === 'f' || g === 'girl') return 'female';
+        if (g === 'male' || g === 'm' || g === 'boy') return 'male';
+    }
+
+    const fullName = `${student.firstName || ''} ${student.lastName || ''}`.toLowerCase().trim();
+    const femaleKeywords = ['kaur', 'rani', 'devi', 'ananya', 'priya', 'simran', 'pooja', 'neha', 'sneha', 'divya', 'meenakshi', 'sunita', 'anita', 'geeta', 'seema', 'rekha', 'kavita', 'deepa', 'monika', 'arti', 'sonia', 'isha', 'tanya', 'riya', 'khushi'];
+    
+    for (const kw of femaleKeywords) {
+        if (fullName.includes(kw)) return 'female';
+    }
+    return 'male';
+}
+
+/**
+ * @route   POST /api/classes/:id/groups/auto-generate
+ * @desc    Auto-generate groups with 2-3 students each (strictly gender-segregated: boys & girls separated)
+ * @access  Private (Admin, Instructor)
+ */
+router.post('/:id/groups/auto-generate', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const classId = req.params.id;
+
+    // Get all enrolled students
     const enrollments = await prisma.classEnrollment.findMany({
         where: { classId, status: 'active' },
         include: {
-            student: { select: { id: true, firstName: true, lastName: true } }
+            student: { select: { id: true, firstName: true, lastName: true, gender: true } }
         }
     });
 
@@ -382,7 +410,21 @@ router.post('/:id/groups/auto-generate', authenticate, authorize('admin', 'princ
         });
     }
 
-    // Get the highest existing group number to continue the sequence
+    // Separate boys and girls
+    const boyStudents = ungroupedStudents.filter(s => inferGender(s) === 'male');
+    const girlStudents = ungroupedStudents.filter(s => inferGender(s) === 'female');
+
+    // Shuffle arrays
+    const shuffle = (arr) => {
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+    };
+    shuffle(boyStudents);
+    shuffle(girlStudents);
+
+    // Get the highest existing group number
     const existingGroups = await prisma.studentGroup.findMany({
         where: { classId },
         select: { name: true }
@@ -395,37 +437,36 @@ router.post('/:id/groups/auto-generate', authenticate, authorize('admin', 'princ
         }
     });
 
-    // Shuffle ungrouped students randomly
-    for (let i = ungroupedStudents.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [ungroupedStudents[i], ungroupedStudents[j]] = [ungroupedStudents[j], ungroupedStudents[i]];
-    }
-
-    // Create groups of 2-3 students
     const groupsToCreate = [];
     let groupNum = maxGroupNum + 1;
-    let i = 0;
 
-    while (i < ungroupedStudents.length) {
-        const remaining = ungroupedStudents.length - i;
-        let groupSize;
+    // Helper to create groups from single-gender student list
+    const createGenderGroups = (studentsList, genderLabel) => {
+        let i = 0;
+        while (i < studentsList.length) {
+            const remaining = studentsList.length - i;
+            let groupSize;
 
-        if (remaining <= 3) {
-            groupSize = remaining; // Take all remaining
-        } else if (remaining === 4) {
-            groupSize = 2; // Split into 2 + 2
-        } else {
-            groupSize = 3; // Take 3
+            if (remaining <= 3) {
+                groupSize = remaining;
+            } else if (remaining === 4) {
+                groupSize = 2;
+            } else {
+                groupSize = 3;
+            }
+
+            groupsToCreate.push({
+                name: `Group ${groupNum} (${genderLabel})`,
+                members: studentsList.slice(i, i + groupSize)
+            });
+
+            i += groupSize;
+            groupNum++;
         }
+    };
 
-        groupsToCreate.push({
-            name: `Group ${groupNum}`,
-            members: ungroupedStudents.slice(i, i + groupSize)
-        });
-
-        i += groupSize;
-        groupNum++;
-    }
+    createGenderGroups(boyStudents, 'Boys');
+    createGenderGroups(girlStudents, 'Girls');
 
     // Create groups in database
     const createdGroups = [];
@@ -444,7 +485,7 @@ router.post('/:id/groups/auto-generate', authenticate, authorize('admin', 'princ
             },
             include: {
                 members: {
-                    include: { student: { select: { id: true, firstName: true, lastName: true } } }
+                    include: { student: { select: { id: true, firstName: true, lastName: true, gender: true } } }
                 }
             }
         });
@@ -453,9 +494,112 @@ router.post('/:id/groups/auto-generate', authenticate, authorize('admin', 'princ
 
     res.status(201).json({
         success: true,
-        message: `Created ${createdGroups.length} new groups with ${ungroupedStudents.length} ungrouped students`,
-        messageHindi: `${createdGroups.length} नए समूह बनाए गए, ${ungroupedStudents.length} छात्रों के साथ`,
+        message: `Created ${createdGroups.length} gender-segregated groups (${boyStudents.length} boys, ${girlStudents.length} girls)`,
+        messageHindi: `${createdGroups.length} लिंग-आधारित समूह बनाए गए (${boyStudents.length} लड़के, ${girlStudents.length} लड़कियां)`,
         data: { groups: createdGroups }
+    });
+}));
+
+/**
+ * @route   POST /api/classes/:id/groups/auto-assign-pcs
+ * @desc    Auto-assign PCs contiguously (all Boys first, then all Girls)
+ * @access  Private (Admin, Instructor)
+ */
+router.post('/:id/groups/auto-assign-pcs', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const classId = req.params.id;
+
+    // Get all groups for class
+    const groups = await prisma.studentGroup.findMany({
+        where: { classId },
+        include: {
+            members: {
+                include: { student: { select: { id: true, firstName: true, lastName: true, gender: true } } }
+            },
+            assignedPc: {
+                include: { lab: { select: { name: true } } }
+            }
+        }
+    });
+
+    if (groups.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: 'No groups found in this class to assign PCs'
+        });
+    }
+
+    // Get all active PCs in school ordered contiguously by lab & item number
+    const pcs = await prisma.labItem.findMany({
+        where: {
+            schoolId: req.user.schoolId,
+            itemType: 'pc',
+            status: 'active'
+        },
+        include: {
+            lab: { select: { id: true, name: true } }
+        },
+        orderBy: [{ lab: { name: 'asc' } }, { itemNumber: 'asc' }]
+    });
+
+    if (pcs.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: 'No active PCs found in any lab'
+        });
+    }
+
+    // Separate groups into Boy Groups and Girl Groups
+    const boyGroups = [];
+    const girlGroups = [];
+    const otherGroups = [];
+
+    groups.forEach(g => {
+        const genders = g.members.map(m => inferGender(m.student));
+        const femaleCount = genders.filter(gen => gen === 'female').length;
+        const maleCount = genders.filter(gen => gen === 'male').length;
+
+        if (femaleCount > maleCount) girlGroups.push(g);
+        else boyGroups.push(g);
+    });
+
+    // Shuffle within gender blocks for random PC assignment inside gender zone
+    const shuffle = (arr) => {
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+    };
+    shuffle(boyGroups);
+    shuffle(girlGroups);
+
+    // Contiguous order: Boys contiguous block first, followed by Girls contiguous block
+    const contiguousGroupOrder = [...boyGroups, ...girlGroups];
+
+    // Assign PCs contiguously
+    const assignments = [];
+    for (let idx = 0; idx < contiguousGroupOrder.length; idx++) {
+        if (idx >= pcs.length) break; // Out of PCs
+        const group = contiguousGroupOrder[idx];
+        const pc = pcs[idx];
+
+        await prisma.studentGroup.update({
+            where: { id: group.id },
+            data: { assignedPcId: pc.id }
+        });
+
+        assignments.push({
+            groupId: group.id,
+            groupName: group.name,
+            pcId: pc.id,
+            pcNumber: pc.itemNumber,
+            labName: pc.lab?.name || 'Lab'
+        });
+    }
+
+    res.json({
+        success: true,
+        message: `Contiguously assigned ${assignments.length} PCs (${boyGroups.length} boy groups, ${girlGroups.length} girl groups)`,
+        data: { assignments }
     });
 }));
 

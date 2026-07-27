@@ -268,6 +268,7 @@ export const classesAPI = {
     enroll: (id, data) => api.post(`/classes/${id}/enroll`, data),
     createGroup: (id, data) => api.post(`/classes/${id}/groups`, data),
     autoGenerateGroups: (id) => api.post(`/classes/${id}/groups/auto-generate`),
+    autoAssignPcs: (id) => api.post(`/classes/${id}/groups/auto-assign-pcs`),
     deleteGroup: (classId, groupId) => api.delete(`/classes/${classId}/groups/${groupId}`),
     addGroupMember: (classId, groupId, studentId) => api.post(`/classes/${classId}/groups/${groupId}/members`, { studentId }),
     removeGroupMember: (classId, groupId, studentId) => api.delete(`/classes/${classId}/groups/${groupId}/members/${studentId}`),

@@ -149,6 +149,27 @@ export default function ClassDetailPage() {
         }
     };
 
+    // Auto-assign PCs contiguously (Boys contiguous block first, then Girls contiguous block)
+    const [autoAssigningPcs, setAutoAssigningPcs] = useState(false);
+    const handleAutoAssignPcs = async () => {
+        if (groups.length === 0) {
+            toast.error('No groups available to assign PCs');
+            return;
+        }
+
+        setAutoAssigningPcs(true);
+        try {
+            const res = await classesAPI.autoAssignPcs(params.id);
+            toast.success(res.data.message || 'PCs assigned contiguously to groups!');
+            loadClassData();
+            setActiveTab('groups');
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to auto-assign PCs');
+        } finally {
+            setAutoAssigningPcs(false);
+        }
+    };
+
     const handleLoadTrainingAnalytics = async () => {
         setActiveTab('training');
         if (!trainingAnalytics) {
@@ -475,10 +496,26 @@ export default function ClassDetailPage() {
                                     <button
                                         onClick={handleAutoGenerateGroups}
                                         disabled={autoGrouping || students.length < 2}
-                                        className="btn btn-secondary p-2.5"
-                                        title="Auto Generate Groups"
+                                        className={`btn p-2.5 transition-all duration-500 relative overflow-hidden ${
+                                            autoGrouping
+                                                ? 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/50 border-0 ring-2 ring-purple-400 ring-offset-2 animate-pulse'
+                                                : 'btn-secondary'
+                                        }`}
+                                        title="Auto Generate Gender-Segregated Groups (Boys & Girls Separated)"
                                     >
-                                        <Shuffle className="w-5 h-5" />
+                                        <Shuffle className={`w-5 h-5 ${autoGrouping ? 'animate-spin' : ''}`} />
+                                    </button>
+                                    <button
+                                        onClick={handleAutoAssignPcs}
+                                        disabled={autoAssigningPcs || groups.length === 0}
+                                        className={`btn p-2.5 transition-all duration-500 relative overflow-hidden ${
+                                            autoAssigningPcs
+                                                ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/50 border-0 ring-2 ring-teal-400 ring-offset-2 animate-pulse'
+                                                : 'btn-secondary'
+                                        }`}
+                                        title="Auto Assign PCs Contiguously (Boys Zone & Girls Zone)"
+                                    >
+                                        <Monitor className={`w-5 h-5 ${autoAssigningPcs ? 'animate-bounce' : ''}`} />
                                     </button>
                                     <Link
                                         href={`/assignments/assign?classId=${params.id}`}

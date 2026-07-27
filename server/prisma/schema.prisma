@@ -143,6 +143,7 @@ model User {
   createdAt                                      DateTime?                 @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt                                      DateTime?                 @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
   studentId                                      String?                   @map("student_id") @db.VarChar(50)
+  gender                                         String?                   @db.VarChar(20)
   resetPin                                       String?                   @map("reset_pin") @db.VarChar(255)
   pinExpiresAt                                   DateTime?                 @map("pin_expires_at") @db.Timestamp(6)
   storageQuotaMb                                 Int?                      @default(500) @map("storage_quota_mb")
