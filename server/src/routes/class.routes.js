@@ -340,15 +340,6 @@ router.get('/:id/groups', authenticate, asyncHandler(async (req, res) => {
 }));
 
 /**
- * @route   POST /api/classes/:id/groups/auto-generate
- * @desc    Auto-generate groups with 2-3 students each (only for ungrouped students)
- * @access  Private (Admin, Instructor)
- */
-router.post('/:id/groups/auto-generate', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
-    const classId = req.params.id;
-
-    // Get all enrolled students
-/**
  * Helper to infer student gender
  */
 function inferGender(student) {

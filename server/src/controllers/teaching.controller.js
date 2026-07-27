@@ -213,7 +213,7 @@ exports.startLectureSession = async (req, res, next) => {
         // Verify plan exists and is for this instructor
         const plan = await prisma.lecturePlan.findUnique({
             where: { id: lecturePlanId },
-            include: { class: { select: { _count: { select: { classEnrollments: { where: { status: 'active' } } } } } } }
+            include: { class: { select: { _count: { select: { enrollments: { where: { status: 'active' } } } } } } }
         });
 
         if (!plan) return next(new AppError('Lecture plan not found', 404));

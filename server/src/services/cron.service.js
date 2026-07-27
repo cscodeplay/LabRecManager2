@@ -289,7 +289,7 @@ const initCronJobs = () => {
                             class: {
                                 select: {
                                     id: true, name: true,
-                                    classEnrollments: {
+                                    enrollments: {
                                         where: { status: 'active' },
                                         select: { studentId: true }
                                     }
@@ -308,6 +308,8 @@ const initCronJobs = () => {
                 // Skip if school is on holiday
                 if (holidaySchoolIds.has(schoolId)) continue;
 
+                // Extract student IDs for this slot's class
+                const studentIds = slot.timetable.class?.enrollments?.map(e => e.studentId) || [];
                 const notification = {
                     type: 'timetable:period-starting',
                     periodNumber: slot.periodNumber,
@@ -330,7 +332,7 @@ const initCronJobs = () => {
                 }
 
                 // Notify all enrolled students
-                const studentIds = slot.timetable.class?.classEnrollments?.map(e => e.studentId) || [];
+                const studentIds = slot.timetable.class?.enrollments?.map(e => e.studentId) || [];
                 for (const studentId of studentIds) {
                     ioInstance.to(`user-${studentId}`).emit('timetable:period-starting', notification);
                 }
