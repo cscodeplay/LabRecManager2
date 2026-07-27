@@ -8,8 +8,9 @@ import {
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
-import api from '@/lib/api';
+import api, { reportsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 
 /* ─── Markdown-ish renderer ─── */
 function RenderMessage({ content }) {
@@ -294,6 +295,119 @@ function ChatChart({ chartData }) {
     );
 }
 
+/* ─── Interactive AI Report Action Card ─── */
+function ReportActionCard({ action }) {
+    const [downloading, setDownloading] = useState(false);
+
+    const handleDownload = async (format) => {
+        setDownloading(true);
+        try {
+            const res = await reportsAPI.generateCustom({
+                entities: action.entities || ['students'],
+                filters: action.filters || {}
+            });
+            const reportData = res.data;
+
+            if (!reportData || !reportData.reportResults) {
+                toast.error('No report data returned');
+                return;
+            }
+
+            if (format === 'xlsx') {
+                const workbook = XLSX.utils.book_new();
+                for (const key of Object.keys(reportData.reportResults)) {
+                    const section = reportData.reportResults[key];
+                    if (section.rows && section.rows.length > 0) {
+                        const worksheet = XLSX.utils.json_to_sheet(section.rows);
+                        XLSX.utils.book_append_sheet(workbook, worksheet, section.title.substring(0, 30));
+                    }
+                }
+                XLSX.writeFile(workbook, `AI_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                toast.success('Excel workbook downloaded!');
+            } else if (format === 'csv') {
+                const keys = Object.keys(reportData.reportResults);
+                const firstResult = reportData.reportResults[keys[0]];
+                if (!firstResult?.rows?.length) {
+                    toast.error('No rows to export');
+                    return;
+                }
+                const worksheet = XLSX.utils.json_to_sheet(firstResult.rows);
+                const csvOutput = XLSX.utils.sheet_to_csv(worksheet);
+                const blob = new Blob([csvOutput], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `AI_Report_${new Date().toISOString().slice(0, 10)}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success('CSV downloaded!');
+            } else if (format === 'pdf') {
+                const printWindow = window.open('', '_blank');
+                const results = reportData.reportResults;
+                let html = `<html><head><title>AI Generated Report</title><style>body{font-family:sans-serif;padding:20px;} table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;} th,td{border:1px solid #cbd5e1;padding:6px 10px;} th{background:#f1f5f9;}</style></head><body><h2>AI Generated Report</h2>`;
+                for (const k of Object.keys(results)) {
+                    const sec = results[k];
+                    if (!sec.rows?.length) continue;
+                    const headers = Object.keys(sec.rows[0]);
+                    html += `<h3>${sec.title}</h3><table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>`;
+                    sec.rows.forEach(r => {
+                        html += `<tr>${headers.map(h => `<td>${r[h] ?? '-'}</td>`).join('')}</tr>`;
+                    });
+                    html += `</tbody></table>`;
+                }
+                html += `<script>window.onload=function(){window.print();}</script></body></html>`;
+                printWindow.document.write(html);
+                printWindow.document.close();
+            }
+        } catch (err) {
+            console.error('In-chat report export error:', err);
+            toast.error('Failed to export report');
+        } finally {
+            setDownloading(false);
+        }
+    };
+
+    return (
+        <div className="my-2 p-3 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 font-bold text-xs text-indigo-950">
+                    <Sparkles className="w-4 h-4 text-indigo-600" />
+                    Interactive Custom Report Ready
+                </span>
+                <span className="text-[10px] font-semibold px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full uppercase">
+                    {(action.entities || []).join(', ')}
+                </span>
+            </div>
+            <p className="text-[11px] text-slate-600">
+                Click a format below to generate & download your custom report:
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <button
+                    onClick={() => handleDownload('pdf')}
+                    disabled={downloading}
+                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 shadow-xs transition"
+                >
+                    <FileText className="w-3 h-3" /> PDF
+                </button>
+                <button
+                    onClick={() => handleDownload('xlsx')}
+                    disabled={downloading}
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 shadow-xs transition"
+                >
+                    <File className="w-3 h-3" /> Excel (XLSX)
+                </button>
+                <button
+                    onClick={() => handleDownload('csv')}
+                    disabled={downloading}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 shadow-xs transition"
+                >
+                    <Download className="w-3 h-3" /> CSV
+                </button>
+            </div>
+        </div>
+    );
+}
+
 /* ─── Document badge ─── */
 function DocBadge({ doc, onRemove }) {
     return (
@@ -348,7 +462,7 @@ export default function FloatingChatbot() {
             const res = await api.post('/admin/chatbot/chat', { message: msg, conversationHistory: history, documentContext: docCtx });
             if (res.data.success) {
                 const d = res.data.data;
-                setMessages(prev => [...prev, { role: 'assistant', content: d.message, sql: d.sql, queryResult: d.queryResult, chartData: d.chartData, model: d.model, provider: d.provider, timestamp: d.timestamp }]);
+                setMessages(prev => [...prev, { role: 'assistant', content: d.message, sql: d.sql, queryResult: d.queryResult, chartData: d.chartData, reportAction: d.reportAction, model: d.model, provider: d.provider, timestamp: d.timestamp }]);
                 if (!isOpen) setUnread(u => u + 1);
             }
         } catch (err) {
@@ -529,6 +643,7 @@ export default function FloatingChatbot() {
                                     }
                                     {msg.queryResult && <SQLResult sql={msg.sql} result={msg.queryResult} onRerun={() => handleRerunSQL(msg.sql)} />}
                                     {msg.chartData && <ChatChart chartData={msg.chartData} />}
+                                    {msg.reportAction && <ReportActionCard action={msg.reportAction} />}
                                     {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
                                 </div>
                             </div>

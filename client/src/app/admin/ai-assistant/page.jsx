@@ -244,6 +244,7 @@ export default function AIAssistantPage() {
                     content: data.message,
                     sql: data.sql,
                     queryResult: data.queryResult,
+                    reportAction: data.reportAction,
                     timestamp: data.timestamp
                 }]);
             }

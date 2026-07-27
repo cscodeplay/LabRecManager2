@@ -417,4 +417,39 @@ router.get('/assignment-analytics/:id', authenticate, asyncHandler(async (req, r
     });
 }));
 
+const reportService = require('../services/report.service');
+
+/**
+ * @route   GET /api/reports/columns
+ * @desc    Get available necessary and optional column definitions for entities
+ * @access  Private (Admin, Instructor, Principal)
+ */
+router.get('/columns', authenticate, authorize('admin', 'instructor', 'principal'), asyncHandler(async (req, res) => {
+    res.json({
+        success: true,
+        data: { columns: reportService.ENTITY_COLUMNS }
+    });
+}));
+
+/**
+ * @route   POST /api/reports/custom-generate
+ * @desc    Generate multi-entity report data dynamically with column selection and filters
+ * @access  Private (Admin, Instructor, Principal)
+ */
+router.post('/custom-generate', authenticate, authorize('admin', 'instructor', 'principal'), asyncHandler(async (req, res) => {
+    const { entities = ['students'], selectedColumns = {}, filters = {} } = req.body;
+    const schoolId = req.user.schoolId;
+    const sessionId = req.headers['x-academic-session'];
+
+    const reportData = await reportService.generateCustomReportData({
+        entities,
+        selectedColumns,
+        filters,
+        schoolId,
+        sessionId
+    });
+
+    res.json(reportData);
+}));
+
 module.exports = router;

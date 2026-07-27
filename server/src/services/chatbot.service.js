@@ -236,7 +236,10 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
    - Keep "data" as an empty array []. The system will automatically inject the SQL results into it.
    - Supported chart types: "pie", "doughnut", "bar", "line", "area", "composed".
    - For "composed" charts, the first metric will be rendered as a Bar, and the rest as Lines. Use this for complex multi-metric comparisons.
-6. Be extremely concise. No unnecessary explanations. Results speak for themselves.
+7. **REPORT GENERATION**: When the user asks to generate, export, or download a report (e.g. "generate PDF report for XII NM-A girls", "export Excel report of student groups"), include this tag:
+   <!--REPORT_ACTION:{"entities":["students","groups"],"filters":{"gender":"female","classId":""},"format":"pdf"}:END_REPORT-->
+   Supported entities: "students", "classes", "groups", "assignments", "lab_pcs". Supported formats: "pdf", "xlsx", "csv".
+8. Be extremely concise. No unnecessary explanations. Results speak for themselves.
 ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     }
 
@@ -258,10 +261,10 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 const is429 = err.message?.includes('429') || err.message?.includes('quota');
                 console.warn(`[ChatBot] Gemini ${name} failed: ${err.message.substring(0, 80)}`);
                 if (is429 && i < this.geminiModels.length - 1) {
-                    await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+                    await new Promise(r => setTimeout(r, 1000));
                     continue;
                 }
-                if (!is429) break;
+                break;
             }
         }
         throw lastError || new Error('All Gemini models failed');
@@ -272,11 +275,15 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
         if (!this.groqClient) throw new Error('Groq not configured');
         const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
         let lastError = null;
+
         for (const model of groqModels) {
             try {
                 console.log(`[ChatBot] Groq → ${model}`);
                 const completion = await this.groqClient.chat.completions.create({
-                    messages, model, temperature: 0.3, max_tokens: 2048,
+                    model,
+                    messages,
+                    temperature: 0.2,
+                    max_tokens: 1500
                 });
                 return {
                     text: completion.choices[0]?.message?.content || '',
@@ -287,7 +294,6 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 const isRateLimit = err.status === 429 || err.status === 413;
                 console.warn(`[ChatBot] Groq ${model} failed (${err.status}): ${err.message?.substring(0, 80)}`);
                 if (isRateLimit && model === groqModels[0]) {
-                    // Try smaller model on rate limit / payload too large
                     await new Promise(r => setTimeout(r, 1000));
                     continue;
                 }
@@ -352,6 +358,41 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
         }
 
         let aiText = aiResult.text;
+
+        // Extract report action
+        let reportAction = null;
+        const reportMatch = aiText.match(/<!--REPORT_ACTION:([\s\S]*?):END_REPORT-->/);
+        if (reportMatch) {
+            try {
+                reportAction = JSON.parse(reportMatch[1].trim());
+            } catch (e) {
+                console.warn('[ChatBot] Report action JSON parse failed:', e.message);
+            }
+            aiText = aiText.replace(/<!--REPORT_ACTION:[\s\S]*?:END_REPORT-->/g, '').trim();
+        }
+
+        // If user prompt mentions report/pdf/excel/csv but model didn't emit tag, auto-build report action
+        const msgLower = message.toLowerCase();
+        if (!reportAction && (msgLower.includes('report') || msgLower.includes('pdf') || msgLower.includes('excel') || msgLower.includes('csv'))) {
+            const entities = [];
+            if (msgLower.includes('student') || msgLower.includes('girl') || msgLower.includes('boy')) entities.push('students');
+            if (msgLower.includes('group')) entities.push('groups');
+            if (msgLower.includes('class')) entities.push('classes');
+            if (msgLower.includes('assignment') || msgLower.includes('score') || msgLower.includes('marks')) entities.push('assignments');
+            if (msgLower.includes('pc') || msgLower.includes('lab') || msgLower.includes('computer')) entities.push('lab_pcs');
+
+            if (entities.length === 0) entities.push('students');
+
+            const filters = {};
+            if (msgLower.includes('girl') || msgLower.includes('female')) filters.gender = 'female';
+            else if (msgLower.includes('boy') || msgLower.includes('male')) filters.gender = 'male';
+
+            let format = 'pdf';
+            if (msgLower.includes('excel') || msgLower.includes('xlsx') || msgLower.includes('sheet')) format = 'xlsx';
+            else if (msgLower.includes('csv')) format = 'csv';
+
+            reportAction = { entities, filters, format };
+        }
 
         // Extract document fetch request
         const docMatch = aiText.match(/<!--FETCH_DOC:\s*(https?:\/\/[^\s>]+)\s*-->/);
@@ -423,7 +464,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
         }
 
         return {
-            message: aiText, sql: executedSQL, queryResult, chartData,
+            message: aiText, sql: executedSQL, queryResult, chartData, reportAction,
             model: aiResult.model, provider: aiResult.provider,
             timestamp: new Date().toISOString()
         };

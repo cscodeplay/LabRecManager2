@@ -360,6 +360,8 @@ export const reportsAPI = {
     getStudentProgress: (studentId) => api.get(`/reports/student-progress/${studentId}`),
     getClassSummary: (classId, params) => api.get(`/reports/class-summary/${classId}`, { params }),
     getAssignmentAnalytics: (assignmentId) => api.get(`/reports/assignment-analytics/${assignmentId}`),
+    getColumns: () => api.get('/reports/columns'),
+    generateCustom: (data) => api.post('/reports/custom-generate', data),
 };
 
 // Notifications API
