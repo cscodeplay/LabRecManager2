@@ -458,22 +458,57 @@ function AssignWorkContent() {
                                             return (
                                                 <div
                                                     key={group.id}
-                                                    onClick={() => toggleTarget(group.id)}
-                                                    className={`p-4 rounded-lg border-2 cursor-pointer transition ${isSelected
-                                                        ? 'border-primary-500 bg-primary-50'
-                                                        : 'border-slate-200 hover:border-slate-300'
+                                                    className={`p-4 rounded-xl border-2 transition space-y-3 ${isSelected
+                                                        ? 'border-primary-500 bg-primary-50/70 shadow-sm'
+                                                        : 'border-slate-200 hover:border-slate-300 bg-white'
                                                         }`}
                                                 >
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isSelected ? 'bg-primary-500 text-white' : 'bg-slate-200 text-slate-600'
-                                                            }`}>
-                                                            {isSelected ? <Check className="w-5 h-5" /> : <UsersRound className="w-5 h-5" />}
+                                                    <div
+                                                        onClick={() => toggleTarget(group.id)}
+                                                        className="flex items-center justify-between cursor-pointer"
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isSelected ? 'bg-primary-500 text-white' : 'bg-slate-200 text-slate-600'
+                                                                }`}>
+                                                                {isSelected ? <Check className="w-5 h-5" /> : <UsersRound className="w-5 h-5" />}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-bold text-slate-900">{group.name}</p>
+                                                                {selectedClassData && (
+                                                                    <p className="text-xs text-primary-700 font-medium">Class: {selectedClassData.name}</p>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                        <div>
-                                                            <p className="font-medium text-slate-900">{group.name}</p>
-                                                            <p className="text-xs text-slate-500">{group.members?.length || 0} members</p>
-                                                        </div>
+                                                        <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">
+                                                            {group.members?.length || 0} members
+                                                        </span>
                                                     </div>
+
+                                                    {/* Collapsible Group Members list */}
+                                                    {group.members?.length > 0 && (
+                                                        <details className="group/collapsible border border-slate-200 rounded-lg overflow-hidden bg-white text-xs">
+                                                            <summary className="flex items-center justify-between p-2 bg-slate-100/80 hover:bg-slate-200/80 cursor-pointer font-medium text-slate-700 select-none">
+                                                                <span className="flex items-center gap-1.5 font-semibold text-[11px]">
+                                                                    <Users className="w-3.5 h-3.5 text-primary-600" />
+                                                                    MEMBERS LIST ({group.members.length})
+                                                                </span>
+                                                                <span className="text-[10px] text-primary-600 group-open/collapsible:hidden">View members</span>
+                                                                <span className="text-[10px] text-slate-500 hidden group-open/collapsible:inline">Hide members</span>
+                                                            </summary>
+                                                            <div className="p-2 bg-slate-50/50 space-y-1.5 border-t border-slate-200">
+                                                                {group.members.map(m => (
+                                                                    <div key={m.id || m.studentId} className="flex items-center justify-between p-1.5 bg-white rounded border border-slate-100 text-xs">
+                                                                        <span className="font-medium text-slate-800">
+                                                                            {m.student?.rollNumber ? `#${m.student.rollNumber} ` : ''}{m.student?.firstName || m.firstName} {m.student?.lastName || m.lastName}
+                                                                        </span>
+                                                                        <span className={`px-1.5 py-0.5 text-[9px] rounded font-semibold ${(m.student?.gender || m.gender) === 'female' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                                            {(m.student?.gender || m.gender) === 'female' ? 'Girl' : 'Boy'}
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </details>
+                                                    )}
                                                 </div>
                                             );
                                         })}

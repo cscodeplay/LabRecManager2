@@ -272,23 +272,32 @@ export default function AssignmentDetailPage() {
                                                 )}
                                             </div>
 
-                                            {/* Render Group Members if target is a group */}
+                                            {/* Render Group Members with Collapsible Accordion Element */}
                                             {t.targetType === 'group' && t.targetGroup?.members?.length > 0 && (
-                                                <div className="pt-2 border-t border-slate-200">
-                                                    <p className="text-xs font-semibold text-slate-500 mb-2">GROUP MEMBERS ({t.targetGroup.members.length}):</p>
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                        {t.targetGroup.members.map(m => (
-                                                            <div key={m.id} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-100 text-xs">
-                                                                <span className="font-medium text-slate-800">
-                                                                    {m.rollNumber ? `#${m.rollNumber} ` : ''}{m.firstName} {m.lastName}
-                                                                </span>
-                                                                <span className={`px-1.5 py-0.5 text-[10px] rounded font-semibold ${m.gender === 'female' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
-                                                                    {m.gender === 'female' ? 'Girl' : 'Boy'}
-                                                                </span>
-                                                            </div>
-                                                        ))}
+                                                <details className="group/collapsible border border-slate-200 rounded-lg overflow-hidden bg-white mt-2">
+                                                    <summary className="flex items-center justify-between p-2.5 bg-slate-100/80 hover:bg-slate-200/80 cursor-pointer transition font-semibold text-xs text-slate-700 select-none">
+                                                        <span className="flex items-center gap-1.5">
+                                                            <Users className="w-3.5 h-3.5 text-primary-600" />
+                                                            GROUP MEMBERS ({t.targetGroup.members.length})
+                                                        </span>
+                                                        <span className="text-[11px] text-primary-600 group-open/collapsible:hidden font-medium">Click to expand</span>
+                                                        <span className="text-[11px] text-slate-500 hidden group-open/collapsible:inline font-medium">Click to collapse</span>
+                                                    </summary>
+                                                    <div className="p-3 bg-slate-50/50 border-t border-slate-200">
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                            {t.targetGroup.members.map(m => (
+                                                                <div key={m.id} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 text-xs shadow-2xs">
+                                                                    <span className="font-medium text-slate-800">
+                                                                        {m.rollNumber ? `#${m.rollNumber} ` : ''}{m.firstName} {m.lastName}
+                                                                    </span>
+                                                                    <span className={`px-1.5 py-0.5 text-[10px] rounded font-semibold ${m.gender === 'female' ? 'bg-pink-100 text-pink-700 border border-pink-200' : 'bg-blue-100 text-blue-700 border border-blue-200'}`}>
+                                                                        {m.gender === 'female' ? 'Girl' : 'Boy'}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                </details>
                                             )}
                                         </div>
                                     ))}

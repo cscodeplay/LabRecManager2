@@ -765,13 +765,21 @@ export default function ClassDetailPage() {
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {groups.map((group) => (
-                                    <div key={group.id} className="card p-6">
+                                    <div key={group.id} className={`card p-6 border transition-all duration-200 ${
+                                        group.assignedPc
+                                            ? 'bg-emerald-50/80 border-emerald-300 shadow-sm shadow-emerald-100/50'
+                                            : 'bg-red-50/80 border-red-300 shadow-sm shadow-red-100/50'
+                                    }`}>
                                         <div className="flex items-start justify-between mb-4">
-                                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white">
+                                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white ${
+                                                group.assignedPc
+                                                    ? 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-500/20'
+                                                    : 'bg-gradient-to-br from-rose-500 to-red-600 shadow-md shadow-red-500/20'
+                                            }`}>
                                                 <UsersRound className="w-6 h-6" />
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <span className="text-sm text-slate-500">
+                                                <span className="text-sm font-medium text-slate-600">
                                                     {group.members?.length || 0} members
                                                 </span>
                                                 {(isAdmin || isInstructor) && (
@@ -787,27 +795,31 @@ export default function ClassDetailPage() {
                                         </div>
 
                                         <div className="flex items-center justify-between mb-3">
-                                            <h3 className="text-lg font-semibold text-slate-900">{group.name}</h3>
+                                            <h3 className="text-lg font-bold text-slate-900">{group.name}</h3>
                                             <button
                                                 onClick={() => setExpandedGroupId(expandedGroupId === group.id ? null : group.id)}
-                                                className="p-1 text-slate-400 hover:text-slate-600"
+                                                className="p-1 text-slate-500 hover:text-slate-700"
                                             >
                                                 {expandedGroupId === group.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                                             </button>
                                         </div>
 
                                         {/* Assigned PC Display/Assignment */}
-                                        <div className="mb-3 p-2 bg-slate-50 rounded-lg">
+                                        <div className={`mb-3 p-2.5 rounded-lg border ${
+                                            group.assignedPc
+                                                ? 'bg-white/80 border-emerald-200 text-emerald-900'
+                                                : 'bg-white/80 border-red-200 text-red-900'
+                                        }`}>
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
-                                                    <Monitor className="w-4 h-4 text-blue-500" />
+                                                    <Monitor className={`w-4 h-4 ${group.assignedPc ? 'text-emerald-600' : 'text-red-500'}`} />
                                                     {group.assignedPc ? (
-                                                        <span className="text-sm font-medium text-slate-700">
+                                                        <span className="text-sm font-semibold text-emerald-800">
                                                             {group.assignedPc.itemNumber}
-                                                            <span className="text-xs text-slate-500 ml-1">({group.assignedPc.lab?.name})</span>
+                                                            <span className="text-xs text-emerald-600 ml-1">({group.assignedPc.lab?.name})</span>
                                                         </span>
                                                     ) : (
-                                                        <span className="text-sm text-slate-400">No PC assigned</span>
+                                                        <span className="text-sm font-medium text-red-600">No PC Assigned</span>
                                                     )}
                                                 </div>
                                                 {(isAdmin || isInstructor) && (
