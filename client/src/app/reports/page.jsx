@@ -217,11 +217,13 @@ export default function ReportsPage() {
                     dateRange
                 }
             });
-            setGeneratedReport(res.data);
-            toast.success('Report data updated!');
+            const reportData = res.data?.data || res.data;
+            setGeneratedReport(reportData);
+            toast.success('Report data generated successfully!');
         } catch (error) {
             console.error('Report generation error:', error);
-            toast.error('Failed to generate custom report');
+            const msg = error.response?.data?.message || error.message || 'Failed to generate custom report';
+            toast.error(msg);
         } finally {
             setGenerating(false);
         }

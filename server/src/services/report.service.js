@@ -88,9 +88,9 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
     // 1. STUDENTS ENTITY DATA
     if (entities.includes('students')) {
         const studentWhere = {
-            schoolId,
             role: 'student',
-            isActive: true
+            isActive: true,
+            ...(schoolId && { schoolId })
         };
 
         if (filters.gender && filters.gender !== 'all') {
@@ -131,17 +131,17 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
         ];
 
         const rows = students.map(s => {
-            const enrollment = s.classEnrollments[0];
-            const groupMember = s.groupMemberships[0];
+            const enrollment = s.classEnrollments?.[0];
+            const groupMember = s.groupMemberships?.[0];
             const group = groupMember?.group;
             const pc = group?.assignedPc;
 
-            const scores = s.submissions.map(sub => sub.marksObtained || sub.score || 0);
+            const scores = (s.submissions || []).map(sub => sub.marksObtained || sub.score || 0);
             const avgScore = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '-';
 
             const rowData = {};
             if (activeCols.includes('admissionNumber')) rowData['Admission / Student ID'] = s.studentId || s.admissionNumber || '-';
-            if (activeCols.includes('fullName')) rowData['Student Name'] = `${s.firstName} ${s.lastName}`.trim();
+            if (activeCols.includes('fullName')) rowData['Student Name'] = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Student';
             if (activeCols.includes('className')) rowData['Enrolled Class'] = enrollment?.class?.name || '-';
             if (activeCols.includes('rollNumber')) rowData['Roll Number'] = s.rollNumber ? `#${s.rollNumber}` : '-';
             if (activeCols.includes('gender')) rowData['Gender'] = s.gender === 'female' ? 'Girl' : 'Boy';
@@ -149,7 +149,7 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
             if (activeCols.includes('phone')) rowData['Phone Number'] = s.phone || '-';
             if (activeCols.includes('groupName')) rowData['Assigned Group'] = group?.name || 'Ungrouped';
             if (activeCols.includes('assignedPc')) rowData['Assigned Lab PC'] = pc ? `${pc.itemNumber} (${pc.lab?.name || 'Lab'})` : 'No PC';
-            if (activeCols.includes('submissionsCount')) rowData['Total Submissions'] = s.submissions.length;
+            if (activeCols.includes('submissionsCount')) rowData['Total Submissions'] = s.submissions?.length || 0;
             if (activeCols.includes('avgScore')) rowData['Average Score (%)'] = avgScore;
 
             return rowData;
@@ -164,7 +164,7 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
 
     // 2. CLASSES ENTITY DATA
     if (entities.includes('classes')) {
-        const classWhere = { schoolId };
+        const classWhere = { ...(schoolId && { schoolId }) };
         if (filters.classId) classWhere.id = filters.classId;
 
         const classes = await prisma.class.findMany({
@@ -186,10 +186,10 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
         ];
 
         const rows = classes.map(c => {
-            const students = c.enrollments.map(e => e.student);
+            const students = (c.enrollments || []).map(e => e.student).filter(Boolean);
             const boyCount = students.filter(s => s.gender === 'male').length;
             const girlCount = students.filter(s => s.gender === 'female').length;
-            const pcsAssigned = c.groups.filter(g => g.assignedPcId).length;
+            const pcsAssigned = (c.groups || []).filter(g => g.assignedPcId).length;
 
             const rowData = {};
             if (activeCols.includes('name')) rowData['Class Name'] = c.name;
@@ -199,7 +199,7 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
             if (activeCols.includes('totalEnrolled')) rowData['Total Students'] = students.length;
             if (activeCols.includes('boyCount')) rowData['Boys Count'] = boyCount;
             if (activeCols.includes('girlCount')) rowData['Girls Count'] = girlCount;
-            if (activeCols.includes('groupsCount')) rowData['Total Groups'] = c.groups.length;
+            if (activeCols.includes('groupsCount')) rowData['Total Groups'] = c.groups?.length || 0;
             if (activeCols.includes('pcsAssigned')) rowData['PCs Allocated'] = pcsAssigned;
 
             return rowData;
@@ -235,24 +235,24 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
 
         const rows = groups.filter(g => {
             if (!filters.gender || filters.gender === 'all') return true;
-            const nameLower = g.name.toLowerCase();
-            if (filters.gender === 'female') return nameLower.includes('girls') || g.members.some(m => m.student.gender === 'female');
-            if (filters.gender === 'male') return nameLower.includes('boys') || g.members.some(m => m.student.gender === 'male');
+            const nameLower = (g.name || '').toLowerCase();
+            if (filters.gender === 'female') return nameLower.includes('girls') || (g.members || []).some(m => m.student?.gender === 'female');
+            if (filters.gender === 'male') return nameLower.includes('boys') || (g.members || []).some(m => m.student?.gender === 'male');
             return true;
         }).map(g => {
-            const memberNames = g.members.map(m => `${m.student.firstName} ${m.student.lastName}`).join(', ');
-            const leader = g.members.find(m => m.role === 'leader')?.student;
-            const isGirlGroup = g.name.toLowerCase().includes('girls') || g.members.every(m => m.student.gender === 'female');
+            const memberNames = (g.members || []).map(m => m.student ? `${m.student.firstName || ''} ${m.student.lastName || ''}`.trim() : '').filter(Boolean).join(', ');
+            const leader = (g.members || []).find(m => m.role === 'leader')?.student;
+            const isGirlGroup = (g.name || '').toLowerCase().includes('girls') || ((g.members || []).length > 0 && g.members.every(m => m.student?.gender === 'female'));
 
             const rowData = {};
             if (activeCols.includes('name')) rowData['Group Name'] = g.name;
             if (activeCols.includes('className')) rowData['Class Name'] = g.class?.name || '-';
             if (activeCols.includes('genderType')) rowData['Gender Category'] = isGirlGroup ? 'Girls' : 'Boys';
-            if (activeCols.includes('memberCount')) rowData['Member Count'] = g.members.length;
+            if (activeCols.includes('memberCount')) rowData['Member Count'] = g.members?.length || 0;
             if (activeCols.includes('memberNames')) rowData['Member Names'] = memberNames || 'No Members';
             if (activeCols.includes('assignedPc')) rowData['Assigned Lab PC'] = g.assignedPc ? g.assignedPc.itemNumber : 'No PC';
             if (activeCols.includes('labName')) rowData['Lab Name'] = g.assignedPc?.lab?.name || '-';
-            if (activeCols.includes('leaderName')) rowData['Group Leader'] = leader ? `${leader.firstName} ${leader.lastName}` : '-';
+            if (activeCols.includes('leaderName')) rowData['Group Leader'] = leader ? `${leader.firstName || ''} ${leader.lastName || ''}`.trim() : '-';
 
             return rowData;
         });
@@ -266,7 +266,7 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
 
     // 4. ASSIGNMENTS ENTITY DATA
     if (entities.includes('assignments')) {
-        const assignWhere = { schoolId };
+        const assignWhere = { ...(schoolId && { schoolId }) };
         if (sessionId) assignWhere.academicYearId = sessionId;
 
         const assignments = await prisma.assignment.findMany({
@@ -286,9 +286,9 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
         ];
 
         const rows = assignments.map(a => {
-            const scores = a.submissions.map(sub => sub.marksObtained || sub.score || 0);
+            const scores = (a.submissions || []).map(sub => sub.marksObtained || sub.score || 0);
             const avgScore = scores.length > 0 ? (scores.reduce((st, val) => st + val, 0) / scores.length).toFixed(1) : '-';
-            const targetsStr = a.targets.map(t => t.targetClass?.name || t.targetGroup?.name || 'Custom').join(', ');
+            const targetsStr = (a.targets || []).map(t => t.targetClass?.name || t.targetGroup?.name || 'Custom').join(', ');
 
             const rowData = {};
             if (activeCols.includes('title')) rowData['Assignment Title'] = a.title;
@@ -297,7 +297,7 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
             if (activeCols.includes('programmingLanguage')) rowData['Language'] = a.programmingLanguage || '-';
             if (activeCols.includes('maxMarks')) rowData['Max Marks'] = a.maxMarks;
             if (activeCols.includes('targetClasses')) rowData['Target Classes/Groups'] = targetsStr || 'All';
-            if (activeCols.includes('submissionsCount')) rowData['Total Submissions'] = a.submissions.length;
+            if (activeCols.includes('submissionsCount')) rowData['Total Submissions'] = a.submissions?.length || 0;
             if (activeCols.includes('avgScore')) rowData['Average Score'] = avgScore;
             if (activeCols.includes('status')) rowData['Status'] = a.status;
 
