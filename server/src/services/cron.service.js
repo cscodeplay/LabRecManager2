@@ -332,7 +332,6 @@ const initCronJobs = () => {
                 }
 
                 // Notify all enrolled students
-                const studentIds = slot.timetable.class?.enrollments?.map(e => e.studentId) || [];
                 for (const studentId of studentIds) {
                     ioInstance.to(`user-${studentId}`).emit('timetable:period-starting', notification);
                 }
