@@ -132,8 +132,9 @@ async function processGendersAndGroups() {
         if (hasMixed) {
             console.log(`Class "${cls.name}" has mixed-gender groups! Re-generating strict single-gender groups...`);
             
-            // Delete existing groups for this class
+            // Delete existing groups for this class (and unlink any assignment targets first)
             for (const g of classGroups) {
+                await prisma.assignmentTarget.deleteMany({ where: { targetGroupId: g.id } });
                 await prisma.groupMember.deleteMany({ where: { groupId: g.id } });
                 await prisma.studentGroup.delete({ where: { id: g.id } });
             }
