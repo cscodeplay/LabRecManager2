@@ -242,6 +242,11 @@ export default function AssignmentDetailPage() {
                                                 <Download className="w-4 h-4" /> Download
                                             </a>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Assigned Targets / Class & Group Members */}
                         {assignment.targets?.length > 0 && (
                             <div className="card p-6 border border-slate-200">

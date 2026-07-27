@@ -25,6 +25,7 @@ export default function AdminStudentsPage() {
     const [selectedStudents, setSelectedStudents] = useState([]);
     const [selectedClass, setSelectedClass] = useState('');
     const [filterClass, setFilterClass] = useState('');
+    const [filterGender, setFilterGender] = useState('');
 
     // Import state
     const [importing, setImporting] = useState(false);
@@ -208,9 +209,6 @@ export default function AdminStudentsPage() {
         navigator.clipboard.writeText(text);
         toast.success('Copied to clipboard');
     };
-
-    const [filterClass, setFilterClass] = useState('');
-    const [filterGender, setFilterGender] = useState('');
 
     // Filter students by class and gender
     const filteredStudents = students.filter(s => {
