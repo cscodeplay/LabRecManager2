@@ -319,6 +319,7 @@ export default function ClassDetailPage() {
             firstName: student.firstName || '',
             lastName: student.lastName || '',
             studentId: student.studentId || student.admissionNumber || '',
+            gender: student.gender || 'male',
             email: student.email || '',
             phone: student.phone || '',
             rollNumber: student.rollNumber ? String(student.rollNumber) : ''
@@ -599,6 +600,7 @@ export default function ClassDetailPage() {
                                         <tr>
                                             <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Roll</th>
                                             <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Student</th>
+                                            <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Gender</th>
                                             <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Student ID</th>
                                             <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Email</th>
                                             <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Contact</th>
@@ -629,6 +631,15 @@ export default function ClassDetailPage() {
                                                             )}
                                                         </div>
                                                     </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`px-2.5 py-1 text-xs rounded-full font-semibold border ${
+                                                        student.gender === 'female'
+                                                            ? 'bg-pink-50 text-pink-700 border-pink-200'
+                                                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                                                    }`}>
+                                                        {student.gender === 'female' ? 'Female (Girl)' : 'Male (Boy)'}
+                                                    </span>
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded font-mono text-sm">
@@ -1089,18 +1100,19 @@ export default function ClassDetailPage() {
                                             value={newStudent.studentId}
                                             onChange={(e) => setNewStudent({ ...newStudent, studentId: e.target.value })}
                                             className="input w-full font-mono text-sm"
-                                            placeholder="e.g. STU1001"
+                                            placeholder="e.g. 1001"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Roll Number</label>
-                                        <input
-                                            type="number"
-                                            value={newStudent.rollNumber}
-                                            onChange={(e) => setNewStudent({ ...newStudent, rollNumber: e.target.value })}
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Gender *</label>
+                                        <select
+                                            value={newStudent.gender || 'male'}
+                                            onChange={(e) => setNewStudent({ ...newStudent, gender: e.target.value })}
                                             className="input w-full"
-                                            placeholder="e.g. 1"
-                                        />
+                                        >
+                                            <option value="male">Male (Boy)</option>
+                                            <option value="female">Female (Girl)</option>
+                                        </select>
                                     </div>
                                 </div>
 
@@ -1200,13 +1212,15 @@ export default function ClassDetailPage() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Roll Number</label>
-                                        <input
-                                            type="number"
-                                            value={editStudentData.rollNumber}
-                                            onChange={(e) => setEditStudentData({ ...editStudentData, rollNumber: e.target.value })}
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Gender *</label>
+                                        <select
+                                            value={editStudentData.gender || 'male'}
+                                            onChange={(e) => setEditStudentData({ ...editStudentData, gender: e.target.value })}
                                             className="input w-full"
-                                        />
+                                        >
+                                            <option value="male">Male (Boy)</option>
+                                            <option value="female">Female (Girl)</option>
+                                        </select>
                                     </div>
                                 </div>
 

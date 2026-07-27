@@ -177,7 +177,7 @@ router.put('/:id', authenticate, asyncHandler(async (req, res) => {
 
     const {
         firstName, firstNameHindi, lastName, lastNameHindi,
-        phone, preferredLanguage, profileImageUrl
+        phone, preferredLanguage, profileImageUrl, gender
     } = req.body;
 
     // Admin can update more fields
@@ -186,7 +186,8 @@ router.put('/:id', authenticate, asyncHandler(async (req, res) => {
         isActive: req.body.isActive,
         admissionNumber: req.body.admissionNumber,
         studentId: req.body.studentId,
-        employeeId: req.body.employeeId
+        employeeId: req.body.employeeId,
+        gender: req.body.gender
     } : {};
 
     const user = await prisma.user.update({
@@ -199,6 +200,7 @@ router.put('/:id', authenticate, asyncHandler(async (req, res) => {
             phone,
             preferredLanguage,
             profileImageUrl,
+            gender: gender || req.body.gender,
             ...adminFields
         },
         select: {
@@ -207,6 +209,7 @@ router.put('/:id', authenticate, asyncHandler(async (req, res) => {
             firstName: true,
             lastName: true,
             role: true,
+            gender: true,
             profileImageUrl: true,
             preferredLanguage: true
         }
@@ -242,7 +245,7 @@ router.post('/', authenticate, authorize('admin', 'principal', 'instructor'), [
 
     const {
         email, firstName, firstNameHindi, lastName, lastNameHindi,
-        role, phone, admissionNumber, studentId, employeeId, password, classId
+        role, phone, admissionNumber, studentId, employeeId, password, classId, gender
     } = req.body;
 
     // Check if email exists
@@ -275,6 +278,7 @@ router.post('/', authenticate, authorize('admin', 'principal', 'instructor'), [
             admissionNumber,
             studentId: studentId || admissionNumber, // Use studentId or fallback to admissionNumber
             employeeId,
+            gender: gender || 'male',
             preferredLanguage: 'en'
         },
         select: {
@@ -283,6 +287,7 @@ router.post('/', authenticate, authorize('admin', 'principal', 'instructor'), [
             firstName: true,
             lastName: true,
             role: true,
+            gender: true,
             admissionNumber: true,
             studentId: true,
             employeeId: true
@@ -426,6 +431,7 @@ router.post('/bulk', authenticate, authorize('admin', 'principal'), asyncHandler
                     admissionNumber: userData.admissionNumber,
                     studentId: userData.studentId || userData.admissionNumber,
                     employeeId: userData.employeeId,
+                    gender: userData.gender || 'male',
                     preferredLanguage: userData.preferredLanguage || 'en'
                 },
                 select: {
@@ -434,6 +440,7 @@ router.post('/bulk', authenticate, authorize('admin', 'principal'), asyncHandler
                     firstName: true,
                     lastName: true,
                     role: true,
+                    gender: true,
                     studentId: true
                 }
             });

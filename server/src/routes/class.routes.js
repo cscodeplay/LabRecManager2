@@ -112,6 +112,7 @@ router.get('/:id/students', authenticate, asyncHandler(async (req, res) => {
                     phone: true,
                     studentId: true,
                     admissionNumber: true,
+                    gender: true,
                     profileImageUrl: true
                 }
             }

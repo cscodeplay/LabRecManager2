@@ -209,10 +209,15 @@ export default function AdminStudentsPage() {
         toast.success('Copied to clipboard');
     };
 
-    // Filter students by class
-    const filteredStudents = filterClass
-        ? students.filter(s => s.classEnrollments?.some(e => e.classId === filterClass))
-        : students;
+    const [filterClass, setFilterClass] = useState('');
+    const [filterGender, setFilterGender] = useState('');
+
+    // Filter students by class and gender
+    const filteredStudents = students.filter(s => {
+        const matchesClass = !filterClass || s.classEnrollments?.some(e => e.classId === filterClass);
+        const matchesGender = !filterGender || (s.gender || 'male') === filterGender;
+        return matchesClass && matchesGender;
+    });
 
     if (loading) {
         return (
@@ -417,6 +422,17 @@ export default function AdminStudentsPage() {
                                 ))}
                             </select>
 
+                            {/* Gender Filter */}
+                            <select
+                                value={filterGender}
+                                onChange={(e) => setFilterGender(e.target.value)}
+                                className="input text-sm py-2 w-36"
+                            >
+                                <option value="">All Genders</option>
+                                <option value="male">Boys (Male)</option>
+                                <option value="female">Girls (Female)</option>
+                            </select>
+
                             {/* Bulk Assign Button */}
                             {selectedStudents.length > 0 && (
                                 <button
@@ -451,6 +467,7 @@ export default function AdminStudentsPage() {
                                     </th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Student ID</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Name</th>
+                                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Gender</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Email</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Class</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Status</th>
@@ -460,7 +477,7 @@ export default function AdminStudentsPage() {
                             <tbody className="divide-y divide-slate-100">
                                 {filteredStudents.length === 0 ? (
                                     <tr>
-                                        <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
+                                        <td colSpan="8" className="px-4 py-8 text-center text-slate-500">
                                             No students found
                                         </td>
                                     </tr>
@@ -492,6 +509,15 @@ export default function AdminStudentsPage() {
                                                             {student.firstName} {student.lastName}
                                                         </span>
                                                     </div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                                                        student.gender === 'female'
+                                                            ? 'bg-pink-50 text-pink-700 border-pink-200'
+                                                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                                                    }`}>
+                                                        {student.gender === 'female' ? 'Female (Girl)' : 'Male (Boy)'}
+                                                    </span>
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-slate-600">{student.email}</td>
                                                 <td className="px-4 py-3 text-sm text-slate-600">{className}</td>
