@@ -16,7 +16,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     // Skip session filter if 'all' is passed (for sharing across sessions)
     const sessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
 
-    let where = { schoolId: req.user.schoolId };
+    let where = { ...(req.user.schoolId && { schoolId: req.user.schoolId }) };
 
     if (sessionId) where.academicYearId = sessionId;
     if (gradeLevel) where.gradeLevel = parseInt(gradeLevel);

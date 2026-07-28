@@ -20,7 +20,7 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
     // Get academic session from header (skip if 'all' is passed for sharing across sessions)
     const sessionId = all === 'true' ? null : req.headers['x-academic-session'];
 
-    let where = { schoolId: req.user.schoolId };
+    let where = { ...(req.user.schoolId && { schoolId: req.user.schoolId }) };
 
     if (role) where.role = role;
     if (isActive !== undefined) where.isActive = isActive === 'true';

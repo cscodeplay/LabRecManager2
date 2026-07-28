@@ -66,9 +66,9 @@ export default function AssignedWorkPage() {
                 api.get('/users', { params: { role: 'student' } })
             ]);
 
-            const assignmentsData = assignmentsRes.data.data.assignments || [];
-            const classesData = classesRes.data.data.classes || [];
-            const studentsData = usersRes.data.data.users || [];
+            const assignmentsData = assignmentsRes.data?.data?.assignments || assignmentsRes.data?.assignments || (Array.isArray(assignmentsRes.data) ? assignmentsRes.data : []);
+            const classesData = classesRes.data?.data?.classes || classesRes.data?.classes || (Array.isArray(classesRes.data) ? classesRes.data : []);
+            const studentsData = usersRes.data?.data?.users || usersRes.data?.users || (Array.isArray(usersRes.data) ? usersRes.data : []);
 
             setAssignments(assignmentsData);
             setClasses(classesData);
@@ -77,29 +77,35 @@ export default function AssignedWorkPage() {
             // Load groups from all classes
             const allGroups = [];
             for (const cls of classesData) {
+                if (!cls?.id) continue;
                 try {
                     const groupRes = await api.get(`/classes/${cls.id}/groups`);
-                    const grps = groupRes.data.data.groups || [];
-                    grps.forEach(g => allGroups.push({ ...g, className: cls.name || `Grade ${cls.gradeLevel}-${cls.section}` }));
+                    const grps = groupRes.data?.data?.groups || groupRes.data?.groups || (Array.isArray(groupRes.data) ? groupRes.data : []);
+                    grps.forEach(g => {
+                        if (g) {
+                            allGroups.push({ ...g, className: cls.name || `Grade ${cls.gradeLevel}-${cls.section}` });
+                        }
+                    });
                 } catch (e) { /* ignore */ }
             }
             setGroups(allGroups);
 
             // Create lookup maps
             const classMap = {};
-            classesData.forEach(c => { classMap[c.id] = c; });
+            classesData.forEach(c => { if (c?.id) classMap[c.id] = c; });
 
             const studentMap = {};
-            studentsData.forEach(s => { studentMap[s.id] = s; });
+            studentsData.forEach(s => { if (s?.id) studentMap[s.id] = s; });
 
             const groupMap = {};
-            allGroups.forEach(g => { groupMap[g.id] = g; });
+            allGroups.forEach(g => { if (g?.id) groupMap[g.id] = g; });
 
             // Flatten to show each assignment-target pair
             const targets = [];
-            assignmentsData.forEach(assignment => {
-                if (assignment.targets && assignment.targets.length > 0) {
+            (assignmentsData || []).forEach(assignment => {
+                if (assignment?.targets && Array.isArray(assignment.targets) && assignment.targets.length > 0) {
                     assignment.targets.forEach(target => {
+                        if (!target) return;
                         const targetClass = target.targetClassId ? classMap[target.targetClassId] : null;
                         const targetStudent = target.targetStudentId ? studentMap[target.targetStudentId] : null;
                         const targetGroup = target.targetGroupId ? groupMap[target.targetGroupId] : target.targetGroup;
@@ -116,7 +122,7 @@ export default function AssignedWorkPage() {
                             targetStudent: targetStudent,
                             assignedAt: target.assignedAt,
                             assignedBy: target.assignedBy,
-                            dueDate: target.dueDate,
+                            dueDate: target.dueDate || target.assignment?.due_date || null,
                             isLocked: target.isLocked || false,
                             specialInstructions: target.specialInstructions
                         });
@@ -127,7 +133,8 @@ export default function AssignedWorkPage() {
             setAssignedWork(targets);
         } catch (error) {
             console.error('Failed to load data:', error);
-            toast.error('Failed to load assigned work');
+            const msg = error.response?.data?.message || error.message || 'Failed to load assigned work';
+            toast.error(msg);
         } finally {
             setLoading(false);
         }
@@ -166,7 +173,7 @@ export default function AssignedWorkPage() {
             open: true,
             targetId: target.id,
             targetName: getTargetName(target),
-            assignmentTitle: target.assignment.title
+            assignmentTitle: target.assignment?.title || 'Assignment'
         });
     };
 
@@ -318,7 +325,8 @@ export default function AssignedWorkPage() {
     if (searchQuery) {
         const query = searchQuery.toLowerCase();
         filteredWork = filteredWork.filter(item =>
-            item.assignment.title.toLowerCase().includes(query) ||
+            (item.assignment?.title && item.assignment.title.toLowerCase().includes(query)) ||
+            (item.assignment?.experimentNumber && item.assignment.experimentNumber.toLowerCase().includes(query)) ||
             getTargetName(item).toLowerCase().includes(query)
         );
     }
@@ -326,13 +334,14 @@ export default function AssignedWorkPage() {
     // Group by assignment
     const groupedByAssignment = {};
     filteredWork.forEach(item => {
-        if (!groupedByAssignment[item.assignment.id]) {
-            groupedByAssignment[item.assignment.id] = {
-                assignment: item.assignment,
+        const assId = item.assignment?.id || 'unknown';
+        if (!groupedByAssignment[assId]) {
+            groupedByAssignment[assId] = {
+                assignment: item.assignment || { title: 'Unknown Assignment' },
                 targets: []
             };
         }
-        groupedByAssignment[item.assignment.id].targets.push(item);
+        groupedByAssignment[assId].targets.push(item);
     });
 
     const stats = {
@@ -557,12 +566,12 @@ export default function AssignedWorkPage() {
                                 </div>
                                 <div>
                                     <h3 className="font-semibold text-slate-900">
-                                        {viewModal.target.assignment.experimentNumber && (
+                                        {viewModal.target?.assignment?.experimentNumber && (
                                             <span className="text-primary-600">{viewModal.target.assignment.experimentNumber}: </span>
                                         )}
-                                        {viewModal.target.assignment.title}
+                                        {viewModal.target?.assignment?.title || 'Assignment Details'}
                                     </h3>
-                                    <p className="text-sm text-slate-500">{viewModal.target.assignment.assignmentType}</p>
+                                    <p className="text-sm text-slate-500">{viewModal.target?.assignment?.assignmentType || '-'}</p>
                                 </div>
                             </div>
                             <button onClick={() => setViewModal({ open: false, target: null })} className="p-2 hover:bg-slate-200 rounded-lg">
@@ -573,23 +582,23 @@ export default function AssignedWorkPage() {
                             <div className="bg-slate-50 rounded-lg p-4">
                                 <h4 className="font-medium text-slate-700 mb-3">Assigned To</h4>
                                 <div className="flex items-center gap-3">
-                                    {getTargetIcon(viewModal.target.targetType)}
+                                    {getTargetIcon(viewModal.target?.targetType)}
                                     <div>
                                         <p className="font-medium text-slate-900">{getTargetName(viewModal.target)}</p>
-                                        {viewModal.target.targetStudent?.studentId && (
+                                        {viewModal.target?.targetStudent?.studentId && (
                                             <p className="text-sm text-slate-500">ID: {viewModal.target.targetStudent.studentId}</p>
                                         )}
-                                        <p className="text-sm text-slate-500 capitalize">{viewModal.target.targetType}</p>
+                                        <p className="text-sm text-slate-500 capitalize">{viewModal.target?.targetType}</p>
                                     </div>
                                 </div>
                                 <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                                    {viewModal.target.dueDate && (
+                                    {viewModal.target?.dueDate && (
                                         <div className="flex items-center gap-2">
                                             <Calendar className="w-4 h-4 text-amber-500" />
                                             <span>Due: {new Date(viewModal.target.dueDate).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
                                         </div>
                                     )}
-                                    {viewModal.target.assignedAt && (
+                                    {viewModal.target?.assignedAt && (
                                         <div className="flex items-center gap-2">
                                             <CheckCircle className="w-4 h-4 text-green-500" />
                                             <span>Assigned: {new Date(viewModal.target.assignedAt).toLocaleDateString()}</span>
@@ -601,14 +610,14 @@ export default function AssignedWorkPage() {
                                 <div className="bg-emerald-50 rounded-lg p-3 text-center">
                                     <Award className="w-5 h-5 text-emerald-600 mx-auto mb-1" />
                                     <p className="text-xs text-slate-500">Max Marks</p>
-                                    <p className="font-semibold text-slate-900">{viewModal.target.assignment.maxMarks}</p>
+                                    <p className="font-semibold text-slate-900">{viewModal.target?.assignment?.maxMarks ?? '-'}</p>
                                 </div>
                                 <div className="bg-amber-50 rounded-lg p-3 text-center">
                                     <FileText className="w-5 h-5 text-amber-600 mx-auto mb-1" />
                                     <p className="text-xs text-slate-500">Type</p>
-                                    <p className="font-semibold text-slate-900 capitalize">{viewModal.target.assignment.assignmentType}</p>
+                                    <p className="font-semibold text-slate-900 capitalize">{viewModal.target?.assignment?.assignmentType || '-'}</p>
                                 </div>
-                                {viewModal.target.assignment.programmingLanguage && (
+                                {viewModal.target?.assignment?.programmingLanguage && (
                                     <div className="bg-purple-50 rounded-lg p-3 text-center">
                                         <Code className="w-5 h-5 text-purple-600 mx-auto mb-1" />
                                         <p className="text-xs text-slate-500">Language</p>
@@ -616,7 +625,7 @@ export default function AssignedWorkPage() {
                                     </div>
                                 )}
                             </div>
-                            {viewModal.target.assignment.description && (
+                            {viewModal.target?.assignment?.description && (
                                 <div>
                                     <h4 className="font-medium text-slate-700 mb-2">Description</h4>
                                     <p className="text-slate-600 text-sm whitespace-pre-wrap">{viewModal.target.assignment.description}</p>
@@ -624,7 +633,7 @@ export default function AssignedWorkPage() {
                             )}
                         </div>
                         <div className="p-4 border-t border-slate-200 flex justify-end gap-2">
-                            <button onClick={() => { setViewModal({ open: false, target: null }); handleEditClick(viewModal.target); }} className="btn btn-secondary">
+                            <button onClick={() => { const tgt = viewModal.target; setViewModal({ open: false, target: null }); handleEditClick(tgt); }} className="btn btn-secondary">
                                 <Edit2 className="w-4 h-4" /> Edit Target
                             </button>
                             <button onClick={() => setViewModal({ open: false, target: null })} className="btn btn-primary">
@@ -643,7 +652,7 @@ export default function AssignedWorkPage() {
                         <div className="p-4 border-b border-slate-200 flex items-center justify-between">
                             <div>
                                 <h3 className="text-lg font-semibold text-slate-900">Edit Assigned Work</h3>
-                                <p className="text-sm text-slate-500">{editModal.target.assignment.title}</p>
+                                <p className="text-sm text-slate-500">{editModal.target?.assignment?.title || 'Assignment'}</p>
                             </div>
                             <button onClick={() => setEditModal({ open: false, target: null })} className="p-2 hover:bg-slate-100 rounded-lg">
                                 <X className="w-5 h-5 text-slate-500" />

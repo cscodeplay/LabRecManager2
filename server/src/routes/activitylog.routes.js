@@ -17,8 +17,9 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
 
     // Role-based filtering
     if (req.user.role === 'admin' || req.user.role === 'principal') {
-        // Admin and principal can see all logs in their school
-        where.user = { schoolId: req.user.schoolId };
+        if (req.user.schoolId) {
+            where.user = { schoolId: req.user.schoolId };
+        }
     } else if (req.user.role === 'instructor') {
         // Instructors can see logs related to their students
         // Get classes they teach
