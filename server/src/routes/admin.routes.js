@@ -70,7 +70,13 @@ router.post('/students/import', authenticate, authorize('admin', 'principal'), u
             const className = row.class || row.Class || row['Class Name'] || '';
             const section = row.section || row.Section || '';
             const trade = row.trade || row.Trade || row['Stream'] || '';
-            const gender = (row.gender || row.Gender || 'male').toLowerCase();
+            const rawGender = (row.gender || row.Gender || row.Sex || row.sex || '').toString().toLowerCase().trim();
+            let gender = 'male';
+            if (rawGender.includes('female') || rawGender.includes('girl') || rawGender === 'f') {
+                gender = 'female';
+            } else if (rawGender.includes('male') || rawGender.includes('boy') || rawGender === 'm') {
+                gender = 'male';
+            }
             const dateOfBirth = row.dob || row.date_of_birth || row['Date of Birth'] || null;
 
             // Validate required fields
@@ -150,6 +156,7 @@ router.post('/students/import', authenticate, authorize('admin', 'principal'), u
             results.push({
                 email,
                 name: `${firstName} ${lastName}`,
+                gender: gender === 'female' ? 'Female' : 'Male',
                 class: className || 'Not assigned',
                 status: 'Created'
             });
@@ -212,7 +219,8 @@ router.get('/students/export/csv', authenticate, authorize('admin', 'principal',
         const enrollment = s.classEnrollments[0];
         const className = enrollment?.class?.name || enrollment?.class?.gradeLevel || '';
         const section = enrollment?.class?.section || '';
-        return `"${s.admissionNumber || ''}","${s.firstName}","${s.lastName}","${s.email}","${s.phone || ''}","${className}","${section}","${s.gender || ''}","${s.isActive ? 'Active' : 'Inactive'}"`;
+        const genderStr = s.gender === 'female' ? 'Female' : 'Male';
+        return `"${s.admissionNumber || ''}","${s.firstName}","${s.lastName}","${s.email}","${s.phone || ''}","${className}","${section}","${genderStr}","${s.isActive ? 'Active' : 'Inactive'}"`;
     }).join('\n');
 
     const csvContent = csvHeader + csvRows;
@@ -276,8 +284,8 @@ router.get('/students/export/pdf', authenticate, authorize('admin', 'principal',
 
     // Table header
     const tableTop = doc.y;
-    const colWidths = [60, 100, 120, 80, 60, 50];
-    const headers = ['Adm. No', 'Name', 'Email', 'Class', 'Phone', 'Status'];
+    const colWidths = [55, 95, 115, 60, 55, 55, 50];
+    const headers = ['Adm. No', 'Name', 'Email', 'Class', 'Gender', 'Phone', 'Status'];
 
     doc.font('Helvetica-Bold').fontSize(9);
     let xPos = 50;
@@ -307,6 +315,7 @@ router.get('/students/export/pdf', authenticate, authorize('admin', 'principal',
             `${student.firstName} ${student.lastName}`,
             student.email,
             className || '-',
+            student.gender === 'female' ? 'Female' : 'Male',
             student.phone || '-',
             student.isActive ? 'Active' : 'Inactive'
         ];

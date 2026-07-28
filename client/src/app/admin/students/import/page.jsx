@@ -119,6 +119,17 @@ export default function ImportStudentsPage() {
             const rollNo = getVal('class_roll_no', 'roll_number', 'roll_no', 'roll', 'sr_no');
             const email = getVal('email', 'email_address') || (studentId ? `${studentId}@epunjab.edu` : `${firstName.toLowerCase().replace(/[^a-z0-9]/g, '')}.${lastName.toLowerCase().replace(/[^a-z0-9]/g, '')}@student.school.edu`);
             const phone = getVal('phone', 'mobile', 'mobile_no', 'contact', 'contact_no');
+            
+            const rawGender = getVal('gender', 'sex');
+            let gender = 'male';
+            if (rawGender) {
+                const gLower = rawGender.toLowerCase();
+                if (gLower.includes('female') || gLower.includes('girl') || gLower === 'f') {
+                    gender = 'female';
+                } else if (gLower.includes('male') || gLower.includes('boy') || gLower === 'm') {
+                    gender = 'male';
+                }
+            }
 
             return {
                 firstName,
@@ -127,6 +138,7 @@ export default function ImportStudentsPage() {
                 admissionNumber: studentId || `ADM${Math.floor(1000 + Math.random() * 9000)}`,
                 email,
                 phone,
+                gender,
                 rollNumber: rollNo ? parseInt(rollNo) : undefined,
                 role: 'student'
             };
@@ -162,6 +174,8 @@ export default function ImportStudentsPage() {
             'firstname': 'firstName',
             'last_name': 'lastName',
             'lastname': 'lastName',
+            'gender': 'gender',
+            'sex': 'gender',
             'email': 'email',
             'phone': 'phone',
             'mobile': 'phone'
@@ -177,6 +191,18 @@ export default function ImportStudentsPage() {
                 row[mappedKey] = values[idx] || '';
             });
 
+            // Parse gender
+            let gender = 'male';
+            if (row.gender) {
+                const gLower = String(row.gender).toLowerCase();
+                if (gLower.includes('female') || gLower.includes('girl') || gLower === 'f') {
+                    gender = 'female';
+                } else if (gLower.includes('male') || gLower.includes('boy') || gLower === 'm') {
+                    gender = 'male';
+                }
+            }
+            row.gender = gender;
+
             // Generate email if not provided
             if (!row.email && row.firstName && row.lastName) {
                 row.email = `${row.firstName.toLowerCase()}.${row.lastName.toLowerCase()}@student.school.edu`;
@@ -187,6 +213,7 @@ export default function ImportStudentsPage() {
                 data.push({
                     ...row,
                     studentId: row.studentId || row.admissionNumber || '',
+                    gender: row.gender || 'male',
                     role: 'student',
                     isValid: true
                 });
@@ -220,6 +247,7 @@ export default function ImportStudentsPage() {
                     phone: s.phone,
                     studentId: s.studentId,
                     admissionNumber: s.admissionNumber || s.studentId,
+                    gender: s.gender || 'male',
                     role: 'student'
                 })),
                 classId: selectedClassId || undefined
@@ -246,7 +274,7 @@ export default function ImportStudentsPage() {
     };
 
     const downloadTemplate = () => {
-        const template = 'student_id,first_name,last_name,email,phone\nSTU-2024-001,John,Doe,john.doe@school.edu,9876543210\nSTU-2024-002,Jane,Smith,jane.smith@school.edu,9876543211';
+        const template = 'student_id,first_name,last_name,gender,email,phone\nSTU-2024-001,John,Doe,male,john.doe@school.edu,9876543210\nSTU-2024-002,Jane,Smith,female,jane.smith@school.edu,9876543211';
         const blob = new Blob([template], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -374,11 +402,12 @@ export default function ImportStudentsPage() {
                         </div>
 
                         <div className="mt-6 p-4 bg-slate-100 rounded-xl">
-                            <h4 className="font-medium text-slate-700 mb-2">Required Columns:</h4>
+                            <h4 className="font-medium text-slate-700 mb-2">Supported Columns:</h4>
                             <ul className="text-sm text-slate-600 space-y-1">
                                 <li>• <code className="bg-slate-200 px-1 rounded">student_id</code> - Student ID (e.g., STU-2024-001)</li>
                                 <li>• <code className="bg-slate-200 px-1 rounded">first_name</code> - First Name</li>
                                 <li>• <code className="bg-slate-200 px-1 rounded">last_name</code> - Last Name</li>
+                                <li>• <code className="bg-slate-200 px-1 rounded">gender</code> - Gender (<code className="bg-slate-200 px-1 rounded">male</code> / <code className="bg-slate-200 px-1 rounded">female</code>)</li>
                                 <li>• <code className="bg-slate-200 px-1 rounded">email</code> - Email (auto-generated if not provided)</li>
                                 <li>• <code className="bg-slate-200 px-1 rounded">phone</code> - Phone (optional)</li>
                             </ul>
@@ -421,6 +450,7 @@ export default function ImportStudentsPage() {
                                         <th className="px-3 py-2 text-left">Status</th>
                                         <th className="px-3 py-2 text-left">Student ID</th>
                                         <th className="px-3 py-2 text-left">Name</th>
+                                        <th className="px-3 py-2 text-left">Gender</th>
                                         <th className="px-3 py-2 text-left">Email</th>
                                         <th className="px-3 py-2 text-left">Phone</th>
                                     </tr>
@@ -437,6 +467,11 @@ export default function ImportStudentsPage() {
                                             </td>
                                             <td className="px-3 py-2 font-mono text-xs">{student.studentId || '-'}</td>
                                             <td className="px-3 py-2">{student.firstName} {student.lastName}</td>
+                                            <td className="px-3 py-2">
+                                                <span className={`px-2 py-0.5 rounded text-xs font-semibold ${student.gender === 'female' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                    {student.gender === 'female' ? 'Female' : 'Male'}
+                                                </span>
+                                            </td>
                                             <td className="px-3 py-2 text-slate-600">{student.email}</td>
                                             <td className="px-3 py-2 text-slate-600">{student.phone || '-'}</td>
                                         </tr>
