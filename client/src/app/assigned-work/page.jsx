@@ -605,6 +605,38 @@ export default function AssignedWorkPage() {
                                         </div>
                                     )}
                                 </div>
+
+                                {/* Assigned Group Members */}
+                                {viewModal.target?.targetType === 'group' && viewModal.target?.targetGroup && (
+                                    <div className="mt-4 pt-3 border-t border-slate-200">
+                                        <h5 className="text-xs font-semibold uppercase text-slate-500 mb-2 flex items-center gap-1.5">
+                                            <UsersRound className="w-3.5 h-3.5 text-primary-500" />
+                                            Group Members ({viewModal.target.targetGroup.members?.length || 0})
+                                        </h5>
+                                        {viewModal.target.targetGroup.members && viewModal.target.targetGroup.members.length > 0 ? (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                                                {viewModal.target.targetGroup.members.map((m, idx) => {
+                                                    const stu = m.student || m;
+                                                    return (
+                                                        <div key={stu.id || idx} className="p-2.5 rounded-lg bg-white border border-slate-200 flex items-center justify-between text-xs">
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="font-medium text-slate-800 truncate">{stu.firstName || stu.name || 'Student'} {stu.lastName || ''}</p>
+                                                                {(stu.studentId || stu.admissionNumber) && (
+                                                                    <p className="text-slate-500 font-mono text-[11px]">{stu.studentId || stu.admissionNumber}</p>
+                                                                )}
+                                                            </div>
+                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${stu.gender === 'female' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                                {stu.gender === 'female' ? 'Female' : 'Male'}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-slate-500 italic">No members found in this group</p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <div className="grid md:grid-cols-3 gap-3">
                                 <div className="bg-emerald-50 rounded-lg p-3 text-center">
@@ -743,27 +775,51 @@ export default function AssignedWorkPage() {
                             {editForm.targetType === 'group' && editClassGroups.length > 0 && (
                                 <div>
                                     <label className="label mb-2">Select Group</label>
-                                    <div className="grid grid-cols-2 gap-2 max-h-[150px] overflow-y-auto">
+                                    <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1">
                                         {editClassGroups.map(group => {
                                             const isSelected = editForm.selectedTargets.includes(group.id);
                                             return (
                                                 <div
                                                     key={group.id}
                                                     onClick={() => setEditForm(prev => ({ ...prev, selectedTargets: [group.id] }))}
-                                                    className={`p-3 rounded-lg border-2 cursor-pointer transition ${isSelected
-                                                        ? 'border-primary-500 bg-primary-50'
+                                                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition ${isSelected
+                                                        ? 'border-primary-500 bg-primary-50/50'
                                                         : 'border-slate-200 hover:border-slate-300'
                                                         }`}
                                                 >
-                                                    <div className="flex items-center gap-2">
-                                                        <div className={`w-6 h-6 rounded flex items-center justify-center ${isSelected ? 'bg-primary-500 text-white' : 'bg-slate-200'}`}>
-                                                            {isSelected ? <Check className="w-4 h-4" /> : <UsersRound className="w-4 h-4 text-slate-500" />}
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <div className="flex items-center gap-2.5">
+                                                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isSelected ? 'bg-primary-500 text-white' : 'bg-slate-200'}`}>
+                                                                {isSelected ? <Check className="w-4 h-4" /> : <UsersRound className="w-4 h-4 text-slate-500" />}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-semibold text-slate-900 text-sm">{group.name}</p>
+                                                                <p className="text-xs text-slate-500">{group.members?.length || 0} members</p>
+                                                            </div>
                                                         </div>
-                                                        <div>
-                                                            <p className="font-medium text-sm">{group.name}</p>
-                                                            <p className="text-xs text-slate-500">{group.members?.length || 0} members</p>
-                                                        </div>
+                                                        {isSelected && (
+                                                            <span className="text-xs font-semibold text-primary-600 bg-primary-100 px-2 py-0.5 rounded-full">
+                                                                Selected
+                                                            </span>
+                                                        )}
                                                     </div>
+
+                                                    {/* Group Members List Preview */}
+                                                    {group.members && group.members.length > 0 && (
+                                                        <div className="mt-2.5 pt-2.5 border-t border-slate-200/80 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                                            {group.members.map((m, idx) => {
+                                                                const stu = m.student || m;
+                                                                return (
+                                                                    <div key={stu.id || idx} className="flex items-center justify-between p-1.5 bg-white rounded border border-slate-100 text-xs">
+                                                                        <span className="truncate font-medium text-slate-700">{stu.firstName || stu.name || 'Student'} {stu.lastName || ''}</span>
+                                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${stu.gender === 'female' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                                            {stu.gender === 'female' ? 'Female' : 'Male'}
+                                                                        </span>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             );
                                         })}
