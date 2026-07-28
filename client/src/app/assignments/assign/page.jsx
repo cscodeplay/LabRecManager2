@@ -80,14 +80,16 @@ function AssignWorkContent() {
                 assignmentsAPI.getAll({ status: 'published' }),
                 classesAPI.getAll()
             ]);
-            // Only include published assignments
-            const publishedAssignments = (assignmentsRes.data.data.assignments || [])
-                .filter(a => a.status === 'published');
+            const allAssignments = assignmentsRes.data?.data?.assignments || assignmentsRes.data?.assignments || (Array.isArray(assignmentsRes.data) ? assignmentsRes.data : []);
+            const publishedAssignments = allAssignments.filter(a => a.status === 'published');
             setAssignments(publishedAssignments);
-            setClasses(classesRes.data.data.classes || []);
+            
+            const allClasses = classesRes.data?.data?.classes || classesRes.data?.classes || (Array.isArray(classesRes.data) ? classesRes.data : []);
+            setClasses(allClasses);
         } catch (error) {
-            toast.error('Failed to load data');
-            console.error(error);
+            console.error('Failed to load data:', error);
+            const msg = error.response?.data?.message || error.message || 'Failed to load assigned work';
+            toast.error(msg);
         } finally {
             setLoading(false);
         }
@@ -99,8 +101,8 @@ function AssignWorkContent() {
                 classesAPI.getStudents(selectedClass),
                 classesAPI.getGroups(selectedClass)
             ]);
-            setStudents(studentsRes.data.data.students || []);
-            setGroups(groupsRes.data.data.groups || []);
+            setStudents(studentsRes.data?.data?.students || studentsRes.data?.students || (Array.isArray(studentsRes.data) ? studentsRes.data : []));
+            setGroups(groupsRes.data?.data?.groups || groupsRes.data?.groups || (Array.isArray(groupsRes.data) ? groupsRes.data : []));
         } catch (error) {
             console.error('Failed to load class details:', error);
         }
@@ -496,13 +498,13 @@ function AssignWorkContent() {
                                                                 <span className="text-[10px] text-slate-500 hidden group-open/collapsible:inline">Hide members</span>
                                                             </summary>
                                                             <div className="p-2 bg-slate-50/50 space-y-1.5 border-t border-slate-200">
-                                                                {group.members.map(m => (
-                                                                    <div key={m.id || m.studentId} className="flex items-center justify-between p-1.5 bg-white rounded border border-slate-100 text-xs">
+                                                                {group.members.filter(Boolean).map((m, mIdx) => (
+                                                                    <div key={m?.id || m?.studentId || mIdx} className="flex items-center justify-between p-1.5 bg-white rounded border border-slate-100 text-xs">
                                                                         <span className="font-medium text-slate-800">
-                                                                            {m.student?.rollNumber ? `#${m.student.rollNumber} ` : ''}{m.student?.firstName || m.firstName} {m.student?.lastName || m.lastName}
+                                                                            {m?.student?.rollNumber || m?.rollNumber ? `#${m?.student?.rollNumber || m?.rollNumber} ` : ''}{m?.student?.firstName || m?.firstName || 'Student'} {m?.student?.lastName || m?.lastName || ''}
                                                                         </span>
-                                                                        <span className={`px-1.5 py-0.5 text-[9px] rounded font-semibold ${(m.student?.gender || m.gender) === 'female' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
-                                                                            {(m.student?.gender || m.gender) === 'female' ? 'Female' : 'Male'}
+                                                                        <span className={`px-1.5 py-0.5 text-[9px] rounded font-semibold ${(m?.student?.gender || m?.gender) === 'female' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                                            {(m?.student?.gender || m?.gender) === 'female' ? 'Female' : 'Male'}
                                                                         </span>
                                                                     </div>
                                                                 ))}

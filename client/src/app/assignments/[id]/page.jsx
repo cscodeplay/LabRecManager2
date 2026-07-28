@@ -36,12 +36,16 @@ export default function AssignmentDetailPage() {
     const loadAssignment = async () => {
         try {
             const res = await assignmentsAPI.getById(params.id);
-            // Merge userSubmission into assignment object for easy access
-            const assignmentData = res.data.data.assignment;
-            assignmentData.userSubmission = res.data.data.userSubmission || null;
-            setAssignment(assignmentData);
+            const rawData = res.data?.data || res.data;
+            const assignmentData = rawData?.assignment || rawData;
+            if (assignmentData) {
+                assignmentData.userSubmission = rawData?.userSubmission || null;
+                setAssignment(assignmentData);
+            }
         } catch (error) {
-            toast.error('Failed to load assignment');
+            console.error('loadAssignment error:', error);
+            const msg = error.response?.data?.message || error.message || 'Failed to load assignment';
+            toast.error(msg);
             router.push('/assignments');
         } finally {
             setLoading(false);
@@ -290,13 +294,13 @@ export default function AssignmentDetailPage() {
                                                     </summary>
                                                     <div className="p-3 bg-slate-50/50 border-t border-slate-200">
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                            {t.targetGroup.members.map(m => (
-                                                                <div key={m.id} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 text-xs shadow-2xs">
+                                                            {t.targetGroup.members.filter(Boolean).map((m, mIdx) => (
+                                                                <div key={m?.id || mIdx} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 text-xs shadow-2xs">
                                                                     <span className="font-medium text-slate-800">
-                                                                        {m.rollNumber ? `#${m.rollNumber} ` : ''}{m.firstName} {m.lastName}
+                                                                        {m?.rollNumber ? `#${m.rollNumber} ` : ''}{m?.firstName || 'Student'} {m?.lastName || ''}
                                                                     </span>
-                                                                    <span className={`px-1.5 py-0.5 text-[10px] rounded font-semibold ${m.gender === 'female' ? 'bg-pink-100 text-pink-700 border border-pink-200' : 'bg-blue-100 text-blue-700 border border-blue-200'}`}>
-                                                                        {m.gender === 'female' ? 'Female' : 'Male'}
+                                                                    <span className={`px-1.5 py-0.5 text-[10px] rounded font-semibold ${m?.gender === 'female' ? 'bg-pink-100 text-pink-700 border border-pink-200' : 'bg-blue-100 text-blue-700 border border-blue-200'}`}>
+                                                                        {m?.gender === 'female' ? 'Female' : 'Male'}
                                                                     </span>
                                                                 </div>
                                                             ))}

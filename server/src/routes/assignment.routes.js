@@ -440,7 +440,17 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
                     id: group.id,
                     name: group.name,
                     className: group.class?.name || cls?.name || '',
-                    members: group.members.map(m => m.student)
+                    members: (group.members || [])
+                        .map(m => m.student ? {
+                            id: m.student.id,
+                            studentId: m.student.id,
+                            firstName: m.student.firstName || '',
+                            lastName: m.student.lastName || '',
+                            rollNumber: m.student.rollNumber || null,
+                            gender: m.student.gender || 'male',
+                            email: m.student.email || ''
+                        } : null)
+                        .filter(Boolean)
                 } : (target.targetGroup || null),
                 targetStudent: target.targetStudentId ? studentMap[target.targetStudentId] : null
             };
