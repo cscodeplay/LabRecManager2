@@ -39,9 +39,12 @@ export default function AssignmentsPage() {
         setLoading(true);
         try {
             const res = await assignmentsAPI.getAll({ status: statusFilter !== 'all' ? statusFilter : undefined });
-            setAssignments(res.data.data.assignments || []);
+            const list = res.data?.data?.assignments || res.data?.assignments || (Array.isArray(res.data) ? res.data : []);
+            setAssignments(list);
         } catch (error) {
-            toast.error(t('common.noData'));
+            console.error('Failed to load assignments:', error);
+            const msg = error.response?.data?.message || error.message || t('common.noData');
+            toast.error(msg);
         } finally {
             setLoading(false);
         }

@@ -34,7 +34,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     // Use X-Academic-Session header for session filtering
     const sessionId = academicYearId || req.headers['x-academic-session'];
 
-    let where = { schoolId: req.user.schoolId };
+    let where = { ...(req.user.schoolId && { schoolId: req.user.schoolId }) };
 
     // Filter by academic session
     if (sessionId) {
@@ -51,12 +51,29 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         where.subjectId = subjectId;
     }
 
+    // Filter by class target if specified
+    if (classId) {
+        where.targets = {
+            some: {
+                OR: [
+                    { targetClassId: classId },
+                    { targetGroup: { classId: classId } }
+                ]
+            }
+        };
+    }
+
     // Search in title
     if (search) {
-        where.OR = [
-            { title: { contains: search, mode: 'insensitive' } },
-            { titleHindi: { contains: search, mode: 'insensitive' } },
-            { experimentNumber: { contains: search, mode: 'insensitive' } }
+        where.AND = [
+            ...(where.AND || []),
+            {
+                OR: [
+                    { title: { contains: search, mode: 'insensitive' } },
+                    { titleHindi: { contains: search, mode: 'insensitive' } },
+                    { experimentNumber: { contains: search, mode: 'insensitive' } }
+                ]
+            }
         ];
     }
 
@@ -96,11 +113,6 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 OR: orConditions
             }
         };
-    }
-
-    // For instructors, show their assignments
-    if (req.user.role === 'instructor' || req.user.role === 'lab_assistant') {
-        where.createdById = req.user.id;
     }
 
     // Build include object
@@ -150,6 +162,37 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         }),
         prisma.assignment.count({ where })
     ]);
+
+    // Enrich targetClass and targetStudent for targets if requested
+    if (includeTargets === 'true' && assignments.length > 0) {
+        const allTargets = assignments.flatMap(a => a.targets || []);
+        const classIds = allTargets.filter(t => t.targetClassId).map(t => t.targetClassId);
+        const studentIds = allTargets.filter(t => t.targetStudentId).map(t => t.targetStudentId);
+
+        const [classes, students] = await Promise.all([
+            classIds.length > 0 ? prisma.class.findMany({
+                where: { id: { in: classIds } },
+                select: { id: true, name: true, gradeLevel: true, section: true }
+            }) : [],
+            studentIds.length > 0 ? prisma.user.findMany({
+                where: { id: { in: studentIds } },
+                select: { id: true, firstName: true, lastName: true, admissionNumber: true, email: true }
+            }) : []
+        ]);
+
+        const classMap = Object.fromEntries(classes.map(c => [c.id, c]));
+        const studentMap = Object.fromEntries(students.map(s => [s.id, s]));
+
+        assignments.forEach(a => {
+            if (a.targets) {
+                a.targets = a.targets.map(t => ({
+                    ...t,
+                    targetClass: t.targetClassId ? classMap[t.targetClassId] : (t.targetGroup?.class || null),
+                    targetStudent: t.targetStudentId ? studentMap[t.targetStudentId] : null
+                }));
+            }
+        });
+    }
 
     res.json({
         success: true,
