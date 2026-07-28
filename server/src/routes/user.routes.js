@@ -490,20 +490,60 @@ router.post('/bulk', authenticate, authorize('admin', 'principal'), asyncHandler
 
 /**
  * @route   DELETE /api/users/:id
- * @desc    Deactivate user (soft delete)
- * @access  Private (Admin)
+ * @desc    Deactivate user (soft delete) or permanent delete if permanent=true
+ * @access  Private (Admin, Principal)
  */
 router.delete('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
-    await prisma.user.update({
-        where: { id: req.params.id },
-        data: { isActive: false }
-    });
+    const userId = req.params.id;
+    const { permanent, hardDelete } = req.query;
+    const isPermanent = permanent === 'true' || hardDelete === 'true';
 
-    res.json({
-        success: true,
-        message: 'User deactivated successfully',
-        messageHindi: 'उपयोगकर्ता निष्क्रिय किया गया'
-    });
+    if (isPermanent) {
+        // Permanent deletion with complete cleanup of non-cascading relations
+        await prisma.$transaction(async (tx) => {
+            // 1. Delete group memberships
+            await tx.studentGroupMember.deleteMany({ where: { studentId: userId } });
+
+            // 2. Clean up groups created by this student
+            await tx.studentGroup.deleteMany({ where: { createdById: userId } });
+
+            // 3. Delete class enrollments
+            await tx.classEnrollment.deleteMany({ where: { studentId: userId } });
+
+            // 4. Delete un-linked assignment targets
+            await tx.assignmentTarget.deleteMany({ where: { targetStudentId: userId } });
+
+            // 5. Delete student submissions & attendance
+            await tx.submission.deleteMany({ where: { studentId: userId } });
+            await tx.codingSubmission.deleteMany({ where: { studentId: userId } });
+            await tx.labAttendance.deleteMany({ where: { studentId: userId } });
+            await tx.lectureAttendance.deleteMany({ where: { studentId: userId } });
+            await tx.vivaParticipant.deleteMany({ where: { studentId: userId } });
+            await tx.notification.deleteMany({ where: { userId: userId } });
+            await tx.userSession.deleteMany({ where: { userId: userId } });
+
+            // 6. Delete the user record
+            await tx.user.delete({ where: { id: userId } });
+        });
+
+        return res.json({
+            success: true,
+            message: 'User permanently deleted along with associated group memberships and records.',
+            messageHindi: 'उपयोगकर्ता और उससे संबंधित डेटा पूरी तरह से हटा दिया गया है'
+        });
+    } else {
+        // Default: Soft delete (Deactivate)
+        await prisma.user.update({
+            where: { id: userId },
+            data: { isActive: false }
+        });
+
+        return res.json({
+            success: true,
+            message: 'User deactivated successfully',
+            messageHindi: 'उपयोगकर्ता निष्क्रिय किया गया'
+        });
+    }
 }));
 
 module.exports = router;
