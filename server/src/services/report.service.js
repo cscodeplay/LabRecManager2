@@ -32,8 +32,8 @@ const ENTITY_COLUMNS = {
         optional: [
             { key: 'stream', label: 'Stream' },
             { key: 'totalEnrolled', label: 'Total Students' },
-            { key: 'boyCount', label: 'Boys Count' },
-            { key: 'girlCount', label: 'Girls Count' },
+            { key: 'boyCount', label: 'Male Count' },
+            { key: 'girlCount', label: 'Female Count' },
             { key: 'groupsCount', label: 'Total Groups' },
             { key: 'pcsAssigned', label: 'PCs Allocated' }
         ]
@@ -144,7 +144,7 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
             if (activeCols.includes('fullName')) rowData['Student Name'] = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Student';
             if (activeCols.includes('className')) rowData['Enrolled Class'] = enrollment?.class?.name || '-';
             if (activeCols.includes('rollNumber')) rowData['Roll Number'] = s.rollNumber ? `#${s.rollNumber}` : '-';
-            if (activeCols.includes('gender')) rowData['Gender'] = s.gender === 'female' ? 'Girl' : 'Boy';
+            if (activeCols.includes('gender')) rowData['Gender'] = s.gender === 'female' ? 'Female' : 'Male';
             if (activeCols.includes('email')) rowData['Email Address'] = s.email || '-';
             if (activeCols.includes('phone')) rowData['Phone Number'] = s.phone || '-';
             if (activeCols.includes('groupName')) rowData['Assigned Group'] = group?.name || 'Ungrouped';
@@ -197,8 +197,8 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
             if (activeCols.includes('section')) rowData['Section'] = c.section || '-';
             if (activeCols.includes('stream')) rowData['Stream'] = c.stream || '-';
             if (activeCols.includes('totalEnrolled')) rowData['Total Students'] = students.length;
-            if (activeCols.includes('boyCount')) rowData['Boys Count'] = boyCount;
-            if (activeCols.includes('girlCount')) rowData['Girls Count'] = girlCount;
+            if (activeCols.includes('boyCount')) rowData['Male Count'] = boyCount;
+            if (activeCols.includes('girlCount')) rowData['Female Count'] = girlCount;
             if (activeCols.includes('groupsCount')) rowData['Total Groups'] = c.groups?.length || 0;
             if (activeCols.includes('pcsAssigned')) rowData['PCs Allocated'] = pcsAssigned;
 
@@ -247,7 +247,7 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
             const rowData = {};
             if (activeCols.includes('name')) rowData['Group Name'] = g.name;
             if (activeCols.includes('className')) rowData['Class Name'] = g.class?.name || '-';
-            if (activeCols.includes('genderType')) rowData['Gender Category'] = isGirlGroup ? 'Girls' : 'Boys';
+            if (activeCols.includes('genderType')) rowData['Gender Category'] = isGirlGroup ? 'Female' : 'Male';
             if (activeCols.includes('memberCount')) rowData['Member Count'] = g.members?.length || 0;
             if (activeCols.includes('memberNames')) rowData['Member Names'] = memberNames || 'No Members';
             if (activeCols.includes('assignedPc')) rowData['Assigned Lab PC'] = g.assignedPc ? g.assignedPc.itemNumber : 'No PC';

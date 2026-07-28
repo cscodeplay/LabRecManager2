@@ -43,8 +43,8 @@ const ENTITY_CONFIG = {
         optional: [
             { key: 'stream', label: 'Stream' },
             { key: 'totalEnrolled', label: 'Total Students' },
-            { key: 'boyCount', label: 'Boys Count' },
-            { key: 'girlCount', label: 'Girls Count' },
+            { key: 'boyCount', label: 'Male Count' },
+            { key: 'girlCount', label: 'Female Count' },
             { key: 'groupsCount', label: 'Total Groups' },
             { key: 'pcsAssigned', label: 'PCs Allocated' }
         ]
@@ -341,8 +341,8 @@ export default function ReportsPage() {
                                 <tr>
                                     ${headers.map(h => {
                                         let val = row[h] ?? '-';
-                                        if (val === 'Girl') val = `<span class="badge-girl">Girl</span>`;
-                                        if (val === 'Boy') val = `<span class="badge-boy">Boy</span>`;
+                                        if (val === 'Female') val = `<span class="badge-girl">Female</span>`;
+                                        if (val === 'Male') val = `<span class="badge-boy">Male</span>`;
                                         return `<td>${val}</td>`;
                                     }).join('')}
                                 </tr>
@@ -465,8 +465,8 @@ export default function ReportsPage() {
                                         className="input w-full text-sm"
                                     >
                                         <option value="all">All Genders</option>
-                                        <option value="male">Boys (Male)</option>
-                                        <option value="female">Girls (Female)</option>
+                                        <option value="male">Male</option>
+                                        <option value="female">Female</option>
                                     </select>
                                 </div>
 
@@ -642,10 +642,10 @@ export default function ReportsPage() {
                                                                 <tr key={idx} className="hover:bg-slate-50">
                                                                     {headers.map(h => (
                                                                         <td key={h} className="px-4 py-2.5 text-slate-800 whitespace-nowrap">
-                                                                            {row[h] === 'Girl' ? (
-                                                                                <span className="px-2 py-0.5 bg-pink-100 text-pink-700 font-bold rounded">Girl</span>
-                                                                            ) : row[h] === 'Boy' ? (
-                                                                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 font-bold rounded">Boy</span>
+                                                                            {row[h] === 'Female' ? (
+                                                                                <span className="px-2 py-0.5 bg-pink-100 text-pink-700 font-bold rounded">Female</span>
+                                                                            ) : row[h] === 'Male' ? (
+                                                                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 font-bold rounded">Male</span>
                                                                             ) : (
                                                                                 row[h] ?? '-'
                                                                             )}
@@ -744,7 +744,7 @@ export default function ReportsPage() {
                                                 <td className="px-4 py-3 font-medium text-slate-900">{tp.firstName} {tp.lastName}</td>
                                                 <td className="px-4 py-3">
                                                     <span className={`px-2 py-0.5 text-xs font-bold rounded ${tp.gender === 'female' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
-                                                        {tp.gender === 'female' ? 'Girl' : 'Boy'}
+                                                        {tp.gender === 'female' ? 'Female' : 'Male'}
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-600">{tp.submissionsCount}</td>

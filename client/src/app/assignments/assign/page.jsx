@@ -502,7 +502,7 @@ function AssignWorkContent() {
                                                                             {m.student?.rollNumber ? `#${m.student.rollNumber} ` : ''}{m.student?.firstName || m.firstName} {m.student?.lastName || m.lastName}
                                                                         </span>
                                                                         <span className={`px-1.5 py-0.5 text-[9px] rounded font-semibold ${(m.student?.gender || m.gender) === 'female' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
-                                                                            {(m.student?.gender || m.gender) === 'female' ? 'Girl' : 'Boy'}
+                                                                            {(m.student?.gender || m.gender) === 'female' ? 'Female' : 'Male'}
                                                                         </span>
                                                                     </div>
                                                                 ))}

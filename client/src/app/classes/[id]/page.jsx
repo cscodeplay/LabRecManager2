@@ -638,7 +638,7 @@ export default function ClassDetailPage() {
                                                             ? 'bg-pink-50 text-pink-700 border-pink-200'
                                                             : 'bg-blue-50 text-blue-700 border-blue-200'
                                                     }`}>
-                                                        {student.gender === 'female' ? 'Female (Girl)' : 'Male (Boy)'}
+                                                        {student.gender === 'female' ? 'Female' : 'Male'}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4">
@@ -1122,8 +1122,8 @@ export default function ClassDetailPage() {
                                             onChange={(e) => setNewStudent({ ...newStudent, gender: e.target.value })}
                                             className="input w-full"
                                         >
-                                            <option value="male">Male (Boy)</option>
-                                            <option value="female">Female (Girl)</option>
+                                            <option value="male">Male</option>
+                                            <option value="female">Female</option>
                                         </select>
                                     </div>
                                 </div>
@@ -1230,8 +1230,8 @@ export default function ClassDetailPage() {
                                             onChange={(e) => setEditStudentData({ ...editStudentData, gender: e.target.value })}
                                             className="input w-full"
                                         >
-                                            <option value="male">Male (Boy)</option>
-                                            <option value="female">Female (Girl)</option>
+                                            <option value="male">Male</option>
+                                            <option value="female">Female</option>
                                         </select>
                                     </div>
                                 </div>

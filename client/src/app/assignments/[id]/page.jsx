@@ -296,7 +296,7 @@ export default function AssignmentDetailPage() {
                                                                         {m.rollNumber ? `#${m.rollNumber} ` : ''}{m.firstName} {m.lastName}
                                                                     </span>
                                                                     <span className={`px-1.5 py-0.5 text-[10px] rounded font-semibold ${m.gender === 'female' ? 'bg-pink-100 text-pink-700 border border-pink-200' : 'bg-blue-100 text-blue-700 border border-blue-200'}`}>
-                                                                        {m.gender === 'female' ? 'Girl' : 'Boy'}
+                                                                        {m.gender === 'female' ? 'Female' : 'Male'}
                                                                     </span>
                                                                 </div>
                                                             ))}

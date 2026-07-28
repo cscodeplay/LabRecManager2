@@ -427,8 +427,8 @@ export default function AdminStudentsPage() {
                                 className="input text-sm py-2 w-36"
                             >
                                 <option value="">All Genders</option>
-                                <option value="male">Boys (Male)</option>
-                                <option value="female">Girls (Female)</option>
+                                <option value="male">Male</option>
+                                <option value="female">Female</option>
                             </select>
 
                             {/* Bulk Assign Button */}
@@ -514,7 +514,7 @@ export default function AdminStudentsPage() {
                                                             ? 'bg-pink-50 text-pink-700 border-pink-200'
                                                             : 'bg-blue-50 text-blue-700 border-blue-200'
                                                     }`}>
-                                                        {student.gender === 'female' ? 'Female (Girl)' : 'Male (Boy)'}
+                                                        {student.gender === 'female' ? 'Female' : 'Male'}
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-slate-600">{student.email}</td>
