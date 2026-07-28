@@ -140,7 +140,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                         class: { select: { id: true, name: true, gradeLevel: true, section: true } },
                         members: {
                             include: {
-                                student: { select: { id: true, firstName: true, lastName: true, rollNumber: true, gender: true, email: true } }
+                                student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true, gender: true, email: true } }
                             }
                         }
                     }
@@ -452,7 +452,7 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
                     class: { select: { id: true, name: true, gradeLevel: true, section: true } },
                     members: {
                         include: {
-                            student: { select: { id: true, firstName: true, lastName: true, rollNumber: true, gender: true, email: true } }
+                            student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true, gender: true, email: true } }
                         }
                     }
                 }
@@ -489,7 +489,7 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
                             studentId: m.student.id,
                             firstName: m.student.firstName || '',
                             lastName: m.student.lastName || '',
-                            rollNumber: m.student.rollNumber || null,
+                            rollNumber: m.student.admissionNumber || null,
                             gender: m.student.gender || 'male',
                             email: m.student.email || ''
                         } : null)
@@ -562,7 +562,7 @@ router.post('/', authenticate, authorize('instructor', 'lab_assistant', 'admin',
 
     const assignment = await prisma.assignment.create({
         data: {
-            schoolId: req.user.schoolId,
+            schoolId: req.user.schoolId || null,
             createdById: req.user.id,
             subjectId,
             labId,
@@ -607,7 +607,7 @@ router.post('/', authenticate, authorize('instructor', 'lab_assistant', 'admin',
     await prisma.activityLog.create({
         data: {
             userId: req.user.id,
-            schoolId: req.user.schoolId,
+            schoolId: req.user.schoolId || null,
             actionType: 'assignment',
             entityType: 'assignment',
             entityId: assignment.id,
