@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import {
     ArrowLeft, Code, FileText, User, Calendar,
-    CheckCircle, XCircle, Award, Send, MessageSquare
+    CheckCircle, XCircle, Award, Send, MessageSquare, Play, Terminal, Loader2, CheckCircle2, AlertCircle
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { submissionsAPI, gradesAPI } from '@/lib/api';
@@ -20,6 +20,61 @@ export default function SubmissionDetailPage() {
     const [loading, setLoading] = useState(true);
     const [grading, setGrading] = useState(false);
     const [showGradeForm, setShowGradeForm] = useState(false);
+
+    const [runningCode, setRunningCode] = useState(false);
+    const [liveOutput, setLiveOutput] = useState(null);
+    const [execError, setExecError] = useState(null);
+
+    const handleRunSubmittedPythonCode = async () => {
+        if (!submission?.codeContent) return;
+        setRunningCode(true);
+        setLiveOutput(null);
+        setExecError(null);
+
+        try {
+            if (!window.pyodideInstance) {
+                if (!window.pyodidePromise) {
+                    window.pyodidePromise = (async () => {
+                        if (!document.getElementById('pyodide-cdn')) {
+                            const script = document.createElement('script');
+                            script.id = 'pyodide-cdn';
+                            script.src = 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js';
+                            document.body.appendChild(script);
+                            await new Promise((resolve, reject) => {
+                                script.onload = resolve;
+                                script.onerror = () => reject(new Error('Failed to load Pyodide CDN'));
+                            });
+                        }
+                        const pyodide = await window.loadPyodide();
+                        window.pyodideInstance = pyodide;
+                        return pyodide;
+                    })();
+                }
+                await window.pyodidePromise;
+            }
+
+            const pyodide = window.pyodideInstance;
+
+            let capturedOutput = '';
+            pyodide.setStdout({
+                batched: (str) => {
+                    capturedOutput += str + '\n';
+                }
+            });
+
+            await pyodide.runPythonAsync(submission.codeContent);
+
+            const finalOutput = capturedOutput.trim() || '[Program executed with no stdout output]';
+            setLiveOutput(finalOutput);
+            toast.success('Live Python execution completed!');
+        } catch (err) {
+            console.error('Python execution error:', err);
+            setExecError(err.message || String(err));
+            toast.error('Execution error occurred!');
+        } finally {
+            setRunningCode(false);
+        }
+    };
 
     const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm({
         defaultValues: {
@@ -141,25 +196,64 @@ export default function SubmissionDetailPage() {
                 <div className="grid lg:grid-cols-3 gap-6">
                     {/* Main Content */}
                     <div className="lg:col-span-2 space-y-6">
-                        {/* Code */}
+                        {/* Submitted Code & Live Python Compiler */}
                         {submission.codeContent && (
-                            <div className="card p-6">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <Code className="w-5 h-5 text-primary-600" />
-                                    <h2 className="text-lg font-semibold text-slate-900">Submitted Code</h2>
+                            <div className="card p-6 border border-slate-200">
+                                <div className="flex items-center justify-between gap-3 mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <Code className="w-5 h-5 text-primary-600" />
+                                        <h2 className="text-lg font-semibold text-slate-900">Submitted Code</h2>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleRunSubmittedPythonCode}
+                                        disabled={runningCode}
+                                        className="btn bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-3 py-1.5 flex items-center gap-1.5 transition"
+                                    >
+                                        {runningCode ? (
+                                            <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                Running...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Play className="w-3.5 h-3.5 fill-white" />
+                                                Re-run Code (Python Compiler)
+                                            </>
+                                        )}
+                                    </button>
                                 </div>
-                                <pre className="code-block overflow-x-auto">{submission.codeContent}</pre>
+                                <pre className="code-block overflow-x-auto bg-slate-900 text-emerald-400 p-4 rounded-xl font-mono text-sm">{submission.codeContent}</pre>
+
+                                {/* Live Execution Output Box */}
+                                {(liveOutput || execError) && (
+                                    <div className="mt-4 p-4 bg-slate-950 border border-slate-800 rounded-xl">
+                                        <div className="flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                                            <Terminal className="w-4 h-4 text-emerald-500" />
+                                            Live Execution Terminal Output
+                                        </div>
+                                        {liveOutput && (
+                                            <pre className="font-mono text-xs text-slate-100 whitespace-pre-wrap">{liveOutput}</pre>
+                                        )}
+                                        {execError && (
+                                            <div className="text-xs font-mono text-red-400 mt-1 flex items-start gap-2">
+                                                <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-500 mt-0.5" />
+                                                <pre className="whitespace-pre-wrap">{execError}</pre>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
 
-                        {/* Output */}
+                        {/* Submitted Output */}
                         {submission.outputContent && (
-                            <div className="card p-6">
+                            <div className="card p-6 border border-slate-200">
                                 <div className="flex items-center gap-2 mb-4">
                                     <FileText className="w-5 h-5 text-emerald-600" />
-                                    <h2 className="text-lg font-semibold text-slate-900">Output</h2>
+                                    <h2 className="text-lg font-semibold text-slate-900">Submitted Output</h2>
                                 </div>
-                                <pre className="code-block bg-slate-800 text-green-400">{submission.outputContent}</pre>
+                                <pre className="code-block bg-slate-900 text-emerald-400 font-mono text-sm p-4 rounded-xl">{submission.outputContent}</pre>
                             </div>
                         )}
 
@@ -358,6 +452,29 @@ export default function SubmissionDetailPage() {
                                         <p className="font-medium">#{submission.submissionNumber}</p>
                                     </div>
                                 </div>
+                                {submission.assignment && (
+                                    <div className="pt-3 border-t border-slate-100">
+                                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Max Marks Breakdown</p>
+                                        <div className="space-y-1 text-xs text-slate-600">
+                                            <div className="flex justify-between">
+                                                <span>Practical:</span>
+                                                <span className="font-semibold text-slate-800">{submission.assignment.practicalMarks ?? 60}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>Output:</span>
+                                                <span className="font-semibold text-slate-800">{submission.assignment.outputMarks ?? 20}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>Viva:</span>
+                                                <span className="font-semibold text-slate-800">{submission.assignment.vivaMarks ?? 20}</span>
+                                            </div>
+                                            <div className="flex justify-between pt-1 border-t border-slate-100 font-bold text-slate-900">
+                                                <span>Total Max:</span>
+                                                <span className="text-primary-600">{submission.assignment.maxMarks ?? 100}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -377,25 +494,37 @@ export default function SubmissionDetailPage() {
                                     )}
                                 </div>
 
-                                <div className="space-y-2 text-sm border-t border-slate-100 pt-4">
-                                    <div className="flex justify-between">
-                                        <span className="text-slate-600">Practical</span>
-                                        <span className="font-medium">{submission.grade.practicalMarks}</span>
+                                <div className="space-y-2.5 text-sm border-t border-slate-100 pt-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600">Practical Marks</span>
+                                        <span className="font-semibold text-slate-900">
+                                            {submission.grade.practicalMarks} <span className="text-slate-400 font-normal">/ {submission.assignment?.practicalMarks ?? 60}</span>
+                                        </span>
                                     </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-slate-600">Output</span>
-                                        <span className="font-medium">{submission.grade.outputMarks}</span>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600">Output Marks</span>
+                                        <span className="font-semibold text-slate-900">
+                                            {submission.grade.outputMarks} <span className="text-slate-400 font-normal">/ {submission.assignment?.outputMarks ?? 20}</span>
+                                        </span>
                                     </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-slate-600">Viva</span>
-                                        <span className="font-medium">{submission.grade.vivaMarks}</span>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600">Viva Marks</span>
+                                        <span className="font-semibold text-slate-900">
+                                            {submission.grade.vivaMarks} <span className="text-slate-400 font-normal">/ {submission.assignment?.vivaMarks ?? 20}</span>
+                                        </span>
                                     </div>
                                     {submission.grade.latePenaltyMarks > 0 && (
-                                        <div className="flex justify-between text-red-600">
+                                        <div className="flex justify-between items-center text-red-600">
                                             <span>Late Penalty</span>
-                                            <span>-{submission.grade.latePenaltyMarks}</span>
+                                            <span className="font-semibold">-{submission.grade.latePenaltyMarks}</span>
                                         </div>
                                     )}
+                                    <div className="flex justify-between items-center border-t border-slate-200 pt-2 font-bold text-slate-900">
+                                        <span>Total Score</span>
+                                        <span className="text-primary-600">
+                                            {submission.grade.finalMarks} <span className="text-slate-400 font-normal">/ {submission.grade.maxMarks || submission.assignment?.maxMarks || 100}</span>
+                                        </span>
+                                    </div>
                                 </div>
 
                                 {isInstructor && !submission.grade.isPublished && (

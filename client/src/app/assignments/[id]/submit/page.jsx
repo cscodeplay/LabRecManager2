@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft, Upload, Code, Image, FileText, Send } from 'lucide-react';
+import { ArrowLeft, Upload, Code, Image, FileText, Send, Play, Terminal, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { assignmentsAPI, submissionsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -17,8 +17,67 @@ export default function SubmitAssignmentPage() {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [existingSubmission, setExistingSubmission] = useState(null);
+    const [runningCode, setRunningCode] = useState(false);
+    const [execStatus, setExecStatus] = useState(null);
 
-    const { register, handleSubmit, formState: { errors }, setValue } = useForm();
+    const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm();
+
+    const handleRunPythonCode = async () => {
+        const code = watch('codeContent');
+        if (!code || !code.trim()) {
+            toast.error('Please write or paste Python code first!');
+            return;
+        }
+
+        setRunningCode(true);
+        setExecStatus(null);
+
+        try {
+            if (!window.pyodideInstance) {
+                if (!window.pyodidePromise) {
+                    window.pyodidePromise = (async () => {
+                        if (!document.getElementById('pyodide-cdn')) {
+                            const script = document.createElement('script');
+                            script.id = 'pyodide-cdn';
+                            script.src = 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js';
+                            document.body.appendChild(script);
+                            await new Promise((resolve, reject) => {
+                                script.onload = resolve;
+                                script.onerror = () => reject(new Error('Failed to load Pyodide CDN'));
+                            });
+                        }
+                        const pyodide = await window.loadPyodide();
+                        window.pyodideInstance = pyodide;
+                        return pyodide;
+                    })();
+                }
+                await window.pyodidePromise;
+            }
+
+            const pyodide = window.pyodideInstance;
+
+            let capturedOutput = '';
+            pyodide.setStdout({
+                batched: (str) => {
+                    capturedOutput += str + '\n';
+                }
+            });
+
+            await pyodide.runPythonAsync(code);
+
+            const finalOutput = capturedOutput.trim() || '[Program executed successfully with no stdout output]';
+            setValue('outputContent', finalOutput);
+            setExecStatus({ success: true, message: 'Python code executed! Output auto-generated below.' });
+            toast.success('Python code compiled & output generated!');
+        } catch (err) {
+            console.error('Python compilation error:', err);
+            const errorMsg = err.message || String(err);
+            setExecStatus({ success: false, message: errorMsg });
+            toast.error('Compilation / Execution error. Check Python code syntax.');
+        } finally {
+            setRunningCode(false);
+        }
+    };
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -138,31 +197,68 @@ export default function SubmitAssignmentPage() {
                 )}
 
                 <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-                    {/* Code Content */}
-                    <div className="card p-6">
-                        <div className="flex items-center gap-2 mb-4">
-                            <Code className="w-5 h-5 text-primary-600" />
-                            <h2 className="text-lg font-semibold text-slate-900">Code / Program</h2>
+                    {/* Code Content & Python Compiler */}
+                    <div className="card p-6 border border-slate-200">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                            <div className="flex items-center gap-2">
+                                <Code className="w-5 h-5 text-primary-600" />
+                                <h2 className="text-lg font-semibold text-slate-900">Code / Program</h2>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleRunPythonCode}
+                                disabled={runningCode}
+                                className="btn bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md px-4 py-2 text-sm flex items-center gap-2 transition"
+                            >
+                                {runningCode ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Compiling & Running...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Play className="w-4 h-4 fill-white" />
+                                        Run Code (Python Compiler)
+                                    </>
+                                )}
+                            </button>
                         </div>
+
                         <textarea
-                            className="input font-mono text-sm min-h-[300px]"
-                            placeholder="Paste your code here..."
+                            className="input font-mono text-sm min-h-[300px] bg-slate-900 text-emerald-400 p-4 rounded-xl shadow-inner focus:ring-2 focus:ring-emerald-500"
+                            placeholder="# Write your Python code here...\nprint('Hello, World!')"
                             {...register('codeContent', { required: assignment?.assignmentType === 'program' ? 'Code is required' : false })}
                         />
                         {errors.codeContent && (
                             <p className="text-red-500 text-sm mt-1">{errors.codeContent.message}</p>
                         )}
+
+                        {/* Compiler Execution Status Banner */}
+                        {execStatus && (
+                            <div className={`mt-3 p-3 rounded-lg flex items-start gap-2.5 text-xs font-mono border ${execStatus.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                                {execStatus.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />}
+                                <div className="flex-1">
+                                    <p className="font-semibold">{execStatus.success ? 'Execution Successful' : 'Execution Error'}</p>
+                                    <pre className="whitespace-pre-wrap mt-1 text-[11px] font-mono">{execStatus.message}</pre>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Output */}
-                    <div className="card p-6">
-                        <div className="flex items-center gap-2 mb-4">
-                            <FileText className="w-5 h-5 text-emerald-600" />
-                            <h2 className="text-lg font-semibold text-slate-900">Output</h2>
+                    {/* Generated Program Output */}
+                    <div className="card p-6 border border-slate-200">
+                        <div className="flex items-center justify-between gap-2 mb-4">
+                            <div className="flex items-center gap-2">
+                                <Terminal className="w-5 h-5 text-emerald-600" />
+                                <h2 className="text-lg font-semibold text-slate-900">Program Output</h2>
+                            </div>
+                            <span className="text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md font-medium">
+                                Auto-generated via Compiler or editable
+                            </span>
                         </div>
                         <textarea
-                            className="input font-mono text-sm min-h-[150px]"
-                            placeholder="Paste your program output here..."
+                            className="input font-mono text-sm min-h-[160px] bg-slate-950 text-slate-100 p-4 rounded-xl shadow-inner border border-slate-800"
+                            placeholder="Program output will be automatically generated here when you click 'Run Code (Python Compiler)'..."
                             {...register('outputContent')}
                         />
                     </div>
