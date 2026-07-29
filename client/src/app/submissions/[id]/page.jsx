@@ -203,46 +203,76 @@ export default function SubmissionDetailPage() {
                                     )}
                                 </div>
 
-                                {showGradeForm && (
-                                    <form onSubmit={handleSubmit(onGradeSubmit)} className="space-y-4">
-                                        <div className="grid md:grid-cols-3 gap-4">
-                                            <div>
-                                                <label className="label">Practical Marks (/{submission.assignment?.practicalMarks || 60})</label>
-                                                <input
-                                                    type="number"
-                                                    className="input"
-                                                    min="0"
-                                                    max={submission.assignment?.practicalMarks || 60}
-                                                    {...register('practicalMarks', { required: true, valueAsNumber: true })}
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="label">Output Marks (/{submission.assignment?.outputMarks || 20})</label>
-                                                <input
-                                                    type="number"
-                                                    className="input"
-                                                    min="0"
-                                                    max={submission.assignment?.outputMarks || 20}
-                                                    {...register('outputMarks', { required: true, valueAsNumber: true })}
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="label">Viva Marks (/{submission.assignment?.vivaMarks || 20})</label>
-                                                <input
-                                                    type="number"
-                                                    className="input"
-                                                    min="0"
-                                                    max={submission.assignment?.vivaMarks || 20}
-                                                    {...register('vivaMarks', { required: true, valueAsNumber: true })}
-                                                />
-                                            </div>
-                                        </div>
+                                {showGradeForm && (() => {
+                                    const maxPractical = submission.assignment?.practicalMarks ?? 60;
+                                    const maxOutput = submission.assignment?.outputMarks ?? 20;
+                                    const maxViva = submission.assignment?.vivaMarks ?? 20;
+                                    const maxTotal = submission.assignment?.maxMarks ?? (maxPractical + maxOutput + maxViva);
 
-                                        <div className="p-3 bg-primary-50 rounded-lg">
-                                            <p className="text-primary-700 font-medium">
-                                                Total: {totalMarks} / {submission.assignment?.maxMarks || 100}
-                                            </p>
-                                        </div>
+                                    return (
+                                        <form onSubmit={handleSubmit(onGradeSubmit)} className="space-y-4">
+                                            <div className="grid md:grid-cols-3 gap-4">
+                                                <div>
+                                                    <label className="label">Practical Marks (/{maxPractical})</label>
+                                                    <input
+                                                        type="number"
+                                                        className="input"
+                                                        min="0"
+                                                        max={maxPractical}
+                                                        {...register('practicalMarks', {
+                                                            required: true,
+                                                            valueAsNumber: true,
+                                                            min: { value: 0, message: 'Cannot be negative' },
+                                                            max: { value: maxPractical, message: `Max allowed is ${maxPractical}` }
+                                                        })}
+                                                    />
+                                                    {errors.practicalMarks && (
+                                                        <p className="text-xs text-red-500 mt-1">{errors.practicalMarks.message}</p>
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <label className="label">Output Marks (/{maxOutput})</label>
+                                                    <input
+                                                        type="number"
+                                                        className="input"
+                                                        min="0"
+                                                        max={maxOutput}
+                                                        {...register('outputMarks', {
+                                                            required: true,
+                                                            valueAsNumber: true,
+                                                            min: { value: 0, message: 'Cannot be negative' },
+                                                            max: { value: maxOutput, message: `Max allowed is ${maxOutput}` }
+                                                        })}
+                                                    />
+                                                    {errors.outputMarks && (
+                                                        <p className="text-xs text-red-500 mt-1">{errors.outputMarks.message}</p>
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <label className="label">Viva Marks (/{maxViva})</label>
+                                                    <input
+                                                        type="number"
+                                                        className="input"
+                                                        min="0"
+                                                        max={maxViva}
+                                                        {...register('vivaMarks', {
+                                                            required: true,
+                                                            valueAsNumber: true,
+                                                            min: { value: 0, message: 'Cannot be negative' },
+                                                            max: { value: maxViva, message: `Max allowed is ${maxViva}` }
+                                                        })}
+                                                    />
+                                                    {errors.vivaMarks && (
+                                                        <p className="text-xs text-red-500 mt-1">{errors.vivaMarks.message}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="p-3 bg-primary-50 rounded-lg">
+                                                <p className="text-primary-700 font-medium">
+                                                    Total: {totalMarks} / {maxTotal}
+                                                </p>
+                                            </div>
 
                                         <div>
                                             <label className="label">Code Feedback</label>
@@ -292,10 +322,10 @@ export default function SubmissionDetailPage() {
                                                 className="btn btn-danger"
                                             >
                                                 Request Revision
-                                            </button>
                                         </div>
                                     </form>
-                                )}
+                                    );
+                                })()}
                             </div>
                         )}
                     </div>

@@ -14,7 +14,7 @@ export default function UsersPage() {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
-    const [roleFilter, setRoleFilter] = useState('all');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
@@ -27,6 +27,19 @@ export default function UsersPage() {
     const [pinData, setPinData] = useState(null);
     const [generatingPin, setGeneratingPin] = useState(null);
 
+    // Debounce search input by 300ms
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedSearch(searchQuery.trim());
+        }, 300);
+        return () => clearTimeout(handler);
+    }, [searchQuery]);
+
+    // Reset page to 1 on filter or search change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [roleFilter, debouncedSearch]);
+
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!isAuthenticated) {
@@ -38,7 +51,7 @@ export default function UsersPage() {
             return;
         }
         loadUsers();
-    }, [isAuthenticated, _hasHydrated, roleFilter, selectedSessionId, currentPage, itemsPerPage]);
+    }, [isAuthenticated, _hasHydrated, roleFilter, selectedSessionId, currentPage, itemsPerPage, debouncedSearch]);
 
     const loadUsers = async () => {
         setLoading(true);
@@ -46,7 +59,8 @@ export default function UsersPage() {
             const params = {
                 page: currentPage,
                 limit: itemsPerPage,
-                ...(roleFilter !== 'all' && { role: roleFilter })
+                ...(roleFilter !== 'all' && { role: roleFilter }),
+                ...(debouncedSearch && { search: debouncedSearch })
             };
             const res = await api.get('/users', { params });
             setUsers(res.data.data.users || []);
@@ -58,17 +72,6 @@ export default function UsersPage() {
             setLoading(false);
         }
     };
-
-    // Reset to page 1 when filters change
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [roleFilter, searchQuery]);
-
-    const filteredUsers = users.filter(u =>
-        u.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.email?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
 
     const getRoleBadge = (role) => {
         const styles = {
@@ -225,7 +228,7 @@ export default function UsersPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {filteredUsers.map((u) => (
+                            {users.map((u) => (
                                 <tr key={u.id} className="hover:bg-slate-50 transition">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">

@@ -104,7 +104,8 @@ export default function NotificationBell() {
         <div className="relative" ref={dropdownRef}>
             {/* Bell Button */}
             <button
-                onClick={() => setIsOpen(!isOpen)}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
                 className="relative p-2 rounded-lg hover:bg-slate-100 transition"
             >
                 <Bell className="w-5 h-5 text-slate-600" />
@@ -117,7 +118,7 @@ export default function NotificationBell() {
 
             {/* Dropdown */}
             {isOpen && (
-                <div className="absolute right-0 top-full mt-2 w-80 md:w-96 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden">
+                <div className="absolute right-0 top-full mt-2 w-80 md:w-96 bg-white rounded-xl shadow-xl border border-slate-200 z-[100] overflow-hidden">
                     {/* Header */}
                     <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                         <h3 className="font-semibold text-slate-900">Notifications</h3>

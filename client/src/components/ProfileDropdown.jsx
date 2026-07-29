@@ -42,7 +42,8 @@ export default function ProfileDropdown() {
         <div className="relative" ref={dropdownRef}>
             {/* Profile Button */}
             <button
-                onClick={() => setIsOpen(!isOpen)}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
                 className="flex items-center gap-2 p-1.5 pr-3 rounded-full hover:bg-slate-100 transition border border-slate-200"
             >
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-medium text-sm">
@@ -56,7 +57,7 @@ export default function ProfileDropdown() {
 
             {/* Dropdown */}
             {isOpen && (
-                <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden">
+                <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 z-[100] overflow-hidden">
                     {/* Profile Header */}
                     <div className="p-4 bg-gradient-to-br from-primary-500 to-primary-600 text-white">
                         <div className="flex items-center gap-3">

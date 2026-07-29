@@ -11,9 +11,10 @@ const { asyncHandler } = require('../middleware/errorHandler');
  */
 router.get('/', authenticate, asyncHandler(async (req, res) => {
     const { schoolId } = req.user;
+    const where = { ...(schoolId && { schoolId }) };
 
     const academicYears = await prisma.academicYear.findMany({
-        where: { schoolId },
+        where,
         orderBy: { startDate: 'desc' }
     });
 

@@ -40,6 +40,18 @@ export default function CreateAssignmentPage() {
         }
     });
 
+    const watchPractical = watch('practicalMarks');
+    const watchOutput = watch('outputMarks');
+    const watchViva = watch('vivaMarks');
+
+    // Auto-calculate Total Marks (maxMarks) = Practical + Output + Viva
+    useEffect(() => {
+        const p = Number(watchPractical) || 0;
+        const o = Number(watchOutput) || 0;
+        const v = Number(watchViva) || 0;
+        setValue('maxMarks', p + o + v);
+    }, [watchPractical, watchOutput, watchViva, setValue]);
+
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!isAuthenticated) {
@@ -291,25 +303,35 @@ export default function CreateAssignmentPage() {
                         <h2 className="text-lg font-semibold text-slate-900 mb-4">Marks Configuration</h2>
                         <div className="grid md:grid-cols-3 gap-4">
                             <div>
-                                <label className="label">Max Marks</label>
-                                <input type="number" className="input" {...register('maxMarks', { valueAsNumber: true })} />
-                            </div>
-                            <div>
-                                <label className="label">Passing Marks</label>
-                                <input type="number" className="input" {...register('passingMarks', { valueAsNumber: true })} />
-                            </div>
-
-                            <div>
                                 <label className="label">Practical Marks</label>
-                                <input type="number" className="input" {...register('practicalMarks', { valueAsNumber: true })} />
+                                <input type="number" min="0" className="input" {...register('practicalMarks', { valueAsNumber: true })} />
                             </div>
                             <div>
                                 <label className="label">Output Marks</label>
-                                <input type="number" className="input" {...register('outputMarks', { valueAsNumber: true })} />
+                                <input type="number" min="0" className="input" {...register('outputMarks', { valueAsNumber: true })} />
+                            </div>
+                            <div>
+                                <label className="label">Viva Marks</label>
+                                <input type="number" min="0" className="input" {...register('vivaMarks', { valueAsNumber: true })} />
+                            </div>
+
+                            <div>
+                                <label className="label">Total Marks (Practical + Output + Viva)</label>
+                                <input
+                                    type="number"
+                                    className="input bg-slate-100 font-bold text-primary-700 cursor-not-allowed"
+                                    readOnly
+                                    title="Auto-calculated from Practical + Output + Viva marks"
+                                    {...register('maxMarks', { valueAsNumber: true })}
+                                />
+                            </div>
+                            <div>
+                                <label className="label">Passing Marks</label>
+                                <input type="number" min="0" className="input" {...register('passingMarks', { valueAsNumber: true })} />
                             </div>
                             <div>
                                 <label className="label">Late Penalty %</label>
-                                <input type="number" className="input" {...register('latePenaltyPercent', { valueAsNumber: true })} />
+                                <input type="number" min="0" max="100" className="input" {...register('latePenaltyPercent', { valueAsNumber: true })} />
                             </div>
                         </div>
                     </div>

@@ -70,7 +70,7 @@ export default function AppLayout({ children }) {
             {/* Main Content */}
             <div className={`transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
                 {/* Top Header */}
-                <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200">
+                <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200">
                     <div className="px-4 h-16 flex items-center justify-between gap-4">
                         {/* Left side - Mobile menu & Search */}
                         <div className="flex items-center gap-3 flex-1">

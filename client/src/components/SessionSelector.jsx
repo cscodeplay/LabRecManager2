@@ -76,7 +76,8 @@ export default function SessionSelector() {
         <div className="relative">
             {/* Selector Button */}
             <button
-                onClick={() => setIsOpen(!isOpen)}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${isReadOnlyMode
                         ? 'bg-amber-50 border-amber-300 text-amber-800'
                         : 'bg-white border-slate-200 text-slate-700 hover:border-primary-300'
@@ -95,12 +96,12 @@ export default function SessionSelector() {
                 <>
                     {/* Backdrop */}
                     <div
-                        className="fixed inset-0 z-40"
+                        className="fixed inset-0 z-[90]"
                         onClick={() => setIsOpen(false)}
                     />
 
                     {/* Dropdown Menu */}
-                    <div className="absolute top-full mt-2 right-0 w-64 bg-white rounded-xl shadow-lg border border-slate-200 z-50 overflow-hidden">
+                    <div className="absolute top-full mt-2 right-0 w-64 bg-white rounded-xl shadow-lg border border-slate-200 z-[100] overflow-hidden">
                         <div className="p-2 border-b border-slate-100 bg-slate-50">
                             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                                 Academic Session
