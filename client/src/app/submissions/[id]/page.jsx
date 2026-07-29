@@ -322,6 +322,7 @@ export default function SubmissionDetailPage() {
                                                 className="btn btn-danger"
                                             >
                                                 Request Revision
+                                            </button>
                                         </div>
                                     </form>
                                     );
