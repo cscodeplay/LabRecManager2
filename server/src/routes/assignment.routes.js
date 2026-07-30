@@ -584,11 +584,11 @@ router.post('/', authenticate, authorize('instructor', 'lab_assistant', 'admin',
             procedureHindi,
             expectedOutput,
             referenceCode,
-            maxMarks: maxMarks || 100,
-            passingMarks: passingMarks || 35,
-            vivaMarks: vivaMarks || 20,
-            practicalMarks: practicalMarks || 60,
-            outputMarks: outputMarks || 20,
+            maxMarks: (maxMarks !== undefined && maxMarks !== null) ? Number(maxMarks) : 100,
+            passingMarks: (passingMarks !== undefined && passingMarks !== null) ? Number(passingMarks) : 35,
+            vivaMarks: (vivaMarks !== undefined && vivaMarks !== null) ? Number(vivaMarks) : 0,
+            practicalMarks: (practicalMarks !== undefined && practicalMarks !== null) ? Number(practicalMarks) : 60,
+            outputMarks: (outputMarks !== undefined && outputMarks !== null) ? Number(outputMarks) : 20,
             lateSubmissionAllowed: lateSubmissionAllowed !== false,
             latePenaltyPercent: latePenaltyPercent || 10,
             status: status || 'draft',
@@ -665,9 +665,11 @@ router.put('/:id', authenticate, authorize('instructor', 'lab_assistant', 'admin
         ];
 
         for (const field of allowedFields) {
-            if (req.body[field] !== undefined) {
+            if (req.body[field] !== undefined && req.body[field] !== null) {
                 if ((field === 'trainingModuleId' || field === 'labId') && req.body[field] === "") {
                     updateData[field] = null;
+                } else if (['maxMarks', 'passingMarks', 'vivaMarks', 'practicalMarks', 'outputMarks', 'latePenaltyPercent'].includes(field)) {
+                    updateData[field] = Number(req.body[field]);
                 } else {
                     updateData[field] = req.body[field];
                 }
