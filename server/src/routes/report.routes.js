@@ -450,22 +450,30 @@ router.get('/columns', authenticate, authorize('admin', 'instructor', 'principal
  * @access  Private (Admin, Instructor, Principal)
  */
 router.post('/custom-generate', authenticate, authorize('admin', 'instructor', 'principal'), asyncHandler(async (req, res) => {
-    const { entities = ['students'], selectedColumns = {}, filters = {} } = req.body;
-    const schoolId = req.user.schoolId;
-    const sessionId = req.headers['x-academic-session'];
+    try {
+        const { entities = ['students'], selectedColumns = {}, filters = {} } = req.body;
+        const schoolId = req.user.schoolId;
+        const sessionId = req.headers['x-academic-session'];
 
-    const reportData = await reportService.generateCustomReportData({
-        entities,
-        selectedColumns,
-        filters,
-        schoolId,
-        sessionId
-    });
+        const reportData = await reportService.generateCustomReportData({
+            entities,
+            selectedColumns,
+            filters,
+            schoolId,
+            sessionId
+        });
 
-    res.json({
-        success: true,
-        data: reportData
-    });
+        res.json({
+            success: true,
+            data: reportData
+        });
+    } catch (error) {
+        console.error('[POST /api/reports/custom-generate] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to generate custom report'
+        });
+    }
 }));
 
 module.exports = router;

@@ -87,277 +87,304 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
 
     // 1. STUDENTS ENTITY DATA
     if (entities.includes('students')) {
-        const studentWhere = {
-            role: 'student',
-            isActive: true,
-            ...(schoolId && { schoolId })
-        };
-
-        if (filters.gender && filters.gender !== 'all') {
-            studentWhere.gender = filters.gender;
-        }
-
-        if (filters.classId) {
-            studentWhere.classEnrollments = {
-                some: { classId: filters.classId, status: 'active' }
+        try {
+            const studentWhere = {
+                role: 'student',
+                isActive: true,
+                ...(schoolId && { schoolId })
             };
-        }
 
-        const students = await prisma.user.findMany({
-            where: studentWhere,
-            include: {
-                classEnrollments: {
-                    where: { status: 'active' },
-                    include: { class: true }
-                },
-                groupMemberships: {
-                    include: {
-                        group: {
-                            include: {
-                                assignedPc: { include: { lab: true } }
+            if (filters.gender && filters.gender !== 'all') {
+                studentWhere.gender = filters.gender;
+            }
+
+            if (filters.classId) {
+                studentWhere.classEnrollments = {
+                    some: { classId: filters.classId, status: 'active' }
+                };
+            }
+
+            const students = await prisma.user.findMany({
+                where: studentWhere,
+                include: {
+                    classEnrollments: {
+                        where: { status: 'active' },
+                        include: { class: true }
+                    },
+                    groupMemberships: {
+                        include: {
+                            group: {
+                                include: {
+                                    assignedPc: { include: { lab: true } }
+                                }
                             }
+                        }
+                    },
+                    submissions: {
+                        include: {
+                            grade: { select: { finalMarks: true, percentage: true } }
                         }
                     }
                 },
-                submissions: {
-                    include: {
-                        grade: { select: { finalMarks: true, percentage: true } }
-                    }
-                }
-            },
-            orderBy: { firstName: 'asc' }
-        });
+                orderBy: { firstName: 'asc' }
+            });
 
-        const activeCols = selectedColumns.students || [
-            'admissionNumber', 'fullName', 'className', 'rollNumber', 'gender', 'email', 'phone', 'groupName', 'assignedPc'
-        ];
+            const activeCols = selectedColumns.students || [
+                'admissionNumber', 'fullName', 'className', 'rollNumber', 'gender', 'email', 'phone', 'groupName', 'assignedPc'
+            ];
 
-        const rows = students.map(s => {
-            const enrollment = s.classEnrollments?.[0];
-            const groupMember = s.groupMemberships?.[0];
-            const group = groupMember?.group;
-            const pc = group?.assignedPc;
+            const rows = students.map(s => {
+                const enrollment = s.classEnrollments?.[0];
+                const groupMember = s.groupMemberships?.[0];
+                const group = groupMember?.group;
+                const pc = group?.assignedPc;
 
-            const scores = (s.submissions || [])
-                .map(sub => sub.grade?.percentage ? parseFloat(sub.grade.percentage) : (sub.grade?.finalMarks || null))
-                .filter(val => val !== null && !isNaN(val));
-            const avgScore = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '-';
+                const scores = (s.submissions || [])
+                    .map(sub => sub.grade?.percentage ? parseFloat(sub.grade.percentage) : (sub.grade?.finalMarks || null))
+                    .filter(val => val !== null && !isNaN(val));
+                const avgScore = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '-';
 
-            const rowData = {};
-            if (activeCols.includes('admissionNumber')) rowData['Admission / Student ID'] = s.studentId || s.admissionNumber || '-';
-            if (activeCols.includes('fullName')) rowData['Student Name'] = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Student';
-            if (activeCols.includes('className')) rowData['Enrolled Class'] = enrollment?.class?.name || '-';
-            if (activeCols.includes('rollNumber')) rowData['Roll Number'] = s.rollNumber ? `#${s.rollNumber}` : '-';
-            if (activeCols.includes('gender')) rowData['Gender'] = s.gender === 'female' ? 'Female' : 'Male';
-            if (activeCols.includes('email')) rowData['Email Address'] = s.email || '-';
-            if (activeCols.includes('phone')) rowData['Phone Number'] = s.phone || '-';
-            if (activeCols.includes('groupName')) rowData['Assigned Group'] = group?.name || 'Ungrouped';
-            if (activeCols.includes('assignedPc')) rowData['Assigned Lab PC'] = pc ? `${pc.itemNumber} (${pc.lab?.name || 'Lab'})` : 'No PC';
-            if (activeCols.includes('submissionsCount')) rowData['Total Submissions'] = s.submissions?.length || 0;
-            if (activeCols.includes('avgScore')) rowData['Average Score (%)'] = avgScore;
+                const rowData = {};
+                if (activeCols.includes('admissionNumber')) rowData['Admission / Student ID'] = s.studentId || s.admissionNumber || '-';
+                if (activeCols.includes('fullName')) rowData['Student Name'] = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Student';
+                if (activeCols.includes('className')) rowData['Enrolled Class'] = enrollment?.class?.name || '-';
+                if (activeCols.includes('rollNumber')) rowData['Roll Number'] = s.rollNumber ? `#${s.rollNumber}` : '-';
+                if (activeCols.includes('gender')) rowData['Gender'] = s.gender === 'female' ? 'Female' : 'Male';
+                if (activeCols.includes('email')) rowData['Email Address'] = s.email || '-';
+                if (activeCols.includes('phone')) rowData['Phone Number'] = s.phone || '-';
+                if (activeCols.includes('groupName')) rowData['Assigned Group'] = group?.name || 'Ungrouped';
+                if (activeCols.includes('assignedPc')) rowData['Assigned Lab PC'] = pc ? `${pc.itemNumber} (${pc.lab?.name || 'Lab'})` : 'No PC';
+                if (activeCols.includes('submissionsCount')) rowData['Total Submissions'] = s.submissions?.length || 0;
+                if (activeCols.includes('avgScore')) rowData['Average Score (%)'] = avgScore;
 
-            return rowData;
-        });
+                return rowData;
+            });
 
-        reportResults.students = {
-            title: 'Students & Roster Report',
-            count: rows.length,
-            rows
-        };
+            reportResults.students = {
+                title: 'Students & Roster Report',
+                count: rows.length,
+                rows
+            };
+        } catch (err) {
+            console.error('Error fetching students for custom report:', err);
+            reportResults.students = { title: 'Students & Roster Report', count: 0, rows: [] };
+        }
     }
 
     // 2. CLASSES ENTITY DATA
     if (entities.includes('classes')) {
-        const classWhere = { ...(schoolId && { schoolId }) };
-        if (filters.classId) classWhere.id = filters.classId;
+        try {
+            const classWhere = { ...(schoolId && { schoolId }) };
+            if (filters.classId) classWhere.id = filters.classId;
 
-        const classes = await prisma.class.findMany({
-            where: classWhere,
-            include: {
-                enrollments: {
-                    where: { status: 'active' },
-                    include: { student: true }
+            const classes = await prisma.class.findMany({
+                where: classWhere,
+                include: {
+                    enrollments: {
+                        where: { status: 'active' },
+                        include: { student: true }
+                    },
+                    groups: {
+                        include: { assignedPc: true }
+                    }
                 },
-                groups: {
-                    include: { assignedPc: true }
-                }
-            },
-            orderBy: { name: 'asc' }
-        });
+                orderBy: { name: 'asc' }
+            });
 
-        const activeCols = selectedColumns.classes || [
-            'name', 'gradeLevel', 'section', 'stream', 'totalEnrolled', 'boyCount', 'girlCount', 'groupsCount', 'pcsAssigned'
-        ];
+            const activeCols = selectedColumns.classes || [
+                'name', 'gradeLevel', 'section', 'stream', 'totalEnrolled', 'boyCount', 'girlCount', 'groupsCount', 'pcsAssigned'
+            ];
 
-        const rows = classes.map(c => {
-            const students = (c.enrollments || []).map(e => e.student).filter(Boolean);
-            const boyCount = students.filter(s => s.gender === 'male').length;
-            const girlCount = students.filter(s => s.gender === 'female').length;
-            const pcsAssigned = (c.groups || []).filter(g => g.assignedPcId).length;
+            const rows = classes.map(c => {
+                const students = (c.enrollments || []).map(e => e.student).filter(Boolean);
+                const boyCount = students.filter(s => s.gender === 'male').length;
+                const girlCount = students.filter(s => s.gender === 'female').length;
+                const pcsAssigned = (c.groups || []).filter(g => g.assignedPcId).length;
 
-            const rowData = {};
-            if (activeCols.includes('name')) rowData['Class Name'] = c.name;
-            if (activeCols.includes('gradeLevel')) rowData['Grade Level'] = c.gradeLevel || '-';
-            if (activeCols.includes('section')) rowData['Section'] = c.section || '-';
-            if (activeCols.includes('stream')) rowData['Stream'] = c.stream || '-';
-            if (activeCols.includes('totalEnrolled')) rowData['Total Students'] = students.length;
-            if (activeCols.includes('boyCount')) rowData['Male Count'] = boyCount;
-            if (activeCols.includes('girlCount')) rowData['Female Count'] = girlCount;
-            if (activeCols.includes('groupsCount')) rowData['Total Groups'] = c.groups?.length || 0;
-            if (activeCols.includes('pcsAssigned')) rowData['PCs Allocated'] = pcsAssigned;
+                const rowData = {};
+                if (activeCols.includes('name')) rowData['Class Name'] = c.name;
+                if (activeCols.includes('gradeLevel')) rowData['Grade Level'] = c.gradeLevel || '-';
+                if (activeCols.includes('section')) rowData['Section'] = c.section || '-';
+                if (activeCols.includes('stream')) rowData['Stream'] = c.stream || '-';
+                if (activeCols.includes('totalEnrolled')) rowData['Total Students'] = students.length;
+                if (activeCols.includes('boyCount')) rowData['Male Count'] = boyCount;
+                if (activeCols.includes('girlCount')) rowData['Female Count'] = girlCount;
+                if (activeCols.includes('groupsCount')) rowData['Total Groups'] = c.groups?.length || 0;
+                if (activeCols.includes('pcsAssigned')) rowData['PCs Allocated'] = pcsAssigned;
 
-            return rowData;
-        });
+                return rowData;
+            });
 
-        reportResults.classes = {
-            title: 'Classes & Enrolled Summary Report',
-            count: rows.length,
-            rows
-        };
+            reportResults.classes = {
+                title: 'Classes & Enrolled Summary Report',
+                count: rows.length,
+                rows
+            };
+        } catch (err) {
+            console.error('Error fetching classes for custom report:', err);
+            reportResults.classes = { title: 'Classes & Enrolled Summary Report', count: 0, rows: [] };
+        }
     }
 
     // 3. GROUPS ENTITY DATA
     if (entities.includes('groups')) {
-        const groupWhere = {};
-        if (filters.classId) groupWhere.classId = filters.classId;
+        try {
+            const groupWhere = {};
+            if (filters.classId) groupWhere.classId = filters.classId;
 
-        const groups = await prisma.studentGroup.findMany({
-            where: groupWhere,
-            include: {
-                class: true,
-                assignedPc: { include: { lab: true } },
-                members: {
-                    include: { student: true }
-                }
-            },
-            orderBy: { name: 'asc' }
-        });
+            const groups = await prisma.studentGroup.findMany({
+                where: groupWhere,
+                include: {
+                    class: true,
+                    assignedPc: { include: { lab: true } },
+                    members: {
+                        include: { student: true }
+                    }
+                },
+                orderBy: { name: 'asc' }
+            });
 
-        const activeCols = selectedColumns.groups || [
-            'name', 'className', 'genderType', 'memberCount', 'memberNames', 'assignedPc', 'labName'
-        ];
+            const activeCols = selectedColumns.groups || [
+                'name', 'className', 'genderType', 'memberCount', 'memberNames', 'assignedPc', 'labName'
+            ];
 
-        const rows = groups.filter(g => {
-            if (!filters.gender || filters.gender === 'all') return true;
-            const nameLower = (g.name || '').toLowerCase();
-            if (filters.gender === 'female') return nameLower.includes('girls') || (g.members || []).some(m => m.student?.gender === 'female');
-            if (filters.gender === 'male') return nameLower.includes('boys') || (g.members || []).some(m => m.student?.gender === 'male');
-            return true;
-        }).map(g => {
-            const memberNames = (g.members || []).map(m => m.student ? `${m.student.firstName || ''} ${m.student.lastName || ''}`.trim() : '').filter(Boolean).join(', ');
-            const leader = (g.members || []).find(m => m.role === 'leader')?.student;
-            const isGirlGroup = (g.name || '').toLowerCase().includes('girls') || ((g.members || []).length > 0 && g.members.every(m => m.student?.gender === 'female'));
+            const rows = groups.filter(g => {
+                if (!filters.gender || filters.gender === 'all') return true;
+                const nameLower = (g.name || '').toLowerCase();
+                if (filters.gender === 'female') return nameLower.includes('girls') || (g.members || []).some(m => m.student?.gender === 'female');
+                if (filters.gender === 'male') return nameLower.includes('boys') || (g.members || []).some(m => m.student?.gender === 'male');
+                return true;
+            }).map(g => {
+                const memberNames = (g.members || []).map(m => m.student ? `${m.student.firstName || ''} ${m.student.lastName || ''}`.trim() : '').filter(Boolean).join(', ');
+                const leader = (g.members || []).find(m => m.role === 'leader')?.student;
+                const isGirlGroup = (g.name || '').toLowerCase().includes('girls') || ((g.members || []).length > 0 && g.members.every(m => m.student?.gender === 'female'));
 
-            const rowData = {};
-            if (activeCols.includes('name')) rowData['Group Name'] = g.name;
-            if (activeCols.includes('className')) rowData['Class Name'] = g.class?.name || '-';
-            if (activeCols.includes('genderType')) rowData['Gender Category'] = isGirlGroup ? 'Female' : 'Male';
-            if (activeCols.includes('memberCount')) rowData['Member Count'] = g.members?.length || 0;
-            if (activeCols.includes('memberNames')) rowData['Member Names'] = memberNames || 'No Members';
-            if (activeCols.includes('assignedPc')) rowData['Assigned Lab PC'] = g.assignedPc ? g.assignedPc.itemNumber : 'No PC';
-            if (activeCols.includes('labName')) rowData['Lab Name'] = g.assignedPc?.lab?.name || '-';
-            if (activeCols.includes('leaderName')) rowData['Group Leader'] = leader ? `${leader.firstName || ''} ${leader.lastName || ''}`.trim() : '-';
+                const rowData = {};
+                if (activeCols.includes('name')) rowData['Group Name'] = g.name;
+                if (activeCols.includes('className')) rowData['Class Name'] = g.class?.name || '-';
+                if (activeCols.includes('genderType')) rowData['Gender Category'] = isGirlGroup ? 'Female' : 'Male';
+                if (activeCols.includes('memberCount')) rowData['Member Count'] = g.members?.length || 0;
+                if (activeCols.includes('memberNames')) rowData['Member Names'] = memberNames || 'No Members';
+                if (activeCols.includes('assignedPc')) rowData['Assigned Lab PC'] = g.assignedPc ? g.assignedPc.itemNumber : 'No PC';
+                if (activeCols.includes('labName')) rowData['Lab Name'] = g.assignedPc?.lab?.name || '-';
+                if (activeCols.includes('leaderName')) rowData['Group Leader'] = leader ? `${leader.firstName || ''} ${leader.lastName || ''}`.trim() : '-';
 
-            return rowData;
-        });
+                return rowData;
+            });
 
-        reportResults.groups = {
-            title: 'Student Groups & PC Allocations Report',
-            count: rows.length,
-            rows
-        };
+            reportResults.groups = {
+                title: 'Student Groups & PC Allocations Report',
+                count: rows.length,
+                rows
+            };
+        } catch (err) {
+            console.error('Error fetching groups for custom report:', err);
+            reportResults.groups = { title: 'Student Groups & PC Allocations Report', count: 0, rows: [] };
+        }
     }
 
     // 4. ASSIGNMENTS ENTITY DATA
     if (entities.includes('assignments')) {
-        const assignWhere = { ...(schoolId && { schoolId }) };
-        if (sessionId) assignWhere.academicYearId = sessionId;
+        try {
+            const assignWhere = { ...(schoolId && { schoolId }) };
+            if (sessionId && sessionId !== 'null' && sessionId !== 'undefined') {
+                assignWhere.academicYearId = sessionId;
+            }
 
-        const assignments = await prisma.assignment.findMany({
-            where: assignWhere,
-            include: {
-                subject: true,
-                targets: {
-                    include: { targetClass: true, targetGroup: true }
-                },
-                submissions: {
-                    include: {
-                        grade: { select: { finalMarks: true, percentage: true } }
+            const assignments = await prisma.assignment.findMany({
+                where: assignWhere,
+                include: {
+                    subject: true,
+                    targets: {
+                        include: { targetClass: true, targetGroup: true }
+                    },
+                    submissions: {
+                        include: {
+                            grade: { select: { finalMarks: true, percentage: true } }
+                        }
                     }
-                }
-            },
-            orderBy: { createdAt: 'desc' }
-        });
+                },
+                orderBy: { createdAt: 'desc' }
+            });
 
-        const activeCols = selectedColumns.assignments || [
-            'title', 'experimentNumber', 'subjectName', 'programmingLanguage', 'maxMarks', 'targetClasses', 'submissionsCount', 'avgScore', 'status'
-        ];
+            const activeCols = selectedColumns.assignments || [
+                'title', 'experimentNumber', 'subjectName', 'programmingLanguage', 'maxMarks', 'targetClasses', 'submissionsCount', 'avgScore', 'status'
+            ];
 
-        const rows = assignments.map(a => {
-            const scores = (a.submissions || [])
-                .map(sub => sub.grade?.percentage ? parseFloat(sub.grade.percentage) : (sub.grade?.finalMarks || null))
-                .filter(val => val !== null && !isNaN(val));
-            const avgScore = scores.length > 0 ? (scores.reduce((st, val) => st + val, 0) / scores.length).toFixed(1) : '-';
-            const targetsStr = (a.targets || []).map(t => t.targetClass?.name || t.targetGroup?.name || 'Custom').join(', ');
+            const rows = assignments.map(a => {
+                const scores = (a.submissions || [])
+                    .map(sub => sub.grade?.percentage ? parseFloat(sub.grade.percentage) : (sub.grade?.finalMarks || null))
+                    .filter(val => val !== null && !isNaN(val));
+                const avgScore = scores.length > 0 ? (scores.reduce((st, val) => st + val, 0) / scores.length).toFixed(1) : '-';
+                const targetsStr = (a.targets || []).map(t => t.targetClass?.name || t.targetGroup?.name || 'Custom').join(', ');
 
-            const rowData = {};
-            if (activeCols.includes('title')) rowData['Assignment Title'] = a.title;
-            if (activeCols.includes('experimentNumber')) rowData['Experiment No'] = a.experimentNumber || '-';
-            if (activeCols.includes('subjectName')) rowData['Subject'] = a.subject?.name || '-';
-            if (activeCols.includes('programmingLanguage')) rowData['Language'] = a.programmingLanguage || '-';
-            if (activeCols.includes('maxMarks')) rowData['Max Marks'] = a.maxMarks;
-            if (activeCols.includes('targetClasses')) rowData['Target Classes/Groups'] = targetsStr || 'All';
-            if (activeCols.includes('submissionsCount')) rowData['Total Submissions'] = a.submissions?.length || 0;
-            if (activeCols.includes('avgScore')) rowData['Average Score'] = avgScore;
-            if (activeCols.includes('status')) rowData['Status'] = a.status;
+                const rowData = {};
+                if (activeCols.includes('title')) rowData['Assignment Title'] = a.title;
+                if (activeCols.includes('experimentNumber')) rowData['Experiment No'] = a.experimentNumber || '-';
+                if (activeCols.includes('subjectName')) rowData['Subject'] = a.subject?.name || '-';
+                if (activeCols.includes('programmingLanguage')) rowData['Language'] = a.programmingLanguage || '-';
+                if (activeCols.includes('maxMarks')) rowData['Max Marks'] = a.maxMarks;
+                if (activeCols.includes('targetClasses')) rowData['Target Classes/Groups'] = targetsStr || 'All';
+                if (activeCols.includes('submissionsCount')) rowData['Total Submissions'] = a.submissions?.length || 0;
+                if (activeCols.includes('avgScore')) rowData['Average Score'] = avgScore;
+                if (activeCols.includes('status')) rowData['Status'] = a.status;
 
-            return rowData;
-        });
+                return rowData;
+            });
 
-        reportResults.assignments = {
-            title: 'Assignments & Performance Report',
-            count: rows.length,
-            rows
-        };
+            reportResults.assignments = {
+                title: 'Assignments & Performance Report',
+                count: rows.length,
+                rows
+            };
+        } catch (err) {
+            console.error('Error fetching assignments for custom report:', err);
+            reportResults.assignments = { title: 'Assignments & Performance Report', count: 0, rows: [] };
+        }
     }
 
     // 5. LAB PCS ENTITY DATA
     if (entities.includes('lab_pcs')) {
-        const pcs = await prisma.labItem.findMany({
-            where: {
-                ...(schoolId && { schoolId })
-            },
-            include: {
-                lab: true,
-                assignedGroups: { include: { class: true } }
-            },
-            orderBy: { itemNumber: 'asc' }
-        });
+        try {
+            const pcs = await prisma.labItem.findMany({
+                where: {
+                    ...(schoolId && { schoolId })
+                },
+                include: {
+                    lab: true,
+                    assignedGroups: { include: { class: true } }
+                },
+                orderBy: { itemNumber: 'asc' }
+            });
 
-        const activeCols = selectedColumns.lab_pcs || [
-            'itemNumber', 'labName', 'status', 'ipAddress', 'assignedGroup', 'assignedClass'
-        ];
+            const activeCols = selectedColumns.lab_pcs || [
+                'itemNumber', 'labName', 'status', 'ipAddress', 'assignedGroup', 'assignedClass'
+            ];
 
-        const rows = pcs.map(pc => {
-            const group = pc.assignedGroups?.[0];
+            const rows = pcs.map(pc => {
+                const group = pc.assignedGroups?.[0];
 
-            const rowData = {};
-            if (activeCols.includes('itemNumber')) rowData['PC Number'] = pc.itemNumber;
-            if (activeCols.includes('labName')) rowData['Lab Name'] = pc.lab?.name || '-';
-            if (activeCols.includes('status')) rowData['Status'] = pc.status;
-            if (activeCols.includes('ipAddress')) rowData['IP Address'] = (pc.specs && pc.specs.ipAddress) ? pc.specs.ipAddress : '-';
-            if (activeCols.includes('macAddress')) rowData['MAC Address'] = (pc.specs && pc.specs.macAddress) ? pc.specs.macAddress : '-';
-            if (activeCols.includes('assignedGroup')) rowData['Assigned Group'] = group?.name || 'Unassigned';
-            if (activeCols.includes('assignedClass')) rowData['Assigned Class'] = group?.class?.name || '-';
+                const rowData = {};
+                if (activeCols.includes('itemNumber')) rowData['PC Number'] = pc.itemNumber;
+                if (activeCols.includes('labName')) rowData['Lab Name'] = pc.lab?.name || '-';
+                if (activeCols.includes('status')) rowData['Status'] = pc.status;
+                if (activeCols.includes('ipAddress')) rowData['IP Address'] = (pc.specs && pc.specs.ipAddress) ? pc.specs.ipAddress : '-';
+                if (activeCols.includes('macAddress')) rowData['MAC Address'] = (pc.specs && pc.specs.macAddress) ? pc.specs.macAddress : '-';
+                if (activeCols.includes('assignedGroup')) rowData['Assigned Group'] = group?.name || 'Unassigned';
+                if (activeCols.includes('assignedClass')) rowData['Assigned Class'] = group?.class?.name || '-';
 
-            return rowData;
-        });
+                return rowData;
+            });
 
-        reportResults.lab_pcs = {
-            title: 'Lab PCs & Inventory Report',
-            count: rows.length,
-            rows
-        };
+            reportResults.lab_pcs = {
+                title: 'Lab PCs & Inventory Report',
+                count: rows.length,
+                rows
+            };
+        } catch (err) {
+            console.error('Error fetching lab_pcs for custom report:', err);
+            reportResults.lab_pcs = { title: 'Lab PCs & Inventory Report', count: 0, rows: [] };
+        }
     }
 
     return {

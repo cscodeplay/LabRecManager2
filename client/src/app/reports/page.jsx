@@ -217,7 +217,7 @@ export default function ReportsPage() {
                     dateRange
                 }
             });
-            const reportData = res.data?.data || res.data;
+            const reportData = res.data?.data?.reportResults ? res.data.data : (res.data?.reportResults ? res.data : (res.data?.data || res.data));
             setGeneratedReport(reportData);
             toast.success('Report data generated successfully!');
         } catch (error) {
