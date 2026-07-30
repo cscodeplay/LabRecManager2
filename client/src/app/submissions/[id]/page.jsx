@@ -12,6 +12,44 @@ import { useAuthStore } from '@/lib/store';
 import { submissionsAPI, gradesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 
+// Helper to get component max marks breakdown dynamically
+const getAssignmentMarksBreakdown = (assignment) => {
+    if (!assignment) {
+        return { maxPractical: 60, maxOutput: 20, maxViva: 20, maxTotal: 100 };
+    }
+
+    const rawPractical = assignment.practicalMarks;
+    const rawOutput = assignment.outputMarks;
+    const rawViva = assignment.vivaMarks;
+    const assignmentMaxTotal = assignment.maxMarks;
+
+    const hasExplicitBreakdown = (rawPractical !== null && rawPractical !== undefined) ||
+                                 (rawOutput !== null && rawOutput !== undefined) ||
+                                 (rawViva !== null && rawViva !== undefined);
+
+    let maxPractical = 0;
+    let maxOutput = 0;
+    let maxViva = 0;
+
+    if (hasExplicitBreakdown) {
+        maxPractical = rawPractical ?? 0;
+        maxOutput = rawOutput ?? 0;
+        maxViva = rawViva ?? 0;
+    } else if (assignmentMaxTotal) {
+        maxPractical = Math.round(assignmentMaxTotal * 0.6);
+        maxOutput = Math.round(assignmentMaxTotal * 0.4);
+        maxViva = 0;
+    } else {
+        maxPractical = 60;
+        maxOutput = 20;
+        maxViva = 20;
+    }
+
+    const maxTotal = assignmentMaxTotal ?? (maxPractical + maxOutput + maxViva);
+
+    return { maxPractical, maxOutput, maxViva, maxTotal };
+};
+
 export default function SubmissionDetailPage() {
     const router = useRouter();
     const params = useParams();
@@ -298,10 +336,7 @@ export default function SubmissionDetailPage() {
                                 </div>
 
                                 {showGradeForm && (() => {
-                                    const maxPractical = submission.assignment?.practicalMarks ?? 60;
-                                    const maxOutput = submission.assignment?.outputMarks ?? 20;
-                                    const maxViva = submission.assignment?.vivaMarks ?? 20;
-                                    const maxTotal = submission.assignment?.maxMarks ?? (maxPractical + maxOutput + maxViva);
+                                    const { maxPractical, maxOutput, maxViva, maxTotal } = getAssignmentMarksBreakdown(submission.assignment);
 
                                     return (
                                         <form onSubmit={handleSubmit(onGradeSubmit)} className="space-y-4">
@@ -452,80 +487,106 @@ export default function SubmissionDetailPage() {
                                         <p className="font-medium">#{submission.submissionNumber}</p>
                                     </div>
                                 </div>
-                                {submission.assignment && (
-                                    <div className="pt-3 border-t border-slate-100">
-                                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Max Marks Breakdown</p>
-                                        <div className="space-y-1 text-xs text-slate-600">
-                                            <div className="flex justify-between">
-                                                <span>Practical:</span>
-                                                <span className="font-semibold text-slate-800">{submission.assignment.practicalMarks ?? 60}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span>Output:</span>
-                                                <span className="font-semibold text-slate-800">{submission.assignment.outputMarks ?? 20}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span>Viva:</span>
-                                                <span className="font-semibold text-slate-800">{submission.assignment.vivaMarks ?? 20}</span>
-                                            </div>
-                                            <div className="flex justify-between pt-1 border-t border-slate-100 font-bold text-slate-900">
-                                                <span>Total Max:</span>
-                                                <span className="text-primary-600">{submission.assignment.maxMarks ?? 100}</span>
+                                {submission.assignment && (() => {
+                                    const { maxPractical, maxOutput, maxViva, maxTotal } = getAssignmentMarksBreakdown(submission.assignment);
+
+                                    return (
+                                        <div className="pt-3 border-t border-slate-100">
+                                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Max Marks Breakdown</p>
+                                            <div className="space-y-1 text-xs text-slate-600">
+                                                <div className="flex justify-between">
+                                                    <span>Practical:</span>
+                                                    <span className="font-semibold text-slate-800">{maxPractical}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span>Output:</span>
+                                                    <span className="font-semibold text-slate-800">{maxOutput}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span>Viva:</span>
+                                                    <span className="font-semibold text-slate-800">{maxViva}</span>
+                                                </div>
+                                                <div className="flex justify-between pt-1 border-t border-slate-100 font-bold text-slate-900">
+                                                    <span>Total Max:</span>
+                                                    <span className="text-primary-600">{maxTotal}</span>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                )}
+                                    );
+                                })()}
                             </div>
                         </div>
 
                         {/* Grade Card */}
-                        {submission.grade && (
-                            <div className="card p-6">
-                                <h3 className="font-semibold text-slate-900 mb-4">Grade</h3>
-                                <div className="text-center mb-4">
-                                    <div className="text-4xl font-bold text-primary-600">
-                                        {submission.grade.finalMarks}
-                                    </div>
-                                    <p className="text-slate-500">out of {submission.grade.maxMarks}</p>
-                                    {submission.grade.gradeLetter && (
-                                        <span className="inline-block mt-2 px-3 py-1 bg-primary-100 text-primary-700 rounded-full font-semibold">
-                                            Grade: {submission.grade.gradeLetter}
-                                        </span>
-                                    )}
-                                </div>
+                        {submission.grade && (() => {
+                            const { maxPractical, maxOutput, maxViva, maxTotal } = getAssignmentMarksBreakdown(submission.assignment);
 
-                                <div className="space-y-2.5 text-sm border-t border-slate-100 pt-4">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-slate-600">Practical Marks</span>
-                                        <span className="font-semibold text-slate-900">
-                                            {submission.grade.practicalMarks} <span className="text-slate-400 font-normal">/ {submission.assignment?.practicalMarks ?? 60}</span>
-                                        </span>
+                            return (
+                                <div className="card p-6">
+                                    <h3 className="font-semibold text-slate-900 mb-4">Grade</h3>
+                                    <div className="text-center mb-4">
+                                        <div className="text-4xl font-bold text-primary-600">
+                                            {submission.grade.finalMarks}
+                                        </div>
+                                        <p className="text-slate-500">out of {submission.grade.maxMarks || maxTotal}</p>
+                                        {submission.grade.gradeLetter && (
+                                            <span className="inline-block mt-2 px-3 py-1 bg-primary-100 text-primary-700 rounded-full font-semibold">
+                                                Grade: {submission.grade.gradeLetter}
+                                            </span>
+                                        )}
                                     </div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-slate-600">Output Marks</span>
-                                        <span className="font-semibold text-slate-900">
-                                            {submission.grade.outputMarks} <span className="text-slate-400 font-normal">/ {submission.assignment?.outputMarks ?? 20}</span>
-                                        </span>
+
+                                    <div className="space-y-2.5 text-sm border-t border-slate-100 pt-4">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-slate-600">Practical Marks</span>
+                                            <span className="font-semibold text-slate-900">
+                                                {submission.grade.practicalMarks} <span className="text-slate-400 font-normal">/ {maxPractical}</span>
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-slate-600">Output Marks</span>
+                                            <span className="font-semibold text-slate-900">
+                                                {submission.grade.outputMarks} <span className="text-slate-400 font-normal">/ {maxOutput}</span>
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-slate-600">Viva Marks</span>
+                                            <span className="font-semibold text-slate-900">
+                                                {submission.grade.vivaMarks} <span className="text-slate-400 font-normal">/ {maxViva}</span>
+                                            </span>
+                                        </div>
+                                        {submission.grade.latePenaltyMarks > 0 && (
+                                            <div className="flex justify-between items-center text-red-600">
+                                                <span>Late Penalty</span>
+                                                <span className="font-semibold">-{submission.grade.latePenaltyMarks}</span>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between items-center border-t border-slate-200 pt-2 font-bold text-slate-900">
+                                            <span>Total Score</span>
+                                            <span className="text-primary-600">
+                                                {submission.grade.finalMarks} <span className="text-slate-400 font-normal">/ {submission.grade.maxMarks || maxTotal}</span>
+                                            </span>
+                                        </div>
                                     </div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-slate-600">Viva Marks</span>
-                                        <span className="font-semibold text-slate-900">
-                                            {submission.grade.vivaMarks} <span className="text-slate-400 font-normal">/ {submission.assignment?.vivaMarks ?? 20}</span>
-                                        </span>
-                                    </div>
-                                    {submission.grade.latePenaltyMarks > 0 && (
-                                        <div className="flex justify-between items-center text-red-600">
-                                            <span>Late Penalty</span>
-                                            <span className="font-semibold">-{submission.grade.latePenaltyMarks}</span>
+
+                                    {isInstructor && !submission.grade.isPublished && (
+                                        <button
+                                            onClick={handlePublishGrade}
+                                            className="btn btn-success w-full mt-4"
+                                        >
+                                            <Send className="w-4 h-4" />
+                                            Publish Grade
+                                        </button>
+                                    )}
+
+                                    {submission.grade.isPublished && (
+                                        <div className="mt-4 p-2 bg-emerald-50 rounded text-center">
+                                            <span className="text-emerald-700 text-sm">✓ Published to student</span>
                                         </div>
                                     )}
-                                    <div className="flex justify-between items-center border-t border-slate-200 pt-2 font-bold text-slate-900">
-                                        <span>Total Score</span>
-                                        <span className="text-primary-600">
-                                            {submission.grade.finalMarks} <span className="text-slate-400 font-normal">/ {submission.grade.maxMarks || submission.assignment?.maxMarks || 100}</span>
-                                        </span>
-                                    </div>
                                 </div>
+                            );
+                        })()}
 
                                 {isInstructor && !submission.grade.isPublished && (
                                     <button

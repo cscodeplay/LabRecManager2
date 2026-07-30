@@ -107,9 +107,9 @@ export default function CreateAssignmentPage() {
             setValue('referenceCode', a.referenceCode || '');
             setValue('maxMarks', a.maxMarks || 100);
             setValue('passingMarks', a.passingMarks || 35);
-            setValue('vivaMarks', a.vivaMarks || 20);
-            setValue('practicalMarks', a.practicalMarks || 60);
-            setValue('outputMarks', a.outputMarks || 20);
+            setValue('vivaMarks', (a.vivaMarks !== undefined && a.vivaMarks !== null) ? a.vivaMarks : 0);
+            setValue('practicalMarks', (a.practicalMarks !== undefined && a.practicalMarks !== null) ? a.practicalMarks : 60);
+            setValue('outputMarks', (a.outputMarks !== undefined && a.outputMarks !== null) ? a.outputMarks : 20);
             setValue('programmingLanguage', a.programmingLanguage || '');
             setValue('trainingModuleId', a.trainingModuleId || '');
             if (a.publishDate) {
