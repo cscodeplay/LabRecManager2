@@ -588,24 +588,6 @@ export default function SubmissionDetailPage() {
                             );
                         })()}
 
-                                {isInstructor && !submission.grade.isPublished && (
-                                    <button
-                                        onClick={handlePublishGrade}
-                                        className="btn btn-success w-full mt-4"
-                                    >
-                                        <Send className="w-4 h-4" />
-                                        Publish Grade
-                                    </button>
-                                )}
-
-                                {submission.grade.isPublished && (
-                                    <div className="mt-4 p-2 bg-emerald-50 rounded text-center">
-                                        <span className="text-emerald-700 text-sm">✓ Published to student</span>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
                         {/* Feedback */}
                         {submission.grade && (submission.grade.codeFeedback || submission.grade.generalRemarks) && (
                             <div className="card p-6">
