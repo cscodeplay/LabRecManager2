@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
     ClipboardList, Search, Filter, Calendar, Users, User, UsersRound,
-    Clock, ChevronRight, Eye, Send, AlertCircle
+    Clock, ChevronRight, Eye, Send, AlertCircle, Award
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
@@ -310,40 +310,39 @@ export default function MyAssignedWorkPage() {
                                             {assignment.hasSubmitted && !assignment.needsRevision && (
                                                 <Link
                                                     href={`/assignments/${assignment.id}`}
-                                                    className="btn btn-ghost flex items-center gap-1"
+                                                    className="btn btn-ghost p-2 text-slate-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
                                                     title="View Assignment & Submission"
                                                 >
-                                                    <Eye className="w-4 h-4" />
-                                                    <span className="text-sm">View</span>
+                                                    <Eye className="w-5 h-5" />
                                                 </Link>
                                             )}
                                             {/* If not submitted, show View Assignment */}
                                             {!assignment.hasSubmitted && (
                                                 <Link
                                                     href={`/assignments/${assignment.id}`}
-                                                    className="btn btn-ghost flex items-center gap-1"
+                                                    className="btn btn-ghost p-2 text-slate-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
                                                     title="View Assignment Details"
                                                 >
-                                                    <Eye className="w-4 h-4" />
-                                                    <span className="text-sm">Details</span>
+                                                    <Eye className="w-5 h-5" />
                                                 </Link>
                                             )}
                                             {/* Show Submit button only if not submitted OR if revision requested */}
                                             {(!assignment.hasSubmitted || assignment.needsRevision) && (
                                                 <Link
                                                     href={`/assignments/${assignment.id}/submit`}
-                                                    className={`btn ${assignment.needsRevision ? 'btn-warning' : 'btn-primary'}`}
+                                                    className={`btn p-2 flex items-center justify-center rounded-lg shadow-sm ${assignment.needsRevision ? 'btn-warning' : 'btn-primary'}`}
+                                                    title={assignment.needsRevision ? 'Resubmit Assignment Revision' : 'Submit Assignment'}
                                                 >
-                                                    <Send className="w-4 h-4" />
-                                                    {assignment.needsRevision ? 'Revise' : 'Submit'}
+                                                    <Send className="w-5 h-5" />
                                                 </Link>
                                             )}
                                             {assignment.isGraded && (
                                                 <Link
                                                     href="/grades"
-                                                    className="btn btn-secondary"
+                                                    className="btn btn-secondary p-2 flex items-center justify-center rounded-lg shadow-2xs"
+                                                    title="View Evaluated Grade & Feedback"
                                                 >
-                                                    View Grade
+                                                    <Award className="w-5 h-5 text-amber-600" />
                                                 </Link>
                                             )}
                                         </div>

@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     TrendingUp, Users, FileText, Award, Download, BarChart3, Calendar, CheckCircle,
-    Filter, UsersRound, School, Monitor, Sparkles, CheckSquare, Square, Eye, FileSpreadsheet, RefreshCw
+    Filter, UsersRound, School, Monitor, Sparkles, CheckSquare, Square, Eye, FileSpreadsheet, RefreshCw,
+    ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api, { classesAPI, reportsAPI } from '@/lib/api';
@@ -492,10 +493,10 @@ export default function ReportsPage() {
                                     <button
                                         onClick={handleGenerateReport}
                                         disabled={generating}
-                                        className="btn btn-primary w-full py-2.5 flex items-center justify-center gap-2"
+                                        className="btn btn-primary py-2.5 px-4 flex items-center justify-center rounded-lg shadow-sm"
+                                        title="Generate & Refresh Report Data"
                                     >
-                                        <RefreshCw className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
-                                        {generating ? 'Updating...' : 'Generate & Refresh Data'}
+                                        <RefreshCw className={`w-5 h-5 ${generating ? 'animate-spin' : ''}`} />
                                     </button>
                                 </div>
                             </div>
@@ -584,27 +585,24 @@ export default function ReportsPage() {
                                     <div className="flex flex-wrap items-center gap-2">
                                         <button
                                             onClick={handleExportXLSX}
-                                            className="btn bg-emerald-600 hover:bg-emerald-700 text-white text-sm py-2 px-3 flex items-center gap-2 shadow-sm"
-                                            title="Export Multi-Tab Excel Workbook"
+                                            className="btn bg-emerald-600 hover:bg-emerald-700 text-white p-2 flex items-center justify-center rounded-lg shadow-sm"
+                                            title="Export Multi-Tab Excel Workbook (XLSX)"
                                         >
-                                            <FileSpreadsheet className="w-4 h-4" />
-                                            Export Excel (XLSX)
+                                            <FileSpreadsheet className="w-5 h-5" />
                                         </button>
                                         <button
                                             onClick={handleExportPDF}
-                                            className="btn bg-rose-600 hover:bg-rose-700 text-white text-sm py-2 px-3 flex items-center gap-2 shadow-sm"
-                                            title="Print/Download Formatted PDF"
+                                            className="btn bg-rose-600 hover:bg-rose-700 text-white p-2 flex items-center justify-center rounded-lg shadow-sm"
+                                            title="Print / Download Formatted PDF Report"
                                         >
-                                            <FileText className="w-4 h-4" />
-                                            Export PDF
+                                            <FileText className="w-5 h-5" />
                                         </button>
                                         <button
                                             onClick={handleExportCSV}
-                                            className="btn btn-secondary text-sm py-2 px-3 flex items-center gap-2"
-                                            title="Export Delimited CSV"
+                                            className="btn btn-secondary p-2 flex items-center justify-center rounded-lg shadow-2xs"
+                                            title="Export Delimited CSV File"
                                         >
-                                            <Download className="w-4 h-4" />
-                                            Export CSV
+                                            <Download className="w-5 h-5" />
                                         </button>
                                     </div>
                                 </div>
@@ -701,11 +699,10 @@ export default function ReportsPage() {
                                                         <button
                                                             onClick={() => handlePageChange(currentPage - 1)}
                                                             disabled={currentPage === 1}
-                                                            className="btn btn-secondary px-2.5 py-1 text-xs flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            className="btn btn-secondary p-1.5 flex items-center justify-center rounded disabled:opacity-50 disabled:cursor-not-allowed"
                                                             title="Previous Page"
                                                         >
-                                                            <ChevronLeft className="w-3.5 h-3.5" />
-                                                            Previous
+                                                            <ChevronLeft className="w-4 h-4" />
                                                         </button>
                                                         <span className="px-2 font-bold text-slate-800">
                                                             {currentPage} / {totalPages}
@@ -713,11 +710,10 @@ export default function ReportsPage() {
                                                         <button
                                                             onClick={() => handlePageChange(currentPage + 1)}
                                                             disabled={currentPage >= totalPages}
-                                                            className="btn btn-secondary px-2.5 py-1 text-xs flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            className="btn btn-secondary p-1.5 flex items-center justify-center rounded disabled:opacity-50 disabled:cursor-not-allowed"
                                                             title="Next Page"
                                                         >
-                                                            Next
-                                                            <ChevronRight className="w-3.5 h-3.5" />
+                                                            <ChevronRight className="w-4 h-4" />
                                                         </button>
                                                     </div>
                                                 </div>
