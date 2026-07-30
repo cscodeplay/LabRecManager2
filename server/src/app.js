@@ -244,14 +244,22 @@ io.on('connection', (socket) => {
     socket.to(`whiteboard-${sessionId}`).emit('whiteboard:clear', data);
   });
 
+  // Background change event
+  socket.on('whiteboard:background-change', (data) => {
+    const { sessionId } = data;
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:background-change', data);
+  });
+
   // Instructor broadcasts canvas state to all viewers
   socket.on('whiteboard:canvas-state', (data) => {
-    const { sessionId, imageData } = data;
+    const { sessionId, imageData, bgColor, bgPattern } = data;
 
     // Broadcast to all viewers in the session room
     socket.to(`whiteboard-${sessionId}`).emit('whiteboard:canvas-state', {
       sessionId,
-      imageData
+      imageData,
+      bgColor,
+      bgPattern
     });
   });
 
@@ -271,11 +279,13 @@ io.on('connection', (socket) => {
 
   // Instructor sends canvas state to new viewer
   socket.on('whiteboard:send-state', (data) => {
-    const { sessionId, imageData, targetSocketId } = data;
+    const { sessionId, imageData, bgColor, bgPattern, targetSocketId } = data;
 
     io.to(targetSocketId).emit('whiteboard:canvas-state', {
       sessionId,
-      imageData
+      imageData,
+      bgColor,
+      bgPattern
     });
   });
 

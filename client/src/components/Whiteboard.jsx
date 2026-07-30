@@ -136,14 +136,28 @@ export default function Whiteboard({
             ...prev,
             [currentPage]: { ...prev[currentPage], pattern }
         }));
-    }, [currentPage]);
+        if (isSharing && socket && sessionId) {
+            socket.emit('whiteboard:background-change', {
+                sessionId,
+                bgColor,
+                bgPattern: pattern
+            });
+        }
+    }, [currentPage, isSharing, socket, sessionId, bgColor]);
 
     const setBgColor = useCallback((color) => {
         setPageBackgrounds(prev => ({
             ...prev,
             [currentPage]: { ...prev[currentPage], color }
         }));
-    }, [currentPage]);
+        if (isSharing && socket && sessionId) {
+            socket.emit('whiteboard:background-change', {
+                sessionId,
+                bgColor: color,
+                bgPattern
+            });
+        }
+    }, [currentPage, isSharing, socket, sessionId, bgPattern]);
 
     // History for undo/redo
     const [history, setHistory] = useState([]);
@@ -339,7 +353,9 @@ export default function Whiteboard({
             const imageData = canvas.toDataURL('image/png');
             socket.emit('whiteboard:canvas-state', {
                 sessionId,
-                imageData
+                imageData,
+                bgColor,
+                bgPattern
             });
         };
 
@@ -1996,31 +2012,30 @@ export default function Whiteboard({
                     {isInstructor && (
                         <button
                             onClick={isSharing ? onStopSharing : onShare}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition text-sm ${isSharing
+                            className={`p-2.5 rounded-lg transition flex items-center justify-center shadow-sm ${isSharing
                                 ? 'bg-red-500 hover:bg-red-600 text-white'
                                 : 'bg-amber-500 hover:bg-amber-600 text-white'
                                 }`}
-                            title={isSharing ? 'Stop Sharing' : 'Share with students'}
+                            title={isSharing ? 'Stop Sharing Whiteboard' : 'Share Whiteboard with Students'}
                         >
-                            <Share2 className="w-4 h-4" />
-                            {isSharing ? 'Stop Sharing' : 'Share'}
+                            <Share2 className="w-5 h-5" />
                         </button>
                     )}
 
                     <button
                         onClick={handleDownload}
-                        className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition text-sm"
+                        className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition flex items-center justify-center"
+                        title="Download / Export Whiteboard Image (PNG)"
                     >
-                        <Download className="w-4 h-4" />
-                        Download
+                        <Download className="w-5 h-5" />
                     </button>
                     {onSave && (
                         <button
                             onClick={handleSave}
-                            className="flex items-center gap-2 px-3 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition text-sm"
+                            className="p-2.5 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition flex items-center justify-center shadow-sm"
+                            title="Save Whiteboard"
                         >
-                            <Save className="w-4 h-4" />
-                            Save
+                            <Save className="w-5 h-5" />
                         </button>
                     )}
                 </div>

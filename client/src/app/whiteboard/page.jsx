@@ -156,31 +156,31 @@ export default function WhiteboardPage() {
                         {/* Camera toggle button */}
                         <button
                             onClick={() => setShowCamera(!showCamera)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${showCamera
+                            className={`p-2.5 rounded-lg font-medium transition flex items-center justify-center ${showCamera
                                 ? 'bg-green-500 hover:bg-green-600 text-white'
                                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                                 }`}
+                            title={showCamera ? 'Turn Camera Off' : 'Turn Camera On'}
                         >
-                            {showCamera ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
-                            {showCamera ? 'Camera On' : 'Camera Off'}
+                            {showCamera ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
                         </button>
 
                         {/* Share button */}
                         {!isSharing ? (
                             <button
                                 onClick={() => setShowShareModal(true)}
-                                className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition"
+                                className="p-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition flex items-center justify-center shadow-sm"
+                                title="Share Whiteboard with Students"
                             >
-                                <Share2 className="w-4 h-4" />
-                                Share with Students
+                                <Share2 className="w-5 h-5" />
                             </button>
                         ) : (
                             <button
                                 onClick={handleStopSharing}
-                                className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition"
+                                className="p-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition flex items-center justify-center shadow-sm"
+                                title="Stop Sharing Whiteboard"
                             >
-                                <Users className="w-4 h-4" />
-                                Stop Sharing
+                                <Users className="w-5 h-5" />
                             </button>
                         )}
                     </div>

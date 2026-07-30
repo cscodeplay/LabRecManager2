@@ -17,6 +17,57 @@ export default function SharedWhiteboardViewer({
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [canvasSize, setCanvasSize] = useState({ width, height });
     const [isActive, setIsActive] = useState(true);
+    const [bgColor, setBgColor] = useState('#ffffff');
+    const [bgPattern, setBgPattern] = useState('plain');
+
+    const getBackgroundStyle = () => {
+        let backgroundImage = 'none';
+        let backgroundSize = 'auto';
+        let backgroundPosition = undefined;
+
+        switch (bgPattern) {
+            case 'dotted':
+                backgroundImage = 'radial-gradient(circle, #999 1.5px, transparent 1.5px)';
+                backgroundSize = '20px 20px';
+                break;
+            case 'grid':
+                backgroundImage = 'linear-gradient(#ccc 1px, transparent 1px), linear-gradient(90deg, #ccc 1px, transparent 1px)';
+                backgroundSize = '25px 25px';
+                break;
+            case 'lined':
+                backgroundImage = 'linear-gradient(#ccc 1px, transparent 1px)';
+                backgroundSize = '100% 25px';
+                break;
+            case 'graph':
+                backgroundImage = 'linear-gradient(#bbb 1px, transparent 1px), linear-gradient(90deg, #bbb 1px, transparent 1px), linear-gradient(#ddd 0.5px, transparent 0.5px), linear-gradient(90deg, #ddd 0.5px, transparent 0.5px)';
+                backgroundSize = '100px 100px, 100px 100px, 20px 20px, 20px 20px';
+                break;
+            case 'music':
+                backgroundImage = 'repeating-linear-gradient(transparent 0px, transparent 7px, #aaa 8px, #aaa 9px)';
+                backgroundSize = '100% 40px';
+                break;
+            case 'iso':
+                backgroundImage = 'linear-gradient(60deg, #ccc 1px, transparent 1px), linear-gradient(-60deg, #ccc 1px, transparent 1px), linear-gradient(#ccc 1px, transparent 1px)';
+                backgroundSize = '30px 52px';
+                backgroundPosition = '0 0, 0 0, 0 0';
+                break;
+            case 'hex':
+                backgroundImage = 'radial-gradient(circle, transparent 12px, #ccc 13px, #ccc 14px, transparent 15px), radial-gradient(circle, transparent 12px, #ccc 13px, #ccc 14px, transparent 15px)';
+                backgroundSize = '60px 52px';
+                backgroundPosition = '0 0, 30px 26px';
+                break;
+            default:
+                backgroundImage = 'none';
+                break;
+        }
+
+        return {
+            backgroundColor: bgColor,
+            backgroundImage,
+            backgroundSize,
+            backgroundPosition
+        };
+    };
 
     // Initialize canvas
     useEffect(() => {
@@ -24,8 +75,7 @@ export default function SharedWhiteboardViewer({
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
     }, []);
 
     // Listen for drawing events from socket
@@ -41,7 +91,22 @@ export default function SharedWhiteboardViewer({
 
             const ctx = canvas.getContext('2d');
 
-            if (data.type === 'path') {
+            if (data.isEraser || data.color === 'eraser') {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.strokeStyle = 'rgba(0,0,0,1)';
+                ctx.lineWidth = data.strokeWidth || 20;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+
+                if (data.isStart) {
+                    ctx.beginPath();
+                    ctx.moveTo(data.x, data.y);
+                } else {
+                    ctx.lineTo(data.x, data.y);
+                    ctx.stroke();
+                }
+                ctx.globalCompositeOperation = 'source-over';
+            } else if (data.type === 'path') {
                 ctx.strokeStyle = data.color || '#000000';
                 ctx.lineWidth = data.strokeWidth || 4;
                 ctx.lineCap = 'round';
@@ -87,13 +152,21 @@ export default function SharedWhiteboardViewer({
             if (!canvas) return;
 
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        };
+
+        // Handle background change event
+        const handleBackgroundChange = (data) => {
+            if (data.sessionId !== sessionId) return;
+            if (data.bgColor) setBgColor(data.bgColor);
+            if (data.bgPattern) setBgPattern(data.bgPattern);
         };
 
         // Handle canvas state (full redraw)
         const handleCanvasState = (data) => {
             if (data.sessionId !== sessionId) return;
+            if (data.bgColor) setBgColor(data.bgColor);
+            if (data.bgPattern) setBgPattern(data.bgPattern);
 
             const canvas = canvasRef.current;
             if (!canvas) return;
@@ -115,6 +188,7 @@ export default function SharedWhiteboardViewer({
 
         socket.on('whiteboard:draw', handleDraw);
         socket.on('whiteboard:clear', handleClear);
+        socket.on('whiteboard:background-change', handleBackgroundChange);
         socket.on('whiteboard:canvas-state', handleCanvasState);
         socket.on('whiteboard:ended', handleEndSharing);
 
@@ -124,6 +198,7 @@ export default function SharedWhiteboardViewer({
         return () => {
             socket.off('whiteboard:draw', handleDraw);
             socket.off('whiteboard:clear', handleClear);
+            socket.off('whiteboard:background-change', handleBackgroundChange);
             socket.off('whiteboard:canvas-state', handleCanvasState);
             socket.off('whiteboard:ended', handleEndSharing);
         };
@@ -173,8 +248,8 @@ export default function SharedWhiteboardViewer({
                             ref={canvasRef}
                             width={width}
                             height={height}
-                            className="bg-white rounded-lg shadow-lg"
-                            style={{ maxWidth: '100%', maxHeight: '100%' }}
+                            className="rounded-lg shadow-lg"
+                            style={{ maxWidth: '100%', maxHeight: '100%', ...getBackgroundStyle() }}
                         />
                     ) : (
                         <div className="text-center py-16">
@@ -254,8 +329,8 @@ export default function SharedWhiteboardViewer({
                             ref={canvasRef}
                             width={width}
                             height={height}
-                            className="bg-white rounded-lg shadow-lg"
-                            style={{ maxWidth: '100%', maxHeight: '100%' }}
+                            className="rounded-lg shadow-lg"
+                            style={{ maxWidth: '100%', maxHeight: '100%', ...getBackgroundStyle() }}
                         />
                     ) : (
                         <div className="text-center py-16">
