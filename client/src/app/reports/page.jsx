@@ -123,6 +123,10 @@ export default function ReportsPage() {
     const [generatedReport, setGeneratedReport] = useState(null);
     const [generating, setGenerating] = useState(false);
 
+    // Custom Report Pagination State
+    const [tablePages, setTablePages] = useState({});
+    const [rowsPerPage, setRowsPerPage] = useState(10);
+
     // Overview Stats State
     const [stats, setStats] = useState({
         totalStudents: 0, totalAssignments: 0, totalSubmissions: 0,
@@ -618,17 +622,47 @@ export default function ReportsPage() {
                                         }
 
                                         const headers = Object.keys(res.rows[0]);
+                                        const currentPage = tablePages[key] || 1;
+                                        const totalPages = Math.ceil(res.rows.length / rowsPerPage) || 1;
+                                        const startIndex = (currentPage - 1) * rowsPerPage;
+                                        const endIndex = Math.min(startIndex + rowsPerPage, res.rows.length);
+                                        const currentRows = res.rows.slice(startIndex, endIndex);
+
+                                        const handlePageChange = (newPage) => {
+                                            setTablePages(prev => ({
+                                                ...prev,
+                                                [key]: Math.max(1, Math.min(newPage, totalPages))
+                                            }));
+                                        };
 
                                         return (
                                             <div key={key} className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-                                                <div className="bg-slate-100 p-3 flex items-center justify-between border-b border-slate-200">
+                                                <div className="bg-slate-100 p-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200">
                                                     <h4 className="font-bold text-slate-900 text-sm">{res.title}</h4>
-                                                    <span className="px-2.5 py-0.5 bg-primary-100 text-primary-800 rounded-full text-xs font-semibold">
-                                                        {res.count} records
-                                                    </span>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+                                                            <span>Rows:</span>
+                                                            <select
+                                                                value={rowsPerPage}
+                                                                onChange={(e) => {
+                                                                    setRowsPerPage(Number(e.target.value));
+                                                                    setTablePages({});
+                                                                }}
+                                                                className="bg-white border border-slate-300 rounded px-2 py-0.5 text-xs focus:ring-1 focus:ring-primary-500 font-semibold"
+                                                            >
+                                                                <option value={10}>10</option>
+                                                                <option value={25}>25</option>
+                                                                <option value={50}>50</option>
+                                                                <option value={100}>100</option>
+                                                            </select>
+                                                        </div>
+                                                        <span className="px-2.5 py-0.5 bg-primary-100 text-primary-800 rounded-full text-xs font-semibold">
+                                                            {res.rows.length} total records
+                                                        </span>
+                                                    </div>
                                                 </div>
 
-                                                <div className="overflow-x-auto max-h-[350px]">
+                                                <div className="overflow-x-auto">
                                                     <table className="w-full text-xs text-left">
                                                         <thead className="bg-slate-50 sticky top-0 border-b border-slate-200">
                                                             <tr>
@@ -638,7 +672,7 @@ export default function ReportsPage() {
                                                             </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-slate-100">
-                                                            {res.rows.slice(0, 15).map((row, idx) => (
+                                                            {currentRows.map((row, idx) => (
                                                                 <tr key={idx} className="hover:bg-slate-50">
                                                                     {headers.map(h => (
                                                                         <td key={h} className="px-4 py-2.5 text-slate-800 whitespace-nowrap">
@@ -655,11 +689,37 @@ export default function ReportsPage() {
                                                             ))}
                                                         </tbody>
                                                     </table>
-                                                    {res.rows.length > 15 && (
-                                                        <div className="p-2 text-center text-xs text-slate-500 bg-slate-50 border-t border-slate-100">
-                                                            Showing first 15 of {res.rows.length} rows in preview. Full dataset will be exported in Excel/PDF/CSV.
-                                                        </div>
-                                                    )}
+                                                </div>
+
+                                                {/* Pagination & Navigation Footer */}
+                                                <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+                                                    <div>
+                                                        Showing <span className="font-semibold text-slate-900">{res.rows.length > 0 ? startIndex + 1 : 0}</span> to <span className="font-semibold text-slate-900">{endIndex}</span> of <span className="font-semibold text-slate-900">{res.rows.length}</span> entries (Page <span className="font-semibold text-slate-900">{currentPage}</span> of <span className="font-semibold text-slate-900">{totalPages}</span>)
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            onClick={() => handlePageChange(currentPage - 1)}
+                                                            disabled={currentPage === 1}
+                                                            className="btn btn-secondary px-2.5 py-1 text-xs flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            title="Previous Page"
+                                                        >
+                                                            <ChevronLeft className="w-3.5 h-3.5" />
+                                                            Previous
+                                                        </button>
+                                                        <span className="px-2 font-bold text-slate-800">
+                                                            {currentPage} / {totalPages}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => handlePageChange(currentPage + 1)}
+                                                            disabled={currentPage >= totalPages}
+                                                            className="btn btn-secondary px-2.5 py-1 text-xs flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            title="Next Page"
+                                                        >
+                                                            Next
+                                                            <ChevronRight className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         );

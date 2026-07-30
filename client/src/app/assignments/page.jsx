@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 import {
     FileText, Plus, Search, Filter, Calendar, Users,
-    ChevronRight, Clock, CheckCircle, Edit, Trash2, Eye
+    ChevronRight, Clock, CheckCircle, Edit, Trash2, Eye, Send, Upload
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { assignmentsAPI } from '@/lib/api';
@@ -215,7 +215,7 @@ export default function AssignmentsPage() {
                                     <div className="flex items-center gap-2 ml-4">
                                         <Link
                                             href={`/assignments/${assignment.id}`}
-                                            className="btn btn-ghost p-2"
+                                            className="btn btn-ghost p-2 text-slate-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
                                             title={t('common.view')}
                                         >
                                             <Eye className="w-5 h-5" />
@@ -225,14 +225,15 @@ export default function AssignmentsPage() {
                                                 {assignment.status === 'draft' && (
                                                     <button
                                                         onClick={() => handlePublish(assignment.id)}
-                                                        className="btn btn-primary py-1.5 px-3 text-sm"
+                                                        className="btn btn-primary p-2 flex items-center justify-center rounded-lg shadow-sm"
+                                                        title={t('assignments.publish')}
                                                     >
-                                                        {t('assignments.publish')}
+                                                        <Send className="w-5 h-5" />
                                                     </button>
                                                 )}
                                                 <button
                                                     onClick={() => handleDeleteClick(assignment.id, assignment.title)}
-                                                    className="btn btn-ghost p-2 text-red-500 hover:bg-red-50"
+                                                    className="btn btn-ghost p-2 text-red-500 hover:bg-red-50 rounded-lg transition"
                                                     title={t('common.delete')}
                                                 >
                                                     <Trash2 className="w-5 h-5" />
@@ -242,9 +243,10 @@ export default function AssignmentsPage() {
                                         {user?.role === 'student' && assignment.status === 'published' && (
                                             <Link
                                                 href={`/assignments/${assignment.id}/submit`}
-                                                className="btn btn-primary py-1.5 px-3 text-sm"
+                                                className="btn btn-primary p-2 flex items-center justify-center rounded-lg shadow-sm"
+                                                title={t('assignments.submit')}
                                             >
-                                                {t('assignments.submit')}
+                                                <Upload className="w-5 h-5" />
                                             </Link>
                                         )}
                                     </div>

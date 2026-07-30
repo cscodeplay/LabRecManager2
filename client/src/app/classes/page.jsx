@@ -164,23 +164,21 @@ export default function ClassesPage() {
                                     </p>
                                 )}
 
-                                <div className="flex gap-2 pt-4 border-t border-slate-100">
+                                <div className="flex gap-2 pt-4 border-t border-slate-100 justify-end">
                                     <Link
                                         href={`/classes/${cls.id}`}
-                                        className="btn btn-secondary flex-1 text-sm flex items-center justify-center gap-1"
-                                        title="View Class Details & Analytics"
+                                        className="btn btn-secondary p-2.5 flex items-center justify-center rounded-lg shadow-2xs"
+                                        title={t('classes.view')}
                                     >
                                         <Eye className="w-4 h-4" />
-                                        {t('classes.view')}
                                     </Link>
                                     {isAdmin && (
                                         <Link
                                             href={`/classes/${cls.id}`}
-                                            className="btn btn-primary flex-1 text-sm flex items-center justify-center gap-1"
-                                            title="Manage Class Students & Roster"
+                                            className="btn btn-primary p-2.5 flex items-center justify-center rounded-lg shadow-2xs"
+                                            title={t('classes.students')}
                                         >
                                             <UserPlus className="w-4 h-4" />
-                                            {t('classes.students')}
                                         </Link>
                                     )}
                                 </div>

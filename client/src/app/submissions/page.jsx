@@ -240,9 +240,14 @@ export default function SubmissionsPage() {
                                     <div className="flex items-center gap-2">
                                         <Link
                                             href={`/submissions/${submission.id}`}
-                                            className="btn btn-primary py-1.5 px-3 text-sm"
+                                            className="btn btn-primary p-2.5 flex items-center justify-center rounded-lg shadow-sm"
+                                            title={isInstructor && submission.status === 'submitted' ? t('submissions.review') : t('submissions.view')}
                                         >
-                                            {isInstructor && submission.status === 'submitted' ? t('submissions.review') : t('submissions.view')}
+                                            {isInstructor && submission.status === 'submitted' ? (
+                                                <Award className="w-5 h-5" />
+                                            ) : (
+                                                <Eye className="w-5 h-5" />
+                                            )}
                                         </Link>
                                     </div>
                                 </div>
