@@ -15,6 +15,7 @@ export default function UsersPage() {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [roleFilter, setRoleFilter] = useState('all');
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
