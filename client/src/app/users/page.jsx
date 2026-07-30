@@ -293,7 +293,7 @@ export default function UsersPage() {
                             ))}
                         </tbody>
                     </table>
-                    {filteredUsers.length === 0 && (
+                    {users.length === 0 && (
                         <div className="p-12 text-center text-slate-500">
                             No users found matching your criteria
                         </div>

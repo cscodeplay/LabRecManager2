@@ -120,7 +120,9 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
                     }
                 },
                 submissions: {
-                    select: { status: true, score: true, marksObtained: true }
+                    include: {
+                        grade: { select: { finalMarks: true, percentage: true } }
+                    }
                 }
             },
             orderBy: { firstName: 'asc' }
@@ -136,7 +138,9 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
             const group = groupMember?.group;
             const pc = group?.assignedPc;
 
-            const scores = (s.submissions || []).map(sub => sub.marksObtained || sub.score || 0);
+            const scores = (s.submissions || [])
+                .map(sub => sub.grade?.percentage ? parseFloat(sub.grade.percentage) : (sub.grade?.finalMarks || null))
+                .filter(val => val !== null && !isNaN(val));
             const avgScore = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '-';
 
             const rowData = {};
@@ -276,7 +280,11 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
                 targets: {
                     include: { targetClass: true, targetGroup: true }
                 },
-                submissions: true
+                submissions: {
+                    include: {
+                        grade: { select: { finalMarks: true, percentage: true } }
+                    }
+                }
             },
             orderBy: { createdAt: 'desc' }
         });
@@ -286,7 +294,9 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
         ];
 
         const rows = assignments.map(a => {
-            const scores = (a.submissions || []).map(sub => sub.marksObtained || sub.score || 0);
+            const scores = (a.submissions || [])
+                .map(sub => sub.grade?.percentage ? parseFloat(sub.grade.percentage) : (sub.grade?.finalMarks || null))
+                .filter(val => val !== null && !isNaN(val));
             const avgScore = scores.length > 0 ? (scores.reduce((st, val) => st + val, 0) / scores.length).toFixed(1) : '-';
             const targetsStr = (a.targets || []).map(t => t.targetClass?.name || t.targetGroup?.name || 'Custom').join(', ');
 
@@ -314,10 +324,12 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
     // 5. LAB PCS ENTITY DATA
     if (entities.includes('lab_pcs')) {
         const pcs = await prisma.labItem.findMany({
-            where: { category: 'PC' },
+            where: {
+                ...(schoolId && { schoolId })
+            },
             include: {
                 lab: true,
-                assignedGroup: { include: { class: true } }
+                assignedGroups: { include: { class: true } }
             },
             orderBy: { itemNumber: 'asc' }
         });
@@ -327,14 +339,14 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
         ];
 
         const rows = pcs.map(pc => {
-            const group = pc.assignedGroup;
+            const group = pc.assignedGroups?.[0];
 
             const rowData = {};
             if (activeCols.includes('itemNumber')) rowData['PC Number'] = pc.itemNumber;
             if (activeCols.includes('labName')) rowData['Lab Name'] = pc.lab?.name || '-';
             if (activeCols.includes('status')) rowData['Status'] = pc.status;
-            if (activeCols.includes('ipAddress')) rowData['IP Address'] = pc.ipAddress || '-';
-            if (activeCols.includes('macAddress')) rowData['MAC Address'] = pc.macAddress || '-';
+            if (activeCols.includes('ipAddress')) rowData['IP Address'] = (pc.specs && pc.specs.ipAddress) ? pc.specs.ipAddress : '-';
+            if (activeCols.includes('macAddress')) rowData['MAC Address'] = (pc.specs && pc.specs.macAddress) ? pc.specs.macAddress : '-';
             if (activeCols.includes('assignedGroup')) rowData['Assigned Group'] = group?.name || 'Unassigned';
             if (activeCols.includes('assignedClass')) rowData['Assigned Class'] = group?.class?.name || '-';
 

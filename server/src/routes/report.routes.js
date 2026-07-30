@@ -35,7 +35,8 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
     }
 
     // Build class filter for students if classId is provided
-    let studentFilter = { schoolId, role: 'student', isActive: true };
+    // Build class filter for students if classId is provided
+    let studentFilter = { role: 'student', isActive: true, ...(schoolId && { schoolId }) };
     let studentIds = null;
 
     if (classId) {
@@ -55,8 +56,8 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
 
     // Build assignment filter - include class-specific assignments if classId provided
     let assignmentFilter = {
-        schoolId,
         status: 'published',
+        ...(schoolId && { schoolId }),
         ...(sessionId && { academicYearId: sessionId }),
         ...(dateRange !== 'all' && { createdAt: dateFilter })
     };
@@ -78,7 +79,10 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
 
     // Build submission filter
     let submissionFilter = {
-        assignment: { schoolId, ...(sessionId && { academicYearId: sessionId }) },
+        assignment: {
+            ...(schoolId && { schoolId }),
+            ...(sessionId && { academicYearId: sessionId })
+        },
         ...(dateRange !== 'all' && { submittedAt: dateFilter })
     };
 
@@ -101,7 +105,12 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
 
     // Build grade filter for other grade-related queries
     let gradeFilter = {
-        submission: { assignment: { schoolId, ...(sessionId && { academicYearId: sessionId }) } },
+        submission: {
+            assignment: {
+                ...(schoolId && { schoolId }),
+                ...(sessionId && { academicYearId: sessionId })
+            }
+        },
         ...(sessionId && { academicYearId: sessionId }),
         ...(dateRange !== 'all' && { gradedAt: dateFilter })
     };
@@ -149,7 +158,11 @@ router.get('/analytics', authenticate, authorize('admin', 'instructor', 'princip
     let topPerformers = [];
     try {
         let topPerformersFilter = {
-            submission: { assignment: { schoolId } },
+            submission: {
+                assignment: {
+                    ...(schoolId && { schoolId })
+                }
+            },
             isPublished: true,
             percentage: { not: null }
         };
@@ -216,7 +229,7 @@ router.get('/export', authenticate, authorize('admin', 'instructor', 'principal'
     // Get all graded submissions with details
     const grades = await prisma.grade.findMany({
         where: {
-            submission: { assignment: { schoolId } },
+            submission: { assignment: { ...(schoolId && { schoolId }) } },
             isPublished: true,
             ...(req.headers['x-academic-session'] && { academicYearId: req.headers['x-academic-session'] })
         },
@@ -449,7 +462,10 @@ router.post('/custom-generate', authenticate, authorize('admin', 'instructor', '
         sessionId
     });
 
-    res.json(reportData);
+    res.json({
+        success: true,
+        data: reportData
+    });
 }));
 
 module.exports = router;
