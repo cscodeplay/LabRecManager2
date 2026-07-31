@@ -1880,7 +1880,7 @@ export default function Whiteboard({
                         <input
                             type="file"
                             ref={imageInputRef}
-                            onChange={handleImageUpload}
+                            onChange={handleImageInsert}
                             accept="image/png, image/jpeg, image/gif, image/webp"
                             className="hidden"
                         />
