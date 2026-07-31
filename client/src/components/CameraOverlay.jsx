@@ -43,10 +43,6 @@ export default function CameraOverlay({
     useEffect(() => {
         const getDevices = async () => {
             try {
-                // Request permission first, then stop tracks immediately
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                stream.getTracks().forEach(track => track.stop());
-
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 setVideoDevices(devices.filter(d => d.kind === 'videoinput'));
                 setAudioDevices(devices.filter(d => d.kind === 'audioinput'));
@@ -141,16 +137,12 @@ export default function CameraOverlay({
 
     // Toggle camera
     const toggleCamera = useCallback(() => {
-        if (streamRef.current) {
-            const videoTrack = streamRef.current.getVideoTracks()[0];
-            if (videoTrack) {
-                videoTrack.enabled = !videoTrack.enabled;
-                setIsCameraOn(videoTrack.enabled);
-            }
-        } else if (!isCameraOn) {
+        if (isCameraOn) {
+            stopMedia();
+        } else {
             startMedia();
         }
-    }, [isCameraOn, startMedia]);
+    }, [isCameraOn, startMedia, stopMedia]);
 
     // Toggle microphone
     const toggleMic = useCallback(() => {

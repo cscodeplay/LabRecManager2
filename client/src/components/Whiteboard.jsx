@@ -5,7 +5,7 @@ import {
     Pencil, Eraser, Circle, Square, Minus, Type, Undo2, Redo2, Trash2, Download, Save,
     Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2,
     Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
-    Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, ScanText
+    Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, Scan
 } from 'lucide-react';
 
 // Default colors (rainbow + black/white)
@@ -952,6 +952,7 @@ export default function Whiteboard({
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
             } else { // pen
+                ctx.globalCompositeOperation = 'source-over';
                 ctx.strokeStyle = color;
                 ctx.lineWidth = strokeWidth;
                 ctx.lineCap = 'round';
@@ -1074,8 +1075,8 @@ export default function Whiteboard({
                     const stdDevRadius = Math.sqrt(sumRadiusDiffSq / pts.length);
                     const radiusVarianceRatio = stdDevRadius / (avgRadius || 1);
 
-                    // 1. Circle / Ellipse: Must have low radius variance (points equidistant from center)
-                    if (circularity > 0.72 && radiusVarianceRatio < 0.14 && aspectRatio >= 0.6 && aspectRatio <= 1.6) {
+                    // 1. Circle / Ellipse: Must have extremely low radius variance to avoid matching squares
+                    if (circularity > 0.85 && radiusVarianceRatio < 0.12 && aspectRatio >= 0.6 && aspectRatio <= 1.6) {
                         if (preStrokeImageDataRef.current) {
                             ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
                         }
@@ -2095,7 +2096,7 @@ export default function Whiteboard({
                         className={`p-1.5 rounded-full transition-colors flex items-center justify-center ${isOcrActive ? 'bg-indigo-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                         title={isOcrActive ? 'Text Recognition (OCR) Active' : 'Enable Text Recognition (OCR)'}
                     >
-                        <ScanText className="w-4 h-4" />
+                        <Scan className="w-4 h-4" />
                     </button>
 
                     <div className="w-px h-5 bg-slate-700 mx-1" />

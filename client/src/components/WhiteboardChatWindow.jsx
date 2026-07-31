@@ -103,7 +103,7 @@ export default function WhiteboardChatWindow({
         return (
             <button
                 onClick={() => setIsOpen(true)}
-                className="fixed bottom-6 right-24 z-40 p-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-full shadow-2xl flex items-center justify-center transition hover:scale-105"
+                className="fixed bottom-6 right-6 z-40 p-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-full shadow-2xl flex items-center justify-center transition hover:scale-105"
                 title="Open Whiteboard Chat & Audience"
             >
                 <MessageSquare className="w-5 h-5" />
