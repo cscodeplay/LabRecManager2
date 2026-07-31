@@ -81,6 +81,15 @@ const hsbToRgb = (h, s, b) => {
     return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(bl * 255) };
 };
 
+// Helper: Get dash array based on stroke style
+const getDashArray = (style) => {
+    switch (style) {
+        case 'dashed': return [10, 6];
+        case 'dotted': return [3, 3];
+        default: return [];
+    }
+};
+
 export default function Whiteboard({
     onSave,
     onClose,
@@ -107,6 +116,8 @@ export default function Whiteboard({
 }) {
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
+    const currentPathPointsRef = useRef([]);
+    const preStrokeImageDataRef = useRef(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [tool, setTool] = useState('pen'); // pen, eraser, line, rectangle, circle, text
     const [color, setColor] = useState('#000000');
@@ -833,7 +844,17 @@ export default function Whiteboard({
 
         if (tool === 'pen' || tool === 'eraser' || tool === 'highlighter') {
             const canvas = canvasRef.current;
+            if (!canvas) return;
             const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+
+            // Save pre-stroke canvas image data for shape auto-detection/replacement
+            try {
+                preStrokeImageDataRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            } catch (err) {}
+
+            currentPathPointsRef.current = [pos];
+
             ctx.beginPath();
             ctx.moveTo(pos.x, pos.y);
 
@@ -906,67 +927,68 @@ export default function Whiteboard({
         setCurrentPos(pos);
 
         const canvas = canvasRef.current;
+        if (!canvas) return;
         const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
 
-        if (tool === 'pen') {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = strokeWidth;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.setLineDash(getDashArray());
-            ctx.lineTo(pos.x, pos.y);
-            ctx.stroke();
+        if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') {
+            const pts = currentPathPointsRef.current;
+            pts.push(pos);
 
-            // Emit path event
+            ctx.beginPath();
+            if (tool === 'highlighter') {
+                ctx.strokeStyle = highlighterColor;
+                ctx.lineWidth = strokeWidth * 4;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.globalCompositeOperation = 'multiply';
+            } else if (tool === 'eraser') {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.strokeStyle = 'rgba(0,0,0,1)';
+                ctx.lineWidth = eraserSize;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+            } else { // pen
+                ctx.strokeStyle = color;
+                ctx.lineWidth = strokeWidth;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.setLineDash(getDashArray(strokeStyle));
+            }
+
+            if (pts.length < 3) {
+                const b = pts[0];
+                ctx.moveTo(b.x, b.y);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+            } else {
+                // Smooth quadratic curve for smooth antialiased writing
+                const lastTwo = pts.slice(-3);
+                const p0 = lastTwo[0];
+                const p1 = lastTwo[1];
+                const p2 = lastTwo[2];
+                const mid1 = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
+                const mid2 = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+
+                ctx.moveTo(mid1.x, mid1.y);
+                ctx.quadraticCurveTo(p1.x, p1.y, mid2.x, mid2.y);
+                ctx.stroke();
+            }
+
+            if (tool === 'highlighter' || tool === 'eraser') {
+                ctx.globalCompositeOperation = 'source-over';
+            }
+
             emitDrawEvent({
                 type: 'path',
                 isStart: false,
                 x: pos.x,
                 y: pos.y,
-                color,
-                strokeWidth,
-                strokeStyle
-            });
-        } else if (tool === 'highlighter') {
-            ctx.strokeStyle = highlighterColor;
-            ctx.lineWidth = strokeWidth * 4;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.globalCompositeOperation = 'multiply';
-            ctx.lineTo(pos.x, pos.y);
-            ctx.stroke();
-            ctx.globalCompositeOperation = 'source-over';
-
-            // Emit highlighter event
-            emitDrawEvent({
-                type: 'path',
-                isStart: false,
-                x: pos.x,
-                y: pos.y,
-                color: highlighterColor,
-                strokeWidth: strokeWidth * 4,
-                isHighlighter: true
-            });
-        } else if (tool === 'eraser') {
-            // Use destination-out to truly erase (make transparent) - reveals CSS background
-            ctx.globalCompositeOperation = 'destination-out';
-            ctx.strokeStyle = 'rgba(0,0,0,1)';
-            ctx.lineWidth = eraserSize;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.lineTo(pos.x, pos.y);
-            ctx.stroke();
-            ctx.globalCompositeOperation = 'source-over'; // Reset to default
-
-            // Emit eraser event
-            emitDrawEvent({
-                type: 'path',
-                isStart: false,
-                x: pos.x,
-                y: pos.y,
-                color: 'eraser',
-                strokeWidth: eraserSize,
-                isEraser: true
+                color: tool === 'eraser' ? 'eraser' : (tool === 'highlighter' ? highlighterColor : color),
+                strokeWidth: tool === 'eraser' ? eraserSize : (tool === 'highlighter' ? strokeWidth * 4 : strokeWidth),
+                isHighlighter: tool === 'highlighter',
+                isEraser: tool === 'eraser',
+                strokeStyle: tool === 'pen' ? strokeStyle : undefined
             });
         } else if (tool === 'laser') {
             setLaserPos(pos);
@@ -980,7 +1002,7 @@ export default function Whiteboard({
                 y: pos.y
             });
         }
-    }, [isDrawing, getPosition, tool, color, strokeWidth, eraserSize, highlighterColor, emitDrawEvent]);
+    }, [isDrawing, getPosition, tool, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, emitDrawEvent]);
 
     // Stop drawing
     const stopDrawing = useCallback((e) => {
@@ -988,31 +1010,167 @@ export default function Whiteboard({
         e.preventDefault();
 
         const canvas = canvasRef.current;
+        if (!canvas) return;
         const ctx = canvas.getContext('2d');
-        const pos = getPosition(e);
+        ctx.imageSmoothingEnabled = true;
 
-        // Helper to get dash array based on stroke style
-        const getDashArray = () => {
-            switch (strokeStyle) {
-                case 'dashed': return [10, 6];
-                case 'dotted': return [3, 3];
-                default: return [];
+        const rawPos = getPosition(e);
+        const pos = (rawPos && !isNaN(rawPos.x) && !isNaN(rawPos.y) && rawPos.x !== 0 && rawPos.y !== 0) ? rawPos : currentPos;
+
+        if (tool === 'pen') {
+            const pts = currentPathPointsRef.current;
+            if (pts && pts.length >= 8) {
+                // Auto shape recognition when user closes or connects a path
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                let pathLength = 0;
+
+                for (let i = 0; i < pts.length; i++) {
+                    const pt = pts[i];
+                    if (pt.x < minX) minX = pt.x;
+                    if (pt.x > maxX) maxX = pt.x;
+                    if (pt.y < minY) minY = pt.y;
+                    if (pt.y > maxY) maxY = pt.y;
+                    if (i > 0) {
+                        pathLength += Math.hypot(pt.x - pts[i - 1].x, pt.y - pts[i - 1].y);
+                    }
+                }
+
+                const w = maxX - minX;
+                const h = maxY - minY;
+                const pStart = pts[0];
+                const pEnd = pts[pts.length - 1];
+                const distClose = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
+                const maxDim = Math.max(w, h);
+                const isClosed = distClose < 45 || distClose < 0.35 * maxDim;
+
+                // Shoelace formula for enclosed polygon area
+                let polygonArea = 0;
+                for (let i = 0; i < pts.length; i++) {
+                    const nextPt = pts[(i + 1) % pts.length];
+                    polygonArea += pts[i].x * nextPt.y - nextPt.x * pts[i].y;
+                }
+                polygonArea = Math.abs(polygonArea / 2);
+
+                if (isClosed && maxDim > 20 && pathLength > 30) {
+                    const circularity = (4 * Math.PI * polygonArea) / (pathLength * pathLength);
+                    const aspectRatio = w / (h || 1);
+
+                    // 1. Circle / Ellipse
+                    if (circularity > 0.58 && aspectRatio >= 0.4 && aspectRatio <= 2.5) {
+                        if (preStrokeImageDataRef.current) {
+                            ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+                        }
+                        const centerX = minX + w / 2;
+                        const centerY = minY + h / 2;
+                        const radiusX = w / 2;
+                        const radiusY = h / 2;
+
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = strokeWidth;
+                        ctx.setLineDash(getDashArray(strokeStyle));
+                        ctx.beginPath();
+                        ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+
+                        emitDrawEvent({
+                            type: 'ellipse',
+                            centerX, centerY, radiusX, radiusY, color, strokeWidth, strokeStyle
+                        });
+                    }
+                    // 2. Rectangle
+                    else if (polygonArea / (w * h) > 0.68) {
+                        if (preStrokeImageDataRef.current) {
+                            ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+                        }
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = strokeWidth;
+                        ctx.setLineDash(getDashArray(strokeStyle));
+                        ctx.strokeRect(minX, minY, w, h);
+                        ctx.setLineDash([]);
+
+                        emitDrawEvent({
+                            type: 'rectangle',
+                            x: minX, y: minY, width: w, height: h, color, strokeWidth, strokeStyle
+                        });
+                    }
+                    // 3. Triangle
+                    else if (polygonArea / (w * h) >= 0.28 && polygonArea / (w * h) <= 0.65) {
+                        if (preStrokeImageDataRef.current) {
+                            ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+                        }
+                        let topPt = pts[0], leftPt = pts[0], rightPt = pts[0];
+                        pts.forEach(p => {
+                            if (p.y < topPt.y) topPt = p;
+                            if (p.x < leftPt.x) leftPt = p;
+                            if (p.x > rightPt.x) rightPt = p;
+                        });
+
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = strokeWidth;
+                        ctx.setLineDash(getDashArray(strokeStyle));
+                        ctx.beginPath();
+                        ctx.moveTo(topPt.x, topPt.y);
+                        ctx.lineTo(leftPt.x, leftPt.y);
+                        ctx.lineTo(rightPt.x, rightPt.y);
+                        ctx.closePath();
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+
+                        emitDrawEvent({
+                            type: 'line',
+                            startX: topPt.x, startY: topPt.y, endX: leftPt.x, endY: leftPt.y,
+                            color, strokeWidth, strokeStyle
+                        });
+                        emitDrawEvent({
+                            type: 'line',
+                            startX: leftPt.x, startY: leftPt.y, endX: rightPt.x, endY: rightPt.y,
+                            color, strokeWidth, strokeStyle
+                        });
+                        emitDrawEvent({
+                            type: 'line',
+                            startX: rightPt.x, startY: rightPt.y, endX: topPt.x, endY: topPt.y,
+                            color, strokeWidth, strokeStyle
+                        });
+                    }
+                } else if (!isClosed && pathLength > 40) {
+                    const straightDist = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
+                    const straightness = straightDist / pathLength;
+
+                    // 4. Straight Line
+                    if (straightness > 0.88) {
+                        if (preStrokeImageDataRef.current) {
+                            ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+                        }
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = strokeWidth;
+                        ctx.lineCap = 'round';
+                        ctx.setLineDash(getDashArray(strokeStyle));
+                        ctx.beginPath();
+                        ctx.moveTo(pStart.x, pStart.y);
+                        ctx.lineTo(pEnd.x, pEnd.y);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+
+                        emitDrawEvent({
+                            type: 'line',
+                            startX: pStart.x, startY: pStart.y, endX: pEnd.x, endY: pEnd.y,
+                            color, strokeWidth, strokeStyle
+                        });
+                    }
+                }
             }
-        };
-
-        // Draw shapes on release
-        if (tool === 'line') {
+        } else if (tool === 'line') {
             ctx.strokeStyle = color;
             ctx.lineWidth = strokeWidth;
             ctx.lineCap = 'round';
-            ctx.setLineDash(getDashArray());
+            ctx.setLineDash(getDashArray(strokeStyle));
             ctx.beginPath();
             ctx.moveTo(startPos.x, startPos.y);
             ctx.lineTo(pos.x, pos.y);
             ctx.stroke();
-            ctx.setLineDash([]); // Reset
+            ctx.setLineDash([]);
 
-            // Emit line event
             emitDrawEvent({
                 type: 'line',
                 startX: startPos.x,
@@ -1026,7 +1184,7 @@ export default function Whiteboard({
         } else if (tool === 'rectangle') {
             ctx.strokeStyle = color;
             ctx.lineWidth = strokeWidth;
-            ctx.setLineDash(getDashArray());
+            ctx.setLineDash(getDashArray(strokeStyle));
             ctx.strokeRect(
                 startPos.x,
                 startPos.y,
@@ -1035,7 +1193,6 @@ export default function Whiteboard({
             );
             ctx.setLineDash([]);
 
-            // Emit rectangle event
             emitDrawEvent({
                 type: 'rectangle',
                 x: startPos.x,
@@ -1049,7 +1206,7 @@ export default function Whiteboard({
         } else if (tool === 'circle') {
             ctx.strokeStyle = color;
             ctx.lineWidth = strokeWidth;
-            ctx.setLineDash(getDashArray());
+            ctx.setLineDash(getDashArray(strokeStyle));
             const radiusX = Math.abs(pos.x - startPos.x) / 2;
             const radiusY = Math.abs(pos.y - startPos.y) / 2;
             const centerX = startPos.x + (pos.x - startPos.x) / 2;
@@ -1059,7 +1216,6 @@ export default function Whiteboard({
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Emit ellipse event
             emitDrawEvent({
                 type: 'ellipse',
                 centerX,
@@ -1071,7 +1227,6 @@ export default function Whiteboard({
                 strokeStyle
             });
         } else if (tool === 'arrow') {
-            // Draw arrow line
             ctx.strokeStyle = color;
             ctx.lineWidth = strokeWidth;
             ctx.lineCap = 'round';
@@ -1080,7 +1235,6 @@ export default function Whiteboard({
             ctx.lineTo(pos.x, pos.y);
             ctx.stroke();
 
-            // Draw arrowhead
             const headLength = strokeWidth * 4;
             const angle = Math.atan2(pos.y - startPos.y, pos.x - startPos.x);
             ctx.beginPath();
@@ -1097,7 +1251,6 @@ export default function Whiteboard({
             ctx.fillStyle = color;
             ctx.fill();
 
-            // Emit arrow event
             emitDrawEvent({
                 type: 'arrow',
                 startX: startPos.x,
@@ -1108,7 +1261,6 @@ export default function Whiteboard({
                 strokeWidth
             });
         } else if (tool === 'select') {
-            // Create selection rectangle
             const x = Math.min(startPos.x, pos.x);
             const y = Math.min(startPos.y, pos.y);
             const selWidth = Math.abs(pos.x - startPos.x);
@@ -1118,7 +1270,6 @@ export default function Whiteboard({
                 setSelection({ x, y, width: selWidth, height: selHeight });
             }
         } else if (tool === 'text') {
-            // Create text boundary box (MS Paint style)
             const x = Math.min(startPos.x, pos.x);
             const y = Math.min(startPos.y, pos.y);
             const textWidth = Math.max(100, Math.abs(pos.x - startPos.x));
@@ -1132,7 +1283,7 @@ export default function Whiteboard({
 
         setIsDrawing(false);
         if (tool !== 'select' && tool !== 'laser' && tool !== 'text') saveToHistory();
-    }, [isDrawing, getPosition, tool, color, strokeWidth, startPos, saveToHistory, emitDrawEvent]);
+    }, [isDrawing, getPosition, currentPos, tool, color, strokeWidth, strokeStyle, startPos, saveToHistory, emitDrawEvent]);
 
     // Download as image - Composites all layers (background, canvas, images, text)
     const handleDownload = useCallback(() => {
@@ -1444,39 +1595,7 @@ export default function Whiteboard({
             className={`bg-white rounded-xl shadow-2xl flex flex-col ${isFullscreen ? 'fixed inset-4 z-50' : ''
                 }`}
         >
-            {/* Header */}
-            <div className="flex items-center justify-between p-3 border-b border-slate-200 bg-slate-50 rounded-t-xl">
-                <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                    <Pencil className="w-5 h-5 text-primary-500" />
-                    Whiteboard
-                    {isSharing && (
-                        <span className="flex items-center gap-1 text-xs bg-red-500 text-white px-2 py-0.5 rounded-full ml-2">
-                            <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                            LIVE - {sharingTargets.join(', ')}
-                        </span>
-                    )}
-                </h3>
-                <div className="flex items-center gap-2">
-                    {onToggleFullscreen && (
-                        <button
-                            onClick={onToggleFullscreen}
-                            className="p-2 hover:bg-slate-200 rounded-lg transition"
-                            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-                        >
-                            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                        </button>
-                    )}
-                    {onClose && (
-                        <button
-                            onClick={onClose}
-                            className="p-2 hover:bg-slate-200 rounded-lg transition"
-                            title="Close"
-                        >
-                            <X className="w-4 h-4" />
-                        </button>
-                    )}
-                </div>
-            </div>
+            {/* Whiteboard Workspace Container */}
 
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-2 p-3 border-b border-slate-100 bg-white">
@@ -2047,13 +2166,7 @@ export default function Whiteboard({
             <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center ${isFullscreen ? 'h-full' : ''}`}>
                 <div className="relative">
                     {/* Fullscreen Button at top right corner of writing area under toolbar */}
-                    <button
-                        onClick={onToggleFullscreen}
-                        className="absolute top-3 right-3 z-30 p-2.5 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-xl shadow-md border border-slate-200 transition hover:scale-105"
-                        title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-                    >
-                        {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
-                    </button>
+
                     <canvas
                         ref={canvasRef}
                         width={canvasWidth}
