@@ -5,7 +5,7 @@ import {
     Pencil, Eraser, Circle, Square, Minus, Type, Undo2, Redo2, Trash2, Download, Save,
     Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2,
     Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
-    Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette
+    Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, ScanText
 } from 'lucide-react';
 
 // Default colors (rainbow + black/white)
@@ -221,6 +221,9 @@ export default function Whiteboard({
     const [textDragState, setTextDragState] = useState(null);
     const [textInputMode, setTextInputMode] = useState('create'); // 'create' or 'edit'
     const [textBoundary, setTextBoundary] = useState(null); // { x, y, width, height } - dotted boundary while creating
+    
+    // OCR toggle
+    const [isOcrActive, setIsOcrActive] = useState(false);
 
     // Get current page's image objects (derived state)
     const imageObjects = pageImageObjects[currentPage] || [];
@@ -1829,7 +1832,7 @@ export default function Whiteboard({
                                     value={hexInput}
                                     onChange={(e) => handleHexChange(e.target.value)}
                                     className="flex-1 px-2 py-1.5 text-sm border border-slate-200 rounded font-mono"
-                                    placeholder="#000000"
+                    placeholder="#000000"
                                 />
                             </div>
 
@@ -1844,337 +1847,364 @@ export default function Whiteboard({
                     )}
                 </div>
 
-                {/* Stroke Width */}
-                <div className="relative">
-                    <button
-                        onClick={() => { setShowStrokePicker(!showStrokePicker); setShowColorPicker(false); }}
-                        className="flex items-center gap-2 p-2 hover:bg-slate-100 rounded-lg transition"
-                        title="Stroke Width"
-                    >
-                        <div className="w-5 flex items-center justify-center">
-                            <div
-                                className="rounded-full bg-slate-800"
-                                style={{ width: strokeWidth * 2, height: strokeWidth * 2 }}
-                            />
-                        </div>
-                        <ChevronDown className="w-3 h-3 text-slate-400" />
-                    </button>
-                    {showStrokePicker && (
-                        <div className="absolute top-full left-0 mt-1 p-2 bg-white rounded-lg shadow-lg border border-slate-200 z-10">
-                            <div className="flex flex-col gap-1">
-                                {STROKE_WIDTHS.map((w) => (
-                                    <button
-                                        key={w}
-                                        onClick={() => { setStrokeWidth(w); setShowStrokePicker(false); }}
-                                        className={`flex items-center gap-3 px-3 py-2 rounded-lg ${strokeWidth === w ? 'bg-primary-50 text-primary-600' : 'hover:bg-slate-50'
-                                            }`}
-                                    >
-                                        <div
-                                            className="rounded-full bg-current"
-                                            style={{ width: w * 2, height: w * 2 }}
-                                        />
-                                        <span className="text-sm">{w}px</span>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Eraser Size Slider */}
-                {tool === 'eraser' && (
-                    <div className="flex items-center gap-2 px-2">
-                        <span className="text-xs text-slate-500 min-w-[50px]">Eraser</span>
+                {/* Floating Sleek Toolbar (Zoom-style) */}
+                <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/50 px-3 py-1.5 flex items-center gap-1.5 rounded-full z-40 max-w-[95%] overflow-x-auto whitespace-nowrap hide-scrollbar transition-all">
+                    {/* Tools */}
+                    <div className="flex items-center gap-0.5">
+                        {[
+                            { id: 'pen', icon: Pencil, label: 'Pen' },
+                            { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
+                            { id: 'eraser', icon: Eraser, label: 'Eraser' },
+                            { id: 'line', icon: Minus, label: 'Line' },
+                            { id: 'rectangle', icon: Square, label: 'Rectangle' },
+                            { id: 'circle', icon: Circle, label: 'Circle' },
+                            { id: 'text', icon: Type, label: 'Text' },
+                            { id: 'image', icon: ImageIcon, label: 'Image' },
+                            { id: 'laser', icon: MousePointer2, label: 'Laser Pointer' },
+                        ].map(t => (
+                            <button
+                                key={t.id}
+                                onClick={() => {
+                                    setTool(t.id);
+                                    if (t.id === 'image') {
+                                        imageInputRef.current?.click();
+                                    }
+                                }}
+                                className={`p-1.5 rounded-full transition-colors flex items-center justify-center ${tool === t.id ? 'bg-primary-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                title={t.label}
+                            >
+                                <t.icon className="w-4 h-4" />
+                            </button>
+                        ))}
                         <input
-                            type="range"
-                            min="5"
-                            max="100"
-                            value={eraserSize}
-                            onChange={(e) => setEraserSize(Number(e.target.value))}
-                            className="w-24 accent-primary-500"
+                            type="file"
+                            ref={imageInputRef}
+                            onChange={handleImageUpload}
+                            accept="image/png, image/jpeg, image/gif, image/webp"
+                            className="hidden"
                         />
-                        <span className="text-xs text-slate-600 min-w-[32px]">{eraserSize}px</span>
                     </div>
-                )}
 
-                {/* Stroke Style (Solid/Dashed/Dotted) */}
-                <div className="relative">
-                    <button
-                        onClick={() => { setShowStrokeStylePicker(!showStrokeStylePicker); setShowColorPicker(false); setShowStrokePicker(false); }}
-                        className="flex items-center gap-2 p-2 hover:bg-slate-100 rounded-lg transition"
-                        title="Stroke Style"
-                    >
-                        <div className="w-6 h-4 flex items-center">
-                            {strokeStyle === 'solid' && <div className="w-full h-0.5 bg-slate-700" />}
-                            {strokeStyle === 'dashed' && <div className="w-full h-0.5 bg-slate-700" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #334155 0px, #334155 6px, transparent 6px, transparent 10px)' }} />}
-                            {strokeStyle === 'dotted' && <div className="w-full h-0.5 bg-slate-700" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #334155 0px, #334155 2px, transparent 2px, transparent 6px)' }} />}
-                        </div>
-                        <ChevronDown className="w-3 h-3 text-slate-400" />
-                    </button>
-                    {showStrokeStylePicker && (
-                        <div className="absolute top-full left-0 mt-1 p-2 bg-white rounded-lg shadow-lg border border-slate-200 z-10 min-w-[120px]">
-                            {[
-                                { id: 'solid', label: 'Solid', dash: [] },
-                                { id: 'dashed', label: 'Dashed', dash: [10, 6] },
-                                { id: 'dotted', label: 'Dotted', dash: [3, 3] }
-                            ].map((style) => (
-                                <button
-                                    key={style.id}
-                                    onClick={() => { setStrokeStyle(style.id); setShowStrokeStylePicker(false); }}
-                                    className={`flex items-center gap-3 w-full px-3 py-2 rounded-lg ${strokeStyle === style.id ? 'bg-primary-50 text-primary-600' : 'hover:bg-slate-50'}`}
-                                >
-                                    <div className="w-8 h-3 flex items-center">
-                                        <svg width="32" height="2" viewBox="0 0 32 2">
-                                            <line x1="0" y1="1" x2="32" y2="1" stroke="currentColor" strokeWidth="2"
-                                                strokeDasharray={style.dash.join(',')} />
-                                        </svg>
-                                    </div>
-                                    <span className="text-sm">{style.label}</span>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                    {/* Vertical Divider */}
+                    <div className="w-px h-5 bg-slate-700 mx-1" />
 
-                {/* Background Options */}
-                <div className="relative">
-                    <button
-                        onClick={() => { setShowBgPicker(!showBgPicker); setShowColorPicker(false); setShowStrokePicker(false); }}
-                        className="flex items-center gap-2 p-2 hover:bg-slate-100 rounded-lg transition"
-                        title="Background"
-                    >
-                        <div
-                            className="w-5 h-5 rounded border-2 border-slate-300"
-                            style={{
-                                backgroundColor: bgColor,
-                                backgroundImage: bgPattern === 'dotted'
-                                    ? 'radial-gradient(circle, #999 1px, transparent 1px)'
-                                    : bgPattern === 'grid'
-                                        ? 'linear-gradient(#ddd 1px, transparent 1px), linear-gradient(90deg, #ddd 1px, transparent 1px)'
-                                        : 'none',
-                                backgroundSize: bgPattern === 'dotted' ? '8px 8px' : '10px 10px'
-                            }}
-                        />
-                        <ChevronDown className="w-3 h-3 text-slate-400" />
-                    </button>
-                    {showBgPicker && (
-                        <div className="absolute top-full left-0 mt-1 p-3 bg-white rounded-lg shadow-lg border border-slate-200 z-10 w-48">
-                            <p className="text-xs font-medium text-slate-500 mb-2">Pattern</p>
-                            <div className="grid grid-cols-4 gap-1 mb-3">
-                                {[
-                                    { id: 'plain', label: 'Plain' },
-                                    { id: 'dotted', label: 'Dots' },
-                                    { id: 'grid', label: 'Grid' },
-                                    { id: 'lined', label: 'Lines' }
-                                ].map(p => (
-                                    <button
-                                        key={p.id}
-                                        onClick={() => setBgPattern(p.id)}
-                                        className={`p-2 rounded border text-xs ${bgPattern === p.id ? 'border-primary-500 bg-primary-50' : 'border-slate-200 hover:bg-slate-50'}`}
-                                    >
-                                        {p.label}
-                                    </button>
-                                ))}
-                            </div>
-                            <p className="text-xs font-medium text-slate-500 mb-2">Extended Patterns</p>
-                            <div className="grid grid-cols-4 gap-1 mb-3">
-                                {[
-                                    { id: 'graph', label: 'Graph' },
-                                    { id: 'music', label: 'Music' },
-                                    { id: 'iso', label: 'Iso' },
-                                    { id: 'hex', label: 'Hex' }
-                                ].map(p => (
-                                    <button
-                                        key={p.id}
-                                        onClick={() => setBgPattern(p.id)}
-                                        className={`p-2 rounded border text-xs ${bgPattern === p.id ? 'border-primary-500 bg-primary-50' : 'border-slate-200 hover:bg-slate-50'}`}
-                                    >
-                                        {p.label}
-                                    </button>
-                                ))}
-                            </div>
-                            <p className="text-xs font-medium text-slate-500 mb-2">Color</p>
-                            <div className="grid grid-cols-5 gap-1 mb-2">
-                                {[
-                                    '#ffffff', '#f5f5f5', '#e0e0e0', '#9e9e9e', '#424242', // Grays
-                                    '#fff9c4', '#fff176', '#ffeb3b', '#ffc107', '#ff9800', // Yellows/Oranges
-                                    '#c8e6c9', '#81c784', '#4caf50', '#2e7d32', '#1b5e20', // Greens
-                                    '#bbdefb', '#64b5f6', '#2196f3', '#1565c0', '#0d47a1', // Blues
-                                    '#f8bbd0', '#f06292', '#e91e63', '#ad1457', '#880e4f', // Pinks
-                                ].map((c, idx) => (
-                                    <button
-                                        key={c + idx}
-                                        onClick={() => setBgColor(c)}
-                                        className={`w-6 h-6 rounded border-2 ${bgColor === c ? 'border-primary-500 ring-2 ring-primary-300' : 'border-slate-200'}`}
-                                        style={{ backgroundColor: c }}
-                                        title={c}
-                                    />
-                                ))}
-                            </div>
-                            <div className="flex items-center gap-2 mt-2">
-                                <label className="text-xs text-slate-500">Custom:</label>
-                                <input
-                                    type="color"
-                                    value={bgColor}
-                                    onChange={(e) => setBgColor(e.target.value)}
-                                    className="w-8 h-6 rounded cursor-pointer border border-slate-200"
-                                    title="Pick custom color"
-                                />
-                                <input
-                                    type="text"
-                                    value={bgColor}
-                                    onChange={(e) => setBgColor(e.target.value)}
-                                    className="flex-1 text-xs px-2 py-1 border rounded border-slate-200 w-16"
-                                    placeholder="#ffffff"
-                                />
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                <div className="w-px h-8 bg-slate-200" />
-
-                {/* Undo/Redo */}
-                <div className="flex items-center gap-1">
-                    <button
-                        onClick={handleUndo}
-                        disabled={historyIndex <= 0}
-                        className="p-2 hover:bg-slate-100 rounded-lg transition disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="Undo"
-                    >
-                        <Undo2 className="w-4 h-4 text-slate-600" />
-                    </button>
-                    <button
-                        onClick={handleRedo}
-                        disabled={historyIndex >= history.length - 1}
-                        className="p-2 hover:bg-slate-100 rounded-lg transition disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="Redo"
-                    >
-                        <Redo2 className="w-4 h-4 text-slate-600" />
-                    </button>
-                </div>
-
-                <div className="w-px h-8 bg-slate-200" />
-
-                {/* Clear */}
-                <button
-                    onClick={handleClear}
-                    className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition"
-                    title="Clear All"
-                >
-                    <Trash2 className="w-4 h-4" />
-                </button>
-
-                {/* Paste (when clipboard has content) */}
-                {clipboard && (
-                    <button
-                        onClick={handlePasteSelection}
-                        className="p-2 hover:bg-green-50 text-green-600 rounded-lg transition"
-                        title="Paste"
-                    >
-                        📋
-                    </button>
-                )}
-
-                <div className="w-px h-8 bg-slate-200" />
-
-                {/* Page Navigation */}
-                <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-                    <button
-                        onClick={goToPrevPage}
-                        disabled={currentPage === 0}
-                        className="p-2 hover:bg-slate-200 rounded-md transition disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="Previous Page"
-                    >
-                        <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <span className="text-sm font-medium text-slate-600 min-w-[50px] text-center">
-                        {currentPage + 1} / {totalPages}
-                    </span>
-                    <button
-                        onClick={goToNextPage}
-                        disabled={currentPage === totalPages - 1}
-                        className="p-2 hover:bg-slate-200 rounded-md transition disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="Next Page"
-                    >
-                        <ChevronRight className="w-4 h-4" />
-                    </button>
-                    <button
-                        onClick={addNewPage}
-                        className="p-2 hover:bg-green-100 text-green-600 rounded-md transition"
-                        title="Add New Page"
-                    >
-                        <Plus className="w-4 h-4" />
-                    </button>
-                </div>
-
-                {/* Highlighter Color Picker (shows when highlighter selected) */}
-                {tool === 'highlighter' && (
-                    <div className="relative">
+                    {/* Colors */}
+                    <div className="flex items-center gap-0.5 relative">
                         <button
-                            onClick={() => setShowHighlighterPicker(!showHighlighterPicker)}
-                            className="flex items-center gap-2 p-2 hover:bg-slate-100 rounded-lg transition"
-                            title="Highlighter Color"
+                            onClick={() => setShowColorPicker(!showColorPicker)}
+                            className="flex items-center gap-1 p-1.5 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white"
+                            title="Colors"
                         >
                             <div
-                                className="w-5 h-5 rounded border-2 border-slate-300"
-                                style={{ backgroundColor: highlighterColor }}
+                                className="w-4 h-4 rounded-full border border-slate-500/50 shadow-sm"
+                                style={{ backgroundColor: color }}
                             />
-                            <ChevronDown className="w-3 h-3 text-slate-400" />
+                            <ChevronDown className="w-3 h-3 opacity-70" />
                         </button>
-                        {showHighlighterPicker && (
-                            <div className="absolute top-full left-0 mt-1 p-2 bg-white rounded-lg shadow-lg border border-slate-200 z-10">
-                                <div className="flex gap-1">
-                                    {HIGHLIGHTER_COLORS.map((c) => (
+
+                        {showColorPicker && (
+                            <div className="absolute top-full left-0 mt-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-10 w-[220px]">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-semibold text-slate-300">Colors</span>
+                                    <button
+                                        onClick={() => {
+                                            setShowColorPicker(false);
+                                            setShowCustomColorPicker(true);
+                                        }}
+                                        className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition flex items-center gap-1 text-[10px]"
+                                    >
+                                        <Pipette className="w-3 h-3" />
+                                        Custom
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-6 gap-1.5">
+                                    {[...new Set([...DEFAULT_COLORS, ...recentColors])].slice(0, 18).map(c => (
                                         <button
                                             key={c}
-                                            onClick={() => { setHighlighterColor(c); setShowHighlighterPicker(false); }}
-                                            className={`w-8 h-8 rounded-lg border-2 ${highlighterColor === c ? 'border-primary-500 ring-2 ring-primary-200' : 'border-slate-200'}`}
+                                            onClick={() => selectColor(c)}
+                                            className={`w-6 h-6 rounded-full border ${color === c ? 'border-white ring-2 ring-primary-500' : 'border-slate-600 hover:scale-110'} transition-transform shadow-sm`}
                                             style={{ backgroundColor: c }}
                                         />
                                     ))}
                                 </div>
                             </div>
                         )}
+
+                        {/* Stroke Width */}
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowStrokePicker(!showStrokePicker)}
+                                className="p-1.5 hover:bg-slate-800 rounded-full transition flex items-center justify-center text-slate-300 hover:text-white"
+                                title="Stroke Width"
+                            >
+                                <div className="w-4 h-4 flex items-center justify-center">
+                                    <div className="bg-current rounded-full" style={{ width: strokeWidth, height: strokeWidth }} />
+                                </div>
+                            </button>
+                            {showStrokePicker && (
+                                <div className="absolute top-full left-0 mt-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-10 w-24">
+                                    <div className="flex flex-col gap-1">
+                                        {STROKE_WIDTHS.map(w => (
+                                            <button
+                                                key={w}
+                                                onClick={() => { setStrokeWidth(w); setShowStrokePicker(false); }}
+                                                className={`p-2 rounded-lg hover:bg-slate-700 flex items-center justify-center ${strokeWidth === w ? 'bg-slate-700' : ''}`}
+                                            >
+                                                <div className="bg-slate-200 rounded-full" style={{ width: w, height: w }} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Stroke Style */}
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowStrokeStylePicker(!showStrokeStylePicker)}
+                                className="p-1.5 hover:bg-slate-800 rounded-full transition flex items-center justify-center text-slate-300 hover:text-white"
+                                title="Stroke Style"
+                            >
+                                <div className="w-4 h-4 flex flex-col justify-center gap-[2px]">
+                                    <div className="h-[2px] bg-current w-full" />
+                                    {strokeStyle === 'dashed' && <div className="h-[2px] bg-current w-full border-l border-r border-transparent border-dashed" />}
+                                    {strokeStyle === 'dotted' && <div className="h-[2px] bg-current w-full border-l border-r border-transparent border-dotted" />}
+                                </div>
+                            </button>
+                            {showStrokeStylePicker && (
+                                <div className="absolute top-full left-0 mt-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-10 w-28">
+                                    <div className="flex flex-col gap-1">
+                                        {['solid', 'dashed', 'dotted'].map(s => (
+                                            <button
+                                                key={s}
+                                                onClick={() => { setStrokeStyle(s); setShowStrokeStylePicker(false); }}
+                                                className={`p-2 hover:bg-slate-700 rounded-lg text-xs capitalize text-slate-200 ${strokeStyle === s ? 'bg-slate-700 font-medium' : ''}`}
+                                            >
+                                                <div className={`h-0.5 w-full bg-current mb-1 ${s === 'dashed' ? 'border-dashed border-t-2' : s === 'dotted' ? 'border-dotted border-t-2' : 'border-solid border-t-2'}`} style={{ borderColor: 'currentColor', backgroundColor: 'transparent' }} />
+                                                {s}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                )}
 
-                <div className="flex-1" />
+                    <div className="w-px h-5 bg-slate-700 mx-1" />
 
-                {/* Sharing, Download & Save */}
-                <div className="flex items-center gap-2">
-                    {/* Share Button (for instructors) */}
-                    {isInstructor && (
+                    {/* Background Pattern */}
+                    <div className="relative">
                         <button
-                            onClick={isSharing ? onStopSharing : onShare}
-                            className={`p-2.5 rounded-lg transition flex items-center justify-center shadow-sm ${isSharing
-                                ? 'bg-red-500 hover:bg-red-600 text-white'
-                                : 'bg-amber-500 hover:bg-amber-600 text-white'
-                                }`}
-                            title={isSharing ? 'Stop Sharing Whiteboard' : 'Share Whiteboard with Students'}
+                            onClick={() => setShowBgPicker(!showBgPicker)}
+                            className="flex items-center gap-1 p-1.5 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white"
+                            title="Background Pattern"
                         >
-                            <Share2 className="w-5 h-5" />
+                            <div
+                                className="w-4 h-4 rounded-sm border border-slate-500/50"
+                                style={{
+                                    backgroundColor: bgColor,
+                                    backgroundImage: bgPattern === 'dotted'
+                                        ? 'radial-gradient(circle, #999 1px, transparent 1px)'
+                                        : bgPattern === 'grid'
+                                            ? 'linear-gradient(#ddd 1px, transparent 1px), linear-gradient(90deg, #ddd 1px, transparent 1px)'
+                                            : 'none',
+                                    backgroundSize: bgPattern === 'dotted' ? '8px 8px' : '10px 10px'
+                                }}
+                            />
+                            <ChevronDown className="w-3 h-3 opacity-70" />
                         </button>
-                    )}
+                        {showBgPicker && (
+                            <div className="absolute top-full left-0 mt-2 p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-10 w-48 text-slate-200">
+                                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Pattern</p>
+                                <div className="grid grid-cols-4 gap-1 mb-3">
+                                    {[
+                                        { id: 'plain', label: 'Plain' },
+                                        { id: 'dotted', label: 'Dots' },
+                                        { id: 'grid', label: 'Grid' },
+                                        { id: 'lined', label: 'Lines' }
+                                    ].map(p => (
+                                        <button
+                                            key={p.id}
+                                            onClick={() => setBgPattern(p.id)}
+                                            className={`p-1.5 rounded-lg border text-xs ${bgPattern === p.id ? 'border-primary-500 bg-primary-500/20 text-white' : 'border-slate-600 hover:bg-slate-700'}`}
+                                        >
+                                            {p.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Extended Patterns</p>
+                                <div className="grid grid-cols-4 gap-1 mb-3">
+                                    {[
+                                        { id: 'graph', label: 'Graph' },
+                                        { id: 'music', label: 'Music' },
+                                        { id: 'iso', label: 'Iso' },
+                                        { id: 'hex', label: 'Hex' }
+                                    ].map(p => (
+                                        <button
+                                            key={p.id}
+                                            onClick={() => setBgPattern(p.id)}
+                                            className={`p-1.5 rounded-lg border text-xs ${bgPattern === p.id ? 'border-primary-500 bg-primary-500/20 text-white' : 'border-slate-600 hover:bg-slate-700'}`}
+                                        >
+                                            {p.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Color</p>
+                                <div className="grid grid-cols-5 gap-1.5 mb-2">
+                                    {[
+                                        '#ffffff', '#f5f5f5', '#e0e0e0', '#9e9e9e', '#424242', // Grays
+                                        '#fff9c4', '#fff176', '#ffeb3b', '#ffc107', '#ff9800', // Yellows/Oranges
+                                        '#c8e6c9', '#81c784', '#4caf50', '#2e7d32', '#1b5e20', // Greens
+                                        '#bbdefb', '#64b5f6', '#2196f3', '#1565c0', '#0d47a1', // Blues
+                                        '#f8bbd0', '#f06292', '#e91e63', '#ad1457', '#880e4f', // Pinks
+                                    ].map((c, idx) => (
+                                        <button
+                                            key={c + idx}
+                                            onClick={() => setBgColor(c)}
+                                            className={`w-6 h-6 rounded-full border-2 ${bgColor === c ? 'border-white ring-2 ring-primary-400' : 'border-slate-600 hover:scale-110'} transition-transform shadow-sm`}
+                                            style={{ backgroundColor: c }}
+                                            title={c}
+                                        />
+                                    ))}
+                                </div>
+                                <div className="flex items-center gap-2 mt-3">
+                                    <input
+                                        type="color"
+                                        value={bgColor}
+                                        onChange={(e) => setBgColor(e.target.value)}
+                                        className="w-6 h-6 rounded cursor-pointer bg-transparent"
+                                        title="Pick custom color"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={bgColor}
+                                        onChange={(e) => setBgColor(e.target.value)}
+                                        className="flex-1 text-xs px-2 py-1 bg-slate-700 border border-slate-600 rounded text-slate-200 uppercase"
+                                        placeholder="#ffffff"
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
+                    <div className="w-px h-5 bg-slate-700 mx-1" />
+
+                    {/* OCR Toggle */}
                     <button
-                        onClick={handleDownload}
-                        className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition flex items-center justify-center"
-                        title="Download / Export Whiteboard Image (PNG)"
+                        onClick={() => setIsOcrActive(!isOcrActive)}
+                        className={`p-1.5 rounded-full transition-colors flex items-center justify-center ${isOcrActive ? 'bg-indigo-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                        title={isOcrActive ? 'Text Recognition (OCR) Active' : 'Enable Text Recognition (OCR)'}
                     >
-                        <Download className="w-5 h-5" />
+                        <ScanText className="w-4 h-4" />
                     </button>
-                    {onSave && (
+
+                    <div className="w-px h-5 bg-slate-700 mx-1" />
+
+                    {/* Undo/Redo */}
+                    <div className="flex items-center gap-0.5">
                         <button
-                            onClick={handleSave}
-                            className="p-2.5 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition flex items-center justify-center shadow-sm"
-                            title="Save Whiteboard"
+                            onClick={handleUndo}
+                            disabled={historyIndex <= 0}
+                            className="p-1.5 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Undo"
                         >
-                            <Save className="w-5 h-5" />
+                            <Undo2 className="w-4 h-4" />
+                        </button>
+                        <button
+                            onClick={handleRedo}
+                            disabled={historyIndex >= history.length - 1}
+                            className="p-1.5 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Redo"
+                        >
+                            <Redo2 className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    {/* Actions */}
+                    <button
+                        onClick={handleClear}
+                        className="p-1.5 hover:bg-red-500/20 text-red-400 rounded-full transition"
+                        title="Clear All"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </button>
+
+                    {clipboard && (
+                        <button
+                            onClick={handlePasteSelection}
+                            className="p-1.5 hover:bg-green-500/20 text-green-400 rounded-full transition"
+                            title="Paste"
+                        >
+                            📋
                         </button>
                     )}
+
+                    <div className="w-px h-5 bg-slate-700 mx-1" />
+
+                    {/* Page Navigation */}
+                    <div className="flex items-center gap-0.5 bg-slate-800/80 rounded-full px-1 py-0.5">
+                        <button
+                            onClick={goToPrevPage}
+                            disabled={currentPage === 0}
+                            className="p-1 hover:bg-slate-700 rounded-full transition disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 hover:text-white"
+                            title="Previous Page"
+                        >
+                            <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <span className="text-xs font-medium text-slate-300 min-w-[36px] text-center tracking-wider">
+                            {currentPage + 1}/{totalPages}
+                        </span>
+                        <button
+                            onClick={goToNextPage}
+                            disabled={currentPage === totalPages - 1}
+                            className="p-1 hover:bg-slate-700 rounded-full transition disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 hover:text-white"
+                            title="Next Page"
+                        >
+                            <ChevronRight className="w-4 h-4" />
+                        </button>
+                        <button
+                            onClick={addNewPage}
+                            className="p-1 hover:bg-green-500/20 text-green-400 rounded-full transition ml-0.5"
+                            title="Add New Page"
+                        >
+                            <Plus className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    <div className="w-px h-5 bg-slate-700 mx-1" />
+
+                    {/* Sharing, Download & Save (Tight grouped) */}
+                    <div className="flex items-center gap-0.5">
+                        {isInstructor && (
+                            <button
+                                onClick={isSharing ? onStopSharing : onShare}
+                                className={`p-1.5 rounded-full transition flex items-center justify-center ${isSharing
+                                    ? 'bg-red-500 hover:bg-red-600 text-white'
+                                    : 'text-amber-400 hover:bg-amber-500/20'
+                                    }`}
+                                title={isSharing ? 'Stop Sharing Whiteboard' : 'Share Whiteboard with Students'}
+                            >
+                                <Share2 className="w-4 h-4" />
+                            </button>
+                        )}
+                        <button
+                            onClick={handleDownload}
+                            className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
+                            title="Download / Export Whiteboard Image (PNG)"
+                        >
+                            <Download className="w-4 h-4" />
+                        </button>
+                        {onSave && (
+                            <button
+                                onClick={handleSave}
+                                className="p-1.5 text-primary-400 hover:bg-primary-500/20 rounded-full transition flex items-center justify-center"
+                                title="Save Whiteboard"
+                            >
+                                <Save className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
                 </div>
-            </div>
 
             {/* Canvas */}
             <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center ${isFullscreen ? 'h-full' : ''}`}>
