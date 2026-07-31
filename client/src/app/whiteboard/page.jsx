@@ -136,18 +136,6 @@ export default function WhiteboardPage() {
             </div>
 
             <div className="absolute top-3 right-4 z-30 flex items-center gap-3">
-                {/* Camera toggle button */}
-                <button
-                    onClick={() => setShowCamera(!showCamera)}
-                    className={`p-2.5 rounded-lg font-medium transition flex items-center justify-center ${showCamera
-                        ? 'bg-green-500 hover:bg-green-600 text-white'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                        }`}
-                    title={showCamera ? 'Turn Camera Off' : 'Turn Camera On'}
-                >
-                    {showCamera ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-                </button>
-
                 {/* Share button */}
                 {!isSharing ? (
                     <button
@@ -166,6 +154,20 @@ export default function WhiteboardPage() {
                         <Users className="w-5 h-5" />
                     </button>
                 )}
+            </div>
+
+            {/* Camera toggle button placed at bottom-left of the board */}
+            <div className="fixed bottom-6 left-6 z-40">
+                <button
+                    onClick={() => setShowCamera(!showCamera)}
+                    className={`p-3.5 rounded-full font-medium transition flex items-center justify-center shadow-2xl border ${showCamera
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                        }`}
+                    title={showCamera ? 'Turn Camera Off' : 'Turn Camera On'}
+                >
+                    {showCamera ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                </button>
             </div>
 
             {/* Whiteboard Area */}

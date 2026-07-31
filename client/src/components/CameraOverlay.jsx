@@ -43,8 +43,9 @@ export default function CameraOverlay({
     useEffect(() => {
         const getDevices = async () => {
             try {
-                // Request permission first
-                await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                // Request permission first, then stop tracks immediately
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                stream.getTracks().forEach(track => track.stop());
 
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 setVideoDevices(devices.filter(d => d.kind === 'videoinput'));
@@ -56,8 +57,10 @@ export default function CameraOverlay({
 
         if (isOpen) {
             getDevices();
+        } else {
+            stopMedia();
         }
-    }, [isOpen]);
+    }, [isOpen, stopMedia]);
 
     // Start camera and microphone
     const startMedia = useCallback(async () => {

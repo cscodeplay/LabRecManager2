@@ -1055,13 +1055,27 @@ export default function Whiteboard({
                     const circularity = (4 * Math.PI * polygonArea) / (pathLength * pathLength);
                     const aspectRatio = w / (h || 1);
 
-                    // 1. Circle / Ellipse
-                    if (circularity > 0.58 && aspectRatio >= 0.4 && aspectRatio <= 2.5) {
+                    // Calculate radius variance to distinguish true Circles from Squares/Rectangles/Semi-circles
+                    const centerX = minX + w / 2;
+                    const centerY = minY + h / 2;
+                    let sumRadius = 0;
+                    for (let i = 0; i < pts.length; i++) {
+                        sumRadius += Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
+                    }
+                    const avgRadius = sumRadius / pts.length;
+                    let sumRadiusDiffSq = 0;
+                    for (let i = 0; i < pts.length; i++) {
+                        const r = Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
+                        sumRadiusDiffSq += (r - avgRadius) * (r - avgRadius);
+                    }
+                    const stdDevRadius = Math.sqrt(sumRadiusDiffSq / pts.length);
+                    const radiusVarianceRatio = stdDevRadius / (avgRadius || 1);
+
+                    // 1. Circle / Ellipse: Must have low radius variance (points equidistant from center)
+                    if (circularity > 0.72 && radiusVarianceRatio < 0.14 && aspectRatio >= 0.6 && aspectRatio <= 1.6) {
                         if (preStrokeImageDataRef.current) {
                             ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
                         }
-                        const centerX = minX + w / 2;
-                        const centerY = minY + h / 2;
                         const radiusX = w / 2;
                         const radiusY = h / 2;
 
@@ -1078,7 +1092,7 @@ export default function Whiteboard({
                             centerX, centerY, radiusX, radiusY, color, strokeWidth, strokeStyle
                         });
                     }
-                    // 2. Rectangle
+                    // 2. Rectangle / Square: Area fill > 0.68 of bounding box
                     else if (polygonArea / (w * h) > 0.68) {
                         if (preStrokeImageDataRef.current) {
                             ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
@@ -2165,7 +2179,16 @@ export default function Whiteboard({
             {/* Canvas */}
             <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center ${isFullscreen ? 'h-full' : ''}`}>
                 <div className="relative">
-                    {/* Fullscreen Button at top right corner of writing area under toolbar */}
+                    {/* Fullscreen Button at top right corner of board writing area */}
+                    {onToggleFullscreen && (
+                        <button
+                            onClick={onToggleFullscreen}
+                            className="absolute top-3 right-3 z-30 p-2.5 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-xl shadow-md border border-slate-200 transition hover:scale-105"
+                            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                        >
+                            {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                        </button>
+                    )}
 
                     <canvas
                         ref={canvasRef}
