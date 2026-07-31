@@ -119,22 +119,42 @@ const prisma = require('./config/database');
 
 // Health check endpoint (Keep-Alive)
 app.get('/api/health', async (req, res) => {
+  const startTime = Date.now();
   try {
     // Lightweight query to keep DB awake
     await prisma.$queryRaw`SELECT 1`;
     res.json({
+      success: true,
       status: 'ok',
-      database: 'connected',
+      server: 'online',
+      database: 'online',
+      responseTime: Date.now() - startTime,
       timestamp: new Date().toISOString(),
       version: '1.0.0'
     });
   } catch (error) {
     console.error('Health check DB error:', error);
-    res.status(500).json({
-      status: 'error',
-      database: 'disconnected',
-      error: error.message
-    });
+    try {
+      await prisma.$connect();
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({
+        success: true,
+        status: 'ok',
+        server: 'online',
+        database: 'online',
+        responseTime: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        version: '1.0.0'
+      });
+    } catch (retryErr) {
+      res.status(500).json({
+        success: false,
+        status: 'error',
+        server: 'online',
+        database: 'offline',
+        error: error.message
+      });
+    }
   }
 });
 

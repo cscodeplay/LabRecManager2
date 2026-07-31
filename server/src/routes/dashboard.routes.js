@@ -394,9 +394,17 @@ router.get('/health', asyncHandler(async (req, res) => {
         dbStatus = 'online';
         dbResponseTime = Date.now() - startTime;
     } catch (error) {
-        dbStatus = 'offline';
-        dbError = error.message;
-        dbResponseTime = Date.now() - startTime;
+        // Attempt automatic reconnect & wakeup for Neon DB cold start
+        try {
+            await prisma.$connect();
+            await prisma.$queryRaw`SELECT 1`;
+            dbStatus = 'online';
+            dbResponseTime = Date.now() - startTime;
+        } catch (retryError) {
+            dbStatus = 'offline';
+            dbError = error.message;
+            dbResponseTime = Date.now() - startTime;
+        }
     }
 
     res.json({

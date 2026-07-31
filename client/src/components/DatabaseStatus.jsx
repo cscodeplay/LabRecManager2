@@ -13,7 +13,14 @@ export default function DatabaseStatus({ className = '' }) {
         setIsChecking(true);
         try {
             const res = await dashboardAPI.getHealth();
-            setStatus(res.data.data);
+            const data = res.data?.data || res.data || {};
+            const dbVal = data.database === 'connected' ? 'online' : (data.database || 'online');
+            setStatus({
+                server: data.server || 'online',
+                database: dbVal,
+                responseTime: data.responseTime,
+                error: data.error
+            });
             setLastCheck(new Date());
         } catch (error) {
             setStatus({
@@ -84,7 +91,12 @@ export function DatabaseStatusBadge() {
         setIsChecking(true);
         try {
             const res = await dashboardAPI.getHealth();
-            setStatus(res.data.data);
+            const data = res.data?.data || res.data || {};
+            const dbVal = data.database === 'connected' ? 'online' : (data.database || 'online');
+            setStatus({
+                server: data.server || 'online',
+                database: dbVal
+            });
         } catch (error) {
             setStatus({
                 server: error.response ? 'online' : 'offline',
