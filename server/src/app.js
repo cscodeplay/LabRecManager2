@@ -283,11 +283,17 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Student requests current canvas state when joining
+  // Student requests current canvas state when joining (Enforces 1 active classroom session lock per student)
   socket.on('whiteboard:request-state', (data) => {
     const { sessionId } = data;
 
-    // Join the whiteboard viewing room
+    // Leave any previous whiteboard session room to prevent attending multiple classrooms simultaneously
+    if (socket.currentWhiteboardRoom && socket.currentWhiteboardRoom !== `whiteboard-${sessionId}`) {
+      socket.leave(socket.currentWhiteboardRoom);
+      console.log(`[Whiteboard] Student socket ${socket.id} left previous room ${socket.currentWhiteboardRoom}`);
+    }
+
+    socket.currentWhiteboardRoom = `whiteboard-${sessionId}`;
     socket.join(`whiteboard-${sessionId}`);
 
     // Request the instructor to send current canvas state
@@ -295,6 +301,12 @@ io.on('connection', (socket) => {
       sessionId,
       requesterId: socket.id
     });
+  });
+
+  // Whiteboard live chat message relay
+  socket.on('whiteboard:chat-message', (data) => {
+    const { sessionId } = data;
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:chat-message', data);
   });
 
   // Instructor sends canvas state to new viewer

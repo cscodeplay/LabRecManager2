@@ -387,6 +387,114 @@ async function generateCustomReportData({ entities = ['students'], selectedColum
         }
     }
 
+    // 6. INTELLIGENT UNIFIED JOINED MASTER TABLE (When 2+ entities requested)
+    if (entities.length > 1) {
+        try {
+            const studentWhere = {
+                role: 'student',
+                isActive: true,
+                ...(schoolId && { schoolId })
+            };
+            if (filters.gender && filters.gender !== 'all') {
+                studentWhere.gender = filters.gender;
+            }
+            if (filters.classId) {
+                studentWhere.classEnrollments = {
+                    some: { classId: filters.classId, status: 'active' }
+                };
+            }
+
+            const masterStudents = await prisma.user.findMany({
+                where: studentWhere,
+                include: {
+                    classEnrollments: {
+                        where: { status: 'active' },
+                        include: { class: { include: { groups: true } } }
+                    },
+                    groupMemberships: {
+                        include: {
+                            group: {
+                                include: {
+                                    assignedPc: { include: { lab: true } },
+                                    members: { include: { student: true } }
+                                }
+                            }
+                        }
+                    },
+                    submissions: {
+                        include: {
+                            assignment: true,
+                            grade: { select: { finalMarks: true, percentage: true } }
+                        }
+                    }
+                },
+                orderBy: { firstName: 'asc' }
+            });
+
+            const unifiedRows = masterStudents.map(s => {
+                const enrollment = s.classEnrollments?.[0];
+                const cls = enrollment?.class;
+                const groupMember = s.groupMemberships?.[0];
+                const group = groupMember?.group;
+                const pc = group?.assignedPc;
+                const leader = group?.members?.find(m => m.role === 'leader')?.student;
+
+                const scores = (s.submissions || [])
+                    .map(sub => sub.grade?.percentage ? parseFloat(sub.grade.percentage) : (sub.grade?.finalMarks || null))
+                    .filter(val => val !== null && !isNaN(val));
+                const avgScore = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '-';
+
+                const row = {};
+                // Students fields
+                if (entities.includes('students') || true) {
+                    row['Student Name'] = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Student';
+                    row['Admission ID'] = s.studentId || s.admissionNumber || '-';
+                    row['Roll Number'] = s.rollNumber ? `#${s.rollNumber}` : '-';
+                    row['Gender'] = s.gender === 'female' ? 'Female' : 'Male';
+                    row['Email Address'] = s.email || '-';
+                }
+
+                // Classes fields
+                if (entities.includes('classes') || entities.includes('students')) {
+                    row['Enrolled Class'] = cls?.name || '-';
+                    row['Section'] = cls?.section || '-';
+                    row['Grade Level'] = cls?.gradeLevel || '-';
+                }
+
+                // Groups fields
+                if (entities.includes('groups') || entities.includes('students')) {
+                    row['Assigned Group'] = group?.name || 'Ungrouped';
+                    row['Group Leader'] = leader ? `${leader.firstName || ''} ${leader.lastName || ''}`.trim() : '-';
+                    row['Group Member Count'] = group?.members?.length || 0;
+                }
+
+                // Lab PCs fields
+                if (entities.includes('lab_pcs') || entities.includes('groups') || entities.includes('students')) {
+                    row['Assigned Lab PC'] = pc ? `${pc.itemNumber}` : 'No PC';
+                    row['Lab Location'] = pc?.lab?.name || '-';
+                    row['PC Status'] = pc?.status || '-';
+                    row['IP Address'] = (pc?.specs && pc.specs.ipAddress) ? pc.specs.ipAddress : '-';
+                }
+
+                // Assignments & Submissions fields
+                if (entities.includes('assignments') || entities.includes('students')) {
+                    row['Total Submissions'] = s.submissions?.length || 0;
+                    row['Average Score (%)'] = avgScore;
+                }
+
+                return row;
+            });
+
+            reportResults.unified = {
+                title: `Unified Joined Master Report (${entities.map(e => e.toUpperCase()).join(' + ')})`,
+                count: unifiedRows.length,
+                rows: unifiedRows
+            };
+        } catch (err) {
+            console.error('Error generating unified joined master report:', err);
+        }
+    }
+
     return {
         success: true,
         generatedAt: new Date().toISOString(),

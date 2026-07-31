@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { Pencil, X, Maximize2, Minimize2, User } from 'lucide-react';
+import WhiteboardChatWindow from '@/components/WhiteboardChatWindow';
 
 export default function SharedWhiteboardViewer({
     isOpen,
@@ -82,6 +83,14 @@ export default function SharedWhiteboardViewer({
     useEffect(() => {
         if (!socket || !sessionId) return;
 
+        const getDashArray = (style) => {
+            switch (style) {
+                case 'dashed': return [10, 6];
+                case 'dotted': return [3, 3];
+                default: return [];
+            }
+        };
+
         // Handle draw event
         const handleDraw = (data) => {
             if (data.sessionId !== sessionId) return;
@@ -90,6 +99,8 @@ export default function SharedWhiteboardViewer({
             if (!canvas) return;
 
             const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
 
             if (data.isEraser || data.color === 'eraser') {
                 ctx.globalCompositeOperation = 'destination-out';
@@ -111,6 +122,7 @@ export default function SharedWhiteboardViewer({
                 ctx.lineWidth = data.strokeWidth || 4;
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
+                ctx.setLineDash(getDashArray(data.strokeStyle));
 
                 if (data.isStart) {
                     ctx.beginPath();
@@ -123,22 +135,29 @@ export default function SharedWhiteboardViewer({
                 ctx.strokeStyle = data.color || '#000000';
                 ctx.lineWidth = data.strokeWidth || 4;
                 ctx.lineCap = 'round';
+                ctx.setLineDash(getDashArray(data.strokeStyle));
                 ctx.beginPath();
                 ctx.moveTo(data.startX, data.startY);
                 ctx.lineTo(data.endX, data.endY);
                 ctx.stroke();
+                ctx.setLineDash([]);
             } else if (data.type === 'rectangle') {
                 ctx.strokeStyle = data.color || '#000000';
                 ctx.lineWidth = data.strokeWidth || 4;
+                ctx.setLineDash(getDashArray(data.strokeStyle));
                 ctx.strokeRect(data.x, data.y, data.width, data.height);
+                ctx.setLineDash([]);
             } else if (data.type === 'ellipse') {
                 ctx.strokeStyle = data.color || '#000000';
                 ctx.lineWidth = data.strokeWidth || 4;
+                ctx.setLineDash(getDashArray(data.strokeStyle));
                 ctx.beginPath();
                 ctx.ellipse(data.centerX, data.centerY, data.radiusX, data.radiusY, 0, 0, 2 * Math.PI);
                 ctx.stroke();
+                ctx.setLineDash([]);
             } else if (data.type === 'text') {
-                ctx.font = `${data.fontSize || 16}px sans-serif`;
+                ctx.font = `${data.fontSize || 18}px 'Inter', system-ui, sans-serif`;
+                ctx.textBaseline = 'middle';
                 ctx.fillStyle = data.color || '#000000';
                 ctx.fillText(data.text, data.x, data.y);
             }
@@ -359,6 +378,14 @@ export default function SharedWhiteboardViewer({
                         👁️ View-only mode • You are watching the instructor's whiteboard live
                     </p>
                 </div>
+
+                {/* Floatable Student Live Chat */}
+                <WhiteboardChatWindow
+                    socket={socket}
+                    sessionId={sessionId}
+                    currentUser={{ name: 'Student', role: 'student' }}
+                    isInstructor={false}
+                />
             </div>
         </div>
     );

@@ -609,7 +609,21 @@ export default function ReportsPage() {
 
                                 {/* Multi-Table Preview Tables */}
                                 <div className="space-y-8">
+                                    {/* View mode indicator when multiple entities generated */}
+                                    {generatedReport.reportResults.unified && (
+                                        <div className="p-3 bg-primary-50 border border-primary-200 rounded-xl flex items-center justify-between">
+                                            <div className="flex items-center gap-2 text-primary-900 font-bold text-sm">
+                                                <Sparkles className="w-5 h-5 text-primary-600" />
+                                                <span>Intelligent Joined Table Mode Active — Automatically joined {selectedEntities.length} entities into 1 unified master table</span>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {Object.keys(generatedReport.reportResults).map(key => {
+                                        // If unified exists, show unified first; skip disjoint entity tables unless requested
+                                        if (generatedReport.reportResults.unified && key !== 'unified') {
+                                            return null;
+                                        }
                                         const res = generatedReport.reportResults[key];
                                         if (!res.rows || res.rows.length === 0) {
                                             return (

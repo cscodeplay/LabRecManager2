@@ -10,6 +10,7 @@ import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
 import WhiteboardShareModal from '@/components/WhiteboardShareModal';
 import CameraOverlay from '@/components/CameraOverlay';
+import WhiteboardChatWindow from '@/components/WhiteboardChatWindow';
 
 export default function WhiteboardPage() {
     const router = useRouter();
@@ -120,37 +121,19 @@ export default function WhiteboardPage() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-100 flex flex-col">
-            {/* Header */}
-            <header className="bg-white border-b border-slate-200 sticky top-0 z-20">
-                <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Link href="/dashboard" className="text-slate-500 hover:text-slate-700 transition">
-                            <ArrowLeft className="w-5 h-5" />
-                        </Link>
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
-                                <Pencil className="w-5 h-5 text-white" />
-                            </div>
-                            <div>
-                                <h1 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                                    Interactive Whiteboard
-                                    {isSharing && (
-                                        <span className="flex items-center gap-1 text-xs bg-red-500 text-white px-2 py-0.5 rounded-full">
-                                            <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                                            LIVE
-                                        </span>
-                                    )}
-                                </h1>
-                                <p className="text-sm text-slate-500">
-                                    {isSharing
-                                        ? `Sharing with: ${shareTargets.join(', ')}`
-                                        : 'Draw and share with your students'
-                                    }
-                                </p>
-                            </div>
-                        </div>
-                    </div>
+        <div className="h-screen bg-slate-100 flex flex-col overflow-hidden relative">
+            {/* Top Navigation & Action Controls Bar (Minimal without title bar) */}
+            <div className="absolute top-3 left-4 z-30 flex items-center gap-3">
+                <Link href="/dashboard" className="p-2 bg-white/90 hover:bg-white text-slate-700 rounded-lg shadow-md transition" title="Back to Dashboard">
+                    <ArrowLeft className="w-5 h-5" />
+                </Link>
+                {isSharing && (
+                    <span className="flex items-center gap-1.5 text-xs bg-red-500 text-white font-bold px-2.5 py-1 rounded-full shadow-md animate-pulse">
+                        <span className="w-2 h-2 bg-white rounded-full" />
+                        LIVE SHARING
+                    </span>
+                )}
+            </div>
 
                     <div className="flex items-center gap-3">
                         {/* Camera toggle button */}
@@ -225,6 +208,21 @@ export default function WhiteboardPage() {
                 socket={socketRef.current}
                 sessionId={sessionId}
                 isInstructor={true}
+            />
+
+            {/* Floatable Chat & Audience Window */}
+            <WhiteboardChatWindow
+                socket={socketRef.current}
+                sessionId={sessionId}
+                currentUser={{ name: user?.name || `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Instructor', role: 'instructor' }}
+                isInstructor={true}
+                availableGroups={availableGroups}
+                selectedGroupIds={selectedGroupIds}
+                onToggleGroupSelection={(groupId) => {
+                    setSelectedGroupIds(prev =>
+                        prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId]
+                    );
+                }}
             />
         </div>
     );
