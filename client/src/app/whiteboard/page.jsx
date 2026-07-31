@@ -135,40 +135,38 @@ export default function WhiteboardPage() {
                 )}
             </div>
 
-                    <div className="flex items-center gap-3">
-                        {/* Camera toggle button */}
-                        <button
-                            onClick={() => setShowCamera(!showCamera)}
-                            className={`p-2.5 rounded-lg font-medium transition flex items-center justify-center ${showCamera
-                                ? 'bg-green-500 hover:bg-green-600 text-white'
-                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                                }`}
-                            title={showCamera ? 'Turn Camera Off' : 'Turn Camera On'}
-                        >
-                            {showCamera ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-                        </button>
+            <div className="absolute top-3 right-4 z-30 flex items-center gap-3">
+                {/* Camera toggle button */}
+                <button
+                    onClick={() => setShowCamera(!showCamera)}
+                    className={`p-2.5 rounded-lg font-medium transition flex items-center justify-center ${showCamera
+                        ? 'bg-green-500 hover:bg-green-600 text-white'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                    title={showCamera ? 'Turn Camera Off' : 'Turn Camera On'}
+                >
+                    {showCamera ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                </button>
 
-                        {/* Share button */}
-                        {!isSharing ? (
-                            <button
-                                onClick={() => setShowShareModal(true)}
-                                className="p-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition flex items-center justify-center shadow-sm"
-                                title="Share Whiteboard with Students"
-                            >
-                                <Share2 className="w-5 h-5" />
-                            </button>
-                        ) : (
-                            <button
-                                onClick={handleStopSharing}
-                                className="p-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition flex items-center justify-center shadow-sm"
-                                title="Stop Sharing Whiteboard"
-                            >
-                                <Users className="w-5 h-5" />
-                            </button>
-                        )}
-                    </div>
-                </div>
-            </header>
+                {/* Share button */}
+                {!isSharing ? (
+                    <button
+                        onClick={() => setShowShareModal(true)}
+                        className="p-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition flex items-center justify-center shadow-sm"
+                        title="Share Whiteboard with Students"
+                    >
+                        <Share2 className="w-5 h-5" />
+                    </button>
+                ) : (
+                    <button
+                        onClick={handleStopSharing}
+                        className="p-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition flex items-center justify-center shadow-sm"
+                        title="Stop Sharing Whiteboard"
+                    >
+                        <Users className="w-5 h-5" />
+                    </button>
+                )}
+            </div>
 
             {/* Whiteboard Area */}
             <main className="flex-1 p-4 flex items-center justify-center">
@@ -216,13 +214,6 @@ export default function WhiteboardPage() {
                 sessionId={sessionId}
                 currentUser={{ name: user?.name || `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Instructor', role: 'instructor' }}
                 isInstructor={true}
-                availableGroups={availableGroups}
-                selectedGroupIds={selectedGroupIds}
-                onToggleGroupSelection={(groupId) => {
-                    setSelectedGroupIds(prev =>
-                        prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId]
-                    );
-                }}
             />
         </div>
     );
