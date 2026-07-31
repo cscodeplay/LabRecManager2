@@ -2205,6 +2205,7 @@ export default function Whiteboard({
                         )}
                     </div>
                 </div>
+            </div>
 
             {/* Canvas */}
             <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center ${isFullscreen ? 'h-full' : ''}`}>
