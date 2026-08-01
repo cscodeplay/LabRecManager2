@@ -6,6 +6,61 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const router = express.Router();
 
 /**
+ * @route   GET /api/whiteboard/personal
+ * @desc    Get the personal standalone whiteboard data for an admin/instructor
+ * @access  Admin/Instructor
+ */
+router.get('/personal', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const schoolId = req.user.schoolId;
+
+    // Find a session representing their personal workspace
+    const session = await prisma.whiteboardSession.findFirst({
+        where: { hostId: userId, schoolId, title: 'Personal Workspace' }
+    });
+
+    if (!session) {
+        return res.json({ success: true, data: { canvasData: null } });
+    }
+
+    res.json({ success: true, data: { canvasData: session.canvasData } });
+}));
+
+/**
+ * @route   PUT /api/whiteboard/personal
+ * @desc    Save the personal standalone whiteboard data
+ * @access  Admin/Instructor
+ */
+router.put('/personal', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const schoolId = req.user.schoolId;
+    const { canvasData } = req.body;
+
+    const session = await prisma.whiteboardSession.findFirst({
+        where: { hostId: userId, schoolId, title: 'Personal Workspace' }
+    });
+
+    if (session) {
+        await prisma.whiteboardSession.update({
+            where: { id: session.id },
+            data: { canvasData }
+        });
+    } else {
+        await prisma.whiteboardSession.create({
+            data: {
+                hostId: userId,
+                schoolId,
+                title: 'Personal Workspace',
+                canvasData,
+                status: 'active'
+            }
+        });
+    }
+
+    res.json({ success: true, message: 'Saved successfully' });
+}));
+
+/**
  * @route   GET /api/whiteboard/sessions
  * @desc    Get all active whiteboard sessions (admin only)
  * @access  Admin/Principal

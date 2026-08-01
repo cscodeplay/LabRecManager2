@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import {
     Pencil, Eraser, Circle, Square, Minus, Type, Undo2, Redo2, Trash2, Download, Save,
-    Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2,
+    Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2, Sparkles, Wand2,
     Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
     Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, Scan
 } from 'lucide-react';
@@ -189,6 +189,7 @@ export default function Whiteboard({
 
     // Laser pointer state
     const [laserPos, setLaserPos] = useState(null);
+    const [isAutoShape, setIsAutoShape] = useState(false);
     const laserTimeoutRef = useRef(null);
 
     // Highlighter color
@@ -259,13 +260,29 @@ export default function Whiteboard({
     const saveTimeoutRef = useRef(null);
     const STORAGE_KEY = whiteboardId ? `whiteboard_${whiteboardId}` : null;
 
-    // Load state from localStorage on mount
+    // Load state from localStorage or API on mount
     useEffect(() => {
         if (!STORAGE_KEY || stateLoadedRef.current) return;
 
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
+        const loadState = async () => {
+            try {
+                let saved = null;
+                if (whiteboardId === 'admin-standalone') {
+                    const token = localStorage.getItem('token');
+                    if (token) {
+                        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/personal`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        const data = await res.json();
+                        if (data.success && data.data?.canvasData) {
+                            saved = data.data.canvasData;
+                        }
+                    }
+                } else {
+                    saved = localStorage.getItem(STORAGE_KEY);
+                }
+
+                if (saved) {
                 const state = JSON.parse(saved);
                 // Restore all state
                 if (state.pages) setPages(state.pages);
@@ -295,11 +312,15 @@ export default function Whiteboard({
                 }
                 console.log('✅ Whiteboard state restored from localStorage');
             }
+            }
         } catch (e) {
             console.error('Error loading whiteboard state:', e);
         }
         stateLoadedRef.current = true;
-    }, [STORAGE_KEY]);
+    };
+    
+    loadState();
+    }, [STORAGE_KEY, whiteboardId]);
 
     // Save state to localStorage on changes (debounced)
     useEffect(() => {
@@ -331,7 +352,24 @@ export default function Whiteboard({
                     tool,
                     savedAt: Date.now()
                 };
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+                
+                const stateStr = JSON.stringify(state);
+                
+                if (whiteboardId === 'admin-standalone') {
+                    const token = localStorage.getItem('token');
+                    if (token) {
+                        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/personal`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ canvasData: stateStr })
+                        }).catch(e => console.error('Failed to sync whiteboard to DB:', e));
+                    }
+                } else {
+                    localStorage.setItem(STORAGE_KEY, stateStr);
+                }
             } catch (e) {
                 console.error('Error saving whiteboard state:', e);
             }
@@ -1023,7 +1061,7 @@ export default function Whiteboard({
 
         if (tool === 'pen') {
             const pts = currentPathPointsRef.current;
-            if (pts && pts.length >= 8) {
+            if (isAutoShape && pts && pts.length >= 8) {
                 // Auto shape recognition when user closes or connects a path
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
                 let pathLength = 0;
@@ -1045,7 +1083,7 @@ export default function Whiteboard({
                 const pEnd = pts[pts.length - 1];
                 const distClose = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
                 const maxDim = Math.max(w, h);
-                const isClosed = distClose < 45 || distClose < 0.35 * maxDim;
+                const isClosed = distClose < 20 || distClose < 0.15 * maxDim;
 
                 // Shoelace formula for enclosed polygon area
                 let polygonArea = 0;
@@ -1619,6 +1657,7 @@ export default function Whiteboard({
                     {/* Tools */}
                     <div className="flex items-center gap-0.5">
                         {[
+                            { id: 'select', icon: MousePointer2, label: 'Select' },
                             { id: 'pen', icon: Pencil, label: 'Pen' },
                             { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
                             { id: 'eraser', icon: Eraser, label: 'Eraser' },
@@ -1627,12 +1666,19 @@ export default function Whiteboard({
                             { id: 'circle', icon: Circle, label: 'Circle' },
                             { id: 'text', icon: Type, label: 'Text' },
                             { id: 'image', icon: ImageIcon, label: 'Image' },
-                            { id: 'laser', icon: MousePointer2, label: 'Laser Pointer' },
+                            { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
                         ].map(t => (
                             <button
                                 key={t.id}
                                 onClick={() => {
-                                    setTool(t.id);
+                                    if (tool === t.id) {
+                                        // Re-click to open stroke size popup
+                                        if (['pen', 'highlighter', 'line', 'arrow', 'rectangle', 'circle'].includes(t.id)) {
+                                            setShowStrokePicker(!showStrokePicker);
+                                        }
+                                    } else {
+                                        setTool(t.id);
+                                    }
                                     if (t.id === 'image') {
                                         imageInputRef.current?.click();
                                     }
@@ -1877,6 +1923,17 @@ export default function Whiteboard({
                                     </div>
                                 </div>
                             )}
+                        </div>
+
+                        {/* AI Shape Toggle */}
+                        <div className="relative border-l border-slate-700 pl-1 ml-1 flex items-center">
+                            <button
+                                onClick={() => setIsAutoShape(!isAutoShape)}
+                                className={`p-1 rounded-full transition flex items-center justify-center ${isAutoShape ? 'bg-purple-500/20 text-purple-400' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                                title={isAutoShape ? "Smart Shapes: ON" : "Smart Shapes: OFF"}
+                            >
+                                <Wand2 className="w-3.5 h-3.5" />
+                            </button>
                         </div>
 
                         {/* Stroke Style */}

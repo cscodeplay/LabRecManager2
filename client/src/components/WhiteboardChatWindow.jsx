@@ -42,6 +42,15 @@ export default function WhiteboardChatWindow({
 
         const handleChatMessage = (data) => {
             if (sessionId && data.sessionId !== sessionId) return;
+            
+            // Client-side filtering for privacy routing
+            if (!isInstructor && data.target !== 'Everyone' && data.target !== currentUser.name) {
+                // If it's a student, and message isn't for Everyone or them specifically, ignore it.
+                // Note: If they belong to a group, we would ideally check if data.target matches their group name.
+                // For now, assume groups are handled or strict filtering blocks it.
+                return;
+            }
+            
             setMessages((prev) => [...prev, data]);
         };
 
@@ -88,10 +97,10 @@ export default function WhiteboardChatWindow({
 
     const handleSendMessage = (e) => {
         e.preventDefault();
-        if (!inputMsg.trim()) return;
+        if (!inputMsg.trim() || !sessionId) return; // Prevent sending if offline
 
         const msgData = {
-            sessionId: sessionId || 'local',
+            sessionId: sessionId,
             sender: currentUser.name || (isInstructor ? 'Instructor' : 'Student'),
             role: isInstructor ? 'instructor' : 'student',
             target: activeTarget,
@@ -117,7 +126,7 @@ export default function WhiteboardChatWindow({
         return (
             <button
                 onClick={() => setIsOpen(true)}
-                className="fixed bottom-24 right-6 z-40 p-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-full shadow-2xl flex items-center justify-center transition hover:scale-105"
+                className="fixed bottom-24 right-6 z-[60] p-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-full shadow-2xl flex items-center justify-center transition hover:scale-105"
                 title="Open Whiteboard Chat & Audience"
             >
                 <MessageSquare className="w-5 h-5" />
@@ -130,17 +139,13 @@ export default function WhiteboardChatWindow({
         );
     }
 
-    // Default mock lists if empty
-    const groupList = availableGroups.length > 0 ? availableGroups : [
-        { id: 'g1', name: 'Group A' },
-        { id: 'g2', name: 'Group B' }
-    ];
+    const groupList = availableGroups;
 
     return (
         <div
             ref={chatRef}
             style={{ left: `${position.x}px`, top: `${position.y}px` }}
-            className="fixed z-50 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden select-none"
+            className="fixed z-[60] w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden select-none"
         >
             {/* Header / Drag Bar */}
             <div
@@ -192,32 +197,25 @@ export default function WhiteboardChatWindow({
                         </button>
                     </div>
 
-                    <div className="p-3 bg-white flex-1">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Groups / Students</p>
-                        <div className="space-y-1">
-                            {groupList.map(g => (
-                                <button
-                                    key={g.id}
-                                    onClick={() => handleSelectTarget(g.name)}
-                                    className="w-full text-left p-2 hover:bg-amber-50 rounded-lg flex items-center gap-3 transition"
-                                >
-                                    <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center border border-slate-200">
-                                        <Users className="w-4 h-4" />
-                                    </div>
-                                    <span className="text-sm font-medium text-slate-700">{g.name}</span>
-                                </button>
-                            ))}
-                            <button
-                                onClick={() => handleSelectTarget('Student Demo')}
-                                className="w-full text-left p-2 hover:bg-amber-50 rounded-lg flex items-center gap-3 transition"
-                            >
-                                <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center border border-slate-200">
-                                    <User className="w-4 h-4" />
-                                </div>
-                                <span className="text-sm font-medium text-slate-700">Student Demo</span>
-                            </button>
+                    {groupList.length > 0 && (
+                        <div className="p-3 bg-white flex-1">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Groups / Students</p>
+                            <div className="space-y-1">
+                                {groupList.map(g => (
+                                    <button
+                                        key={g.id}
+                                        onClick={() => handleSelectTarget(g.name)}
+                                        className="w-full text-left p-2 hover:bg-amber-50 rounded-lg flex items-center gap-3 transition"
+                                    >
+                                        <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center border border-slate-200">
+                                            <Users className="w-4 h-4" />
+                                        </div>
+                                        <span className="text-sm font-medium text-slate-700">{g.name}</span>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
             ) : (
                 /* Chat View */
@@ -267,13 +265,14 @@ export default function WhiteboardChatWindow({
                             type="text"
                             value={inputMsg}
                             onChange={(e) => setInputMsg(e.target.value)}
-                            placeholder={`Message ${activeTarget}...`}
-                            className="flex-1 px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-800"
+                            placeholder={sessionId ? `Message ${activeTarget}...` : "Waiting for Live Sharing..."}
+                            disabled={!sessionId}
+                            className="flex-1 px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-800 disabled:opacity-50"
                         />
                         <button
                             type="submit"
-                            disabled={!inputMsg.trim()}
-                            className="p-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white rounded-full transition shadow-xs"
+                            disabled={!inputMsg.trim() || !sessionId}
+                            className="p-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 disabled:opacity-40 text-white rounded-full transition shadow-xs"
                             title="Send Message"
                         >
                             <Send className="w-3.5 h-3.5" />

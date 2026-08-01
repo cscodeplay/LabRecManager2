@@ -135,26 +135,7 @@ export default function WhiteboardPage() {
                 )}
             </div>
 
-            <div className="absolute top-3 right-4 z-30 flex items-center gap-3">
-                {/* Share button */}
-                {!isSharing ? (
-                    <button
-                        onClick={() => setShowShareModal(true)}
-                        className="p-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition flex items-center justify-center shadow-sm"
-                        title="Share Whiteboard with Students"
-                    >
-                        <Share2 className="w-5 h-5" />
-                    </button>
-                ) : (
-                    <button
-                        onClick={handleStopSharing}
-                        className="p-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition flex items-center justify-center shadow-sm"
-                        title="Stop Sharing Whiteboard"
-                    >
-                        <Users className="w-5 h-5" />
-                    </button>
-                )}
-            </div>
+
 
             {/* Camera toggle button placed at bottom-left of the board */}
             <div className="fixed bottom-6 left-6 z-40">
@@ -186,7 +167,7 @@ export default function WhiteboardPage() {
                         onStopSharing={handleStopSharing}
                         socket={socketRef.current}
                         sessionId={sessionId}
-                        whiteboardId={user?.id ? `user_${user.id}` : null}
+                        whiteboardId="admin-standalone"
                     />
                 </div>
             </main>
