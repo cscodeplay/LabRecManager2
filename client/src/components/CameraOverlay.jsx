@@ -39,24 +39,25 @@ export default function CameraOverlay({
     const audioContextRef = useRef(null);
     const analyserRef = useRef(null);
 
-    // Get available devices
-    useEffect(() => {
-        const getDevices = async () => {
-            try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                setVideoDevices(devices.filter(d => d.kind === 'videoinput'));
-                setAudioDevices(devices.filter(d => d.kind === 'audioinput'));
-            } catch (err) {
-                console.error('Error getting devices:', err);
-            }
-        };
-
-        if (isOpen) {
-            getDevices();
-        } else {
-            stopMedia();
+    // Stop camera and microphone
+    const stopMedia = useCallback(() => {
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
         }
-    }, [isOpen, stopMedia]);
+        if (audioContextRef.current) {
+            audioContextRef.current.close();
+            audioContextRef.current = null;
+        }
+        setIsCameraOn(false);
+        setIsMicOn(false);
+        setAudioLevel(0);
+
+        // Emit stream stop event
+        if (socket && sessionId) {
+            socket.emit('whiteboard:camera-stop', { sessionId });
+        }
+    }, [socket, sessionId]);
 
     // Start camera and microphone
     const startMedia = useCallback(async () => {
@@ -115,25 +116,24 @@ export default function CameraOverlay({
         }
     }, [selectedVideoDevice, selectedAudioDevice, socket, sessionId]);
 
-    // Stop camera and microphone
-    const stopMedia = useCallback(() => {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-        if (audioContextRef.current) {
-            audioContextRef.current.close();
-            audioContextRef.current = null;
-        }
-        setIsCameraOn(false);
-        setIsMicOn(false);
-        setAudioLevel(0);
+    // Get available devices
+    useEffect(() => {
+        const getDevices = async () => {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                setVideoDevices(devices.filter(d => d.kind === 'videoinput'));
+                setAudioDevices(devices.filter(d => d.kind === 'audioinput'));
+            } catch (err) {
+                console.error('Error getting devices:', err);
+            }
+        };
 
-        // Emit stream stop event
-        if (socket && sessionId) {
-            socket.emit('whiteboard:camera-stop', { sessionId });
+        if (isOpen) {
+            getDevices();
+        } else {
+            stopMedia();
         }
-    }, [socket, sessionId]);
+    }, [isOpen, stopMedia]);
 
     // Toggle camera
     const toggleCamera = useCallback(() => {
