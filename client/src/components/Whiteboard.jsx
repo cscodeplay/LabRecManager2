@@ -312,7 +312,6 @@ export default function Whiteboard({
                 }
                 console.log('✅ Whiteboard state restored from localStorage');
             }
-            }
         } catch (e) {
             console.error('Error loading whiteboard state:', e);
         }
