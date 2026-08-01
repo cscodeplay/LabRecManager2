@@ -14,9 +14,10 @@ router.get('/personal', authenticate, authorize('admin', 'principal', 'instructo
     const userId = req.user.id;
     const schoolId = req.user.schoolId;
 
-    // Find a session representing their personal workspace
+    // Find a session representing their personal workspace (shared across school admins)
     const session = await prisma.whiteboardSession.findFirst({
-        where: { hostId: userId, schoolId, title: 'Personal Workspace' }
+        where: { schoolId, title: 'Personal Workspace' },
+        orderBy: { updatedAt: 'desc' }
     });
 
     if (!session) {
@@ -37,7 +38,8 @@ router.put('/personal', authenticate, authorize('admin', 'principal', 'instructo
     const { canvasData } = req.body;
 
     const session = await prisma.whiteboardSession.findFirst({
-        where: { hostId: userId, schoolId, title: 'Personal Workspace' }
+        where: { schoolId, title: 'Personal Workspace' },
+        orderBy: { updatedAt: 'desc' }
     });
 
     if (session) {
@@ -319,6 +321,43 @@ router.post('/sessions/:id/message', authenticate, authorize('admin', 'principal
         success: true,
         data: { sessionId: id, message, sentAt: new Date() },
         message: 'Message will be broadcast to participants'
+    });
+}));
+
+/**
+ * @route   POST /api/whiteboard/recordings
+ * @desc    Save a whiteboard recording
+ * @access  Admin/Instructor
+ */
+router.post('/recordings', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const { title, description, sessionId, cloudinaryId, cloudinaryUrl, thumbnailUrl, duration, fileSize, isPublic } = req.body;
+    
+    if (!cloudinaryId || !cloudinaryUrl) {
+        return res.status(400).json({ success: false, message: 'Cloudinary details are required' });
+    }
+    
+    const recording = await prisma.whiteboardRecording.create({
+        data: {
+            userId: req.user.id,
+            schoolId: req.user.schoolId,
+            title: title || 'Whiteboard Recording',
+            description,
+            sessionId,
+            cloudinaryId,
+            cloudinaryUrl,
+            thumbnailUrl,
+            duration,
+            fileSize,
+            isPublic: isPublic !== undefined ? isPublic : true,
+            // Generate a random 16 char token for sharing
+            shareToken: Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10)
+        }
+    });
+
+    res.status(201).json({
+        success: true,
+        data: recording,
+        message: 'Recording saved successfully'
     });
 }));
 

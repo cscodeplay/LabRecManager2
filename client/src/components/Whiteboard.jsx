@@ -5,8 +5,11 @@ import {
     Pencil, Eraser, Circle, Square, Minus, Type, Undo2, Redo2, Trash2, Download, Save,
     Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2, Sparkles, Wand2,
     Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
-    Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, Scan
+    Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, Scan,
+    Triangle, Star, Hexagon // For shapes
 } from 'lucide-react';
+import WhiteboardChatWindow from './WhiteboardChatWindow';
+import WhiteboardRecorder from './WhiteboardRecorder';
 
 // Default colors (rainbow + black/white)
 const DEFAULT_COLORS = [
@@ -119,14 +122,23 @@ export default function Whiteboard({
     const currentPathPointsRef = useRef([]);
     const preStrokeImageDataRef = useRef(null);
     const [isDrawing, setIsDrawing] = useState(false);
-    const [tool, setTool] = useState('pen'); // pen, eraser, line, rectangle, circle, text
+    const [tool, setTool] = useState('pen'); // pen, eraser, select, highlighter, shape, laser, text, image
     const [color, setColor] = useState('#000000');
     const [strokeWidth, setStrokeWidth] = useState(4);
     const [eraserSize, setEraserSize] = useState(20); // Separate eraser size
     const [strokeStyle, setStrokeStyle] = useState('solid'); // solid, dashed, dotted
     const [showColorPicker, setShowColorPicker] = useState(false);
+    
+    // Pop-over UI states
     const [showStrokePicker, setShowStrokePicker] = useState(false);
-    const [showStrokeStylePicker, setShowStrokeStylePicker] = useState(false);
+    const [showEraserPicker, setShowEraserPicker] = useState(false);
+    const [showShapePicker, setShowShapePicker] = useState(false);
+    const [showSelectPicker, setShowSelectPicker] = useState(false);
+    const [showHighlighterPicker, setShowHighlighterPicker] = useState(false);
+
+    // Sub-tool options
+    const [shapeType, setShapeType] = useState('rectangle'); // rectangle, circle, triangle, star
+    const [selectMode, setSelectMode] = useState('rectangle'); // rectangle, lasso
 
     // Multi-page state - must be before anything that uses currentPage
     const [pages, setPages] = useState([null]); // Array of canvas data URLs
@@ -184,7 +196,8 @@ export default function Whiteboard({
     const [textValue, setTextValue] = useState('');
 
     // Selection state
-    const [selection, setSelection] = useState(null); // { x, y, width, height }
+    const [selection, setSelection] = useState(null); // { x, y, width, height, path?: [{x,y}] }
+    const [lassoPath, setLassoPath] = useState([]);
     const [clipboard, setClipboard] = useState(null); // imageData for copy/paste
 
     // Laser pointer state
@@ -223,6 +236,12 @@ export default function Whiteboard({
     const [textInputMode, setTextInputMode] = useState('create'); // 'create' or 'edit'
     const [textBoundary, setTextBoundary] = useState(null); // { x, y, width, height } - dotted boundary while creating
     
+    // Shape objects for manipulation
+    const [pageShapeObjects, setPageShapeObjects] = useState({ 0: [] });
+    const [selectedShapeId, setSelectedShapeId] = useState(null);
+    const [shapeDragState, setShapeDragState] = useState(null);
+    const [editingShapeTextId, setEditingShapeTextId] = useState(null);
+
     // OCR toggle
     const [isOcrActive, setIsOcrActive] = useState(false);
 
@@ -231,6 +250,9 @@ export default function Whiteboard({
 
     // Get current page's text objects (derived state)
     const textObjects = pageTextObjects[currentPage] || [];
+
+    // Get current page's shape objects (derived state)
+    const shapeObjects = pageShapeObjects[currentPage] || [];
 
     // Helper ref to track current page for stable callbacks
     const currentPageRef = useRef(currentPage);
@@ -251,18 +273,25 @@ export default function Whiteboard({
         }));
     }, []);
 
+    const setShapeObjects = useCallback((updater) => {
+        setPageShapeObjects(prev => ({
+            ...prev,
+            [currentPageRef.current]: typeof updater === 'function' ? updater(prev[currentPageRef.current] || []) : updater
+        }));
+    }, []);
+
     // Canvas dimensions - keep fixed to prevent content loss
     const canvasWidth = width;
     const canvasHeight = height;
 
     // Persistence: track if state has been loaded from localStorage
-    const stateLoadedRef = useRef(false);
+    const [isStateLoaded, setIsStateLoaded] = useState(false);
     const saveTimeoutRef = useRef(null);
     const STORAGE_KEY = whiteboardId ? `whiteboard_${whiteboardId}` : null;
 
     // Load state from localStorage or API on mount
     useEffect(() => {
-        if (!STORAGE_KEY || stateLoadedRef.current) return;
+        if (!STORAGE_KEY || isStateLoaded) return;
 
         const loadState = async () => {
             try {
@@ -296,6 +325,7 @@ export default function Whiteboard({
                 if (state.pageBackgrounds) setPageBackgrounds(state.pageBackgrounds);
                 if (state.pageImageObjects) setPageImageObjects(state.pageImageObjects);
                 if (state.pageTextObjects) setPageTextObjects(state.pageTextObjects);
+                if (state.pageShapeObjects) setPageShapeObjects(state.pageShapeObjects);
                 if (state.color) setColor(state.color);
                 if (state.strokeWidth) setStrokeWidth(state.strokeWidth);
                 if (state.eraserSize) setEraserSize(state.eraserSize);
@@ -320,7 +350,7 @@ export default function Whiteboard({
         } catch (e) {
             console.error('Error loading whiteboard state:', e);
         }
-        stateLoadedRef.current = true;
+        setIsStateLoaded(true);
     };
     
     loadState();
@@ -328,7 +358,7 @@ export default function Whiteboard({
 
     // Save state to localStorage on changes (debounced)
     useEffect(() => {
-        if (!STORAGE_KEY || !stateLoadedRef.current) return;
+        if (!STORAGE_KEY || !isStateLoaded) return;
 
         // Debounce saves to avoid excessive writes
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -349,6 +379,7 @@ export default function Whiteboard({
                     pageBackgrounds,
                     pageImageObjects,
                     pageTextObjects,
+                    pageShapeObjects,
                     color,
                     strokeWidth,
                     eraserSize,
@@ -387,7 +418,7 @@ export default function Whiteboard({
         return () => {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         };
-    }, [STORAGE_KEY, pages, currentPage, totalPages, pageBackgrounds, pageImageObjects, pageTextObjects, color, strokeWidth, eraserSize, strokeStyle, tool]);
+    }, [STORAGE_KEY, pages, currentPage, totalPages, pageBackgrounds, pageImageObjects, pageTextObjects, pageShapeObjects, color, strokeWidth, eraserSize, strokeStyle, tool]);
 
     // Initialize canvas - keep transparent to show CSS background patterns
     useEffect(() => {
@@ -416,7 +447,11 @@ export default function Whiteboard({
                 sessionId,
                 imageData,
                 bgColor,
-                bgPattern
+                bgPattern,
+                imageObjects,
+                textObjects,
+                shapeObjects,
+                laserPos
             });
         };
 
@@ -438,7 +473,7 @@ export default function Whiteboard({
             clearInterval(intervalId);
             socket.off('whiteboard:request-state', handleStateRequest);
         };
-    }, [isSharing, socket, sessionId]);
+    }, [isSharing, socket, sessionId, bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos]);
 
     // Save current state to history
     const saveToHistory = useCallback(() => {
@@ -512,7 +547,26 @@ export default function Whiteboard({
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
-        const imageData = ctx.getImageData(selection.x, selection.y, selection.width, selection.height);
+        let imageData;
+        if (selection.path) {
+            const offCanvas = document.createElement('canvas');
+            offCanvas.width = selection.width;
+            offCanvas.height = selection.height;
+            const offCtx = offCanvas.getContext('2d');
+            
+            offCtx.beginPath();
+            offCtx.moveTo(selection.path[0].x - selection.x, selection.path[0].y - selection.y);
+            for (let i = 1; i < selection.path.length; i++) {
+                offCtx.lineTo(selection.path[i].x - selection.x, selection.path[i].y - selection.y);
+            }
+            offCtx.closePath();
+            offCtx.clip();
+            
+            offCtx.drawImage(canvas, -selection.x, -selection.y);
+            imageData = offCtx.getImageData(0, 0, selection.width, selection.height);
+        } else {
+            imageData = ctx.getImageData(selection.x, selection.y, selection.width, selection.height);
+        }
         setClipboard({ imageData, width: selection.width, height: selection.height });
     }, [selection]);
 
@@ -525,8 +579,22 @@ export default function Whiteboard({
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
-        // Clear selection area (make transparent) to reveal CSS background
-        ctx.clearRect(selection.x, selection.y, selection.width, selection.height);
+        if (selection.path) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(selection.path[0].x, selection.path[0].y);
+            for (let i = 1; i < selection.path.length; i++) {
+                ctx.lineTo(selection.path[i].x, selection.path[i].y);
+            }
+            ctx.closePath();
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fillStyle = 'black';
+            ctx.fill();
+            ctx.restore();
+        } else {
+            // Clear selection area (make transparent) to reveal CSS background
+            ctx.clearRect(selection.x, selection.y, selection.width, selection.height);
+        }
         setSelection(null);
         saveToHistory();
     }, [selection, handleCopySelection, saveToHistory]);
@@ -552,8 +620,22 @@ export default function Whiteboard({
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
-        // Clear selection area (make transparent) to reveal CSS background
-        ctx.clearRect(selection.x, selection.y, selection.width, selection.height);
+        if (selection.path) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(selection.path[0].x, selection.path[0].y);
+            for (let i = 1; i < selection.path.length; i++) {
+                ctx.lineTo(selection.path[i].x, selection.path[i].y);
+            }
+            ctx.closePath();
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fillStyle = 'black';
+            ctx.fill();
+            ctx.restore();
+        } else {
+            // Clear selection area (make transparent) to reveal CSS background
+            ctx.clearRect(selection.x, selection.y, selection.width, selection.height);
+        }
         setSelection(null);
         saveToHistory();
     }, [selection, saveToHistory]);
@@ -827,11 +909,91 @@ export default function Whiteboard({
         };
     }, [textDragState, saveToHistory, setTextObjects]);
 
+    // Handle shape dragging/resizing
+    useEffect(() => {
+        if (!shapeDragState) return;
+
+        const handleMouseMove = (e) => {
+            const dx = e.clientX - shapeDragState.startX;
+            const dy = e.clientY - shapeDragState.startY;
+            const startObj = shapeDragState.startObj;
+
+            if (shapeDragState.action === 'move') {
+                setShapeObjects(prev => prev.map(shp =>
+                    shp.id === shapeDragState.id
+                        ? { ...shp, x: startObj.x + dx, y: startObj.y + dy }
+                        : shp
+                ));
+            } else if (shapeDragState.action === 'rotate') {
+                const canvas = canvasRef.current;
+                const rect = canvas.getBoundingClientRect();
+                
+                // Get the center of the shape in screen coordinates
+                const centerX = startObj.x + startObj.width / 2;
+                const centerY = startObj.y + startObj.height / 2;
+                
+                const canvasCenterX = rect.left + (centerX / canvas.width) * rect.width;
+                const canvasCenterY = rect.top + (centerY / canvas.height) * rect.height;
+
+                const startAngle = Math.atan2(shapeDragState.startY - canvasCenterY, shapeDragState.startX - canvasCenterX);
+                const currentAngle = Math.atan2(e.clientY - canvasCenterY, e.clientX - canvasCenterX);
+                const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
+
+                setShapeObjects(prev => prev.map(shp =>
+                    shp.id === shapeDragState.id
+                        ? { ...shp, rotation: (startObj.rotation || 0) + angleDiff }
+                        : shp
+                ));
+            } else if (shapeDragState.action.startsWith('resize-')) {
+                const handle = shapeDragState.action.replace('resize-', '');
+                let newX = startObj.x, newY = startObj.y;
+                let newWidth = startObj.width, newHeight = startObj.height;
+                const minSize = 20;
+
+                if (handle.includes('e')) {
+                    newWidth = Math.max(minSize, startObj.width + dx);
+                }
+                if (handle.includes('w')) {
+                    const widthChange = Math.min(dx, startObj.width - minSize);
+                    newX = startObj.x + widthChange;
+                    newWidth = startObj.width - widthChange;
+                }
+                if (handle.includes('s')) {
+                    newHeight = Math.max(minSize, startObj.height + dy);
+                }
+                if (handle.includes('n')) {
+                    const heightChange = Math.min(dy, startObj.height - minSize);
+                    newY = startObj.y + heightChange;
+                    newHeight = startObj.height - heightChange;
+                }
+
+                setShapeObjects(prev => prev.map(shp =>
+                    shp.id === shapeDragState.id
+                        ? { ...shp, x: newX, y: newY, width: newWidth, height: newHeight }
+                        : shp
+                ));
+            }
+        };
+
+        const handleMouseUp = () => {
+            setShapeDragState(null);
+            saveToHistory();
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [shapeDragState, saveToHistory, setShapeObjects]);
+
     // Click on canvas to deselect images and text
     const handleCanvasClick = useCallback(() => {
         setSelectedImageId(null);
         setSelectedTextId(null);
         setEditingTextId(null);
+        setSelectedShapeId(null);
     }, []);
 
     // Get position from event (works for both mouse and touch)
@@ -874,18 +1036,21 @@ export default function Whiteboard({
         e.preventDefault();
         const pos = getPosition(e);
 
-        // Handle text tool - start drawing text boundary area (like MS Paint)
-        if (tool === 'text') {
+        // Handle text or shape tool - start drawing boundary area
+        if (tool === 'text' || tool === 'shape') {
             setIsDrawing(true);
             setStartPos(pos);
             setCurrentPos(pos);
-            setTextBoundary(null);
+            if (tool === 'text') setTextBoundary(null);
             return;
         }
 
         // Handle select tool - start drawing selection box
         if (tool === 'select') {
             setSelection(null); // Clear previous selection
+            if (selectMode === 'lasso') {
+                setLassoPath([{ x: pos.x, y: pos.y }]);
+            }
         }
 
         setIsDrawing(true);
@@ -975,6 +1140,13 @@ export default function Whiteboard({
 
         const pos = getPosition(e);
         setCurrentPos(pos);
+
+        if (tool === 'select') {
+            if (selectMode === 'lasso') {
+                setLassoPath(prev => [...prev, { x: pos.x, y: pos.y }]);
+            }
+            return;
+        }
 
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -1246,51 +1418,37 @@ export default function Whiteboard({
                 strokeWidth,
                 strokeStyle
             });
-        } else if (tool === 'rectangle') {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = strokeWidth;
-            ctx.setLineDash(getDashArray(strokeStyle));
-            ctx.strokeRect(
-                startPos.x,
-                startPos.y,
-                pos.x - startPos.x,
-                pos.y - startPos.y
-            );
-            ctx.setLineDash([]);
+        } else if (tool === 'shape') {
+            const x = Math.min(startPos.x, pos.x);
+            const y = Math.min(startPos.y, pos.y);
+            const w = Math.abs(pos.x - startPos.x);
+            const h = Math.abs(pos.y - startPos.y);
+            
+            // Only create if it's large enough
+            if (w > 10 && h > 10) {
+                const newShapeObj = {
+                    id: Date.now(),
+                    type: shapeType, // 'rectangle', 'circle', 'triangle', 'star'
+                    x, y, width: w, height: h,
+                    rotation: 0,
+                    color: color,
+                    strokeWidth: strokeWidth,
+                    text: '', // Embedded text
+                    fontSize: 20
+                };
+                
+                setShapeObjects(prev => [...prev, newShapeObj]);
+                setSelectedShapeId(newShapeObj.id);
+                saveToHistory();
 
-            emitDrawEvent({
-                type: 'rectangle',
-                x: startPos.x,
-                y: startPos.y,
-                width: pos.x - startPos.x,
-                height: pos.y - startPos.y,
-                color,
-                strokeWidth,
-                strokeStyle
-            });
-        } else if (tool === 'circle') {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = strokeWidth;
-            ctx.setLineDash(getDashArray(strokeStyle));
-            const radiusX = Math.abs(pos.x - startPos.x) / 2;
-            const radiusY = Math.abs(pos.y - startPos.y) / 2;
-            const centerX = startPos.x + (pos.x - startPos.x) / 2;
-            const centerY = startPos.y + (pos.y - startPos.y) / 2;
-            ctx.beginPath();
-            ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
-            ctx.stroke();
-            ctx.setLineDash([]);
-
-            emitDrawEvent({
-                type: 'ellipse',
-                centerX,
-                centerY,
-                radiusX,
-                radiusY,
-                color,
-                strokeWidth,
-                strokeStyle
-            });
+                // Emit event to network
+                if (isSharing && socket && sessionId) {
+                    socket.emit('whiteboard:shape-add', {
+                        sessionId,
+                        shape: newShapeObj
+                    });
+                }
+            }
         } else if (tool === 'arrow') {
             ctx.strokeStyle = color;
             ctx.lineWidth = strokeWidth;
@@ -1326,13 +1484,32 @@ export default function Whiteboard({
                 strokeWidth
             });
         } else if (tool === 'select') {
-            const x = Math.min(startPos.x, pos.x);
-            const y = Math.min(startPos.y, pos.y);
-            const selWidth = Math.abs(pos.x - startPos.x);
-            const selHeight = Math.abs(pos.y - startPos.y);
+            if (selectMode === 'lasso') {
+                if (lassoPath.length > 2) {
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                    for (const p of lassoPath) {
+                        if (p.x < minX) minX = p.x;
+                        if (p.y < minY) minY = p.y;
+                        if (p.x > maxX) maxX = p.x;
+                        if (p.y > maxY) maxY = p.y;
+                    }
+                    const selWidth = maxX - minX;
+                    const selHeight = maxY - minY;
+                    
+                    if (selWidth > 5 && selHeight > 5) {
+                        setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath });
+                    }
+                }
+                setLassoPath([]);
+            } else {
+                const x = Math.min(startPos.x, pos.x);
+                const y = Math.min(startPos.y, pos.y);
+                const selWidth = Math.abs(pos.x - startPos.x);
+                const selHeight = Math.abs(pos.y - startPos.y);
 
-            if (selWidth > 5 && selHeight > 5) {
-                setSelection({ x, y, width: selWidth, height: selHeight });
+                if (selWidth > 5 && selHeight > 5) {
+                    setSelection({ x, y, width: selWidth, height: selHeight });
+                }
             }
         } else if (tool === 'text') {
             const x = Math.min(startPos.x, pos.x);
@@ -1345,10 +1522,11 @@ export default function Whiteboard({
             setTextValue('');
             setShowTextInput(true);
         }
-
         setIsDrawing(false);
-        if (tool !== 'select' && tool !== 'laser' && tool !== 'text') saveToHistory();
-    }, [isDrawing, getPosition, currentPos, tool, color, strokeWidth, strokeStyle, startPos, saveToHistory, emitDrawEvent]);
+        if (tool !== 'select' && tool !== 'laser' && tool !== 'text' && tool !== 'shape') {
+            saveToHistory();
+        }
+    }, [isDrawing, getPosition, tool, isAutoShape, color, strokeWidth, strokeStyle, eraserSize, saveToHistory, emitDrawEvent, shapeType, setShapeObjects, isSharing, socket, sessionId]);
 
     // Download as image - Composites all layers (background, canvas, images, text)
     const handleDownload = useCallback(() => {
@@ -1665,38 +1843,126 @@ export default function Whiteboard({
                 <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/50 px-2 py-1 flex items-center gap-0.5 rounded-full z-40 max-w-[95%] overflow-visible whitespace-nowrap hide-scrollbar transition-all">
                     {/* Tools */}
                     <div className="flex items-center gap-0.5">
+                        <div className="flex items-center gap-0.5 relative">
                         {[
-                            { id: 'select', icon: MousePointer2, label: 'Select' },
+                            { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select' },
                             { id: 'pen', icon: Pencil, label: 'Pen' },
                             { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
                             { id: 'eraser', icon: Eraser, label: 'Eraser' },
                             { id: 'line', icon: Minus, label: 'Line' },
-                            { id: 'rectangle', icon: Square, label: 'Rectangle' },
-                            { id: 'circle', icon: Circle, label: 'Circle' },
+                            { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : Square)), label: 'Shapes' },
                             { id: 'text', icon: Type, label: 'Text' },
                             { id: 'image', icon: ImageIcon, label: 'Image' },
                             { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
                         ].map(t => (
-                            <button
-                                key={t.id}
-                                onClick={() => {
-                                    if (tool === t.id) {
-                                        // Re-click to open stroke size popup
-                                        if (['pen', 'highlighter', 'line', 'arrow', 'rectangle', 'circle'].includes(t.id)) {
-                                            setShowStrokePicker(!showStrokePicker);
+                            <div key={t.id} className="relative">
+                                <button
+                                    onClick={() => {
+                                        if (tool === t.id) {
+                                            // Re-click to open popup
+                                            if (t.id === 'pen') setShowStrokePicker(!showStrokePicker);
+                                            if (t.id === 'eraser') setShowEraserPicker(!showEraserPicker);
+                                            if (t.id === 'select') setShowSelectPicker(!showSelectPicker);
+                                            if (t.id === 'shape') setShowShapePicker(!showShapePicker);
+                                            if (t.id === 'highlighter') setShowHighlighterPicker(!showHighlighterPicker);
+                                        } else {
+                                            setTool(t.id);
+                                            setShowStrokePicker(false);
+                                            setShowEraserPicker(false);
+                                            setShowSelectPicker(false);
+                                            setShowShapePicker(false);
+                                            setShowHighlighterPicker(false);
                                         }
-                                    } else {
-                                        setTool(t.id);
-                                    }
-                                    if (t.id === 'image') {
-                                        imageInputRef.current?.click();
-                                    }
-                                }}
-                                className={`p-1 rounded-full transition-colors flex items-center justify-center ${tool === t.id ? 'bg-primary-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
-                                title={t.label}
-                            >
-                                <t.icon className="w-3.5 h-3.5" />
-                            </button>
+                                        if (t.id === 'image') {
+                                            imageInputRef.current?.click();
+                                        }
+                                    }}
+                                    className={`p-1 rounded-full transition-colors flex items-center justify-center ${tool === t.id ? 'bg-primary-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                    title={t.label}
+                                >
+                                    <t.icon className="w-3.5 h-3.5" />
+                                </button>
+                                
+                                {/* Popovers rendered relatively above the button */}
+                                {tool === t.id && t.id === 'pen' && showStrokePicker && (
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-2 min-w-[120px]">
+                                        <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1 text-center">Stroke Width</p>
+                                        <input
+                                            type="range"
+                                            min="1"
+                                            max="20"
+                                            value={strokeWidth}
+                                            onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
+                                            className="w-full h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer"
+                                        />
+                                        <div className="text-xs text-white text-center mt-1">{strokeWidth}px</div>
+                                    </div>
+                                )}
+
+                                {tool === t.id && t.id === 'eraser' && showEraserPicker && (
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-2">
+                                        {[10, 20, 30, 40, 50].map(size => (
+                                            <button
+                                                key={size}
+                                                onClick={() => { setEraserSize(size); setShowEraserPicker(false); }}
+                                                className={`flex items-center justify-center w-8 h-8 rounded-lg hover:bg-slate-700 transition ${eraserSize === size ? 'bg-slate-700 ring-2 ring-primary-500' : ''}`}
+                                            >
+                                                <div className="bg-white border border-slate-500" style={{ width: size/2, height: size/2 }}></div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {tool === t.id && t.id === 'highlighter' && showHighlighterPicker && (
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 grid grid-cols-3 gap-1">
+                                        {HIGHLIGHTER_COLORS.map(c => (
+                                            <button
+                                                key={c}
+                                                onClick={() => { setHighlighterColor(c); setShowHighlighterPicker(false); }}
+                                                className={`w-6 h-6 rounded-full border-2 ${highlighterColor === c ? 'border-primary-500' : 'border-transparent hover:border-slate-400'}`}
+                                                style={{ backgroundColor: c }}
+                                                title={c}
+                                            />
+                                        ))}
+                                    </div>
+                                )}
+
+                                {tool === t.id && t.id === 'select' && showSelectPicker && (
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[120px]">
+                                        <button
+                                            onClick={() => { setSelectMode('rectangle'); setShowSelectPicker(false); }}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'rectangle' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                        >
+                                            <Square className="w-3.5 h-3.5" /> Rect Select
+                                        </button>
+                                        <button
+                                            onClick={() => { setSelectMode('lasso'); setShowSelectPicker(false); }}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'lasso' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                        >
+                                            <Wand2 className="w-3.5 h-3.5" /> Lasso Select
+                                        </button>
+                                    </div>
+                                )}
+
+                                {tool === t.id && t.id === 'shape' && showShapePicker && (
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 grid grid-cols-2 gap-1 w-[120px]">
+                                        {[
+                                            { id: 'rectangle', icon: Square, label: 'Rectangle' },
+                                            { id: 'circle', icon: Circle, label: 'Circle' },
+                                            { id: 'triangle', icon: Triangle, label: 'Triangle' },
+                                            { id: 'star', icon: Star, label: 'Star' },
+                                        ].map(s => (
+                                            <button
+                                                key={s.id}
+                                                onClick={() => { setShapeType(s.id); setShowShapePicker(false); }}
+                                                className={`flex flex-col items-center justify-center p-2 rounded-lg text-xs transition gap-1 ${shapeType === s.id ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            >
+                                                <s.icon className="w-4 h-4" />
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         ))}
                         <input
                             type="file"
@@ -1934,16 +2200,7 @@ export default function Whiteboard({
                             )}
                         </div>
 
-                        {/* AI Shape Toggle */}
-                        <div className="relative border-l border-slate-700 pl-1 ml-1 flex items-center">
-                            <button
-                                onClick={() => setIsAutoShape(!isAutoShape)}
-                                className={`p-1 rounded-full transition flex items-center justify-center ${isAutoShape ? 'bg-purple-500/20 text-purple-400' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-                                title={isAutoShape ? "Smart Shapes: ON" : "Smart Shapes: OFF"}
-                            >
-                                <Wand2 className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
+                        {/* AI Shape Toggle removed to avoid confusion with Lasso and writing glitches */}
 
                         {/* Stroke Style */}
                         <div className="relative">
@@ -2841,6 +3098,190 @@ export default function Whiteboard({
                         );
                     })}
 
+                    {/* Shape Objects Layer - Selectable, Movable, Resizable, Rotatable */}
+                    {shapeObjects.map((shpObj) => {
+                        const isSelected = selectedShapeId === shpObj.id;
+                        const handleSize = 10;
+                        const renderShapeSVG = () => {
+                            if (shpObj.type === 'rectangle') {
+                                return <rect x="0" y="0" width={shpObj.width} height={shpObj.height} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                            } else if (shpObj.type === 'circle') {
+                                return <ellipse cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                            } else if (shpObj.type === 'triangle') {
+                                return <polygon points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                            } else if (shpObj.type === 'star') {
+                                const cx = shpObj.width / 2;
+                                const cy = shpObj.height / 2;
+                                const outerRadius = Math.min(cx, cy);
+                                const innerRadius = outerRadius / 2.5;
+                                let points = [];
+                                for (let i = 0; i < 10; i++) {
+                                    const r = i % 2 === 0 ? outerRadius : innerRadius;
+                                    const angle = (i * Math.PI) / 5 - Math.PI / 2;
+                                    points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
+                                }
+                                return <polygon points={points.join(' ')} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                            }
+                            return null;
+                        };
+
+                        return (
+                            <div
+                                key={shpObj.id}
+                                className="absolute"
+                                style={{
+                                    left: shpObj.x,
+                                    top: shpObj.y,
+                                    width: shpObj.width,
+                                    height: shpObj.height,
+                                    transform: `rotate(${shpObj.rotation || 0}deg)`,
+                                    transformOrigin: 'center center',
+                                    cursor: isSelected ? 'move' : 'pointer',
+                                    zIndex: isSelected ? 20 : 10,
+                                    pointerEvents: tool === 'select' && !isSelected ? 'none' : 'auto',
+                                }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedShapeId(shpObj.id);
+                                    setSelectedImageId(null);
+                                    setSelectedTextId(null);
+                                    setEditingTextId(null);
+                                }}
+                                onMouseDown={(e) => {
+                                    if (!isSelected) {
+                                        setSelectedShapeId(shpObj.id);
+                                        setSelectedImageId(null);
+                                        setSelectedTextId(null);
+                                        setEditingTextId(null);
+                                        return;
+                                    }
+                                    if (e.target.dataset.handle) return;
+                                    e.stopPropagation();
+                                    setShapeDragState({
+                                        id: shpObj.id,
+                                        action: 'move',
+                                        startX: e.clientX,
+                                        startY: e.clientY,
+                                        startObj: { ...shpObj }
+                                    });
+                                }}
+                            >
+                                <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+                                    {renderShapeSVG()}
+                                </svg>
+                                
+                                {shpObj.text !== undefined && (
+                                    <div className="absolute inset-0 flex items-center justify-center p-2">
+                                        <textarea
+                                            value={shpObj.text}
+                                            onChange={(e) => {
+                                                setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, text: e.target.value } : s));
+                                            }}
+                                            onMouseDown={e => e.stopPropagation()}
+                                            placeholder="Text..."
+                                            className="w-full text-center bg-transparent border-none outline-none resize-none overflow-hidden"
+                                            style={{ color: shpObj.color, fontSize: shpObj.fontSize || 20 }}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Selection Border & Handles */}
+                                {isSelected && (
+                                    <>
+                                        <div className="absolute inset-0 border-2 border-purple-500 pointer-events-none" />
+                                        
+                                        {/* Corner Resize Handles */}
+                                        {['nw', 'ne', 'sw', 'se'].map(corner => {
+                                            const pos = {
+                                                nw: { left: -handleSize / 2, top: -handleSize / 2, cursor: 'nwse-resize' },
+                                                ne: { right: -handleSize / 2, top: -handleSize / 2, cursor: 'nesw-resize' },
+                                                sw: { left: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nesw-resize' },
+                                                se: { right: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nwse-resize' },
+                                            }[corner];
+                                            return (
+                                                <div
+                                                    key={corner}
+                                                    data-handle={corner}
+                                                    className="absolute bg-white border-2 border-purple-500 z-30"
+                                                    style={{ width: handleSize, height: handleSize, ...pos }}
+                                                    onMouseDown={(e) => {
+                                                        e.stopPropagation();
+                                                        setShapeDragState({
+                                                            id: shpObj.id,
+                                                            action: `resize-${corner}`,
+                                                            startX: e.clientX,
+                                                            startY: e.clientY,
+                                                            startObj: { ...shpObj }
+                                                        });
+                                                    }}
+                                                />
+                                            );
+                                        })}
+                                        {/* Edge Resize Handles */}
+                                        {['n', 'e', 's', 'w'].map(edge => {
+                                            const pos = {
+                                                n: { left: '50%', top: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
+                                                s: { left: '50%', bottom: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
+                                                e: { right: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+                                                w: { left: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+                                            }[edge];
+                                            return (
+                                                <div
+                                                    key={edge}
+                                                    data-handle={edge}
+                                                    className="absolute bg-white border-2 border-purple-500 z-30"
+                                                    style={{ width: handleSize, height: handleSize, ...pos }}
+                                                    onMouseDown={(e) => {
+                                                        e.stopPropagation();
+                                                        setShapeDragState({
+                                                            id: shpObj.id,
+                                                            action: `resize-${edge}`,
+                                                            startX: e.clientX,
+                                                            startY: e.clientY,
+                                                            startObj: { ...shpObj }
+                                                        });
+                                                    }}
+                                                />
+                                            );
+                                        })}
+                                        {/* Rotate Handle */}
+                                        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center z-30" style={{ bottom: -35 }}>
+                                            <div className="w-px h-5 bg-purple-500" />
+                                            <div
+                                                data-handle="rotate"
+                                                className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center cursor-grab hover:bg-purple-600"
+                                                onMouseDown={(e) => {
+                                                    e.stopPropagation();
+                                                    setShapeDragState({
+                                                        id: shpObj.id,
+                                                        action: 'rotate',
+                                                        startX: e.clientX,
+                                                        startY: e.clientY,
+                                                        startObj: { ...shpObj }
+                                                    });
+                                                }}
+                                            >
+                                                <RotateCw className="w-3 h-3 text-white" />
+                                            </div>
+                                        </div>
+                                        {/* Delete Button */}
+                                        <button
+                                            className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setShapeObjects(prev => prev.filter(s => s.id !== shpObj.id));
+                                                setSelectedShapeId(null);
+                                                saveToHistory();
+                                            }}
+                                        >
+                                            <X className="w-3 h-3 text-white" />
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        );
+                    })}
+
                     {/* Laser Pointer Overlay */}
                     {laserPos && (
                         <div
@@ -2903,17 +3344,50 @@ export default function Whiteboard({
                             />
                         </div>
                     )}
+                    {/* Lasso Drawing Overlay */}
+                    {lassoPath && lassoPath.length > 0 && (
+                        <svg
+                            className="absolute inset-0 pointer-events-none z-10"
+                            width="100%"
+                            height="100%"
+                            style={{ overflow: 'visible' }}
+                        >
+                            <polyline
+                                points={lassoPath.map(p => `${p.x},${p.y}`).join(' ')}
+                                fill="rgba(59, 130, 246, 0.1)"
+                                stroke="#3b82f6"
+                                strokeWidth="2"
+                                strokeDasharray="5,5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        </svg>
+                    )}
+
                     {/* Selection Overlay */}
                     {selection && (
                         <div
-                            className="absolute border-2 border-dashed border-blue-500 bg-blue-500/10 pointer-events-none"
+                            className={`absolute border-2 border-dashed ${!selection.path ? 'border-blue-500 bg-blue-500/10' : 'border-transparent'} pointer-events-none z-20`}
                             style={{
                                 left: selection.x,
                                 top: selection.y,
                                 width: selection.width,
                                 height: selection.height
                             }}
+                            }}
                         >
+                            {selection.path && (
+                                <svg width="100%" height="100%" style={{ overflow: 'visible' }} className="absolute inset-0 pointer-events-none">
+                                    <polygon
+                                        points={selection.path.map(p => `${p.x - selection.x},${p.y - selection.y}`).join(' ')}
+                                        fill="rgba(59, 130, 246, 0.1)"
+                                        stroke="#3b82f6"
+                                        strokeWidth="2"
+                                        strokeDasharray="5,5"
+                                        strokeLinejoin="round"
+                                    />
+                                </svg>
+                            )}
                             {/* Selection action buttons */}
                             <div className="absolute -top-10 left-0 flex gap-1 pointer-events-auto">
                                 <button
@@ -2956,6 +3430,28 @@ export default function Whiteboard({
                     ✨ Draw with mouse or touch • Supports stylus input on tablets
                 </p>
             </div>
+
+            {/* Floatable Live Chat (Visible only during sharing for Instructor) */}
+            {isSharing && (
+                <WhiteboardChatWindow
+                    socket={socket}
+                    sessionId={sessionId}
+                    currentUser={{ name: 'Instructor', role: 'instructor' }}
+                    isInstructor={true}
+                    availableGroups={sharingTargets.map((name, i) => ({ id: i, name }))}
+                />
+            )}
+
+            {/* AV Recorder (Instructor Only) */}
+            {isInstructor && (
+                <WhiteboardRecorder 
+                    canvasRef={canvasRef} 
+                    sessionId={sessionId || whiteboardId}
+                    onRecordingComplete={(data) => {
+                        console.log('Recording complete:', data);
+                    }}
+                />
+            )}
         </div>
     );
 }
