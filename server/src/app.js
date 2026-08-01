@@ -158,6 +158,8 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+const whiteboardChatHistory = new Map();
+
 // Socket.io connection handling for viva sessions
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -240,6 +242,9 @@ io.on('connection', (socket) => {
     const { sessionId } = data;
 
     console.log(`[Whiteboard] Session ${sessionId} stopped sharing`);
+    
+    // Clear chat history
+    whiteboardChatHistory.delete(sessionId);
 
     // Notify all viewers
     io.to(`whiteboard-${sessionId}`).emit('whiteboard:ended', { sessionId });
@@ -306,7 +311,18 @@ io.on('connection', (socket) => {
   // Whiteboard live chat message relay
   socket.on('whiteboard:chat-message', (data) => {
     const { sessionId } = data;
+    if (!whiteboardChatHistory.has(sessionId)) {
+      whiteboardChatHistory.set(sessionId, []);
+    }
+    whiteboardChatHistory.get(sessionId).push(data);
     socket.to(`whiteboard-${sessionId}`).emit('whiteboard:chat-message', data);
+  });
+  
+  // Whiteboard chat history request
+  socket.on('whiteboard:request-chat-history', (data) => {
+    const { sessionId } = data;
+    const history = whiteboardChatHistory.get(sessionId) || [];
+    socket.emit('whiteboard:chat-history', history);
   });
 
   // Instructor sends canvas state to new viewer

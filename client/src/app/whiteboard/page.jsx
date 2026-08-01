@@ -197,6 +197,7 @@ export default function WhiteboardPage() {
                 sessionId={sessionId}
                 currentUser={{ name: user?.name || `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Instructor', role: 'instructor' }}
                 isInstructor={true}
+                availableGroups={shareTargets.map((name, i) => ({ id: i, name }))}
             />
         </div>
     );

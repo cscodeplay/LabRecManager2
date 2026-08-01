@@ -268,7 +268,12 @@ export default function Whiteboard({
             try {
                 let saved = null;
                 if (whiteboardId === 'admin-standalone') {
-                    const token = localStorage.getItem('token');
+                    let token = null;
+                    try {
+                        const authStore = JSON.parse(localStorage.getItem('auth-storage'));
+                        token = authStore?.state?.accessToken;
+                    } catch (e) {}
+
                     if (token) {
                         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/personal`, {
                             headers: { 'Authorization': `Bearer ${token}` }
@@ -355,7 +360,12 @@ export default function Whiteboard({
                 const stateStr = JSON.stringify(state);
                 
                 if (whiteboardId === 'admin-standalone') {
-                    const token = localStorage.getItem('token');
+                    let token = null;
+                    try {
+                        const authStore = JSON.parse(localStorage.getItem('auth-storage'));
+                        token = authStore?.state?.accessToken;
+                    } catch (e) {}
+
                     if (token) {
                         fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/personal`, {
                             method: 'PUT',

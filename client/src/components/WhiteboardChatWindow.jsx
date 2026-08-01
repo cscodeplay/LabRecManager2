@@ -53,12 +53,26 @@ export default function WhiteboardChatWindow({
             
             setMessages((prev) => [...prev, data]);
         };
+        
+        const handleChatHistory = (history) => {
+            setMessages(history || []);
+        };
 
         socket.on('whiteboard:chat-message', handleChatMessage);
+        socket.on('whiteboard:chat-history', handleChatHistory);
 
         return () => {
             socket.off('whiteboard:chat-message', handleChatMessage);
+            socket.off('whiteboard:chat-history', handleChatHistory);
         };
+    }, [socket]);
+    
+    useEffect(() => {
+        if (socket && sessionId) {
+            socket.emit('whiteboard:request-chat-history', { sessionId });
+        } else {
+            setMessages([]);
+        }
     }, [socket, sessionId]);
 
     // Drag handlers
