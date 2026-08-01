@@ -1849,7 +1849,7 @@ export default function Whiteboard({
                 </div>
 
                 {/* Floating Sleek Toolbar (Zoom-style) */}
-                <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/50 px-3 py-1.5 flex items-center gap-1.5 rounded-full z-40 max-w-[95%] overflow-x-auto whitespace-nowrap hide-scrollbar transition-all">
+                <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/50 px-2 py-1 flex items-center gap-0.5 rounded-full z-40 max-w-[95%] overflow-x-auto whitespace-nowrap hide-scrollbar transition-all">
                     {/* Tools */}
                     <div className="flex items-center gap-0.5">
                         {[
@@ -1871,10 +1871,10 @@ export default function Whiteboard({
                                         imageInputRef.current?.click();
                                     }
                                 }}
-                                className={`p-1.5 rounded-full transition-colors flex items-center justify-center ${tool === t.id ? 'bg-primary-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                className={`p-1 rounded-full transition-colors flex items-center justify-center ${tool === t.id ? 'bg-primary-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                                 title={t.label}
                             >
-                                <t.icon className="w-4 h-4" />
+                                <t.icon className="w-3.5 h-3.5" />
                             </button>
                         ))}
                         <input
@@ -1887,17 +1887,17 @@ export default function Whiteboard({
                     </div>
 
                     {/* Vertical Divider */}
-                    <div className="w-px h-5 bg-slate-700 mx-1" />
+                    
 
                     {/* Colors */}
                     <div className="flex items-center gap-0.5 relative">
                         <button
                             onClick={() => setShowColorPicker(!showColorPicker)}
-                            className="flex items-center gap-1 p-1.5 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white"
+                            className="flex items-center gap-1 p-1 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white"
                             title="Colors"
                         >
                             <div
-                                className="w-4 h-4 rounded-full border border-slate-500/50 shadow-sm"
+                                className="w-3.5 h-3.5 rounded-full border border-slate-500/50 shadow-sm"
                                 style={{ backgroundColor: color }}
                             />
                             <ChevronDown className="w-3 h-3 opacity-70" />
@@ -1918,7 +1918,7 @@ export default function Whiteboard({
                                         Custom
                                     </button>
                                 </div>
-                                <div className="grid grid-cols-6 gap-1.5">
+                                <div className="grid grid-cols-6 gap-1">
                                     {[...new Set([...DEFAULT_COLORS, ...recentColors])].slice(0, 18).map(c => (
                                         <button
                                             key={c}
@@ -1935,10 +1935,10 @@ export default function Whiteboard({
                         <div className="relative">
                             <button
                                 onClick={() => setShowStrokePicker(!showStrokePicker)}
-                                className="p-1.5 hover:bg-slate-800 rounded-full transition flex items-center justify-center text-slate-300 hover:text-white"
+                                className="p-1 hover:bg-slate-800 rounded-full transition flex items-center justify-center text-slate-300 hover:text-white"
                                 title="Stroke Width"
                             >
-                                <div className="w-4 h-4 flex items-center justify-center">
+                                <div className="w-3.5 h-3.5 flex items-center justify-center">
                                     <div className="bg-current rounded-full" style={{ width: strokeWidth, height: strokeWidth }} />
                                 </div>
                             </button>
@@ -1963,10 +1963,10 @@ export default function Whiteboard({
                         <div className="relative">
                             <button
                                 onClick={() => setShowStrokeStylePicker(!showStrokeStylePicker)}
-                                className="p-1.5 hover:bg-slate-800 rounded-full transition flex items-center justify-center text-slate-300 hover:text-white"
+                                className="p-1 hover:bg-slate-800 rounded-full transition flex items-center justify-center text-slate-300 hover:text-white"
                                 title="Stroke Style"
                             >
-                                <div className="w-4 h-4 flex flex-col justify-center gap-[2px]">
+                                <div className="w-3.5 h-3.5 flex flex-col justify-center gap-[2px]">
                                     <div className="h-[2px] bg-current w-full" />
                                     {strokeStyle === 'dashed' && <div className="h-[2px] bg-current w-full border-l border-r border-transparent border-dashed" />}
                                     {strokeStyle === 'dotted' && <div className="h-[2px] bg-current w-full border-l border-r border-transparent border-dotted" />}
@@ -1991,17 +1991,17 @@ export default function Whiteboard({
                         </div>
                     </div>
 
-                    <div className="w-px h-5 bg-slate-700 mx-1" />
+                    
 
                     {/* Background Pattern */}
                     <div className="relative">
                         <button
                             onClick={() => setShowBgPicker(!showBgPicker)}
-                            className="flex items-center gap-1 p-1.5 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white"
+                            className="flex items-center gap-1 p-1 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white"
                             title="Background Pattern"
                         >
                             <div
-                                className="w-4 h-4 rounded-sm border border-slate-500/50"
+                                className="w-3.5 h-3.5 rounded-sm border border-slate-500/50"
                                 style={{
                                     backgroundColor: bgColor,
                                     backgroundImage: bgPattern === 'dotted'
@@ -2027,7 +2027,7 @@ export default function Whiteboard({
                                         <button
                                             key={p.id}
                                             onClick={() => setBgPattern(p.id)}
-                                            className={`p-1.5 rounded-lg border text-xs ${bgPattern === p.id ? 'border-primary-500 bg-primary-500/20 text-white' : 'border-slate-600 hover:bg-slate-700'}`}
+                                            className={`p-1 rounded-lg border text-xs ${bgPattern === p.id ? 'border-primary-500 bg-primary-500/20 text-white' : 'border-slate-600 hover:bg-slate-700'}`}
                                         >
                                             {p.label}
                                         </button>
@@ -2044,14 +2044,14 @@ export default function Whiteboard({
                                         <button
                                             key={p.id}
                                             onClick={() => setBgPattern(p.id)}
-                                            className={`p-1.5 rounded-lg border text-xs ${bgPattern === p.id ? 'border-primary-500 bg-primary-500/20 text-white' : 'border-slate-600 hover:bg-slate-700'}`}
+                                            className={`p-1 rounded-lg border text-xs ${bgPattern === p.id ? 'border-primary-500 bg-primary-500/20 text-white' : 'border-slate-600 hover:bg-slate-700'}`}
                                         >
                                             {p.label}
                                         </button>
                                     ))}
                                 </div>
                                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Color</p>
-                                <div className="grid grid-cols-5 gap-1.5 mb-2">
+                                <div className="grid grid-cols-5 gap-1 mb-2">
                                     {[
                                         '#ffffff', '#f5f5f5', '#e0e0e0', '#9e9e9e', '#424242', // Grays
                                         '#fff9c4', '#fff176', '#ffeb3b', '#ffc107', '#ff9800', // Yellows/Oranges
@@ -2088,59 +2088,59 @@ export default function Whiteboard({
                         )}
                     </div>
 
-                    <div className="w-px h-5 bg-slate-700 mx-1" />
+                    
 
                     {/* OCR Toggle */}
                     <button
                         onClick={() => setIsOcrActive(!isOcrActive)}
-                        className={`p-1.5 rounded-full transition-colors flex items-center justify-center ${isOcrActive ? 'bg-indigo-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                        className={`p-1 rounded-full transition-colors flex items-center justify-center ${isOcrActive ? 'bg-indigo-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                         title={isOcrActive ? 'Text Recognition (OCR) Active' : 'Enable Text Recognition (OCR)'}
                     >
-                        <Scan className="w-4 h-4" />
+                        <Scan className="w-3.5 h-3.5" />
                     </button>
 
-                    <div className="w-px h-5 bg-slate-700 mx-1" />
+                    
 
                     {/* Undo/Redo */}
                     <div className="flex items-center gap-0.5">
                         <button
                             onClick={handleUndo}
                             disabled={historyIndex <= 0}
-                            className="p-1.5 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="p-1 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
                             title="Undo"
                         >
-                            <Undo2 className="w-4 h-4" />
+                            <Undo2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                             onClick={handleRedo}
                             disabled={historyIndex >= history.length - 1}
-                            className="p-1.5 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="p-1 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
                             title="Redo"
                         >
-                            <Redo2 className="w-4 h-4" />
+                            <Redo2 className="w-3.5 h-3.5" />
                         </button>
                     </div>
 
                     {/* Actions */}
                     <button
                         onClick={handleClear}
-                        className="p-1.5 hover:bg-red-500/20 text-red-400 rounded-full transition"
+                        className="p-1 hover:bg-red-500/20 text-red-400 rounded-full transition"
                         title="Clear All"
                     >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
                     </button>
 
                     {clipboard && (
                         <button
                             onClick={handlePasteSelection}
-                            className="p-1.5 hover:bg-green-500/20 text-green-400 rounded-full transition"
+                            className="p-1 hover:bg-green-500/20 text-green-400 rounded-full transition"
                             title="Paste"
                         >
                             📋
                         </button>
                     )}
 
-                    <div className="w-px h-5 bg-slate-700 mx-1" />
+                    
 
                     {/* Page Navigation */}
                     <div className="flex items-center gap-0.5 bg-slate-800/80 rounded-full px-1 py-0.5">
@@ -2150,7 +2150,7 @@ export default function Whiteboard({
                             className="p-1 hover:bg-slate-700 rounded-full transition disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 hover:text-white"
                             title="Previous Page"
                         >
-                            <ChevronLeft className="w-4 h-4" />
+                            <ChevronLeft className="w-3.5 h-3.5" />
                         </button>
                         <span className="text-xs font-medium text-slate-300 min-w-[36px] text-center tracking-wider">
                             {currentPage + 1}/{totalPages}
@@ -2161,47 +2161,47 @@ export default function Whiteboard({
                             className="p-1 hover:bg-slate-700 rounded-full transition disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 hover:text-white"
                             title="Next Page"
                         >
-                            <ChevronRight className="w-4 h-4" />
+                            <ChevronRight className="w-3.5 h-3.5" />
                         </button>
                         <button
                             onClick={addNewPage}
                             className="p-1 hover:bg-green-500/20 text-green-400 rounded-full transition ml-0.5"
                             title="Add New Page"
                         >
-                            <Plus className="w-4 h-4" />
+                            <Plus className="w-3.5 h-3.5" />
                         </button>
                     </div>
 
-                    <div className="w-px h-5 bg-slate-700 mx-1" />
+                    
 
                     {/* Sharing, Download & Save (Tight grouped) */}
                     <div className="flex items-center gap-0.5">
                         {isInstructor && (
                             <button
                                 onClick={isSharing ? onStopSharing : onShare}
-                                className={`p-1.5 rounded-full transition flex items-center justify-center ${isSharing
+                                className={`p-1 rounded-full transition flex items-center justify-center ${isSharing
                                     ? 'bg-red-500 hover:bg-red-600 text-white'
                                     : 'text-amber-400 hover:bg-amber-500/20'
                                     }`}
                                 title={isSharing ? 'Stop Sharing Whiteboard' : 'Share Whiteboard with Students'}
                             >
-                                <Share2 className="w-4 h-4" />
+                                <Share2 className="w-3.5 h-3.5" />
                             </button>
                         )}
                         <button
                             onClick={handleDownload}
-                            className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
+                            className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
                             title="Download / Export Whiteboard Image (PNG)"
                         >
-                            <Download className="w-4 h-4" />
+                            <Download className="w-3.5 h-3.5" />
                         </button>
                         {onSave && (
                             <button
                                 onClick={handleSave}
-                                className="p-1.5 text-primary-400 hover:bg-primary-500/20 rounded-full transition flex items-center justify-center"
+                                className="p-1 text-primary-400 hover:bg-primary-500/20 rounded-full transition flex items-center justify-center"
                                 title="Save Whiteboard"
                             >
-                                <Save className="w-4 h-4" />
+                                <Save className="w-3.5 h-3.5" />
                             </button>
                         )}
                     </div>
