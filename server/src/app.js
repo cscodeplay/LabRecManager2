@@ -277,14 +277,18 @@ io.on('connection', (socket) => {
 
   // Instructor broadcasts canvas state to all viewers
   socket.on('whiteboard:canvas-state', (data) => {
-    const { sessionId, imageData, bgColor, bgPattern } = data;
+    const { sessionId, imageData, bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos } = data;
 
     // Broadcast to all viewers in the session room
     socket.to(`whiteboard-${sessionId}`).emit('whiteboard:canvas-state', {
       sessionId,
       imageData,
       bgColor,
-      bgPattern
+      bgPattern,
+      imageObjects,
+      textObjects,
+      shapeObjects,
+      laserPos
     });
   });
 
@@ -327,13 +331,17 @@ io.on('connection', (socket) => {
 
   // Instructor sends canvas state to new viewer
   socket.on('whiteboard:send-state', (data) => {
-    const { sessionId, imageData, bgColor, bgPattern, targetSocketId } = data;
+    const { sessionId, imageData, bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos, targetSocketId } = data;
 
     io.to(targetSocketId).emit('whiteboard:canvas-state', {
       sessionId,
       imageData,
       bgColor,
-      bgPattern
+      bgPattern,
+      imageObjects,
+      textObjects,
+      shapeObjects,
+      laserPos
     });
   });
 

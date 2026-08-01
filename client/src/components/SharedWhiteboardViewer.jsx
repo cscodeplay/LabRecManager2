@@ -21,6 +21,12 @@ export default function SharedWhiteboardViewer({
     const [bgColor, setBgColor] = useState('#ffffff');
     const [bgPattern, setBgPattern] = useState('plain');
 
+    // Objects state
+    const [imageObjects, setImageObjects] = useState([]);
+    const [textObjects, setTextObjects] = useState([]);
+    const [shapeObjects, setShapeObjects] = useState([]);
+    const [laserPos, setLaserPos] = useState(null);
+
     const getBackgroundStyle = () => {
         let backgroundImage = 'none';
         let backgroundSize = 'auto';
@@ -186,6 +192,10 @@ export default function SharedWhiteboardViewer({
             if (data.sessionId !== sessionId) return;
             if (data.bgColor) setBgColor(data.bgColor);
             if (data.bgPattern) setBgPattern(data.bgPattern);
+            if (data.imageObjects) setImageObjects(data.imageObjects);
+            if (data.textObjects) setTextObjects(data.textObjects);
+            if (data.shapeObjects) setShapeObjects(data.shapeObjects);
+            if (data.laserPos !== undefined) setLaserPos(data.laserPos);
 
             const canvas = canvasRef.current;
             if (!canvas) return;
@@ -225,6 +235,60 @@ export default function SharedWhiteboardViewer({
 
     if (!isOpen) return null;
 
+    const renderCanvasContent = () => (
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden" style={{ width: canvasSize.width, height: canvasSize.height, maxWidth: '100%', maxHeight: '100%' }}>
+            <canvas
+                ref={canvasRef}
+                width={width}
+                height={height}
+                className="rounded-lg shadow-lg max-w-full max-h-full"
+                style={{ ...getBackgroundStyle() }}
+            />
+            
+            {/* Objects Layer */}
+            {imageObjects.map(imgObj => (
+                <div key={imgObj.id} className="absolute pointer-events-none" style={{ left: imgObj.x, top: imgObj.y, width: imgObj.width, height: imgObj.height, transform: `rotate(${imgObj.rotation || 0}deg)`, transformOrigin: 'center center' }}>
+                    <img src={imgObj.src} className="w-full h-full object-contain pointer-events-none" />
+                </div>
+            ))}
+            {textObjects.map(txtObj => (
+                <div key={txtObj.id} className="absolute pointer-events-none flex items-center justify-center p-2" style={{ left: txtObj.x, top: txtObj.y, width: txtObj.width, minHeight: txtObj.height, transform: `rotate(${txtObj.rotation || 0}deg)`, transformOrigin: 'center center' }}>
+                    <div className="w-full text-center whitespace-pre-wrap break-words" style={{ color: txtObj.color, fontSize: txtObj.fontSize || 24, fontFamily: "'Inter', system-ui, sans-serif" }}>
+                        {txtObj.text}
+                    </div>
+                </div>
+            ))}
+            {shapeObjects.map(shpObj => {
+                const renderShapeSVG = () => {
+                    if (shpObj.type === 'rectangle') return <rect x="0" y="0" width={shpObj.width} height={shpObj.height} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                    if (shpObj.type === 'circle') return <ellipse cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                    if (shpObj.type === 'triangle') return <polygon points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                    if (shpObj.type === 'star') {
+                        const cx = shpObj.width / 2, cy = shpObj.height / 2, outerRadius = Math.min(cx, cy), innerRadius = outerRadius / 2.5;
+                        let points = [];
+                        for (let i = 0; i < 10; i++) {
+                            const r = i % 2 === 0 ? outerRadius : innerRadius;
+                            const angle = (i * Math.PI) / 5 - Math.PI / 2;
+                            points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
+                        }
+                        return <polygon points={points.join(' ')} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                    }
+                    return null;
+                };
+                return (
+                    <div key={shpObj.id} className="absolute pointer-events-none" style={{ left: shpObj.x, top: shpObj.y, width: shpObj.width, height: shpObj.height, transform: `rotate(${shpObj.rotation || 0}deg)`, transformOrigin: 'center center' }}>
+                        <svg width="100%" height="100%" style={{ overflow: 'visible' }}>{renderShapeSVG()}</svg>
+                        {shpObj.text !== undefined && (
+                            <div className="absolute inset-0 flex items-center justify-center p-2 pointer-events-none">
+                                <div className="w-full text-center whitespace-pre-wrap break-words" style={{ color: shpObj.color, fontSize: shpObj.fontSize || 20 }}>{shpObj.text}</div>
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+
     // Inline mode - render directly in parent container
     if (isInline) {
         return (
@@ -263,13 +327,7 @@ export default function SharedWhiteboardViewer({
                 {/* Canvas */}
                 <div className="flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center">
                     {isActive ? (
-                        <canvas
-                            ref={canvasRef}
-                            width={width}
-                            height={height}
-                            className="rounded-lg shadow-lg"
-                            style={{ maxWidth: '100%', maxHeight: '100%', ...getBackgroundStyle() }}
-                        />
+                        renderCanvasContent()
                     ) : (
                         <div className="text-center py-16">
                             <div className="w-20 h-20 bg-slate-200 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -287,6 +345,14 @@ export default function SharedWhiteboardViewer({
                         👁️ View-only mode • You are watching the instructor's whiteboard live
                     </p>
                 </div>
+
+                {/* Floatable Student Live Chat */}
+                <WhiteboardChatWindow
+                    socket={socket}
+                    sessionId={sessionId}
+                    currentUser={{ name: 'Student', role: 'student' }}
+                    isInstructor={false}
+                />
             </div>
         );
     }
@@ -344,13 +410,7 @@ export default function SharedWhiteboardViewer({
                 {/* Canvas */}
                 <div className="flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center">
                     {isActive ? (
-                        <canvas
-                            ref={canvasRef}
-                            width={width}
-                            height={height}
-                            className="rounded-lg shadow-lg"
-                            style={{ maxWidth: '100%', maxHeight: '100%', ...getBackgroundStyle() }}
-                        />
+                        renderCanvasContent()
                     ) : (
                         <div className="text-center py-16">
                             <div className="w-20 h-20 bg-slate-200 rounded-full flex items-center justify-center mx-auto mb-4">

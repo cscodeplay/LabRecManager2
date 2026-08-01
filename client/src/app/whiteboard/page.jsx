@@ -191,14 +191,6 @@ export default function WhiteboardPage() {
                 isInstructor={true}
             />
 
-            {/* Floatable Chat & Audience Window */}
-            <WhiteboardChatWindow
-                socket={socketRef.current}
-                sessionId={sessionId}
-                currentUser={{ name: user?.name || `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Instructor', role: 'instructor' }}
-                isInstructor={true}
-                availableGroups={shareTargets.map((name, i) => ({ id: i, name }))}
-            />
         </div>
     );
 }
