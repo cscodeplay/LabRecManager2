@@ -2129,12 +2129,12 @@ export default function Whiteboard({
 
             {/* Canvas */}
             <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center ${isFullscreen ? 'h-full' : ''}`}>
-                <div className="relative">
+                <div className={`relative ${isFullscreen ? 'w-full h-full flex items-center justify-center' : ''}`}>
                     {/* Fullscreen Button at top right corner of board writing area */}
                     {onToggleFullscreen && (
                         <button
                             onClick={onToggleFullscreen}
-                            className="absolute top-3 right-3 z-30 p-2.5 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-xl shadow-md border border-slate-200 transition hover:scale-105"
+                            className={`absolute z-30 p-2.5 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-xl shadow-md border border-slate-200 transition hover:scale-105 ${isFullscreen ? 'top-6 right-6' : 'top-3 right-3'}`}
                             title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
                         >
                             {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
@@ -2148,8 +2148,9 @@ export default function Whiteboard({
                         className="rounded-lg shadow-lg touch-none"
                         style={{
                             width: isFullscreen ? '100%' : undefined,
-                            height: isFullscreen ? 'auto' : undefined,
+                            height: isFullscreen ? '100%' : undefined,
                             maxHeight: isFullscreen ? '100%' : '100%',
+                            objectFit: isFullscreen ? 'contain' : undefined,
                             backgroundColor: bgColor,
                             backgroundImage: (() => {
                                 switch (bgPattern) {
