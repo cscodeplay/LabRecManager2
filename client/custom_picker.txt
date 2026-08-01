@@ -1,0 +1,154 @@
+{/* Custom Color Picker Modal */}
+                    {showCustomColorPicker && (
+                        <div className="absolute top-full left-0 mt-1 p-4 bg-white rounded-lg shadow-xl border border-slate-200 z-20 w-72">
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-sm font-semibold text-slate-700">Custom Color</p>
+                                <button onClick={() => setShowCustomColorPicker(false)} className="text-slate-400 hover:text-slate-600">
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            {/* Color Preview */}
+                            <div
+                                className="w-full h-16 rounded-lg border border-slate-200 mb-3"
+                                style={{ backgroundColor: hexInput }}
+                            />
+
+                            {/* Mode Tabs */}
+                            <div className="flex gap-2 mb-3">
+                                <button
+                                    onClick={() => setCustomColorMode('rgb')}
+                                    className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition ${customColorMode === 'rgb' ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-600'
+                                        }`}
+                                >
+                                    RGB
+                                </button>
+                                <button
+                                    onClick={() => setCustomColorMode('hsb')}
+                                    className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition ${customColorMode === 'hsb' ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-600'
+                                        }`}
+                                >
+                                    HSB
+                                </button>
+                            </div>
+
+                            {/* RGB Sliders */}
+                            {customColorMode === 'rgb' && (
+                                <div className="space-y-2 mb-3">
+                                    {['r', 'g', 'b'].map(key => (
+                                        <div key={key} className="flex items-center gap-2">
+                                            <span className="w-4 text-xs font-medium text-slate-500 uppercase">{key}</span>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="255"
+                                                value={customRgb[key]}
+                                                onChange={(e) => handleRgbChange(key, e.target.value)}
+                                                className="flex-1 h-2 rounded-full appearance-none cursor-pointer"
+                                                style={{
+                                                    background: `linear-gradient(to right, 
+                                                        ${key === 'r' ? `rgb(0,${customRgb.g},${customRgb.b}), rgb(255,${customRgb.g},${customRgb.b})` : ''}
+                                                        ${key === 'g' ? `rgb(${customRgb.r},0,${customRgb.b}), rgb(${customRgb.r},255,${customRgb.b})` : ''}
+                                                        ${key === 'b' ? `rgb(${customRgb.r},${customRgb.g},0), rgb(${customRgb.r},${customRgb.g},255)` : ''}
+                                                    )`
+                                                }}
+                                            />
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="255"
+                                                value={customRgb[key]}
+                                                onChange={(e) => handleRgbChange(key, e.target.value)}
+                                                className="w-14 px-2 py-1 text-xs border border-slate-200 rounded text-center"
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* HSB Sliders */}
+                            {customColorMode === 'hsb' && (
+                                <div className="space-y-2 mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-4 text-xs font-medium text-slate-500">H</span>
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="360"
+                                            value={customHsb.h}
+                                            onChange={(e) => handleHsbChange('h', e.target.value)}
+                                            className="flex-1 h-2 rounded-full appearance-none cursor-pointer"
+                                            style={{ background: 'linear-gradient(to right, red, yellow, lime, cyan, blue, magenta, red)' }}
+                                        />
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="360"
+                                            value={customHsb.h}
+                                            onChange={(e) => handleHsbChange('h', e.target.value)}
+                                            className="w-14 px-2 py-1 text-xs border border-slate-200 rounded text-center"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-4 text-xs font-medium text-slate-500">S</span>
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={customHsb.s}
+                                            onChange={(e) => handleHsbChange('s', e.target.value)}
+                                            className="flex-1 h-2 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-slate-300 to-primary-500"
+                                        />
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={customHsb.s}
+                                            onChange={(e) => handleHsbChange('s', e.target.value)}
+                                            className="w-14 px-2 py-1 text-xs border border-slate-200 rounded text-center"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-4 text-xs font-medium text-slate-500">B</span>
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={customHsb.b}
+                                            onChange={(e) => handleHsbChange('b', e.target.value)}
+                                            className="flex-1 h-2 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-black to-white"
+                                        />
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={customHsb.b}
+                                            onChange={(e) => handleHsbChange('b', e.target.value)}
+                                            className="w-14 px-2 py-1 text-xs border border-slate-200 rounded text-center"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Hex Input */}
+                            <div className="flex items-center gap-2 mb-3">
+                                <span className="text-xs font-medium text-slate-500">HEX</span>
+                                <input
+                                    type="text"
+                                    value={hexInput}
+                                    onChange={(e) => handleHexChange(e.target.value)}
+                                    className="flex-1 px-2 py-1.5 text-sm border border-slate-200 rounded font-mono"
+                    placeholder="#000000"
+                                />
+                            </div>
+
+                            {/* Apply Button */}
+                            <button
+                                onClick={applyCustomColor}
+                                className="w-full py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium rounded-lg transition"
+                            >
+                                Apply Color
+                            </button>
+                        </div>
+                    )}
+             

@@ -1610,7 +1610,7 @@ export default function Whiteboard({
     return (
         <div
             ref={containerRef}
-            className={`bg-white rounded-xl shadow-2xl flex flex-col ${isFullscreen ? 'h-full w-full border-0 rounded-none' : ''}`}
+            className={`relative bg-white rounded-xl shadow-2xl flex flex-col ${isFullscreen ? 'h-full w-full border-0 rounded-none' : ''}`}
         >
             {/* Whiteboard Workspace Container */}
 

@@ -172,7 +172,7 @@ export default function WhiteboardPage() {
 
             {/* Whiteboard Area */}
             <main className="flex-1 p-4 flex items-center justify-center">
-                <div className={`${isFullscreen ? 'fixed inset-0 z-50 bg-white' : 'w-full max-w-6xl'}`}>
+                <div className={`${isFullscreen ? 'fixed inset-0 z-50 bg-white' : 'w-full h-full'}`}>
                     <Whiteboard
                         width={1200}
                         height={700}
