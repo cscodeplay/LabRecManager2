@@ -53,6 +53,8 @@ class CloudinaryService {
             let resourceType = 'auto';
             if (mimeType.startsWith('image/')) {
                 resourceType = 'image';
+            } else if (mimeType.startsWith('video/')) {
+                resourceType = 'video';
             } else if (mimeType === 'application/pdf') {
                 resourceType = 'raw';
             }

@@ -12,17 +12,18 @@ const upload = multer({
         fileSize: 50 * 1024 * 1024, // 50MB limit
     },
     fileFilter: (req, file, cb) => {
-        // Allow images and PDFs
+        // Allow images, PDFs, and video recordings
         const allowedTypes = [
             'image/jpeg', 'image/png', 'image/gif', 'image/webp',
             'application/pdf',
             'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'video/webm', 'video/mp4', 'video/x-matroska', 'video/quicktime'
         ];
         if (allowedTypes.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Invalid file type. Only images, PDFs, and documents allowed.'));
+            cb(new Error('Invalid file type. Only images, PDFs, documents, and videos allowed.'));
         }
     }
 });

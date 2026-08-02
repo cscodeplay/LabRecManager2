@@ -1,16 +1,44 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Video, VideoOff, Mic, MicOff, Circle, Square } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [hasCamera, setHasCamera] = useState(false);
     const [hasMic, setHasMic] = useState(false);
+    const [isPaused, setIsPaused] = useState(false);
     
     const mediaRecorderRef = useRef(null);
     const recordedChunksRef = useRef([]);
     const streamRef = useRef(null);
     const videoPreviewRef = useRef(null);
+
+    // Draggable camera state
+    const [position, setPosition] = useState({ x: 24, y: 100 });
+    const isDragging = useRef(false);
+    const dragOffset = useRef({ x: 0, y: 0 });
+
+    const handlePointerDown = (e) => {
+        isDragging.current = true;
+        dragOffset.current = {
+            x: e.clientX - position.x,
+            y: window.innerHeight - e.clientY - position.y
+        };
+        e.target.setPointerCapture(e.pointerId);
+    };
+
+    const handlePointerMove = (e) => {
+        if (!isDragging.current) return;
+        setPosition({
+            x: Math.max(0, Math.min(window.innerWidth - 192, e.clientX - dragOffset.current.x)),
+            y: Math.max(0, Math.min(window.innerHeight - 144, window.innerHeight - e.clientY - dragOffset.current.y))
+        });
+    };
+
+    const handlePointerUp = (e) => {
+        isDragging.current = false;
+        e.target.releasePointerCapture(e.pointerId);
+    };
 
     // Initialize media stream for camera/mic
     useEffect(() => {
@@ -111,6 +139,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
             mediaRecorderRef.current = mediaRecorder;
             mediaRecorder.start(1000); // collect data every second
             setIsRecording(true);
+            setIsPaused(false);
             toast.success('Recording started');
         } catch (err) {
             console.error('Error starting recording:', err);
@@ -118,10 +147,25 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
         }
     };
 
+    const togglePause = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            if (isPaused) {
+                mediaRecorderRef.current.resume();
+                setIsPaused(false);
+                toast.success('Recording resumed');
+            } else {
+                mediaRecorderRef.current.pause();
+                setIsPaused(true);
+                toast.success('Recording paused');
+            }
+        }
+    };
+
     const stopRecording = () => {
         if (mediaRecorderRef.current && isRecording) {
             mediaRecorderRef.current.stop();
             setIsRecording(false);
+            setIsPaused(false);
             toast.loading('Uploading recording...', { id: 'recording-upload' });
         }
     };
@@ -193,63 +237,79 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
     };
 
     return (
-        <div className="absolute bottom-6 left-6 z-40 flex items-end gap-4 pointer-events-none">
-            {/* Video Preview Picture-in-Picture */}
-            <div className={`w-48 h-36 bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-700 pointer-events-auto transition-opacity duration-300 ${hasCamera ? 'opacity-100' : 'opacity-0 hidden'}`}>
+        <>
+            {/* Movable Video Preview Picture-in-Picture */}
+            <div 
+                className={`fixed z-50 w-48 h-36 bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-700 pointer-events-auto transition-opacity duration-300 ${hasCamera ? 'opacity-100' : 'opacity-0 hidden'}`}
+                style={{ left: `${position.x}px`, bottom: `${position.y}px`, cursor: 'grab', touchAction: 'none' }}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+            >
                 <video 
                     ref={videoPreviewRef} 
                     autoPlay 
                     muted 
                     playsInline 
-                    className="w-full h-full object-cover transform scale-x-[-1]"
+                    className="w-full h-full object-cover transform scale-x-[-1] pointer-events-none"
                 />
             </div>
 
-            {/* Recording Controls */}
-            <div className="bg-slate-800/95 backdrop-blur-md p-2 rounded-2xl shadow-xl border border-slate-700/50 flex items-center gap-2 pointer-events-auto">
+            {/* Recording Controls (above main toolbar) */}
+            <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 bg-slate-800/95 backdrop-blur-md px-2 py-1 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-1 pointer-events-auto z-40">
                 <button
                     onClick={toggleMic}
-                    className={`p-2 rounded-xl transition-all ${hasMic ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
+                    className={`p-1.5 rounded-full transition-all ${hasMic ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
                     title={hasMic ? 'Mute Microphone' : 'Unmute Microphone'}
                 >
-                    {hasMic ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+                    {hasMic ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
                 </button>
                 <button
                     onClick={toggleCamera}
-                    className={`p-2 rounded-xl transition-all ${hasCamera ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
+                    className={`p-1.5 rounded-full transition-all ${hasCamera ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
                     title={hasCamera ? 'Turn Camera Off' : 'Turn Camera On'}
                 >
-                    {hasCamera ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                    {hasCamera ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
                 </button>
                 
-                <div className="w-px h-8 bg-slate-700 mx-1"></div>
+                <div className="w-px h-5 bg-slate-700 mx-1"></div>
                 
                 {isRecording ? (
-                    <button
-                        onClick={stopRecording}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors"
-                    >
-                        <Square className="w-4 h-4 fill-current" />
-                        Stop Recording
-                    </button>
+                    <>
+                        <button
+                            onClick={togglePause}
+                            className={`p-1.5 rounded-full transition-all ${isPaused ? 'text-red-400 hover:bg-red-500/20 bg-red-500/10' : 'text-slate-200 hover:bg-slate-700'}`}
+                            title={isPaused ? 'Resume Recording' : 'Pause Recording'}
+                        >
+                            {isPaused ? <Play className="w-4 h-4 fill-current" /> : <Pause className="w-4 h-4 fill-current" />}
+                        </button>
+                        <button
+                            onClick={stopRecording}
+                            className="p-1.5 text-white bg-red-500 hover:bg-red-600 rounded-full transition-colors"
+                            title="Stop Recording"
+                        >
+                            <Square className="w-4 h-4 fill-current" />
+                        </button>
+                    </>
                 ) : (
                     <button
                         onClick={startRecording}
-                        className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-medium transition-colors group"
+                        className="p-1.5 text-white hover:bg-slate-700 rounded-full transition-colors group"
+                        title="Start Recording"
                     >
                         <Circle className="w-4 h-4 fill-red-500 text-red-500 group-hover:scale-110 transition-transform" />
-                        Record Lecture
                     </button>
                 )}
                 
                 {isRecording && (
-                    <div className="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-red-500/10 border border-red-500/30 px-3 py-1 rounded-full flex items-center gap-2 pointer-events-none">
-                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                        <span className="text-red-500 font-medium text-sm">Recording...</span>
+                    <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-full flex items-center gap-1.5 pointer-events-none whitespace-nowrap">
+                        <div className={`w-1.5 h-1.5 rounded-full bg-red-500 ${isPaused ? '' : 'animate-pulse'}`}></div>
+                        <span className="text-red-500 font-medium text-xs tracking-wider">{isPaused ? 'PAUSED' : 'REC'}</span>
                     </div>
                 )}
             </div>
-        </div>
+        </>
     );
 };
 
