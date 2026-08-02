@@ -881,7 +881,7 @@ export default function Whiteboard({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageId, copySelectedImage, deleteSelectedImage, pasteImage]);
+    }, [selectedImageId, selectedTextId, selectedShapeId, selection, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete]);
 
     // Image manipulation mouse handlers
     useEffect(() => {

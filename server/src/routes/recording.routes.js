@@ -104,10 +104,16 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     const { page = 1, limit = 20 } = req.query;
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
+    const isAdmin = ['admin', 'principal'].includes(req.user.role);
+
+    const whereClause = {
+        schoolId,
+        ...(isAdmin ? {} : { userId })
+    };
 
     const [recordings, total] = await Promise.all([
         prisma.whiteboardRecording.findMany({
-            where: { userId, schoolId },
+            where: whereClause,
             orderBy: { createdAt: 'desc' },
             skip,
             take: parseInt(limit),
@@ -117,7 +123,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 }
             }
         }),
-        prisma.whiteboardRecording.count({ where: { userId, schoolId } })
+        prisma.whiteboardRecording.count({ where: whereClause })
     ]);
 
     // Add share URLs
