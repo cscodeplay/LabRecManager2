@@ -7,6 +7,8 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
     const [hasCamera, setHasCamera] = useState(false);
     const [hasMic, setHasMic] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
+    const [recordingTime, setRecordingTime] = useState(0);
+    const timerIntervalRef = useRef(null);
     
     const mediaRecorderRef = useRef(null);
     const recordedChunksRef = useRef([]);
@@ -137,9 +139,15 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
             };
 
             mediaRecorderRef.current = mediaRecorder;
-            mediaRecorder.start(1000); // collect data every second
+            mediaRecorderRef.current.start(1000); // Record in 1s chunks
             setIsRecording(true);
             setIsPaused(false);
+            setRecordingTime(0);
+            
+            timerIntervalRef.current = setInterval(() => {
+                setRecordingTime(prev => prev + 1);
+            }, 1000);
+            
             toast.success('Recording started');
         } catch (err) {
             console.error('Error starting recording:', err);
@@ -148,24 +156,34 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
     };
 
     const togglePause = () => {
-        if (mediaRecorderRef.current && isRecording) {
-            if (isPaused) {
-                mediaRecorderRef.current.resume();
-                setIsPaused(false);
-                toast.success('Recording resumed');
-            } else {
-                mediaRecorderRef.current.pause();
-                setIsPaused(true);
-                toast.success('Recording paused');
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            mediaRecorderRef.current.pause();
+            setIsPaused(true);
+            if (timerIntervalRef.current) {
+                clearInterval(timerIntervalRef.current);
             }
         }
     };
 
+    const resumeRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'paused') {
+            mediaRecorderRef.current.resume();
+            setIsPaused(false);
+            timerIntervalRef.current = setInterval(() => {
+                setRecordingTime(prev => prev + 1);
+            }, 1000);
+        }
+    };
+
     const stopRecording = () => {
-        if (mediaRecorderRef.current && isRecording) {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
             mediaRecorderRef.current.stop();
             setIsRecording(false);
             setIsPaused(false);
+            if (timerIntervalRef.current) {
+                clearInterval(timerIntervalRef.current);
+                timerIntervalRef.current = null;
+            }
             toast.loading('Uploading recording...', { id: 'recording-upload' });
         }
     };
@@ -236,6 +254,12 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
         }
     };
 
+    const formatTime = (seconds) => {
+        const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const s = (seconds % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    };
+
     return (
         <>
             {/* Movable Video Preview Picture-in-Picture */}
@@ -277,9 +301,13 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
                 
                 {isRecording ? (
                     <>
+                        <div className="text-red-500 text-xs font-mono font-medium mx-2 flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full bg-red-500 ${isPaused ? '' : 'animate-pulse'}`}></span>
+                            {formatTime(recordingTime)}
+                        </div>
                         <button
-                            onClick={togglePause}
-                            className={`p-1.5 rounded-full transition-all ${isPaused ? 'text-red-400 hover:bg-red-500/20 bg-red-500/10' : 'text-slate-200 hover:bg-slate-700'}`}
+                            onClick={isPaused ? resumeRecording : togglePause}
+                            className={`p-1.5 rounded-full transition-all ${isPaused ? 'text-green-400 hover:bg-green-500/20 bg-green-500/10' : 'text-slate-200 hover:bg-slate-700'}`}
                             title={isPaused ? 'Resume Recording' : 'Pause Recording'}
                         >
                             {isPaused ? <Play className="w-4 h-4 fill-current" /> : <Pause className="w-4 h-4 fill-current" />}

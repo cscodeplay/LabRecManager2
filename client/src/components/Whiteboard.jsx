@@ -559,11 +559,13 @@ export default function Whiteboard({
         // Clear canvas (transparent) to show CSS background
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Also clear images and text on current page
+        // Also clear images, text, and shapes on current page
         setImageObjects([]);
         setTextObjects([]);
+        setShapeObjects([]);
         setSelectedImageId(null);
         setSelectedTextId(null);
+        setSelectedShapeId(null);
 
         saveToHistory();
     }, [saveToHistory]);
@@ -678,8 +680,11 @@ export default function Whiteboard({
         if (selectedTextId || editingTextId) {
             const activeId = editingTextId || selectedTextId;
             setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, color: newColor } : t));
+        } else if (selectedShapeId) {
+            setShapeObjects(prev => prev.map(s => s.id === selectedShapeId ? { ...s, color: newColor } : s));
         } else {
             setTextObjects(prev => prev.map(t => ({ ...t, color: newColor })));
+            setShapeObjects(prev => prev.map(s => ({ ...s, color: newColor })));
         }
 
         // Add to recently used (move to front, keep 9 max)
@@ -1196,18 +1201,45 @@ export default function Whiteboard({
         const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = true;
 
-        if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') {
+        if (tool === 'highlighter') {
+            const pts = currentPathPointsRef.current;
+            pts.push(pos);
+
+            if (preStrokeImageDataRef.current) {
+                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+            }
+
+            ctx.beginPath();
+            ctx.strokeStyle = highlighterColor;
+            ctx.lineWidth = strokeWidth * 4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.globalCompositeOperation = 'multiply';
+
+            ctx.moveTo(pts[0].x, pts[0].y);
+            if (pts.length < 3) {
+                ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+            } else {
+                for (let i = 1; i < pts.length - 2; i++) {
+                    const c = (pts[i].x + pts[i + 1].x) / 2;
+                    const d = (pts[i].y + pts[i + 1].y) / 2;
+                    ctx.quadraticCurveTo(pts[i].x, pts[i].y, c, d);
+                }
+                ctx.quadraticCurveTo(
+                    pts[pts.length - 2].x,
+                    pts[pts.length - 2].y,
+                    pts[pts.length - 1].x,
+                    pts[pts.length - 1].y
+                );
+            }
+            ctx.stroke();
+            ctx.globalCompositeOperation = 'source-over';
+        } else if (tool === 'pen' || tool === 'eraser') {
             const pts = currentPathPointsRef.current;
             pts.push(pos);
 
             ctx.beginPath();
-            if (tool === 'highlighter') {
-                ctx.strokeStyle = highlighterColor;
-                ctx.lineWidth = strokeWidth * 4;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.globalCompositeOperation = 'multiply';
-            } else if (tool === 'eraser') {
+            if (tool === 'eraser') {
                 ctx.globalCompositeOperation = 'destination-out';
                 ctx.strokeStyle = 'rgba(0,0,0,1)';
                 ctx.lineWidth = eraserSize;
@@ -1241,7 +1273,7 @@ export default function Whiteboard({
                 ctx.stroke();
             }
 
-            if (tool === 'highlighter' || tool === 'eraser') {
+            if (tool === 'eraser') {
                 ctx.globalCompositeOperation = 'source-over';
             }
 
@@ -2966,7 +2998,9 @@ export default function Whiteboard({
                                     setSelectedTextId(txtObj.id);
                                 }}
                                 onMouseDown={(e) => {
-                                    if (isEditing) return; // Don't drag while editing
+                                    if (e.target.tagName.toLowerCase() === 'textarea' || e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'select' || e.target.tagName.toLowerCase() === 'button') {
+                                        return;
+                                    }
                                     if (!isSelected) {
                                         setSelectedTextId(txtObj.id);
                                         setSelectedImageId(null);
@@ -2974,6 +3008,7 @@ export default function Whiteboard({
                                     }
                                     if (e.target.dataset.handle) return;
                                     e.stopPropagation();
+                                    e.preventDefault(); // Prevent text selection deselect when dragging wrapper
                                     setTextDragState({
                                         id: txtObj.id,
                                         action: 'move',
@@ -2986,7 +3021,13 @@ export default function Whiteboard({
                                 {/* Text Content or Edit Textarea */}
                                 {isEditing ? (
                                     <textarea
-                                        defaultValue={txtObj.text}
+                                        value={txtObj.text}
+                                        onChange={(e) => {
+                                            const newText = e.target.value;
+                                            setTextObjects(prev => prev.map(t =>
+                                                t.id === txtObj.id ? { ...t, text: newText } : t
+                                            ));
+                                        }}
                                         autoFocus
                                         className="w-full h-full p-2 bg-white border-2 border-blue-500 rounded resize-none focus:outline-none"
                                         style={{
@@ -3000,12 +3041,6 @@ export default function Whiteboard({
                                             minHeight: txtObj.height,
                                         }}
                                         onBlur={(e) => {
-                                            const newText = e.target.value;
-                                            if (newText.trim()) {
-                                                setTextObjects(prev => prev.map(t =>
-                                                    t.id === txtObj.id ? { ...t, text: newText } : t
-                                                ));
-                                            }
                                             setEditingTextId(null);
                                             saveToHistory();
                                         }}
@@ -3046,7 +3081,7 @@ export default function Whiteboard({
                                         <div
                                             className="absolute -top-14 left-0 flex items-center gap-1 bg-white rounded-lg shadow-lg border border-slate-200 p-1.5 pointer-events-auto z-40"
                                             onClick={e => e.stopPropagation()}
-                                            onMouseDown={e => e.stopPropagation()}
+                                            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
                                         >
                                             {/* Font Family */}
                                             <select
@@ -3141,13 +3176,86 @@ export default function Whiteboard({
                                                     <option key={size} value={size}>{size}</option>
                                                 ))}
                                             </select>
+                                            
+                                            <div className="w-px h-5 bg-slate-200 mx-1"></div>
+
+                                            {/* Background Color */}
+                                            <div className="relative group">
+                                                <input
+                                                    type="color"
+                                                    value={txtObj.bgColor || '#ffffff'}
+                                                    onChange={(e) => {
+                                                        setTextObjects(prev => prev.map(t =>
+                                                            t.id === txtObj.id ? { ...t, bgColor: e.target.value } : t
+                                                        ));
+                                                    }}
+                                                    className="w-7 h-7 p-0 border-0 rounded cursor-pointer"
+                                                    title="Background Color"
+                                                />
+                                                <button
+                                                    onClick={() => setTextObjects(prev => prev.map(t => t.id === txtObj.id ? { ...t, bgColor: 'transparent' } : t))}
+                                                    className="absolute -top-6 left-0 text-xs bg-slate-800 text-white px-1 rounded opacity-0 group-hover:opacity-100"
+                                                >
+                                                    Clear Bg
+                                                </button>
+                                            </div>
+
+                                            <div className="w-px h-5 bg-slate-200 mx-1"></div>
+
+                                            {/* Action Buttons */}
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(txtObj.text);
+                                                }}
+                                                className="px-2 h-7 flex items-center justify-center rounded text-xs border border-slate-200 hover:bg-slate-100"
+                                                title="Copy Text"
+                                            >
+                                                Copy
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(txtObj.text).then(() => {
+                                                        setTextObjects(prev => prev.map(t => t.id === txtObj.id ? { ...t, text: '' } : t));
+                                                    });
+                                                }}
+                                                className="px-2 h-7 flex items-center justify-center rounded text-xs border border-slate-200 hover:bg-slate-100"
+                                                title="Cut Text"
+                                            >
+                                                Cut
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    const clone = { ...txtObj, id: Date.now(), x: txtObj.x + 20, y: txtObj.y + 20 };
+                                                    setTextObjects(prev => [...prev, clone]);
+                                                    setSelectedTextId(clone.id);
+                                                }}
+                                                className="px-2 h-7 flex items-center justify-center rounded text-xs border border-slate-200 hover:bg-slate-100"
+                                                title="Duplicate Object"
+                                            >
+                                                Dup
+                                            </button>
+                                            
+                                            <div className="w-px h-5 bg-slate-200 mx-1"></div>
+
                                             {/* Edit Button */}
                                             <button
                                                 onClick={() => setEditingTextId(txtObj.id)}
-                                                className="px-2 h-7 flex items-center justify-center rounded text-xs border border-slate-200 hover:bg-slate-100"
+                                                className="px-2 h-7 flex items-center justify-center rounded text-xs bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100"
                                                 title="Edit Text"
                                             >
                                                 Edit
+                                            </button>
+                                            
+                                            {/* Delete Button */}
+                                            <button
+                                                onClick={() => {
+                                                    setTextObjects(prev => prev.filter(t => t.id !== txtObj.id));
+                                                    setSelectedTextId(null);
+                                                }}
+                                                className="w-7 h-7 flex items-center justify-center rounded text-xs bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
+                                                title="Delete"
+                                            >
+                                                <X className="w-4 h-4" />
                                             </button>
                                         </div>
 
@@ -3304,12 +3412,13 @@ export default function Whiteboard({
                         const isSelected = selectedShapeId === shpObj.id;
                         const handleSize = 10;
                         const renderShapeSVG = () => {
+                            const fill = shpObj.fillColor || 'transparent';
                             if (shpObj.type === 'rectangle') {
-                                return <rect x="0" y="0" width={shpObj.width} height={shpObj.height} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                return <rect x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
                             } else if (shpObj.type === 'circle') {
-                                return <ellipse cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                return <ellipse cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
                             } else if (shpObj.type === 'triangle') {
-                                return <polygon points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                                return <polygon points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
                             } else if (shpObj.type === 'star') {
                                 const cx = shpObj.width / 2;
                                 const cy = shpObj.height / 2;
@@ -3321,7 +3430,7 @@ export default function Whiteboard({
                                     const angle = (i * Math.PI) / 5 - Math.PI / 2;
                                     points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
                                 }
-                                return <polygon points={points.join(' ')} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                                return <polygon points={points.join(' ')} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
                             }
                             return null;
                         };
@@ -3381,7 +3490,13 @@ export default function Whiteboard({
                                             onMouseDown={e => e.stopPropagation()}
                                             placeholder="Text..."
                                             className="w-full text-center bg-transparent border-none outline-none resize-none overflow-hidden"
-                                            style={{ color: shpObj.color, fontSize: shpObj.fontSize || 20 }}
+                                            style={{ 
+                                                color: shpObj.textColor || shpObj.color, 
+                                                fontSize: shpObj.fontSize || 20,
+                                                fontFamily: shpObj.fontFamily || 'sans-serif',
+                                                fontWeight: shpObj.fontWeight || 'normal',
+                                                fontStyle: shpObj.fontStyle || 'normal',
+                                            }}
                                         />
                                     </div>
                                 )}
@@ -3390,6 +3505,146 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-purple-500 pointer-events-none" />
+                                        
+                                        {/* Formatting Toolbar */}
+                                        <div
+                                            className="absolute -top-14 left-0 flex items-center gap-1 bg-white rounded-lg shadow-lg border border-slate-200 p-1.5 pointer-events-auto z-40 whitespace-nowrap"
+                                            onClick={e => e.stopPropagation()}
+                                            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+                                        >
+                                            {/* Border Color */}
+                                            <input
+                                                type="color"
+                                                value={shpObj.color}
+                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, color: e.target.value } : s))}
+                                                className="w-7 h-7 p-0 border-0 rounded cursor-pointer"
+                                                title="Border Color"
+                                            />
+                                            {/* Fill Color */}
+                                            <div className="relative group">
+                                                <input
+                                                    type="color"
+                                                    value={shpObj.fillColor || '#ffffff'}
+                                                    onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fillColor: e.target.value } : s))}
+                                                    className="w-7 h-7 p-0 border-0 rounded cursor-pointer"
+                                                    title="Fill Color"
+                                                />
+                                                <button
+                                                    onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fillColor: 'transparent' } : s))}
+                                                    className="absolute -top-6 left-0 text-xs bg-slate-800 text-white px-1 rounded opacity-0 group-hover:opacity-100"
+                                                >
+                                                    Clear Fill
+                                                </button>
+                                            </div>
+                                            {/* Stroke Width */}
+                                            <select
+                                                value={shpObj.strokeWidth}
+                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeWidth: parseInt(e.target.value) } : s))}
+                                                className="h-7 px-1 text-xs border border-slate-200 rounded bg-white"
+                                                title="Border Width"
+                                            >
+                                                {[1, 2, 4, 6, 8].map(w => <option key={w} value={w}>{w}px</option>)}
+                                            </select>
+                                            
+                                            <div className="w-px h-5 bg-slate-200 mx-1"></div>
+                                            
+                                            {/* Text Color */}
+                                            <input
+                                                type="color"
+                                                value={shpObj.textColor || shpObj.color}
+                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, textColor: e.target.value } : s))}
+                                                className="w-7 h-7 p-0 border-0 rounded cursor-pointer"
+                                                title="Text Color"
+                                            />
+                                            {/* Font Family */}
+                                            <select
+                                                value={shpObj.fontFamily || 'sans-serif'}
+                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontFamily: e.target.value } : s))}
+                                                className="h-7 px-1 text-xs border border-slate-200 rounded bg-white w-20"
+                                                title="Font Family"
+                                            >
+                                                <option value="sans-serif">Sans</option>
+                                                <option value="serif">Serif</option>
+                                                <option value="monospace">Mono</option>
+                                                <option value="cursive">Cursive</option>
+                                            </select>
+                                            {/* Bold */}
+                                            <button
+                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontWeight: s.fontWeight === 'bold' ? 'normal' : 'bold' } : s))}
+                                                className={`w-7 h-7 flex items-center justify-center rounded text-sm font-bold border ${shpObj.fontWeight === 'bold' ? 'bg-blue-100 border-blue-400' : 'border-slate-200 hover:bg-slate-100'}`}
+                                                title="Bold"
+                                            >
+                                                B
+                                            </button>
+                                            {/* Italic */}
+                                            <button
+                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontStyle: s.fontStyle === 'italic' ? 'normal' : 'italic' } : s))}
+                                                className={`w-7 h-7 flex items-center justify-center rounded text-sm italic border ${shpObj.fontStyle === 'italic' ? 'bg-blue-100 border-blue-400' : 'border-slate-200 hover:bg-slate-100'}`}
+                                                title="Italic"
+                                            >
+                                                I
+                                            </button>
+                                            {/* Font Size */}
+                                            <select
+                                                value={shpObj.fontSize || 20}
+                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontSize: parseInt(e.target.value) } : s))}
+                                                className="h-7 px-1 text-xs border border-slate-200 rounded bg-white"
+                                                title="Font Size"
+                                            >
+                                                {[10, 12, 14, 16, 20, 24, 32, 48].map(size => (
+                                                    <option key={size} value={size}>{size}</option>
+                                                ))}
+                                            </select>
+                                            
+                                            <div className="w-px h-5 bg-slate-200 mx-1"></div>
+
+                                            {/* Action Buttons */}
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(shpObj.text || '');
+                                                }}
+                                                className="px-2 h-7 flex items-center justify-center rounded text-xs border border-slate-200 hover:bg-slate-100"
+                                                title="Copy Text"
+                                            >
+                                                Copy
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(shpObj.text || '').then(() => {
+                                                        setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, text: '' } : s));
+                                                    });
+                                                }}
+                                                className="px-2 h-7 flex items-center justify-center rounded text-xs border border-slate-200 hover:bg-slate-100"
+                                                title="Cut Text"
+                                            >
+                                                Cut
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    const clone = { ...shpObj, id: Date.now(), x: shpObj.x + 20, y: shpObj.y + 20 };
+                                                    setShapeObjects(prev => [...prev, clone]);
+                                                    setSelectedShapeId(clone.id);
+                                                }}
+                                                className="px-2 h-7 flex items-center justify-center rounded text-xs border border-slate-200 hover:bg-slate-100"
+                                                title="Duplicate Object"
+                                            >
+                                                Dup
+                                            </button>
+                                            
+                                            <div className="w-px h-5 bg-slate-200 mx-1"></div>
+
+                                            {/* Delete Button */}
+                                            <button
+                                                onClick={() => {
+                                                    setShapeObjects(prev => prev.filter(s => s.id !== shpObj.id));
+                                                    setSelectedShapeId(null);
+                                                }}
+                                                className="w-7 h-7 flex items-center justify-center rounded text-xs bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
+                                                title="Delete"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                         
                                         {/* Corner Resize Handles */}
                                         {['nw', 'ne', 'sw', 'se'].map(corner => {

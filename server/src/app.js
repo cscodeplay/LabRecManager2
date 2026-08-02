@@ -52,10 +52,17 @@ const { requestLogger } = require('./middleware/requestLogger');
 const app = express();
 const server = http.createServer(app);
 
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://lab-rec-client.onrender.com',
+  'https://labrecordmanager.onrender.com',
+  process.env.CLIENT_URL
+].filter(Boolean);
+
 // Initialize Socket.io for real-time features (viva, notifications)
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -66,7 +73,7 @@ app.set('io', io);
 
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: allowedOrigins,
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
