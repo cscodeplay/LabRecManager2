@@ -131,6 +131,7 @@ export default function Whiteboard({
     
     // Pop-over UI states
     const [showStrokePicker, setShowStrokePicker] = useState(false);
+    const [showStrokeStylePicker, setShowStrokeStylePicker] = useState(false);
     const [showEraserPicker, setShowEraserPicker] = useState(false);
     const [showShapePicker, setShowShapePicker] = useState(false);
     const [showSelectPicker, setShowSelectPicker] = useState(false);
