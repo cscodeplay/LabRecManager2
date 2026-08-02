@@ -1,6 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
-const { prisma } = require('../config/database');
+const prisma = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const cloudinary = require('../services/cloudinary');
@@ -39,23 +39,26 @@ router.post('/upload', authenticate, authorize('instructor', 'admin', 'lab_assis
     }
 
     // Upload to Cloudinary as video
-    const result = await new Promise((resolve, reject) => {
-        const uploadStream = require('cloudinary').v2.uploader.upload_stream(
-            {
-                resource_type: 'video',
-                folder: 'ulrms/whiteboard_recordings',
-                public_id: `wb_rec_${userId}_${Date.now()}`,
-                eager: [
-                    { width: 320, height: 180, crop: 'fill', format: 'jpg' } // Thumbnail
-                ]
-            },
-            (error, result) => {
-                if (error) reject(error);
-                else resolve(result);
-            }
-        );
-        uploadStream.end(req.file.buffer);
-    });
+    let result;
+    try {
+        result = await require('cloudinary').v2.uploader.upload(req.file.path, {
+            resource_type: 'video',
+            folder: 'ulrms/whiteboard_recordings',
+            public_id: `wb_rec_${userId}_${Date.now()}`,
+            eager: [
+                { width: 320, height: 180, crop: 'fill', format: 'jpg' } // Thumbnail
+            ]
+        });
+        
+        // Clean up the temp file
+        const fs = require('fs');
+        if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+    } catch (uploadError) {
+        console.error('Cloudinary upload error:', uploadError);
+        return res.status(500).json({ success: false, message: 'Failed to upload video to Cloudinary' });
+    }
 
     // Generate unique share token
     const shareToken = crypto.randomBytes(32).toString('hex');
