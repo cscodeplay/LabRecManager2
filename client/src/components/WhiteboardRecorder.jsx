@@ -14,6 +14,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
     const mediaRecorderRef = useRef(null);
     const recordedChunksRef = useRef([]);
     const streamRef = useRef(null);
+    const screenStreamRef = useRef(null);
     const videoPreviewRef = useRef(null);
 
     // Draggable camera state
@@ -108,13 +109,37 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
         try {
             recordedChunksRef.current = [];
             
-            // Capture canvas stream at 30 fps
-            const canvasStream = canvasRef.current.captureStream(30);
+            // Get screen recording stream (this captures the entire tab/window including shapes, text, and SVG overlays)
+            let screenStream;
+            try {
+                screenStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { displaySurface: 'browser' },
+                    audio: true, // Try to capture tab audio as well
+                    preferCurrentTab: true
+                });
+            } catch (err) {
+                console.error("Screen recording cancelled or failed:", err);
+                toast.error("Screen recording permission is required to capture the whiteboard.");
+                return;
+            }
+            
+            // Handle user stopping the screen share natively via browser UI
+            screenStream.getVideoTracks()[0].onended = () => {
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                    stopRecording();
+                }
+            };
+            
+            screenStreamRef.current = screenStream;
             
             // Combine with camera/mic stream if available
-            const combinedTracks = [...canvasStream.getTracks()];
-            if (streamRef.current) {
-                combinedTracks.push(...streamRef.current.getTracks());
+            const combinedTracks = [...screenStream.getVideoTracks()];
+            
+            // Handle audio tracks: use mic audio if available, otherwise tab audio
+            if (streamRef.current && streamRef.current.getAudioTracks().length > 0) {
+                combinedTracks.push(streamRef.current.getAudioTracks()[0]);
+            } else if (screenStream.getAudioTracks().length > 0) {
+                combinedTracks.push(screenStream.getAudioTracks()[0]);
             }
 
             const combinedStream = new MediaStream(combinedTracks);
@@ -184,6 +209,10 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
             if (timerIntervalRef.current) {
                 clearInterval(timerIntervalRef.current);
                 timerIntervalRef.current = null;
+            }
+            if (screenStreamRef.current) {
+                screenStreamRef.current.getTracks().forEach(track => track.stop());
+                screenStreamRef.current = null;
             }
             toast.loading('Uploading recording...', { id: 'recording-upload' });
         }
