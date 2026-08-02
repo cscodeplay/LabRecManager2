@@ -3374,7 +3374,6 @@ export default function Whiteboard({
                                 width: selection.width,
                                 height: selection.height
                             }}
-                            }}
                         >
                             {selection.path && (
                                 <svg width="100%" height="100%" style={{ overflow: 'visible' }} className="absolute inset-0 pointer-events-none">
