@@ -2,6 +2,13 @@ const express = require('express');
 const prisma = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const multer = require('multer');
+const cloudinary = require('../services/cloudinary');
+
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 }
+});
 
 const router = express.Router();
 
@@ -105,6 +112,73 @@ router.get('/sessions', authenticate, authorize('admin', 'principal'), asyncHand
             }))
         }
     });
+}));
+
+/**
+ * @route   POST /api/whiteboard/screenshot
+ * @desc    Upload a screenshot and save it to the Documents page under a Screenshot folder
+ * @access  Admin/Instructor
+ */
+router.post('/screenshot', authenticate, authorize('admin', 'principal', 'instructor'), upload.single('file'), asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const schoolId = req.user.schoolId;
+
+    if (!req.file) {
+        return res.status(400).json({ success: false, message: 'No screenshot file uploaded.' });
+    }
+
+    try {
+        // Upload to Cloudinary
+        const result = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+                { folder: `labrec/${schoolId}/screenshots`, resource_type: 'image' },
+                (error, result) => {
+                    if (error) reject(error);
+                    else resolve(result);
+                }
+            );
+            uploadStream.end(req.file.buffer);
+        });
+
+        // Find or create 'Screenshots' folder
+        let folder = await prisma.documentFolder.findFirst({
+            where: { schoolId, name: 'Screenshots', deletedAt: null }
+        });
+
+        if (!folder) {
+            folder = await prisma.documentFolder.create({
+                data: {
+                    name: 'Screenshots',
+                    schoolId,
+                    createdById: userId
+                }
+            });
+        }
+
+        // Save Document record
+        const doc = await prisma.document.create({
+            data: {
+                schoolId,
+                uploadedById: userId,
+                folderId: folder.id,
+                name: `Screenshot - ${new Date().toLocaleString()}`,
+                description: 'Whiteboard screenshot',
+                fileName: req.file.originalname || 'screenshot.png',
+                fileType: 'png',
+                mimeType: req.file.mimetype,
+                fileSize: req.file.size,
+                cloudinaryId: result.public_id,
+                url: result.secure_url,
+                category: 'Screenshot',
+                isPublic: false
+            }
+        });
+
+        res.status(201).json({ success: true, data: doc });
+    } catch (error) {
+        console.error('Screenshot upload error:', error);
+        res.status(500).json({ success: false, message: 'Failed to upload screenshot' });
+    }
 }));
 
 /**

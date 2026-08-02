@@ -93,6 +93,82 @@ const getDashArray = (style) => {
     }
 };
 
+function ScreenshotPickerModal({ onClose, onSelect }) {
+    const [screenshots, setScreenshots] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchScreenshots = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                // The category might be "Screenshot" as defined in the backend
+                const res = await fetch('/api/documents?category=Screenshot', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (data.success && data.data) {
+                    setScreenshots(data.data.documents || []);
+                }
+            } catch (err) {
+                console.error("Failed to fetch screenshots", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchScreenshots();
+    }, []);
+
+    return (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col overflow-hidden">
+                <div className="flex justify-between items-center p-4 border-b border-slate-200">
+                    <h3 className="text-lg font-semibold text-slate-800">Insert Screenshot</h3>
+                    <button onClick={onClose} className="text-slate-500 hover:text-slate-700">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+                <div className="p-4 overflow-y-auto flex-1">
+                    {loading ? (
+                        <div className="flex justify-center items-center h-40">
+                            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                    ) : screenshots.length === 0 ? (
+                        <div className="text-center text-slate-500 py-10">
+                            No screenshots found. Take a screenshot first!
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                            {screenshots.map(doc => (
+                                <div 
+                                    key={doc.id} 
+                                    className="border border-slate-200 rounded-lg overflow-hidden cursor-pointer hover:border-blue-500 hover:shadow-md transition group"
+                                    onClick={() => onSelect(doc.url)}
+                                >
+                                    <div className="aspect-video bg-slate-100 flex items-center justify-center relative">
+                                        <img 
+                                            src={doc.url} 
+                                            alt={doc.name} 
+                                            className="w-full h-full object-contain"
+                                        />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                            <span className="text-white font-medium bg-blue-600/90 px-3 py-1.5 rounded-full text-sm">
+                                                Insert
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="p-2 text-xs text-slate-600 truncate text-center">
+                                        {new Date(doc.createdAt).toLocaleString()}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function Whiteboard({
     onSave,
     onClose,
@@ -141,6 +217,8 @@ export default function Whiteboard({
     const [shapeType, setShapeType] = useState('rectangle'); // rectangle, circle, triangle, star
     const [shapePreview, setShapePreview] = useState(null);
     const [selectMode, setSelectMode] = useState('rectangle'); // rectangle, lasso
+    const [showImagePicker, setShowImagePicker] = useState(false);
+    const [showScreenshotModal, setShowScreenshotModal] = useState(false);
 
     // Multi-page state - must be before anything that uses currentPage
     const [pages, setPages] = useState([null]); // Array of canvas data URLs
@@ -1728,8 +1806,8 @@ export default function Whiteboard({
         }
     }, [isDrawing, getPosition, tool, isAutoShape, color, strokeWidth, strokeStyle, eraserSize, saveToHistory, emitDrawEvent, shapeType, setShapeObjects, isSharing, socket, sessionId]);
 
-    // Download as image - Composites all layers (background, canvas, images, text)
-    const handleDownload = useCallback(() => {
+    // Screenshot - Composites all layers (background, canvas, images, text)
+    const handleScreenshot = useCallback(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
@@ -1831,12 +1909,45 @@ export default function Whiteboard({
             ctx.restore();
         });
 
-        // Download
-        const link = document.createElement('a');
-        link.download = `whiteboard-page${currentPage + 1}-${new Date().toISOString().slice(0, 10)}.png`;
-        link.href = exportCanvas.toDataURL('image/png');
-        link.click();
-    }, [currentPage, pageBackgrounds, pageImageObjects, pageTextObjects]);
+        let finalCanvas = exportCanvas;
+
+        // If there's a selection, crop to it
+        if (selection) {
+            const cropCanvas = document.createElement('canvas');
+            cropCanvas.width = selection.width;
+            cropCanvas.height = selection.height;
+            const cropCtx = cropCanvas.getContext('2d');
+            cropCtx.drawImage(exportCanvas, -selection.x, -selection.y);
+            finalCanvas = cropCanvas;
+        }
+
+        // Upload screenshot
+        finalCanvas.toBlob(async (blob) => {
+            if (!blob) return;
+            const formData = new FormData();
+            formData.append('file', blob, `screenshot-${new Date().getTime()}.png`);
+
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch('/api/whiteboard/screenshot', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Screenshot saved to Documents > Screenshots!');
+                } else {
+                    alert('Failed to save screenshot: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Screenshot upload error:', error);
+                alert('Error saving screenshot.');
+            }
+        }, 'image/png');
+    }, [currentPage, pageBackgrounds, pageImageObjects, pageTextObjects, selection]);
 
     // Save and return data
     const handleSave = useCallback(() => {
@@ -2067,6 +2178,7 @@ export default function Whiteboard({
                                             if (t.id === 'highlighter') setShowHighlighterPicker(!showHighlighterPicker);
                                             if (t.id === 'line') setShowLinePicker(!showLinePicker);
                                             if (t.id === 'text') setShowTextBgPicker(!showTextBgPicker);
+                                            if (t.id === 'image') setShowImagePicker(!showImagePicker);
                                         } else {
                                             setTool(t.id);
                                             setShowStrokePicker(false);
@@ -2076,9 +2188,7 @@ export default function Whiteboard({
                                             setShowHighlighterPicker(false);
                                             setShowLinePicker(false);
                                             setShowTextBgPicker(false);
-                                        }
-                                        if (t.id === 'image') {
-                                            imageInputRef.current?.click();
+                                            setShowImagePicker(t.id === 'image');
                                         }
                                     }}
                                     className={`p-1 rounded-full transition-colors flex items-center justify-center ${tool === t.id ? 'bg-primary-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
@@ -2100,6 +2210,24 @@ export default function Whiteboard({
                                             className="w-full h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer"
                                         />
                                         <div className="text-xs text-white text-center mt-1">{strokeWidth}px</div>
+                                    </div>
+                                )}
+
+                                {/* Image Tool Popover */}
+                                {tool === t.id && t.id === 'image' && showImagePicker && (
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 min-w-[150px]">
+                                        <button 
+                                            onClick={() => { imageInputRef.current?.click(); setShowImagePicker(false); }}
+                                            className="text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded-md transition"
+                                        >
+                                            Upload from Device
+                                        </button>
+                                        <button 
+                                            onClick={() => { setShowScreenshotModal(true); setShowImagePicker(false); }}
+                                            className="text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded-md transition"
+                                        >
+                                            Insert Screenshot
+                                        </button>
                                     </div>
                                 )}
 
@@ -2687,21 +2815,12 @@ export default function Whiteboard({
                             </button>
                         )}
                         <button
-                            onClick={handleDownload}
+                            onClick={handleScreenshot}
                             className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
-                            title="Download / Export Whiteboard Image (PNG)"
+                            title="Take Screenshot (Selection or Full Page)"
                         >
-                            <Download className="w-3.5 h-3.5" />
+                            <Camera className="w-3.5 h-3.5" />
                         </button>
-                        {onSave && (
-                            <button
-                                onClick={handleSave}
-                                className="p-1 text-primary-400 hover:bg-primary-500/20 rounded-full transition flex items-center justify-center"
-                                title="Save Whiteboard"
-                            >
-                                <Save className="w-3.5 h-3.5" />
-                            </button>
-                        )}
                     </div>
                 </div>
                 
@@ -4086,6 +4205,31 @@ export default function Whiteboard({
                     sessionId={sessionId || whiteboardId}
                     onRecordingComplete={(data) => {
                         console.log('Recording complete:', data);
+                    }}
+                />
+            )}
+
+            {/* Screenshot Modal */}
+            {showScreenshotModal && (
+                <ScreenshotPickerModal 
+                    onClose={() => setShowScreenshotModal(false)}
+                    onSelect={(url) => {
+                        const img = new Image();
+                        img.crossOrigin = 'anonymous';
+                        img.onload = () => {
+                            const newObj = {
+                                id: Date.now(),
+                                type: 'image',
+                                src: url,
+                                x: 100,
+                                y: 100,
+                                width: Math.min(img.width, 400),
+                                height: Math.min(img.height, (400 / img.width) * img.height)
+                            };
+                            setImageObjects(prev => [...prev, newObj]);
+                        };
+                        img.src = url;
+                        setShowScreenshotModal(false);
                     }}
                 />
             )}
