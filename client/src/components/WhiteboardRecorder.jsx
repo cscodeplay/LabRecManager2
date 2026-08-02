@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import api from '@/lib/api';
 
 const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
     const [isRecording, setIsRecording] = useState(false);
@@ -195,62 +196,30 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
                 type: 'video/webm'
             });
 
-            // Need to wrap in FormData based on the filesAPI implementation
             const formData = new FormData();
-            formData.append('file', file);
+            formData.append('video', file);
+            formData.append('title', `Whiteboard Lecture - ${new Date().toLocaleDateString()}`);
+            if (sessionId) {
+                formData.append('sessionId', sessionId);
+            }
+            formData.append('duration', recordingTime);
 
-            // Fetch token for API call
-            const authStore = JSON.parse(localStorage.getItem('auth-storage') || '{}');
-            const token = authStore?.state?.accessToken;
-            
-            // Upload to Cloudinary using existing API endpoint
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/files/upload`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData
+            const res = await api.post('/recordings/upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
             });
             
-            const uploadData = await res.json();
-            
-            if (uploadData.success && uploadData.data?.url) {
-                // Save metadata to WhiteboardRecording DB
-                await saveRecordingMetadata(uploadData.data);
+            if (res.data.success) {
                 toast.success('Recording saved successfully!', { id: 'recording-upload' });
                 
                 if (onRecordingComplete) {
-                    onRecordingComplete(uploadData.data);
+                    onRecordingComplete(res.data.data);
                 }
             } else {
-                throw new Error('Upload failed');
+                throw new Error(res.data.error || 'Upload failed');
             }
         } catch (err) {
             console.error('Error uploading recording:', err);
             toast.error('Failed to upload recording', { id: 'recording-upload' });
-        }
-    };
-
-    const saveRecordingMetadata = async (fileData) => {
-        try {
-            const authStore = JSON.parse(localStorage.getItem('auth-storage') || '{}');
-            const token = authStore?.state?.accessToken;
-
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/recordings`, {
-                method: 'POST',
-                headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    title: `Whiteboard Lecture - ${new Date().toLocaleDateString()}`,
-                    cloudinaryId: fileData.fileId || fileData.public_id,
-                    cloudinaryUrl: fileData.url,
-                    sessionId: sessionId,
-                    fileSize: fileData.size || fileData.bytes,
-                    isPublic: true
-                })
-            });
-        } catch (err) {
-            console.error('Error saving recording metadata:', err);
         }
     };
 
