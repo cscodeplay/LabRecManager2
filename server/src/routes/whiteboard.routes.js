@@ -17,7 +17,7 @@ router.get('/personal', authenticate, authorize('admin', 'principal', 'instructo
     // Find a session representing their personal workspace (shared across school admins)
     const session = await prisma.whiteboardSession.findFirst({
         where: { schoolId, title: 'Personal Workspace' },
-        orderBy: { updatedAt: 'desc' }
+        orderBy: { createdAt: 'desc' }
     });
 
     if (!session) {
@@ -39,7 +39,7 @@ router.put('/personal', authenticate, authorize('admin', 'principal', 'instructo
 
     const session = await prisma.whiteboardSession.findFirst({
         where: { schoolId, title: 'Personal Workspace' },
-        orderBy: { updatedAt: 'desc' }
+        orderBy: { createdAt: 'desc' }
     });
 
     if (session) {

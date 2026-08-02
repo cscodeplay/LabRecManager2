@@ -16,6 +16,8 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
     const streamRef = useRef(null);
     const screenStreamRef = useRef(null);
     const videoPreviewRef = useRef(null);
+    const compositeCanvasRef = useRef(null);
+    const requestAnimationFrameRef = useRef(null);
 
     // Draggable camera state
     const [position, setPosition] = useState({ x: 24, y: 100 });
@@ -109,37 +111,73 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
         try {
             recordedChunksRef.current = [];
             
-            // Get screen recording stream (this captures the entire tab/window including shapes, text, and SVG overlays)
-            let screenStream;
-            try {
-                screenStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: { displaySurface: 'browser' },
-                    audio: true, // Try to capture tab audio as well
-                    preferCurrentTab: true
-                });
-            } catch (err) {
-                console.error("Screen recording cancelled or failed:", err);
-                toast.error("Screen recording permission is required to capture the whiteboard.");
-                return;
-            }
+            // Create a hidden composite canvas for recording
+            const mainCanvas = canvasRef.current;
+            // The canvas logical size (width/height attributes) is what we want to record
+            const width = mainCanvas.width;
+            const height = mainCanvas.height;
             
-            // Handle user stopping the screen share natively via browser UI
-            screenStream.getVideoTracks()[0].onended = () => {
-                if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-                    stopRecording();
+            if (!compositeCanvasRef.current) {
+                compositeCanvasRef.current = document.createElement('canvas');
+            }
+            const compositeCanvas = compositeCanvasRef.current;
+            compositeCanvas.width = width;
+            compositeCanvas.height = height;
+            
+            const compositeCtx = compositeCanvas.getContext('2d', { willReadFrequently: true });
+            
+            // Function to continually composite the main canvas and the camera video
+            const drawComposite = () => {
+                // Fill with background color to avoid black backgrounds in video
+                let bgColor = mainCanvas.style.backgroundColor || '#ffffff';
+                if (bgColor === 'transparent' || bgColor === 'rgba(0, 0, 0, 0)') {
+                    bgColor = '#ffffff';
                 }
+                compositeCtx.fillStyle = bgColor;
+                compositeCtx.fillRect(0, 0, width, height);
+                
+                // Draw whiteboard
+                compositeCtx.drawImage(mainCanvas, 0, 0);
+                
+                // Draw camera if active and ready
+                if (hasCamera && videoPreviewRef.current && videoPreviewRef.current.readyState >= 2) {
+                    const videoWidth = 192; // Match the CSS width
+                    const videoHeight = 144; // Match the CSS height
+                    
+                    // We need to map the CSS position (left: x, bottom: y) to canvas coordinates.
+                    // However, we want it relative to the visual window size vs logical canvas size.
+                    // The main canvas css width is 100%, height is 100%. So the scale is:
+                    const scaleX = width / mainCanvas.clientWidth;
+                    const scaleY = height / mainCanvas.clientHeight;
+                    
+                    const drawX = position.x * scaleX;
+                    const drawY = height - (position.y * scaleY) - (videoHeight * scaleY);
+                    
+                    // We must respect the scale to match the video element's CSS
+                    // Also, the video is horizontally flipped! `transform scale-x-[-1]`
+                    compositeCtx.save();
+                    // Move to the position
+                    compositeCtx.translate(drawX + (videoWidth * scaleX), drawY);
+                    compositeCtx.scale(-1, 1);
+                    // Draw video
+                    compositeCtx.drawImage(videoPreviewRef.current, 0, 0, videoWidth * scaleX, videoHeight * scaleY);
+                    compositeCtx.restore();
+                }
+                
+                requestAnimationFrameRef.current = requestAnimationFrame(drawComposite);
             };
             
-            screenStreamRef.current = screenStream;
+            // Start the loop
+            drawComposite();
             
-            // Combine with camera/mic stream if available
-            const combinedTracks = [...screenStream.getVideoTracks()];
+            // Capture the composited canvas stream at 30 fps
+            const canvasStream = compositeCanvas.captureStream(30);
             
-            // Handle audio tracks: use mic audio if available, otherwise tab audio
+            // Combine with microphone stream if available
+            const combinedTracks = [...canvasStream.getVideoTracks()];
+            
             if (streamRef.current && streamRef.current.getAudioTracks().length > 0) {
                 combinedTracks.push(streamRef.current.getAudioTracks()[0]);
-            } else if (screenStream.getAudioTracks().length > 0) {
-                combinedTracks.push(screenStream.getAudioTracks()[0]);
             }
 
             const combinedStream = new MediaStream(combinedTracks);
@@ -206,6 +244,12 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
             mediaRecorderRef.current.stop();
             setIsRecording(false);
             setIsPaused(false);
+            
+            if (requestAnimationFrameRef.current) {
+                cancelAnimationFrame(requestAnimationFrameRef.current);
+                requestAnimationFrameRef.current = null;
+            }
+
             if (timerIntervalRef.current) {
                 clearInterval(timerIntervalRef.current);
                 timerIntervalRef.current = null;
