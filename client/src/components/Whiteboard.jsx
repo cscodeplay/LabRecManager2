@@ -207,7 +207,6 @@ export default function Whiteboard({
 
     // Highlighter color
     const [highlighterColor, setHighlighterColor] = useState(HIGHLIGHTER_COLORS[0]);
-    const [showHighlighterPicker, setShowHighlighterPicker] = useState(false);
 
     // Image insert
     const imageInputRef = useRef(null);
@@ -2449,6 +2448,7 @@ export default function Whiteboard({
                         )}
                     </div>
                 </div>
+            </div>
 
             {/* Canvas */}
             <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center ${isFullscreen ? 'h-full' : ''}`}>
