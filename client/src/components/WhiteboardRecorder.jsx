@@ -224,10 +224,10 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
                 },
                 body: JSON.stringify({
                     title: `Whiteboard Lecture - ${new Date().toLocaleDateString()}`,
-                    cloudinaryId: fileData.public_id,
+                    cloudinaryId: fileData.fileId || fileData.public_id,
                     cloudinaryUrl: fileData.url,
                     sessionId: sessionId,
-                    fileSize: fileData.bytes,
+                    fileSize: fileData.size || fileData.bytes,
                     isPublic: true
                 })
             });
@@ -256,8 +256,8 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
                 />
             </div>
 
-            {/* Recording Controls (above main toolbar) */}
-            <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 bg-slate-800/95 backdrop-blur-md px-2 py-1 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-1 pointer-events-auto z-40">
+            {/* Recording Controls (bottom right corner) */}
+            <div className="absolute bottom-6 right-6 bg-slate-800/95 backdrop-blur-md px-2 py-1 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-1 pointer-events-auto z-50">
                 <button
                     onClick={toggleMic}
                     className={`p-1.5 rounded-full transition-all ${hasMic ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}

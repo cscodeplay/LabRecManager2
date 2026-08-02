@@ -139,6 +139,7 @@ export default function Whiteboard({
 
     // Sub-tool options
     const [shapeType, setShapeType] = useState('rectangle'); // rectangle, circle, triangle, star
+    const [shapePreview, setShapePreview] = useState(null);
     const [selectMode, setSelectMode] = useState('rectangle'); // rectangle, lasso
 
     // Multi-page state - must be before anything that uses currentPage
@@ -209,6 +210,10 @@ export default function Whiteboard({
     // Highlighter color
     const [highlighterColor, setHighlighterColor] = useState(HIGHLIGHTER_COLORS[0]);
 
+    // Line / Arrow state
+    const [lineType, setLineType] = useState('line');
+    const [showLinePicker, setShowLinePicker] = useState(false);
+
     // Image insert
     const imageInputRef = useRef(null);
 
@@ -236,6 +241,12 @@ export default function Whiteboard({
     const [textInputMode, setTextInputMode] = useState('create'); // 'create' or 'edit'
     const [textBoundary, setTextBoundary] = useState(null); // { x, y, width, height } - dotted boundary while creating
     
+    // Text formatting state
+    const [isBold, setIsBold] = useState(false);
+    const [isItalic, setIsItalic] = useState(false);
+    const [textBgColor, setTextBgColor] = useState('transparent');
+    const [showTextBgPicker, setShowTextBgPicker] = useState(false);
+    
     // Shape objects for manipulation
     const [pageShapeObjects, setPageShapeObjects] = useState({ 0: [] });
     const [selectedShapeId, setSelectedShapeId] = useState(null);
@@ -244,6 +255,23 @@ export default function Whiteboard({
 
     // OCR toggle
     const [isOcrActive, setIsOcrActive] = useState(false);
+
+    // Fullscreen scaling
+    const [fullscreenScale, setFullscreenScale] = useState(1);
+    useEffect(() => {
+        if (!isFullscreen) {
+            setFullscreenScale(1);
+            return;
+        }
+        const updateScale = () => {
+            const wScale = window.innerWidth / width;
+            const hScale = window.innerHeight / height;
+            setFullscreenScale(Math.min(wScale, hScale) * 0.95);
+        };
+        updateScale();
+        window.addEventListener('resize', updateScale);
+        return () => window.removeEventListener('resize', updateScale);
+    }, [isFullscreen, width, height]);
 
     // Get current page's image objects (derived state)
     const imageObjects = pageImageObjects[currentPage] || [];
@@ -646,12 +674,20 @@ export default function Whiteboard({
         setShowColorPicker(false);
         setShowCustomColorPicker(false);
 
+        // Update active text if any
+        if (selectedTextId || editingTextId) {
+            const activeId = editingTextId || selectedTextId;
+            setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, color: newColor } : t));
+        } else {
+            setTextObjects(prev => prev.map(t => ({ ...t, color: newColor })));
+        }
+
         // Add to recently used (move to front, keep 9 max)
         setRecentColors(prev => {
             const filtered = prev.filter(c => c.toLowerCase() !== newColor.toLowerCase());
             return [newColor, ...filtered].slice(0, 9);
         });
-    }, []);
+    }, [editingTextId, selectedTextId, setTextObjects]);
 
     // Handle custom color RGB change
     const handleRgbChange = useCallback((key, value) => {
@@ -1036,12 +1072,19 @@ export default function Whiteboard({
         e.preventDefault();
         const pos = getPosition(e);
 
+        // If text input is open and they click outside, let the blur event commit it.
+        // Don't start a new drawing/text action.
+        if (showTextInput) {
+            return;
+        }
+
         // Handle text or shape tool - start drawing boundary area
         if (tool === 'text' || tool === 'shape') {
             setIsDrawing(true);
             setStartPos(pos);
             setCurrentPos(pos);
             if (tool === 'text') setTextBoundary(null);
+            if (tool === 'shape') setShapePreview(null);
             return;
         }
 
@@ -1057,7 +1100,7 @@ export default function Whiteboard({
         setStartPos(pos);
         setCurrentPos(pos);
 
-        if (tool === 'pen' || tool === 'eraser' || tool === 'highlighter') {
+        if (tool === 'pen' || tool === 'eraser' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
             const canvas = canvasRef.current;
             if (!canvas) return;
             const ctx = canvas.getContext('2d');
@@ -1212,6 +1255,52 @@ export default function Whiteboard({
                 isHighlighter: tool === 'highlighter',
                 isEraser: tool === 'eraser',
                 strokeStyle: tool === 'pen' ? strokeStyle : undefined
+            });
+        } else if (tool === 'line' || tool === 'arrow') {
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            if (preStrokeImageDataRef.current) {
+                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+            }
+            if (tool === 'line') {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = strokeWidth;
+                ctx.lineCap = 'round';
+                ctx.setLineDash(getDashArray(strokeStyle));
+                ctx.beginPath();
+                ctx.moveTo(startPos.x, startPos.y);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            } else { // arrow
+                ctx.strokeStyle = color;
+                ctx.lineWidth = strokeWidth;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(startPos.x, startPos.y);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+
+                const headLength = strokeWidth * 4;
+                const angle = Math.atan2(pos.y - startPos.y, pos.x - startPos.x);
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+                ctx.lineTo(pos.x - headLength * Math.cos(angle - Math.PI / 6), pos.y - headLength * Math.sin(angle - Math.PI / 6));
+                ctx.lineTo(pos.x - headLength * Math.cos(angle + Math.PI / 6), pos.y - headLength * Math.sin(angle + Math.PI / 6));
+                ctx.closePath();
+                ctx.fillStyle = color;
+                ctx.fill();
+            }
+        } else if (tool === 'shape') {
+            setShapePreview({
+                x: Math.min(startPos.x, pos.x),
+                y: Math.min(startPos.y, pos.y),
+                width: Math.abs(pos.x - startPos.x),
+                height: Math.abs(pos.y - startPos.y),
+                type: shapeType,
+                color,
+                strokeWidth
             });
         } else if (tool === 'laser') {
             setLaserPos(pos);
@@ -1408,6 +1497,24 @@ export default function Whiteboard({
             ctx.stroke();
             ctx.setLineDash([]);
 
+            if (lineType === 'arrow') {
+                const headLength = strokeWidth * 4;
+                const angle = Math.atan2(pos.y - startPos.y, pos.x - startPos.x);
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+                ctx.lineTo(
+                    pos.x - headLength * Math.cos(angle - Math.PI / 6),
+                    pos.y - headLength * Math.sin(angle - Math.PI / 6)
+                );
+                ctx.lineTo(
+                    pos.x - headLength * Math.cos(angle + Math.PI / 6),
+                    pos.y - headLength * Math.sin(angle + Math.PI / 6)
+                );
+                ctx.closePath();
+                ctx.fillStyle = color;
+                ctx.fill();
+            }
+
             emitDrawEvent({
                 type: 'line',
                 startX: startPos.x,
@@ -1416,16 +1523,24 @@ export default function Whiteboard({
                 endY: pos.y,
                 color,
                 strokeWidth,
-                strokeStyle
+                strokeStyle,
+                lineType
             });
         } else if (tool === 'shape') {
-            const x = Math.min(startPos.x, pos.x);
-            const y = Math.min(startPos.y, pos.y);
-            const w = Math.abs(pos.x - startPos.x);
-            const h = Math.abs(pos.y - startPos.y);
+            let x = Math.min(startPos.x, pos.x);
+            let y = Math.min(startPos.y, pos.y);
+            let w = Math.abs(pos.x - startPos.x);
+            let h = Math.abs(pos.y - startPos.y);
             
-            // Only create if it's large enough
-            if (w > 10 && h > 10) {
+            // Create default size if it was just a click
+            if (w <= 10 && h <= 10) {
+                w = 100;
+                h = 100;
+                x = pos.x - 50;
+                y = pos.y - 50;
+            }
+            
+            if (w > 0 && h > 0) {
                 const newShapeObj = {
                     id: Date.now(),
                     type: shapeType, // 'rectangle', 'circle', 'triangle', 'star'
@@ -1449,40 +1564,7 @@ export default function Whiteboard({
                     });
                 }
             }
-        } else if (tool === 'arrow') {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = strokeWidth;
-            ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(startPos.x, startPos.y);
-            ctx.lineTo(pos.x, pos.y);
-            ctx.stroke();
-
-            const headLength = strokeWidth * 4;
-            const angle = Math.atan2(pos.y - startPos.y, pos.x - startPos.x);
-            ctx.beginPath();
-            ctx.moveTo(pos.x, pos.y);
-            ctx.lineTo(
-                pos.x - headLength * Math.cos(angle - Math.PI / 6),
-                pos.y - headLength * Math.sin(angle - Math.PI / 6)
-            );
-            ctx.lineTo(
-                pos.x - headLength * Math.cos(angle + Math.PI / 6),
-                pos.y - headLength * Math.sin(angle + Math.PI / 6)
-            );
-            ctx.closePath();
-            ctx.fillStyle = color;
-            ctx.fill();
-
-            emitDrawEvent({
-                type: 'arrow',
-                startX: startPos.x,
-                startY: startPos.y,
-                endX: pos.x,
-                endY: pos.y,
-                color,
-                strokeWidth
-            });
+            setShapePreview(null);
         } else if (tool === 'select') {
             if (selectMode === 'lasso') {
                 if (lassoPath.length > 2) {
@@ -1849,7 +1931,7 @@ export default function Whiteboard({
                             { id: 'pen', icon: Pencil, label: 'Pen' },
                             { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
                             { id: 'eraser', icon: Eraser, label: 'Eraser' },
-                            { id: 'line', icon: Minus, label: 'Line' },
+                            { id: 'line', icon: lineType === 'arrow' ? MoveRight : Minus, label: 'Lines & Arrows' },
                             { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : Square)), label: 'Shapes' },
                             { id: 'text', icon: Type, label: 'Text' },
                             { id: 'image', icon: ImageIcon, label: 'Image' },
@@ -1865,6 +1947,8 @@ export default function Whiteboard({
                                             if (t.id === 'select') setShowSelectPicker(!showSelectPicker);
                                             if (t.id === 'shape') setShowShapePicker(!showShapePicker);
                                             if (t.id === 'highlighter') setShowHighlighterPicker(!showHighlighterPicker);
+                                            if (t.id === 'line') setShowLinePicker(!showLinePicker);
+                                            if (t.id === 'text') setShowTextBgPicker(!showTextBgPicker);
                                         } else {
                                             setTool(t.id);
                                             setShowStrokePicker(false);
@@ -1872,6 +1956,8 @@ export default function Whiteboard({
                                             setShowSelectPicker(false);
                                             setShowShapePicker(false);
                                             setShowHighlighterPicker(false);
+                                            setShowLinePicker(false);
+                                            setShowTextBgPicker(false);
                                         }
                                         if (t.id === 'image') {
                                             imageInputRef.current?.click();
@@ -1900,7 +1986,7 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'eraser' && showEraserPicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-2">
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-2">
                                         {[10, 20, 30, 40, 50].map(size => (
                                             <button
                                                 key={size}
@@ -1914,12 +2000,12 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'highlighter' && showHighlighterPicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 grid grid-cols-3 gap-1">
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-1">
                                         {HIGHLIGHTER_COLORS.map(c => (
                                             <button
                                                 key={c}
                                                 onClick={() => { setHighlighterColor(c); setShowHighlighterPicker(false); }}
-                                                className={`w-6 h-6 rounded-full border-2 ${highlighterColor === c ? 'border-primary-500' : 'border-transparent hover:border-slate-400'}`}
+                                                className={`w-6 h-6 shrink-0 rounded-full border-2 ${highlighterColor === c ? 'border-primary-500' : 'border-transparent hover:border-slate-400'}`}
                                                 style={{ backgroundColor: c }}
                                                 title={c}
                                             />
@@ -1932,15 +2018,89 @@ export default function Whiteboard({
                                         <button
                                             onClick={() => { setSelectMode('rectangle'); setShowSelectPicker(false); }}
                                             className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'rectangle' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            title="Rectangle Select"
                                         >
                                             <Square className="w-3.5 h-3.5" /> Rect Select
                                         </button>
                                         <button
                                             onClick={() => { setSelectMode('lasso'); setShowSelectPicker(false); }}
                                             className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'lasso' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            title="Lasso Select"
                                         >
                                             <Wand2 className="w-3.5 h-3.5" /> Lasso Select
                                         </button>
+                                    </div>
+                                )}
+
+                                {tool === t.id && t.id === 'line' && showLinePicker && (
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[100px]">
+                                        <button
+                                            onClick={() => { setLineType('line'); setShowLinePicker(false); }}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'line' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            title="Line"
+                                        >
+                                            <Minus className="w-3.5 h-3.5" /> Line
+                                        </button>
+                                        <button
+                                            onClick={() => { setLineType('arrow'); setShowLinePicker(false); }}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'arrow' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            title="Arrow"
+                                        >
+                                            <MoveRight className="w-3.5 h-3.5" /> Arrow
+                                        </button>
+                                    </div>
+                                )}
+                                
+                                {tool === t.id && t.id === 'text' && showTextBgPicker && (
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-2">
+                                        <button
+                                            onClick={() => {
+                                                const newVal = !isBold;
+                                                setIsBold(newVal);
+                                                const activeId = editingTextId || selectedTextId;
+                                                if (activeId) {
+                                                    setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, fontWeight: newVal ? 'bold' : 'normal' } : t));
+                                                } else {
+                                                    setTextObjects(prev => prev.map(t => ({ ...t, fontWeight: newVal ? 'bold' : 'normal' })));
+                                                }
+                                            }}
+                                            className={`p-1.5 rounded hover:bg-slate-700 ${isBold ? 'text-primary-400 font-bold' : 'text-slate-300'}`}
+                                            title="Bold"
+                                        >B</button>
+                                        <button
+                                            onClick={() => {
+                                                const newVal = !isItalic;
+                                                setIsItalic(newVal);
+                                                const activeId = editingTextId || selectedTextId;
+                                                if (activeId) {
+                                                    setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, fontStyle: newVal ? 'italic' : 'normal' } : t));
+                                                } else {
+                                                    setTextObjects(prev => prev.map(t => ({ ...t, fontStyle: newVal ? 'italic' : 'normal' })));
+                                                }
+                                            }}
+                                            className={`p-1.5 rounded hover:bg-slate-700 italic ${isItalic ? 'text-primary-400' : 'text-slate-300'}`}
+                                            title="Italic"
+                                        >I</button>
+                                        <div className="w-px bg-slate-700 mx-1"></div>
+                                        {['transparent', '#fef08a', '#bbf7d0', '#bfdbfe', '#fecaca', '#e9d5ff'].map(bg => (
+                                            <button
+                                                key={bg}
+                                                onClick={() => {
+                                                    setTextBgColor(bg);
+                                                    const activeId = editingTextId || selectedTextId;
+                                                    if (activeId) {
+                                                        setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, bgColor: bg } : t));
+                                                    } else {
+                                                        setTextObjects(prev => prev.map(t => ({ ...t, bgColor: bg })));
+                                                    }
+                                                }}
+                                                className={`w-6 h-6 rounded-full border-2 ${textBgColor === bg ? 'border-primary-500' : 'border-slate-600'}`}
+                                                style={{ backgroundColor: bg === 'transparent' ? '#334155' : bg }}
+                                                title={bg === 'transparent' ? 'No Background' : 'Set Background'}
+                                            >
+                                                {bg === 'transparent' && <span className="text-[10px] text-slate-400 block mt-[2px] ml-[2px]">🚫</span>}
+                                            </button>
+                                        ))}
                                     </div>
                                 )}
 
@@ -1956,6 +2116,7 @@ export default function Whiteboard({
                                                 key={s.id}
                                                 onClick={() => { setShapeType(s.id); setShowShapePicker(false); }}
                                                 className={`flex flex-col items-center justify-center p-2 rounded-lg text-xs transition gap-1 ${shapeType === s.id ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                                title={s.label}
                                             >
                                                 <s.icon className="w-4 h-4" />
                                             </button>
@@ -2172,35 +2333,7 @@ export default function Whiteboard({
                         </div>
                     )}
 
-                        {/* Stroke Width */}
-                        <div className="relative">
-                            <button
-                                onClick={() => setShowStrokePicker(!showStrokePicker)}
-                                className="p-1 hover:bg-slate-800 rounded-full transition flex items-center justify-center text-slate-300 hover:text-white"
-                                title="Stroke Width"
-                            >
-                                <div className="w-3.5 h-3.5 flex items-center justify-center">
-                                    <div className="bg-current rounded-full" style={{ width: strokeWidth, height: strokeWidth }} />
-                                </div>
-                            </button>
-                            {showStrokePicker && (
-                                <div className="absolute bottom-full left-0 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-10 w-24">
-                                    <div className="flex flex-col gap-1">
-                                        {STROKE_WIDTHS.map(w => (
-                                            <button
-                                                key={w}
-                                                onClick={() => { setStrokeWidth(w); setShowStrokePicker(false); }}
-                                                className={`p-2 rounded-lg hover:bg-slate-700 flex items-center justify-center ${strokeWidth === w ? 'bg-slate-700' : ''}`}
-                                            >
-                                                <div className="bg-slate-200 rounded-full" style={{ width: w, height: w }} />
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* AI Shape Toggle removed to avoid confusion with Lasso and writing glitches */}
+                        {/* Stroke Width Removed because it opens inside Pen popover */}
 
                         {/* Stroke Style */}
                         <div className="relative">
@@ -2452,29 +2585,33 @@ export default function Whiteboard({
             </div>
 
             {/* Canvas */}
-            <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center ${isFullscreen ? 'h-full' : ''}`}>
-                <div className={`relative ${isFullscreen ? 'w-full h-full flex items-center justify-center' : ''}`}>
-                    {/* Fullscreen Button at top right corner of board writing area */}
-                    {onToggleFullscreen && (
-                        <button
-                            onClick={onToggleFullscreen}
-                            className={`absolute z-30 p-2.5 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-xl shadow-md border border-slate-200 transition hover:scale-105 ${isFullscreen ? 'top-6 right-6' : 'top-3 right-3'}`}
-                            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-                        >
-                            {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
-                        </button>
-                    )}
+            <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center relative ${isFullscreen ? 'h-full' : ''}`}>
+                {/* Fullscreen Button */}
+                {onToggleFullscreen && (
+                    <button
+                        onClick={onToggleFullscreen}
+                        className={`absolute z-30 p-2.5 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-xl shadow-md border border-slate-200 transition hover:scale-105 ${isFullscreen ? 'top-6 right-6' : 'top-3 right-3'}`}
+                        title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                    >
+                        {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                    </button>
+                )}
 
+                <div 
+                    className="relative"
+                    style={{
+                        width: canvasWidth,
+                        height: canvasHeight,
+                        transform: isFullscreen ? `scale(${fullscreenScale})` : 'none',
+                        transformOrigin: 'center center'
+                    }}
+                >
                     <canvas
                         ref={canvasRef}
                         width={canvasWidth}
                         height={canvasHeight}
                         className="rounded-lg shadow-lg touch-none"
                         style={{
-                            width: isFullscreen ? '100%' : undefined,
-                            height: isFullscreen ? '100%' : undefined,
-                            maxHeight: isFullscreen ? '100%' : '100%',
-                            objectFit: isFullscreen ? 'contain' : undefined,
                             backgroundColor: bgColor,
                             backgroundImage: (() => {
                                 switch (bgPattern) {
@@ -2653,7 +2790,7 @@ export default function Whiteboard({
                                     cursor: isSelected ? 'move' : 'pointer',
                                     zIndex: isSelected ? 20 : 10,
                                     // Disable pointer events when select tool is active so selection rectangle can be drawn
-                                    pointerEvents: tool === 'select' && !isSelected ? 'none' : 'auto',
+                                    pointerEvents: 'auto',
                                 }}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -2813,7 +2950,8 @@ export default function Whiteboard({
                                     transformOrigin: 'center center',
                                     cursor: isEditing ? 'text' : isSelected ? 'move' : 'pointer',
                                     zIndex: isEditing ? 30 : isSelected ? 25 : 15,
-                                    pointerEvents: tool === 'select' && !isSelected && !isEditing ? 'none' : 'auto',
+                                    pointerEvents: tool === 'select' || tool === 'text' || isSelected || isEditing ? 'auto' : 'none',
+                                    backgroundColor: txtObj.bgColor || 'transparent',
                                 }}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -2900,7 +3038,7 @@ export default function Whiteboard({
                                 )}
 
                                 {/* Selection Border & Handles (not shown when editing) */}
-                                {isSelected && !isEditing && (
+                                {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-green-500 pointer-events-none" />
 
@@ -2930,7 +3068,6 @@ export default function Whiteboard({
                                                 <option value="'Comic Sans MS', cursive">Comic Sans</option>
                                                 <option value="Impact, sans-serif">Impact</option>
                                             </select>
-                                            {/* Color Picker */}
                                             <input
                                                 type="color"
                                                 value={txtObj.color}
@@ -2942,6 +3079,29 @@ export default function Whiteboard({
                                                 className="w-7 h-7 border border-slate-200 cursor-pointer rounded"
                                                 title="Text Color"
                                             />
+                                            {/* Background Color Picker */}
+                                            <input
+                                                type="color"
+                                                value={txtObj.bgColor || '#ffffff'}
+                                                onChange={(e) => {
+                                                    setTextObjects(prev => prev.map(t =>
+                                                        t.id === txtObj.id ? { ...t, bgColor: e.target.value } : t
+                                                    ));
+                                                }}
+                                                className="w-7 h-7 border border-slate-200 cursor-pointer rounded"
+                                                title="Background Color"
+                                            />
+                                            <button
+                                                onClick={() => {
+                                                    setTextObjects(prev => prev.map(t =>
+                                                        t.id === txtObj.id ? { ...t, bgColor: 'transparent' } : t
+                                                    ));
+                                                }}
+                                                className={`w-7 h-7 flex items-center justify-center rounded text-xs border ${txtObj.bgColor === 'transparent' || !txtObj.bgColor ? 'bg-blue-100 border-blue-400' : 'border-slate-200 hover:bg-slate-100'}`}
+                                                title="No Background"
+                                            >
+                                                T
+                                            </button>
                                             {/* Bold */}
                                             <button
                                                 onClick={() => {
@@ -3012,6 +3172,7 @@ export default function Whiteboard({
                                                     }}
                                                     onMouseDown={(e) => {
                                                         e.stopPropagation();
+                                                        e.preventDefault();
                                                         setTextDragState({
                                                             id: txtObj.id,
                                                             action: `resize-${corner}`,
@@ -3045,6 +3206,7 @@ export default function Whiteboard({
                                                     }}
                                                     onMouseDown={(e) => {
                                                         e.stopPropagation();
+                                                        e.preventDefault();
                                                         setTextDragState({
                                                             id: txtObj.id,
                                                             action: `resize-${edge}`,
@@ -3068,6 +3230,7 @@ export default function Whiteboard({
                                                 className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center cursor-grab hover:bg-green-600"
                                                 onMouseDown={(e) => {
                                                     e.stopPropagation();
+                                                    e.preventDefault();
                                                     setTextDragState({
                                                         id: txtObj.id,
                                                         action: 'rotate',
@@ -3079,6 +3242,11 @@ export default function Whiteboard({
                                             >
                                                 <RotateCw className="w-3 h-3 text-white" />
                                             </div>
+                                            {textDragState?.id === txtObj.id && textDragState?.action === 'rotate' && (
+                                                <div className="absolute top-6 text-xs bg-slate-800 text-white px-1.5 py-0.5 rounded shadow-lg whitespace-nowrap z-50">
+                                                    {Math.round(txtObj.rotation || 0)}°
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Delete Button */}
@@ -3098,6 +3266,38 @@ export default function Whiteboard({
                             </div>
                         );
                     })}
+
+                    {/* Shape Preview */}
+                    {shapePreview && shapePreview.width > 0 && shapePreview.height > 0 && (
+                        <div
+                            className="absolute pointer-events-none z-20"
+                            style={{
+                                left: shapePreview.x,
+                                top: shapePreview.y,
+                                width: shapePreview.width,
+                                height: shapePreview.height,
+                            }}
+                        >
+                            <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+                                {shapePreview.type === 'rectangle' && <rect x="0" y="0" width={shapePreview.width} height={shapePreview.height} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
+                                {shapePreview.type === 'circle' && <ellipse cx={shapePreview.width/2} cy={shapePreview.height/2} rx={shapePreview.width/2} ry={shapePreview.height/2} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
+                                {shapePreview.type === 'triangle' && <polygon points={`${shapePreview.width/2},0 0,${shapePreview.height} ${shapePreview.width},${shapePreview.height}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
+                                {shapePreview.type === 'star' && (() => {
+                                    const cx = shapePreview.width / 2;
+                                    const cy = shapePreview.height / 2;
+                                    const outerRadius = Math.min(cx, cy);
+                                    const innerRadius = outerRadius / 2.5;
+                                    let points = [];
+                                    for (let i = 0; i < 10; i++) {
+                                        const r = i % 2 === 0 ? outerRadius : innerRadius;
+                                        const angle = (i * Math.PI) / 5 - Math.PI / 2;
+                                        points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
+                                    }
+                                    return <polygon points={points.join(' ')} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />;
+                                })()}
+                            </svg>
+                        </div>
+                    )}
 
                     {/* Shape Objects Layer - Selectable, Movable, Resizable, Rotatable */}
                     {shapeObjects.map((shpObj) => {
@@ -3139,7 +3339,7 @@ export default function Whiteboard({
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'pointer',
                                     zIndex: isSelected ? 20 : 10,
-                                    pointerEvents: tool === 'select' && !isSelected ? 'none' : 'auto',
+                                    pointerEvents: tool === 'select' || isSelected ? 'auto' : 'none',
                                 }}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -3207,6 +3407,7 @@ export default function Whiteboard({
                                                     style={{ width: handleSize, height: handleSize, ...pos }}
                                                     onMouseDown={(e) => {
                                                         e.stopPropagation();
+                                                        e.preventDefault();
                                                         setShapeDragState({
                                                             id: shpObj.id,
                                                             action: `resize-${corner}`,
@@ -3234,6 +3435,7 @@ export default function Whiteboard({
                                                     style={{ width: handleSize, height: handleSize, ...pos }}
                                                     onMouseDown={(e) => {
                                                         e.stopPropagation();
+                                                        e.preventDefault();
                                                         setShapeDragState({
                                                             id: shpObj.id,
                                                             action: `resize-${edge}`,
@@ -3253,6 +3455,7 @@ export default function Whiteboard({
                                                 className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center cursor-grab hover:bg-purple-600"
                                                 onMouseDown={(e) => {
                                                     e.stopPropagation();
+                                                    e.preventDefault();
                                                     setShapeDragState({
                                                         id: shpObj.id,
                                                         action: 'rotate',
@@ -3264,6 +3467,11 @@ export default function Whiteboard({
                                             >
                                                 <RotateCw className="w-3 h-3 text-white" />
                                             </div>
+                                            {shapeDragState?.id === shpObj.id && shapeDragState?.action === 'rotate' && (
+                                                <div className="absolute top-6 text-xs bg-slate-800 text-white px-1.5 py-0.5 rounded shadow-lg whitespace-nowrap z-50">
+                                                    {Math.round(shpObj.rotation || 0)}°
+                                                </div>
+                                            )}
                                         </div>
                                         {/* Delete Button */}
                                         <button
