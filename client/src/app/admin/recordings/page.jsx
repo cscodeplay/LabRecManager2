@@ -17,6 +17,7 @@ export default function VivaRecordingsPage() {
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
     const [recordings, setRecordings] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState('all'); // all, with_recording, without_recording
     const [selectedRecording, setSelectedRecording] = useState(null);
@@ -45,6 +46,7 @@ export default function VivaRecordingsPage() {
             setRecordings(sessions);
         } catch (error) {
             console.error('Error loading recordings:', error);
+            setError('Failed to load recordings. Please try again later.');
             toast.error('Failed to load recordings');
         } finally {
             setLoading(false);
@@ -180,7 +182,21 @@ export default function VivaRecordingsPage() {
 
                 {/* Recordings List */}
                 <div className="space-y-4">
-                    {filteredRecordings.length === 0 ? (
+                    {error ? (
+                        <div className="card p-12 text-center">
+                            <div className="w-16 h-16 mx-auto bg-red-100 rounded-full flex items-center justify-center mb-4">
+                                <span className="text-red-500 text-2xl">⚠️</span>
+                            </div>
+                            <h3 className="text-lg font-medium text-slate-700">Failed to load recordings</h3>
+                            <p className="text-slate-500 mb-6">{error}</p>
+                            <button
+                                onClick={loadRecordings}
+                                className="inline-flex items-center gap-2 px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition"
+                            >
+                                Retry
+                            </button>
+                        </div>
+                    ) : filteredRecordings.length === 0 ? (
                         <div className="card p-12 text-center">
                             <Video className="w-16 h-16 mx-auto text-slate-300 mb-4" />
                             <h3 className="text-lg font-medium text-slate-700">No recordings found</h3>

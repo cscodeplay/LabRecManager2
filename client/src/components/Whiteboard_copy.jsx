@@ -6,7 +6,7 @@ import {
     Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2, Sparkles, Wand2,
     Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
     Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, Scan,
-    Triangle, Star, Hexagon, Scissors, Copy, Files, ClipboardPaste, LineChart // For shapes and toolbars
+    Triangle, Star, Hexagon // For shapes
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -131,7 +131,6 @@ export default function Whiteboard({
     
     // Pop-over UI states
     const [showStrokePicker, setShowStrokePicker] = useState(false);
-    const [showStrokeStylePicker, setShowStrokeStylePicker] = useState(false);
     const [showEraserPicker, setShowEraserPicker] = useState(false);
     const [showShapePicker, setShowShapePicker] = useState(false);
     const [showSelectPicker, setShowSelectPicker] = useState(false);
@@ -139,7 +138,6 @@ export default function Whiteboard({
 
     // Sub-tool options
     const [shapeType, setShapeType] = useState('rectangle'); // rectangle, circle, triangle, star
-    const [shapePreview, setShapePreview] = useState(null);
     const [selectMode, setSelectMode] = useState('rectangle'); // rectangle, lasso
 
     // Multi-page state - must be before anything that uses currentPage
@@ -200,8 +198,8 @@ export default function Whiteboard({
     // Selection state
     const [selection, setSelection] = useState(null); // { x, y, width, height, path?: [{x,y}] }
     const [lassoPath, setLassoPath] = useState([]);
-    const [clipboardHistory, setClipboardHistory] = useState([]); // array of clipboard items
-    const [showClipboard, setShowClipboard] = useState(false);
+    const [clipboard, setClipboard] = useState(null); // imageData for copy/paste
+
     // Laser pointer state
     const [laserPos, setLaserPos] = useState(null);
     const [isAutoShape, setIsAutoShape] = useState(false);
@@ -209,10 +207,6 @@ export default function Whiteboard({
 
     // Highlighter color
     const [highlighterColor, setHighlighterColor] = useState(HIGHLIGHTER_COLORS[0]);
-
-    // Line / Arrow state
-    const [lineType, setLineType] = useState('line');
-    const [showLinePicker, setShowLinePicker] = useState(false);
 
     // Image insert
     const imageInputRef = useRef(null);
@@ -241,12 +235,6 @@ export default function Whiteboard({
     const [textInputMode, setTextInputMode] = useState('create'); // 'create' or 'edit'
     const [textBoundary, setTextBoundary] = useState(null); // { x, y, width, height } - dotted boundary while creating
     
-    // Text formatting state
-    const [isBold, setIsBold] = useState(false);
-    const [isItalic, setIsItalic] = useState(false);
-    const [textBgColor, setTextBgColor] = useState('transparent');
-    const [showTextBgPicker, setShowTextBgPicker] = useState(false);
-    
     // Shape objects for manipulation
     const [pageShapeObjects, setPageShapeObjects] = useState({ 0: [] });
     const [selectedShapeId, setSelectedShapeId] = useState(null);
@@ -255,23 +243,6 @@ export default function Whiteboard({
 
     // OCR toggle
     const [isOcrActive, setIsOcrActive] = useState(false);
-
-    // Fullscreen scaling
-    const [fullscreenScale, setFullscreenScale] = useState(1);
-    useEffect(() => {
-        if (!isFullscreen) {
-            setFullscreenScale(1);
-            return;
-        }
-        const updateScale = () => {
-            const wScale = window.innerWidth / width;
-            const hScale = window.innerHeight / height;
-            setFullscreenScale(Math.min(wScale, hScale) * 0.95);
-        };
-        updateScale();
-        window.addEventListener('resize', updateScale);
-        return () => window.removeEventListener('resize', updateScale);
-    }, [isFullscreen, width, height]);
 
     // Get current page's image objects (derived state)
     const imageObjects = pageImageObjects[currentPage] || [];
@@ -559,13 +530,11 @@ export default function Whiteboard({
         // Clear canvas (transparent) to show CSS background
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Also clear images, text, and shapes on current page
+        // Also clear images and text on current page
         setImageObjects([]);
         setTextObjects([]);
-        setShapeObjects([]);
         setSelectedImageId(null);
         setSelectedTextId(null);
-        setSelectedShapeId(null);
 
         saveToHistory();
     }, [saveToHistory]);
@@ -595,29 +564,9 @@ export default function Whiteboard({
             offCtx.drawImage(canvas, -selection.x, -selection.y);
             imageData = offCtx.getImageData(0, 0, selection.width, selection.height);
         } else {
-            const offCanvas = document.createElement('canvas');
-            offCanvas.width = selection.width;
-            offCanvas.height = selection.height;
-            const offCtx = offCanvas.getContext('2d');
-            offCtx.drawImage(canvas, -selection.x, -selection.y);
-            imageData = offCtx.getImageData(0, 0, selection.width, selection.height);
+            imageData = ctx.getImageData(selection.x, selection.y, selection.width, selection.height);
         }
-        
-        // Convert to dataURL for display in clipboard history
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = selection.width;
-        tempCanvas.height = selection.height;
-        tempCanvas.getContext('2d').putImageData(imageData, 0, 0);
-        const dataURL = tempCanvas.toDataURL();
-        
-        setClipboardHistory(prev => [{ 
-            id: Date.now(), 
-            type: 'drawing', 
-            imageData, 
-            dataURL,
-            width: selection.width, 
-            height: selection.height 
-        }, ...prev].slice(0, 10)); // keep last 10
+        setClipboard({ imageData, width: selection.width, height: selection.height });
     }, [selection]);
 
     // Cut selection (copy + delete)
@@ -650,61 +599,18 @@ export default function Whiteboard({
     }, [selection, handleCopySelection, saveToHistory]);
 
     // Paste from clipboard
-    const handlePasteItem = useCallback((item) => {
-        if (!item) return;
-        
-        if (item.type === 'drawing') {
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            
-            const x = (canvas.width - item.width) / 2;
-            const y = (canvas.height - item.height) / 2;
-            
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = item.width;
-            tempCanvas.height = item.height;
-            tempCanvas.getContext('2d').putImageData(item.imageData, 0, 0);
-            
-            ctx.drawImage(tempCanvas, x, y);
-            saveToHistory();
-        } else if (item.type === 'image') {
-            setImageObjects(prev => [
-                ...prev,
-                {
-                    ...item.data,
-                    id: Date.now(),
-                    x: item.data.x + 20,
-                    y: item.data.y + 20
-                }
-            ]);
-        } else if (item.type === 'text') {
-            setTextObjects(prev => [
-                ...prev,
-                {
-                    ...item.data,
-                    id: Date.now(),
-                    x: item.data.x + 20,
-                    y: item.data.y + 20
-                }
-            ]);
-        } else if (item.type === 'shape') {
-            setShapeObjects(prev => [
-                ...prev,
-                {
-                    ...item.data,
-                    id: Date.now(),
-                    x: item.data.x + 20,
-                    y: item.data.y + 20
-                }
-            ]);
-        }
-    }, [saveToHistory]);
-
     const handlePasteSelection = useCallback(() => {
-        if (clipboardHistory.length === 0) return;
-        handlePasteItem(clipboardHistory[0]);
-    }, [clipboardHistory, handlePasteItem]);
+        if (!clipboard) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        // Paste at center of canvas
+        const x = (canvas.width - clipboard.width) / 2;
+        const y = (canvas.height - clipboard.height) / 2;
+        ctx.putImageData(clipboard.imageData, x, y);
+        saveToHistory();
+    }, [clipboard, saveToHistory]);
 
     // Delete selection
     const handleDeleteSelection = useCallback(() => {
@@ -739,23 +645,12 @@ export default function Whiteboard({
         setShowColorPicker(false);
         setShowCustomColorPicker(false);
 
-        // Update active text if any
-        if (selectedTextId || editingTextId) {
-            const activeId = editingTextId || selectedTextId;
-            setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, color: newColor } : t));
-        } else if (selectedShapeId) {
-            setShapeObjects(prev => prev.map(s => s.id === selectedShapeId ? { ...s, color: newColor } : s));
-        } else {
-            setTextObjects(prev => prev.map(t => ({ ...t, color: newColor })));
-            setShapeObjects(prev => prev.map(s => ({ ...s, color: newColor })));
-        }
-
         // Add to recently used (move to front, keep 9 max)
         setRecentColors(prev => {
             const filtered = prev.filter(c => c.toLowerCase() !== newColor.toLowerCase());
             return [newColor, ...filtered].slice(0, 9);
         });
-    }, [editingTextId, selectedTextId, setTextObjects]);
+    }, []);
 
     // Handle custom color RGB change
     const handleRgbChange = useCallback((key, value) => {
@@ -791,97 +686,74 @@ export default function Whiteboard({
         selectColor(hexInput);
     }, [hexInput, selectColor]);
 
-    // Unified Delete
-    const handleDelete = useCallback(() => {
+    // Delete selected image
+    const deleteSelectedImage = useCallback(() => {
         if (selectedImageId) {
             setImageObjects(prev => prev.filter(img => img.id !== selectedImageId));
             setSelectedImageId(null);
-        } else if (selectedTextId) {
-            setTextObjects(prev => prev.filter(txt => txt.id !== selectedTextId));
-            setSelectedTextId(null);
-        } else if (selectedShapeId) {
-            setShapeObjects(prev => prev.filter(shp => shp.id !== selectedShapeId));
-            setSelectedShapeId(null);
-        } else if (selection) {
-            handleDeleteSelection();
+            saveToHistory();
         }
-        saveToHistory();
-    }, [selectedImageId, selectedTextId, selectedShapeId, selection, handleDeleteSelection, saveToHistory]);
+    }, [selectedImageId, saveToHistory]);
 
-    // Unified Copy
-    const handleCopy = useCallback(() => {
+    // Copy selected image
+    const copySelectedImage = useCallback(() => {
         if (selectedImageId) {
             const img = imageObjects.find(i => i.id === selectedImageId);
-            if (img) setClipboardHistory(prev => [{ id: Date.now(), type: 'image', data: { ...img }, dataURL: img.src }, ...prev].slice(0, 10));
-        } else if (selectedTextId) {
-            const txt = textObjects.find(t => t.id === selectedTextId);
-            if (txt) setClipboardHistory(prev => [{ id: Date.now(), type: 'text', data: { ...txt } }, ...prev].slice(0, 10));
-        } else if (selectedShapeId) {
-            const shp = shapeObjects.find(s => s.id === selectedShapeId);
-            if (shp) setClipboardHistory(prev => [{ id: Date.now(), type: 'shape', data: { ...shp } }, ...prev].slice(0, 10));
-        } else if (selection) {
-            handleCopySelection();
+            if (img) {
+                setClipboard({ type: 'image', data: { ...img, id: Date.now() } });
+            }
         }
-    }, [selectedImageId, selectedTextId, selectedShapeId, selection, imageObjects, textObjects, shapeObjects, handleCopySelection]);
+    }, [selectedImageId, imageObjects]);
 
-    // Unified Cut
-    const handleCut = useCallback(() => {
-        handleCopy();
-        handleDelete();
-    }, [handleCopy, handleDelete]);
-
-    // Unified Paste
-    const handlePaste = useCallback(() => {
-        handlePasteSelection(); // this already uses clipboardHistory[0]
-    }, [handlePasteSelection]);
-
-    // Unified Duplicate
-    const handleDuplicate = useCallback(() => {
-        handleCopy();
-        setTimeout(() => handlePaste(), 50);
-    }, [handleCopy, handlePaste]);
+    // Paste image from clipboard
+    const pasteImage = useCallback(() => {
+        if (clipboard?.type === 'image') {
+            const newImg = {
+                ...clipboard.data,
+                id: Date.now(),
+                x: clipboard.data.x + 20,
+                y: clipboard.data.y + 20
+            };
+            setImageObjects(prev => [...prev, newImg]);
+            setSelectedImageId(newImg.id);
+        }
+    }, [clipboard]);
 
     // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
             const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
             const modKey = isMac ? e.metaKey : e.ctrlKey;
-            const activeTag = document.activeElement.tagName.toLowerCase();
-            const isInput = activeTag === 'input' || activeTag === 'textarea';
 
-            if (isInput && !selectedTextId && !selectedShapeId) return; // let default inputs work
-
-            if (modKey && e.key.toLowerCase() === 'c') {
-                e.preventDefault();
-                handleCopy();
-            } else if (modKey && e.key.toLowerCase() === 'x') {
-                e.preventDefault();
-                handleCut();
-            } else if (modKey && e.key.toLowerCase() === 'v') {
-                // Don't prevent default if focusing an input (they might be pasting real text)
-                if (isInput) return;
-                e.preventDefault();
-                handlePaste();
-            } else if (modKey && e.key.toLowerCase() === 'd') {
-                e.preventDefault();
-                handleDuplicate();
-            } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (!isInput || selectedImageId || selection) {
-                    // Only prevent backspace/delete if not in an input, OR if we have an image/selection active (which can't be typed into)
+            if (modKey && e.key === 'c') {
+                if (selectedImageId) {
                     e.preventDefault();
-                    handleDelete();
+                    copySelectedImage();
+                }
+            } else if (modKey && e.key === 'x') {
+                if (selectedImageId) {
+                    e.preventDefault();
+                    copySelectedImage();
+                    deleteSelectedImage();
+                }
+            } else if (modKey && e.key === 'v') {
+                if (clipboard?.type === 'image') {
+                    e.preventDefault();
+                    pasteImage();
+                }
+            } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (selectedImageId && document.activeElement === document.body) {
+                    e.preventDefault();
+                    deleteSelectedImage();
                 }
             } else if (e.key === 'Escape') {
                 setSelectedImageId(null);
-                setSelectedTextId(null);
-                setSelectedShapeId(null);
-                setSelection(null);
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageId, copySelectedImage, deleteSelectedImage, pasteImage]);
+    }, [selectedImageId, clipboard, copySelectedImage, deleteSelectedImage, pasteImage]);
 
     // Image manipulation mouse handlers
     useEffect(() => {
@@ -1163,19 +1035,12 @@ export default function Whiteboard({
         e.preventDefault();
         const pos = getPosition(e);
 
-        // If text input is open and they click outside, let the blur event commit it.
-        // Don't start a new drawing/text action.
-        if (showTextInput) {
-            return;
-        }
-
         // Handle text or shape tool - start drawing boundary area
         if (tool === 'text' || tool === 'shape') {
             setIsDrawing(true);
             setStartPos(pos);
             setCurrentPos(pos);
             if (tool === 'text') setTextBoundary(null);
-            if (tool === 'shape') setShapePreview(null);
             return;
         }
 
@@ -1191,7 +1056,7 @@ export default function Whiteboard({
         setStartPos(pos);
         setCurrentPos(pos);
 
-        if (tool === 'pen' || tool === 'eraser' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
+        if (tool === 'pen' || tool === 'eraser' || tool === 'highlighter') {
             const canvas = canvasRef.current;
             if (!canvas) return;
             const ctx = canvas.getContext('2d');
@@ -1287,45 +1152,18 @@ export default function Whiteboard({
         const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = true;
 
-        if (tool === 'highlighter') {
-            const pts = currentPathPointsRef.current;
-            pts.push(pos);
-
-            if (preStrokeImageDataRef.current) {
-                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-            }
-
-            ctx.beginPath();
-            ctx.strokeStyle = highlighterColor;
-            ctx.lineWidth = strokeWidth * 4;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.globalCompositeOperation = 'source-over';
-
-            ctx.moveTo(pts[0].x, pts[0].y);
-            if (pts.length < 3) {
-                ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-            } else {
-                for (let i = 1; i < pts.length - 2; i++) {
-                    const c = (pts[i].x + pts[i + 1].x) / 2;
-                    const d = (pts[i].y + pts[i + 1].y) / 2;
-                    ctx.quadraticCurveTo(pts[i].x, pts[i].y, c, d);
-                }
-                ctx.quadraticCurveTo(
-                    pts[pts.length - 2].x,
-                    pts[pts.length - 2].y,
-                    pts[pts.length - 1].x,
-                    pts[pts.length - 1].y
-                );
-            }
-            ctx.stroke();
-            ctx.globalCompositeOperation = 'source-over';
-        } else if (tool === 'pen' || tool === 'eraser') {
+        if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') {
             const pts = currentPathPointsRef.current;
             pts.push(pos);
 
             ctx.beginPath();
-            if (tool === 'eraser') {
+            if (tool === 'highlighter') {
+                ctx.strokeStyle = highlighterColor;
+                ctx.lineWidth = strokeWidth * 4;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.globalCompositeOperation = 'multiply';
+            } else if (tool === 'eraser') {
                 ctx.globalCompositeOperation = 'destination-out';
                 ctx.strokeStyle = 'rgba(0,0,0,1)';
                 ctx.lineWidth = eraserSize;
@@ -1359,7 +1197,7 @@ export default function Whiteboard({
                 ctx.stroke();
             }
 
-            if (tool === 'eraser') {
+            if (tool === 'highlighter' || tool === 'eraser') {
                 ctx.globalCompositeOperation = 'source-over';
             }
 
@@ -1373,52 +1211,6 @@ export default function Whiteboard({
                 isHighlighter: tool === 'highlighter',
                 isEraser: tool === 'eraser',
                 strokeStyle: tool === 'pen' ? strokeStyle : undefined
-            });
-        } else if (tool === 'line' || tool === 'arrow') {
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            if (preStrokeImageDataRef.current) {
-                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-            }
-            if (tool === 'line') {
-                ctx.strokeStyle = color;
-                ctx.lineWidth = strokeWidth;
-                ctx.lineCap = 'round';
-                ctx.setLineDash(getDashArray(strokeStyle));
-                ctx.beginPath();
-                ctx.moveTo(startPos.x, startPos.y);
-                ctx.lineTo(pos.x, pos.y);
-                ctx.stroke();
-                ctx.setLineDash([]);
-            } else { // arrow
-                ctx.strokeStyle = color;
-                ctx.lineWidth = strokeWidth;
-                ctx.lineCap = 'round';
-                ctx.beginPath();
-                ctx.moveTo(startPos.x, startPos.y);
-                ctx.lineTo(pos.x, pos.y);
-                ctx.stroke();
-
-                const headLength = strokeWidth * 4;
-                const angle = Math.atan2(pos.y - startPos.y, pos.x - startPos.x);
-                ctx.beginPath();
-                ctx.moveTo(pos.x, pos.y);
-                ctx.lineTo(pos.x - headLength * Math.cos(angle - Math.PI / 6), pos.y - headLength * Math.sin(angle - Math.PI / 6));
-                ctx.lineTo(pos.x - headLength * Math.cos(angle + Math.PI / 6), pos.y - headLength * Math.sin(angle + Math.PI / 6));
-                ctx.closePath();
-                ctx.fillStyle = color;
-                ctx.fill();
-            }
-        } else if (tool === 'shape') {
-            setShapePreview({
-                x: Math.min(startPos.x, pos.x),
-                y: Math.min(startPos.y, pos.y),
-                width: Math.abs(pos.x - startPos.x),
-                height: Math.abs(pos.y - startPos.y),
-                type: shapeType,
-                color,
-                strokeWidth
             });
         } else if (tool === 'laser') {
             setLaserPos(pos);
@@ -1615,24 +1407,6 @@ export default function Whiteboard({
             ctx.stroke();
             ctx.setLineDash([]);
 
-            if (lineType === 'arrow') {
-                const headLength = strokeWidth * 4;
-                const angle = Math.atan2(pos.y - startPos.y, pos.x - startPos.x);
-                ctx.beginPath();
-                ctx.moveTo(pos.x, pos.y);
-                ctx.lineTo(
-                    pos.x - headLength * Math.cos(angle - Math.PI / 6),
-                    pos.y - headLength * Math.sin(angle - Math.PI / 6)
-                );
-                ctx.lineTo(
-                    pos.x - headLength * Math.cos(angle + Math.PI / 6),
-                    pos.y - headLength * Math.sin(angle + Math.PI / 6)
-                );
-                ctx.closePath();
-                ctx.fillStyle = color;
-                ctx.fill();
-            }
-
             emitDrawEvent({
                 type: 'line',
                 startX: startPos.x,
@@ -1641,24 +1415,16 @@ export default function Whiteboard({
                 endY: pos.y,
                 color,
                 strokeWidth,
-                strokeStyle,
-                lineType
+                strokeStyle
             });
         } else if (tool === 'shape') {
-            let x = Math.min(startPos.x, pos.x);
-            let y = Math.min(startPos.y, pos.y);
-            let w = Math.abs(pos.x - startPos.x);
-            let h = Math.abs(pos.y - startPos.y);
+            const x = Math.min(startPos.x, pos.x);
+            const y = Math.min(startPos.y, pos.y);
+            const w = Math.abs(pos.x - startPos.x);
+            const h = Math.abs(pos.y - startPos.y);
             
-            // Create default size if it was just a click
-            if (w <= 10 && h <= 10) {
-                w = 100;
-                h = 100;
-                x = pos.x - 50;
-                y = pos.y - 50;
-            }
-            
-            if (w > 0 && h > 0) {
+            // Only create if it's large enough
+            if (w > 10 && h > 10) {
                 const newShapeObj = {
                     id: Date.now(),
                     type: shapeType, // 'rectangle', 'circle', 'triangle', 'star'
@@ -1682,7 +1448,40 @@ export default function Whiteboard({
                     });
                 }
             }
-            setShapePreview(null);
+        } else if (tool === 'arrow') {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = strokeWidth;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(startPos.x, startPos.y);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+
+            const headLength = strokeWidth * 4;
+            const angle = Math.atan2(pos.y - startPos.y, pos.x - startPos.x);
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            ctx.lineTo(
+                pos.x - headLength * Math.cos(angle - Math.PI / 6),
+                pos.y - headLength * Math.sin(angle - Math.PI / 6)
+            );
+            ctx.lineTo(
+                pos.x - headLength * Math.cos(angle + Math.PI / 6),
+                pos.y - headLength * Math.sin(angle + Math.PI / 6)
+            );
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            emitDrawEvent({
+                type: 'arrow',
+                startX: startPos.x,
+                startY: startPos.y,
+                endX: pos.x,
+                endY: pos.y,
+                color,
+                strokeWidth
+            });
         } else if (tool === 'select') {
             if (selectMode === 'lasso') {
                 if (lassoPath.length > 2) {
@@ -2049,7 +1848,7 @@ export default function Whiteboard({
                             { id: 'pen', icon: Pencil, label: 'Pen' },
                             { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
                             { id: 'eraser', icon: Eraser, label: 'Eraser' },
-                            { id: 'line', icon: lineType === 'arrow' ? MoveRight : Minus, label: 'Lines & Arrows' },
+                            { id: 'line', icon: Minus, label: 'Line' },
                             { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : Square)), label: 'Shapes' },
                             { id: 'text', icon: Type, label: 'Text' },
                             { id: 'image', icon: ImageIcon, label: 'Image' },
@@ -2065,8 +1864,6 @@ export default function Whiteboard({
                                             if (t.id === 'select') setShowSelectPicker(!showSelectPicker);
                                             if (t.id === 'shape') setShowShapePicker(!showShapePicker);
                                             if (t.id === 'highlighter') setShowHighlighterPicker(!showHighlighterPicker);
-                                            if (t.id === 'line') setShowLinePicker(!showLinePicker);
-                                            if (t.id === 'text') setShowTextBgPicker(!showTextBgPicker);
                                         } else {
                                             setTool(t.id);
                                             setShowStrokePicker(false);
@@ -2074,8 +1871,6 @@ export default function Whiteboard({
                                             setShowSelectPicker(false);
                                             setShowShapePicker(false);
                                             setShowHighlighterPicker(false);
-                                            setShowLinePicker(false);
-                                            setShowTextBgPicker(false);
                                         }
                                         if (t.id === 'image') {
                                             imageInputRef.current?.click();
@@ -2104,29 +1899,26 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'eraser' && showEraserPicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-2 w-48">
-                                        <div className="flex justify-between text-xs text-slate-300">
-                                            <span>Size</span>
-                                            <span>{eraserSize}px</span>
-                                        </div>
-                                        <input
-                                            type="range"
-                                            min="1"
-                                            max="30"
-                                            value={eraserSize}
-                                            onChange={(e) => setEraserSize(parseInt(e.target.value))}
-                                            className="w-full accent-primary-500 cursor-pointer"
-                                        />
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-2">
+                                        {[10, 20, 30, 40, 50].map(size => (
+                                            <button
+                                                key={size}
+                                                onClick={() => { setEraserSize(size); setShowEraserPicker(false); }}
+                                                className={`flex items-center justify-center w-8 h-8 rounded-lg hover:bg-slate-700 transition ${eraserSize === size ? 'bg-slate-700 ring-2 ring-primary-500' : ''}`}
+                                            >
+                                                <div className="bg-white border border-slate-500" style={{ width: size/2, height: size/2 }}></div>
+                                            </button>
+                                        ))}
                                     </div>
                                 )}
 
                                 {tool === t.id && t.id === 'highlighter' && showHighlighterPicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-1">
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 grid grid-cols-3 gap-1">
                                         {HIGHLIGHTER_COLORS.map(c => (
                                             <button
                                                 key={c}
                                                 onClick={() => { setHighlighterColor(c); setShowHighlighterPicker(false); }}
-                                                className={`w-6 h-6 shrink-0 rounded-full border-2 ${highlighterColor === c ? 'border-primary-500' : 'border-transparent hover:border-slate-400'}`}
+                                                className={`w-6 h-6 rounded-full border-2 ${highlighterColor === c ? 'border-primary-500' : 'border-transparent hover:border-slate-400'}`}
                                                 style={{ backgroundColor: c }}
                                                 title={c}
                                             />
@@ -2139,89 +1931,15 @@ export default function Whiteboard({
                                         <button
                                             onClick={() => { setSelectMode('rectangle'); setShowSelectPicker(false); }}
                                             className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'rectangle' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
-                                            title="Rectangle Select"
                                         >
                                             <Square className="w-3.5 h-3.5" /> Rect Select
                                         </button>
                                         <button
                                             onClick={() => { setSelectMode('lasso'); setShowSelectPicker(false); }}
                                             className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'lasso' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
-                                            title="Lasso Select"
                                         >
                                             <Wand2 className="w-3.5 h-3.5" /> Lasso Select
                                         </button>
-                                    </div>
-                                )}
-
-                                {tool === t.id && t.id === 'line' && showLinePicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[100px]">
-                                        <button
-                                            onClick={() => { setLineType('line'); setShowLinePicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'line' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
-                                            title="Line"
-                                        >
-                                            <Minus className="w-3.5 h-3.5" /> Line
-                                        </button>
-                                        <button
-                                            onClick={() => { setLineType('arrow'); setShowLinePicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'arrow' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
-                                            title="Arrow"
-                                        >
-                                            <MoveRight className="w-3.5 h-3.5" /> Arrow
-                                        </button>
-                                    </div>
-                                )}
-                                
-                                {tool === t.id && t.id === 'text' && showTextBgPicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-2">
-                                        <button
-                                            onClick={() => {
-                                                const newVal = !isBold;
-                                                setIsBold(newVal);
-                                                const activeId = editingTextId || selectedTextId;
-                                                if (activeId) {
-                                                    setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, fontWeight: newVal ? 'bold' : 'normal' } : t));
-                                                } else {
-                                                    setTextObjects(prev => prev.map(t => ({ ...t, fontWeight: newVal ? 'bold' : 'normal' })));
-                                                }
-                                            }}
-                                            className={`p-1.5 rounded hover:bg-slate-700 ${isBold ? 'text-primary-400 font-bold' : 'text-slate-300'}`}
-                                            title="Bold"
-                                        >B</button>
-                                        <button
-                                            onClick={() => {
-                                                const newVal = !isItalic;
-                                                setIsItalic(newVal);
-                                                const activeId = editingTextId || selectedTextId;
-                                                if (activeId) {
-                                                    setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, fontStyle: newVal ? 'italic' : 'normal' } : t));
-                                                } else {
-                                                    setTextObjects(prev => prev.map(t => ({ ...t, fontStyle: newVal ? 'italic' : 'normal' })));
-                                                }
-                                            }}
-                                            className={`p-1.5 rounded hover:bg-slate-700 italic ${isItalic ? 'text-primary-400' : 'text-slate-300'}`}
-                                            title="Italic"
-                                        >I</button>
-                                        <div className="w-px bg-slate-700 mx-1"></div>
-                                        {['transparent', '#fef08a', '#bbf7d0', '#bfdbfe', '#fecaca', '#e9d5ff'].map(bg => (
-                                            <button
-                                                key={bg}
-                                                onClick={() => {
-                                                    setTextBgColor(bg);
-                                                    const activeId = editingTextId || selectedTextId;
-                                                    if (activeId) {
-                                                        setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, bgColor: bg } : t));
-                                                    } else {
-                                                        setTextObjects(prev => prev.map(t => ({ ...t, bgColor: bg })));
-                                                    }
-                                                }}
-                                                className={`w-6 h-6 rounded-full border-2 ${textBgColor === bg ? 'border-primary-500' : 'border-slate-600'}`}
-                                                style={{ backgroundColor: bg === 'transparent' ? '#334155' : bg }}
-                                                title={bg === 'transparent' ? 'No Background' : 'Set Background'}
-                                            >
-                                                {bg === 'transparent' && <span className="text-[10px] text-slate-400 block mt-[2px] ml-[2px]">🚫</span>}
-                                            </button>
-                                        ))}
                                     </div>
                                 )}
 
@@ -2232,13 +1950,11 @@ export default function Whiteboard({
                                             { id: 'circle', icon: Circle, label: 'Circle' },
                                             { id: 'triangle', icon: Triangle, label: 'Triangle' },
                                             { id: 'star', icon: Star, label: 'Star' },
-                                            { id: 'graph', icon: LineChart, label: '2D Graph' },
                                         ].map(s => (
                                             <button
                                                 key={s.id}
                                                 onClick={() => { setShapeType(s.id); setShowShapePicker(false); }}
                                                 className={`flex flex-col items-center justify-center p-2 rounded-lg text-xs transition gap-1 ${shapeType === s.id ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
-                                                title={s.label}
                                             >
                                                 <s.icon className="w-4 h-4" />
                                             </button>
@@ -2455,7 +2171,35 @@ export default function Whiteboard({
                         </div>
                     )}
 
-                        {/* Stroke Width Removed because it opens inside Pen popover */}
+                        {/* Stroke Width */}
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowStrokePicker(!showStrokePicker)}
+                                className="p-1 hover:bg-slate-800 rounded-full transition flex items-center justify-center text-slate-300 hover:text-white"
+                                title="Stroke Width"
+                            >
+                                <div className="w-3.5 h-3.5 flex items-center justify-center">
+                                    <div className="bg-current rounded-full" style={{ width: strokeWidth, height: strokeWidth }} />
+                                </div>
+                            </button>
+                            {showStrokePicker && (
+                                <div className="absolute bottom-full left-0 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-10 w-24">
+                                    <div className="flex flex-col gap-1">
+                                        {STROKE_WIDTHS.map(w => (
+                                            <button
+                                                key={w}
+                                                onClick={() => { setStrokeWidth(w); setShowStrokePicker(false); }}
+                                                className={`p-2 rounded-lg hover:bg-slate-700 flex items-center justify-center ${strokeWidth === w ? 'bg-slate-700' : ''}`}
+                                            >
+                                                <div className="bg-slate-200 rounded-full" style={{ width: w, height: w }} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* AI Shape Toggle removed to avoid confusion with Lasso and writing glitches */}
 
                         {/* Stroke Style */}
                         <div className="relative">
@@ -2628,13 +2372,13 @@ export default function Whiteboard({
                         <Trash2 className="w-3.5 h-3.5" />
                     </button>
 
-                    {clipboardHistory.length > 0 && (
+                    {clipboard && (
                         <button
-                            onClick={() => setShowClipboard(!showClipboard)}
-                            className={`p-1 rounded-full transition ${showClipboard ? 'bg-green-500/20 text-green-400' : 'hover:bg-green-500/20 text-slate-300 hover:text-green-400'}`}
-                            title="Clipboard"
+                            onClick={handlePasteSelection}
+                            className="p-1 hover:bg-green-500/20 text-green-400 rounded-full transition"
+                            title="Paste"
                         >
-                            <Files className="w-4 h-4" />
+                            📋
                         </button>
                     )}
 
@@ -2704,76 +2448,32 @@ export default function Whiteboard({
                         )}
                     </div>
                 </div>
-                
-                {/* Clipboard Panel */}
-                {showClipboard && clipboardHistory.length > 0 && (
-                    <div className="absolute top-16 left-1/2 transform -translate-x-1/2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-3 z-50 w-72 flex flex-col gap-2">
-                        <div className="flex justify-between items-center pb-2 border-b border-slate-700">
-                            <h3 className="text-slate-200 text-sm font-semibold flex items-center gap-2"><Files className="w-4 h-4"/> Clipboard</h3>
-                            <button onClick={() => setShowClipboard(false)} className="text-slate-400 hover:text-white">✕</button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
-                            {clipboardHistory.map((item, idx) => (
-                                <button 
-                                    key={item.id} 
-                                    onClick={() => { handlePasteItem(item); setShowClipboard(false); }}
-                                    className="bg-slate-900 border border-slate-700 rounded-lg overflow-hidden hover:border-primary-500 hover:ring-1 hover:ring-primary-500 transition relative group h-24 flex items-center justify-center p-1"
-                                    title={`Paste ${item.type}`}
-                                >
-                                    {item.dataURL ? (
-                                        <img src={item.dataURL} className="max-w-full max-h-full object-contain" />
-                                    ) : item.type === 'text' ? (
-                                        <div className="text-slate-300 text-xs truncate px-2">{item.data.text}</div>
-                                    ) : (
-                                        <div className="text-slate-400 text-xs uppercase">{item.type}</div>
-                                    )}
-                                    <div className="absolute inset-0 bg-primary-500/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                        <ClipboardPaste className="w-6 h-6 text-primary-400" />
-                                    </div>
-                                    <div className="absolute top-1 left-1 bg-slate-800/80 px-1 rounded text-[9px] text-slate-300 pointer-events-none">
-                                        {idx + 1}
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                        <button 
-                            onClick={() => { setClipboardHistory([]); setShowClipboard(false); }}
-                            className="w-full mt-1 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-xs font-medium transition"
-                        >
-                            Clear Clipboard
-                        </button>
-                    </div>
-                )}
             </div>
 
             {/* Canvas */}
-            <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center relative ${isFullscreen ? 'h-full' : ''}`}>
-                {/* Fullscreen Button */}
-                {onToggleFullscreen && (
-                    <button
-                        onClick={onToggleFullscreen}
-                        className={`absolute z-30 p-2.5 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-xl shadow-md border border-slate-200 transition hover:scale-105 ${isFullscreen ? 'top-6 right-6' : 'top-3 right-3'}`}
-                        title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-                    >
-                        {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
-                    </button>
-                )}
+            <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center ${isFullscreen ? 'h-full' : ''}`}>
+                <div className={`relative ${isFullscreen ? 'w-full h-full flex items-center justify-center' : ''}`}>
+                    {/* Fullscreen Button at top right corner of board writing area */}
+                    {onToggleFullscreen && (
+                        <button
+                            onClick={onToggleFullscreen}
+                            className={`absolute z-30 p-2.5 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-xl shadow-md border border-slate-200 transition hover:scale-105 ${isFullscreen ? 'top-6 right-6' : 'top-3 right-3'}`}
+                            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                        >
+                            {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                        </button>
+                    )}
 
-                <div 
-                    className="relative"
-                    style={{
-                        width: canvasWidth,
-                        height: canvasHeight,
-                        transform: isFullscreen ? `scale(${fullscreenScale})` : 'none',
-                        transformOrigin: 'center center'
-                    }}
-                >
                     <canvas
                         ref={canvasRef}
                         width={canvasWidth}
                         height={canvasHeight}
                         className="rounded-lg shadow-lg touch-none"
                         style={{
+                            width: isFullscreen ? '100%' : undefined,
+                            height: isFullscreen ? '100%' : undefined,
+                            maxHeight: isFullscreen ? '100%' : '100%',
+                            objectFit: isFullscreen ? 'contain' : undefined,
                             backgroundColor: bgColor,
                             backgroundImage: (() => {
                                 switch (bgPattern) {
@@ -2952,7 +2652,7 @@ export default function Whiteboard({
                                     cursor: isSelected ? 'move' : 'pointer',
                                     zIndex: isSelected ? 20 : 10,
                                     // Disable pointer events when select tool is active so selection rectangle can be drawn
-                                    pointerEvents: 'auto',
+                                    pointerEvents: tool === 'select' && !isSelected ? 'none' : 'auto',
                                 }}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -3112,8 +2812,7 @@ export default function Whiteboard({
                                     transformOrigin: 'center center',
                                     cursor: isEditing ? 'text' : isSelected ? 'move' : 'pointer',
                                     zIndex: isEditing ? 30 : isSelected ? 25 : 15,
-                                    pointerEvents: tool === 'select' || tool === 'text' || isSelected || isEditing ? 'auto' : 'none',
-                                    backgroundColor: txtObj.bgColor || 'transparent',
+                                    pointerEvents: tool === 'select' && !isSelected && !isEditing ? 'none' : 'auto',
                                 }}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -3128,9 +2827,7 @@ export default function Whiteboard({
                                     setSelectedTextId(txtObj.id);
                                 }}
                                 onMouseDown={(e) => {
-                                    if (e.target.tagName.toLowerCase() === 'textarea' || e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'select' || e.target.tagName.toLowerCase() === 'button') {
-                                        return;
-                                    }
+                                    if (isEditing) return; // Don't drag while editing
                                     if (!isSelected) {
                                         setSelectedTextId(txtObj.id);
                                         setSelectedImageId(null);
@@ -3138,7 +2835,6 @@ export default function Whiteboard({
                                     }
                                     if (e.target.dataset.handle) return;
                                     e.stopPropagation();
-                                    e.preventDefault(); // Prevent text selection deselect when dragging wrapper
                                     setTextDragState({
                                         id: txtObj.id,
                                         action: 'move',
@@ -3151,13 +2847,7 @@ export default function Whiteboard({
                                 {/* Text Content or Edit Textarea */}
                                 {isEditing ? (
                                     <textarea
-                                        value={txtObj.text}
-                                        onChange={(e) => {
-                                            const newText = e.target.value;
-                                            setTextObjects(prev => prev.map(t =>
-                                                t.id === txtObj.id ? { ...t, text: newText } : t
-                                            ));
-                                        }}
+                                        defaultValue={txtObj.text}
                                         autoFocus
                                         className="w-full h-full p-2 bg-white border-2 border-blue-500 rounded resize-none focus:outline-none"
                                         style={{
@@ -3171,6 +2861,12 @@ export default function Whiteboard({
                                             minHeight: txtObj.height,
                                         }}
                                         onBlur={(e) => {
+                                            const newText = e.target.value;
+                                            if (newText.trim()) {
+                                                setTextObjects(prev => prev.map(t =>
+                                                    t.id === txtObj.id ? { ...t, text: newText } : t
+                                                ));
+                                            }
                                             setEditingTextId(null);
                                             saveToHistory();
                                         }}
@@ -3203,22 +2899,15 @@ export default function Whiteboard({
                                 )}
 
                                 {/* Selection Border & Handles (not shown when editing) */}
-                                {isSelected && (
+                                {isSelected && !isEditing && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-green-500 pointer-events-none" />
 
                                         {/* Formatting Toolbar */}
                                         <div
-                                            className="absolute -top-14 left-0 flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg shadow-xl p-1.5 pointer-events-auto z-40 text-slate-200"
+                                            className="absolute -top-14 left-0 flex items-center gap-1 bg-white rounded-lg shadow-lg border border-slate-200 p-1.5 pointer-events-auto z-40"
                                             onClick={e => e.stopPropagation()}
-                                            onMouseDown={e => {
-                                                // Prevent default ONLY if it's a button so we don't lose focus.
-                                                // Allow default for select/input so dropdowns open.
-                                                if (e.target.tagName !== 'SELECT' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'OPTION') {
-                                                    e.preventDefault();
-                                                }
-                                                e.stopPropagation();
-                                            }}
+                                            onMouseDown={e => e.stopPropagation()}
                                         >
                                             {/* Font Family */}
                                             <select
@@ -3228,7 +2917,7 @@ export default function Whiteboard({
                                                         t.id === txtObj.id ? { ...t, fontFamily: e.target.value } : t
                                                     ));
                                                 }}
-                                                className="h-7 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white max-w-[100px] outline-none"
+                                                className="h-7 px-1 text-xs border border-slate-200 rounded bg-white max-w-[100px]"
                                                 title="Font Family"
                                             >
                                                 <option value="sans-serif">Sans Serif</option>
@@ -3240,6 +2929,7 @@ export default function Whiteboard({
                                                 <option value="'Comic Sans MS', cursive">Comic Sans</option>
                                                 <option value="Impact, sans-serif">Impact</option>
                                             </select>
+                                            {/* Color Picker */}
                                             <input
                                                 type="color"
                                                 value={txtObj.color}
@@ -3248,7 +2938,7 @@ export default function Whiteboard({
                                                         t.id === txtObj.id ? { ...t, color: e.target.value } : t
                                                     ));
                                                 }}
-                                                className="w-7 h-7 border border-slate-700 cursor-pointer rounded bg-slate-800 p-0.5"
+                                                className="w-7 h-7 border border-slate-200 cursor-pointer rounded"
                                                 title="Text Color"
                                             />
                                             {/* Bold */}
@@ -3258,7 +2948,7 @@ export default function Whiteboard({
                                                         t.id === txtObj.id ? { ...t, fontWeight: t.fontWeight === 'bold' ? 'normal' : 'bold' } : t
                                                     ));
                                                 }}
-                                                className={`w-7 h-7 flex items-center justify-center rounded text-sm font-bold transition-colors ${txtObj.fontWeight === 'bold' ? 'bg-primary-500/20 text-primary-400' : 'hover:bg-white/10'}`}
+                                                className={`w-7 h-7 flex items-center justify-center rounded text-sm font-bold border ${txtObj.fontWeight === 'bold' ? 'bg-blue-100 border-blue-400' : 'border-slate-200 hover:bg-slate-100'}`}
                                                 title="Bold"
                                             >
                                                 B
@@ -3270,26 +2960,11 @@ export default function Whiteboard({
                                                         t.id === txtObj.id ? { ...t, fontStyle: t.fontStyle === 'italic' ? 'normal' : 'italic' } : t
                                                     ));
                                                 }}
-                                                className={`w-7 h-7 flex items-center justify-center rounded text-sm italic transition-colors ${txtObj.fontStyle === 'italic' ? 'bg-primary-500/20 text-primary-400' : 'hover:bg-white/10'}`}
+                                                className={`w-7 h-7 flex items-center justify-center rounded text-sm italic border ${txtObj.fontStyle === 'italic' ? 'bg-blue-100 border-blue-400' : 'border-slate-200 hover:bg-slate-100'}`}
                                                 title="Italic"
                                             >
                                                 I
                                             </button>
-                                            {/* Align */}
-                                            <select
-                                                value={txtObj.textAlign || 'left'}
-                                                onChange={(e) => {
-                                                    setTextObjects(prev => prev.map(t =>
-                                                        t.id === txtObj.id ? { ...t, textAlign: e.target.value } : t
-                                                    ));
-                                                }}
-                                                className="h-7 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white outline-none"
-                                                title="Text Align"
-                                            >
-                                                <option value="left">Left</option>
-                                                <option value="center">Center</option>
-                                                <option value="right">Right</option>
-                                            </select>
                                             {/* Font Size */}
                                             <select
                                                 value={txtObj.fontSize}
@@ -3298,96 +2973,20 @@ export default function Whiteboard({
                                                         t.id === txtObj.id ? { ...t, fontSize: parseInt(e.target.value) } : t
                                                     ));
                                                 }}
-                                                className="h-7 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white outline-none"
+                                                className="h-7 px-1 text-xs border border-slate-200 rounded bg-white"
                                                 title="Font Size"
                                             >
                                                 {[10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72].map(size => (
                                                     <option key={size} value={size}>{size}</option>
                                                 ))}
                                             </select>
-                                            
-                                            <div className="w-px h-5 bg-slate-700 mx-1"></div>
-
-                                            {/* Background Color */}
-                                            <div className="relative group">
-                                                <input
-                                                    type="color"
-                                                    value={txtObj.bgColor || '#ffffff'}
-                                                    onChange={(e) => {
-                                                        setTextObjects(prev => prev.map(t =>
-                                                            t.id === txtObj.id ? { ...t, bgColor: e.target.value } : t
-                                                        ));
-                                                    }}
-                                                    className="w-7 h-7 p-0.5 border border-slate-700 rounded cursor-pointer bg-slate-800"
-                                                    title="Background Color"
-                                                />
-                                                <button
-                                                    onClick={() => setTextObjects(prev => prev.map(t => t.id === txtObj.id ? { ...t, bgColor: 'transparent' } : t))}
-                                                    className="absolute -top-6 left-0 text-xs bg-slate-900 text-white px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap border border-slate-700 pointer-events-none group-hover:pointer-events-auto transition-opacity"
-                                                >
-                                                    Clear Bg
-                                                </button>
-                                            </div>
-
-                                            <div className="w-px h-5 bg-slate-700 mx-1"></div>
-
-                                            {/* Action Buttons */}
-                                            <button
-                                                onClick={() => navigator.clipboard.writeText(txtObj.text)}
-                                                className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
-                                                title="Copy"
-                                            >
-                                                <Copy className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText(txtObj.text).then(() => {
-                                                        setTextObjects(prev => prev.map(t => t.id === txtObj.id ? { ...t, text: '' } : t));
-                                                    });
-                                                }}
-                                                className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
-                                                title="Cut"
-                                            >
-                                                <Scissors className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    const clone = { ...txtObj, id: Date.now(), x: txtObj.x + 20, y: txtObj.y + 20 };
-                                                    setTextObjects(prev => [...prev, clone]);
-                                                    setSelectedTextId(clone.id);
-                                                }}
-                                                className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
-                                                title="Duplicate"
-                                            >
-                                                <Files className="w-4 h-4" />
-                                            </button>
-                                            
-                                            <div className="w-px h-5 bg-slate-700 mx-1"></div>
-
                                             {/* Edit Button */}
                                             <button
                                                 onClick={() => setEditingTextId(txtObj.id)}
-                                                className="px-2 h-7 flex items-center justify-center rounded text-xs bg-primary-500/20 text-primary-400 hover:bg-primary-500/30 transition-colors"
+                                                className="px-2 h-7 flex items-center justify-center rounded text-xs border border-slate-200 hover:bg-slate-100"
                                                 title="Edit Text"
                                             >
                                                 Edit
-                                            </button>
-                                            
-                                            {/* Delete Button */}
-                                            <button
-                                                onClick={handleDeleteSelection}
-                                                className="w-7 h-7 flex items-center justify-center rounded text-red-400 hover:text-red-300 hover:bg-red-400/20 transition-colors"
-                                                title="Delete"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                            <div className="w-px h-5 bg-slate-700 mx-1"></div>
-                                            <button
-                                                onClick={handlePaste}
-                                                className="w-7 h-7 flex items-center justify-center rounded text-green-400 hover:text-green-300 hover:bg-green-400/20 transition-colors"
-                                                title="Paste"
-                                            >
-                                                <ClipboardPaste className="w-4 h-4" />
                                             </button>
                                         </div>
 
@@ -3412,7 +3011,6 @@ export default function Whiteboard({
                                                     }}
                                                     onMouseDown={(e) => {
                                                         e.stopPropagation();
-                                                        e.preventDefault();
                                                         setTextDragState({
                                                             id: txtObj.id,
                                                             action: `resize-${corner}`,
@@ -3446,7 +3044,6 @@ export default function Whiteboard({
                                                     }}
                                                     onMouseDown={(e) => {
                                                         e.stopPropagation();
-                                                        e.preventDefault();
                                                         setTextDragState({
                                                             id: txtObj.id,
                                                             action: `resize-${edge}`,
@@ -3470,7 +3067,6 @@ export default function Whiteboard({
                                                 className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center cursor-grab hover:bg-green-600"
                                                 onMouseDown={(e) => {
                                                     e.stopPropagation();
-                                                    e.preventDefault();
                                                     setTextDragState({
                                                         id: txtObj.id,
                                                         action: 'rotate',
@@ -3482,11 +3078,6 @@ export default function Whiteboard({
                                             >
                                                 <RotateCw className="w-3 h-3 text-white" />
                                             </div>
-                                            {textDragState?.id === txtObj.id && textDragState?.action === 'rotate' && (
-                                                <div className="absolute top-6 text-xs bg-slate-800 text-white px-1.5 py-0.5 rounded shadow-lg whitespace-nowrap z-50">
-                                                    {Math.round(txtObj.rotation || 0)}°
-                                                </div>
-                                            )}
                                         </div>
 
                                         {/* Delete Button */}
@@ -3507,60 +3098,17 @@ export default function Whiteboard({
                         );
                     })}
 
-                    {/* Shape Preview */}
-                    {shapePreview && shapePreview.width > 0 && shapePreview.height > 0 && (
-                        <div
-                            className="absolute pointer-events-none z-20"
-                            style={{
-                                left: shapePreview.x,
-                                top: shapePreview.y,
-                                width: shapePreview.width,
-                                height: shapePreview.height,
-                            }}
-                        >
-                            <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
-                                {shapePreview.type === 'rectangle' && <rect x="0" y="0" width={shapePreview.width} height={shapePreview.height} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
-                                {shapePreview.type === 'circle' && <ellipse cx={shapePreview.width/2} cy={shapePreview.height/2} rx={shapePreview.width/2} ry={shapePreview.height/2} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
-                                {shapePreview.type === 'triangle' && <polygon points={`${shapePreview.width/2},0 0,${shapePreview.height} ${shapePreview.width},${shapePreview.height}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
-                                {shapePreview.type === 'star' && (() => {
-                                    const cx = shapePreview.width / 2;
-                                    const cy = shapePreview.height / 2;
-                                    const outerRadius = Math.min(cx, cy);
-                                    const innerRadius = outerRadius / 2.5;
-                                    let points = [];
-                                    for (let i = 0; i < 10; i++) {
-                                        const r = i % 2 === 0 ? outerRadius : innerRadius;
-                                        const angle = (i * Math.PI) / 5 - Math.PI / 2;
-                                        points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
-                                    }
-                                    return <polygon points={points.join(' ')} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />;
-                                })()}
-                                {shapePreview.type === 'graph' && (
-                                    <g stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} fill="transparent">
-                                        {/* Y-axis */}
-                                        <line x1={shapePreview.width/10} y1={shapePreview.height/10} x2={shapePreview.width/10} y2={shapePreview.height*0.9} />
-                                        <polygon points={`${shapePreview.width/10},${shapePreview.height/10} ${shapePreview.width/10 - 4},${shapePreview.height/10 + 8} ${shapePreview.width/10 + 4},${shapePreview.height/10 + 8}`} fill={shapePreview.color} stroke="none" />
-                                        {/* X-axis */}
-                                        <line x1={shapePreview.width/10} y1={shapePreview.height/2} x2={shapePreview.width*0.9} y2={shapePreview.height/2} />
-                                        <polygon points={`${shapePreview.width*0.9},${shapePreview.height/2} ${shapePreview.width*0.9 - 8},${shapePreview.height/2 - 4} ${shapePreview.width*0.9 - 8},${shapePreview.height/2 + 4}`} fill={shapePreview.color} stroke="none" />
-                                    </g>
-                                )}
-                            </svg>
-                        </div>
-                    )}
-
                     {/* Shape Objects Layer - Selectable, Movable, Resizable, Rotatable */}
                     {shapeObjects.map((shpObj) => {
                         const isSelected = selectedShapeId === shpObj.id;
                         const handleSize = 10;
                         const renderShapeSVG = () => {
-                            const fill = shpObj.fillColor || 'transparent';
                             if (shpObj.type === 'rectangle') {
-                                return <rect x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                return <rect x="0" y="0" width={shpObj.width} height={shpObj.height} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
                             } else if (shpObj.type === 'circle') {
-                                return <ellipse cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                return <ellipse cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
                             } else if (shpObj.type === 'triangle') {
-                                return <polygon points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                                return <polygon points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
                             } else if (shpObj.type === 'star') {
                                 const cx = shpObj.width / 2;
                                 const cy = shpObj.height / 2;
@@ -3572,19 +3120,7 @@ export default function Whiteboard({
                                     const angle = (i * Math.PI) / 5 - Math.PI / 2;
                                     points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
                                 }
-                                return <polygon points={points.join(' ')} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
-                            } else if (shpObj.type === 'graph') {
-                                return (
-                                    <g stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} fill={fill}>
-                                        <rect width={shpObj.width} height={shpObj.height} fill={fill} stroke="none" />
-                                        {/* Y-axis */}
-                                        <line x1={shpObj.width/10} y1={shpObj.height/10} x2={shpObj.width/10} y2={shpObj.height*0.9} />
-                                        <polygon points={`${shpObj.width/10},${shpObj.height/10} ${shpObj.width/10 - 4},${shpObj.height/10 + 8} ${shpObj.width/10 + 4},${shpObj.height/10 + 8}`} fill={shpObj.color} stroke="none" />
-                                        {/* X-axis */}
-                                        <line x1={shpObj.width/10} y1={shpObj.height/2} x2={shpObj.width*0.9} y2={shpObj.height/2} />
-                                        <polygon points={`${shpObj.width*0.9},${shpObj.height/2} ${shpObj.width*0.9 - 8},${shpObj.height/2 - 4} ${shpObj.width*0.9 - 8},${shpObj.height/2 + 4}`} fill={shpObj.color} stroke="none" />
-                                    </g>
-                                );
+                                return <polygon points={points.join(' ')} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
                             }
                             return null;
                         };
@@ -3602,7 +3138,7 @@ export default function Whiteboard({
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'pointer',
                                     zIndex: isSelected ? 20 : 10,
-                                    pointerEvents: tool === 'select' || isSelected ? 'auto' : 'none',
+                                    pointerEvents: tool === 'select' && !isSelected ? 'none' : 'auto',
                                 }}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -3644,13 +3180,7 @@ export default function Whiteboard({
                                             onMouseDown={e => e.stopPropagation()}
                                             placeholder="Text..."
                                             className="w-full text-center bg-transparent border-none outline-none resize-none overflow-hidden"
-                                            style={{ 
-                                                color: shpObj.textColor || shpObj.color, 
-                                                fontSize: shpObj.fontSize || 20,
-                                                fontFamily: shpObj.fontFamily || 'sans-serif',
-                                                fontWeight: shpObj.fontWeight || 'normal',
-                                                fontStyle: shpObj.fontStyle || 'normal',
-                                            }}
+                                            style={{ color: shpObj.color, fontSize: shpObj.fontSize || 20 }}
                                         />
                                     </div>
                                 )}
@@ -3659,146 +3189,6 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-purple-500 pointer-events-none" />
-                                        
-                                        {/* Formatting Toolbar */}
-                                        <div
-                                            className="absolute -top-14 left-0 flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg shadow-xl p-1.5 pointer-events-auto z-40 whitespace-nowrap text-slate-200"
-                                            onClick={e => e.stopPropagation()}
-                                            onMouseDown={e => {
-                                                if (e.target.tagName !== 'SELECT' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'OPTION') {
-                                                    e.preventDefault();
-                                                }
-                                                e.stopPropagation();
-                                            }}
-                                        >
-                                            {/* Border Color */}
-                                            <input
-                                                type="color"
-                                                value={shpObj.color}
-                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, color: e.target.value } : s))}
-                                                className="w-7 h-7 p-0.5 border border-slate-700 rounded cursor-pointer bg-slate-800"
-                                                title="Border Color"
-                                            />
-                                            {/* Fill Color */}
-                                            <div className="relative group">
-                                                <input
-                                                    type="color"
-                                                    value={shpObj.fillColor || '#ffffff'}
-                                                    onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fillColor: e.target.value } : s))}
-                                                    className="w-7 h-7 p-0.5 border border-slate-700 rounded cursor-pointer bg-slate-800"
-                                                    title="Fill Color"
-                                                />
-                                                <button
-                                                    onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fillColor: 'transparent' } : s))}
-                                                    className="absolute -top-6 left-0 text-xs bg-slate-900 text-white px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap border border-slate-700 pointer-events-none group-hover:pointer-events-auto transition-opacity"
-                                                >
-                                                    Clear Fill
-                                                </button>
-                                            </div>
-                                            {/* Stroke Width */}
-                                            <select
-                                                value={shpObj.strokeWidth}
-                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeWidth: parseInt(e.target.value) } : s))}
-                                                className="h-7 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white outline-none"
-                                                title="Border Width"
-                                            >
-                                                {[1, 2, 4, 6, 8].map(w => <option key={w} value={w}>{w}px</option>)}
-                                            </select>
-                                            
-                                            <div className="w-px h-5 bg-slate-700 mx-1"></div>
-                                            
-                                            {/* Text Color */}
-                                            <input
-                                                type="color"
-                                                value={shpObj.textColor || shpObj.color}
-                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, textColor: e.target.value } : s))}
-                                                className="w-7 h-7 p-0.5 border border-slate-700 rounded cursor-pointer bg-slate-800"
-                                                title="Text Color"
-                                            />
-                                            {/* Font Family */}
-                                            <select
-                                                value={shpObj.fontFamily || 'sans-serif'}
-                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontFamily: e.target.value } : s))}
-                                                className="h-7 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white w-20 outline-none"
-                                                title="Font Family"
-                                            >
-                                                <option value="sans-serif">Sans</option>
-                                                <option value="serif">Serif</option>
-                                                <option value="monospace">Mono</option>
-                                                <option value="cursive">Cursive</option>
-                                            </select>
-                                            {/* Bold */}
-                                            <button
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontWeight: s.fontWeight === 'bold' ? 'normal' : 'bold' } : s))}
-                                                className={`w-7 h-7 flex items-center justify-center rounded text-sm font-bold transition-colors ${shpObj.fontWeight === 'bold' ? 'bg-primary-500/20 text-primary-400' : 'hover:bg-white/10'}`}
-                                                title="Bold"
-                                            >
-                                                B
-                                            </button>
-                                            {/* Italic */}
-                                            <button
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontStyle: s.fontStyle === 'italic' ? 'normal' : 'italic' } : s))}
-                                                className={`w-7 h-7 flex items-center justify-center rounded text-sm italic transition-colors ${shpObj.fontStyle === 'italic' ? 'bg-primary-500/20 text-primary-400' : 'hover:bg-white/10'}`}
-                                                title="Italic"
-                                            >
-                                                I
-                                            </button>
-                                            {/* Font Size */}
-                                            <select
-                                                value={shpObj.fontSize || 20}
-                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontSize: parseInt(e.target.value) } : s))}
-                                                className="h-7 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white outline-none"
-                                                title="Font Size"
-                                            >
-                                                {[10, 12, 14, 16, 20, 24, 32, 48].map(size => (
-                                                    <option key={size} value={size}>{size}</option>
-                                                ))}
-                                            </select>
-                                            
-                                            <div className="w-px h-5 bg-slate-700 mx-1"></div>
-
-                                            {/* Action Buttons */}
-                                            <button
-                                                onClick={handleCopy}
-                                                className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
-                                                title="Copy"
-                                            >
-                                                <Copy className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={handleCut}
-                                                className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
-                                                title="Cut"
-                                            >
-                                                <Scissors className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={handleDuplicate}
-                                                className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
-                                                title="Duplicate"
-                                            >
-                                                <Files className="w-4 h-4" />
-                                            </button>
-                                            
-                                            <div className="w-px h-5 bg-slate-700 mx-1"></div>
-
-                                            {/* Delete Button */}
-                                            <button
-                                                onClick={handleDelete}
-                                                className="w-7 h-7 flex items-center justify-center rounded text-red-400 hover:text-red-300 hover:bg-red-400/20 transition-colors"
-                                                title="Delete"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                            <div className="w-px h-5 bg-slate-700 mx-1"></div>
-                                            <button
-                                                onClick={handlePaste}
-                                                className="w-7 h-7 flex items-center justify-center rounded text-green-400 hover:text-green-300 hover:bg-green-400/20 transition-colors"
-                                                title="Paste"
-                                            >
-                                                <ClipboardPaste className="w-4 h-4" />
-                                            </button>
-                                        </div>
                                         
                                         {/* Corner Resize Handles */}
                                         {['nw', 'ne', 'sw', 'se'].map(corner => {
@@ -3816,7 +3206,6 @@ export default function Whiteboard({
                                                     style={{ width: handleSize, height: handleSize, ...pos }}
                                                     onMouseDown={(e) => {
                                                         e.stopPropagation();
-                                                        e.preventDefault();
                                                         setShapeDragState({
                                                             id: shpObj.id,
                                                             action: `resize-${corner}`,
@@ -3844,7 +3233,6 @@ export default function Whiteboard({
                                                     style={{ width: handleSize, height: handleSize, ...pos }}
                                                     onMouseDown={(e) => {
                                                         e.stopPropagation();
-                                                        e.preventDefault();
                                                         setShapeDragState({
                                                             id: shpObj.id,
                                                             action: `resize-${edge}`,
@@ -3864,7 +3252,6 @@ export default function Whiteboard({
                                                 className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center cursor-grab hover:bg-purple-600"
                                                 onMouseDown={(e) => {
                                                     e.stopPropagation();
-                                                    e.preventDefault();
                                                     setShapeDragState({
                                                         id: shpObj.id,
                                                         action: 'rotate',
@@ -3876,11 +3263,6 @@ export default function Whiteboard({
                                             >
                                                 <RotateCw className="w-3 h-3 text-white" />
                                             </div>
-                                            {shapeDragState?.id === shpObj.id && shapeDragState?.action === 'rotate' && (
-                                                <div className="absolute top-6 text-xs bg-slate-800 text-white px-1.5 py-0.5 rounded shadow-lg whitespace-nowrap z-50">
-                                                    {Math.round(shpObj.rotation || 0)}°
-                                                </div>
-                                            )}
                                         </div>
                                         {/* Delete Button */}
                                         <button
@@ -4006,40 +3388,34 @@ export default function Whiteboard({
                                 </svg>
                             )}
                             {/* Selection action buttons */}
-                            <div
-                                className="absolute -top-14 left-0 flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg shadow-xl p-1.5 pointer-events-auto text-slate-200"
-                                onClick={e => e.stopPropagation()}
-                                onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
-                            >
+                            <div className="absolute -top-10 left-0 flex gap-1 pointer-events-auto">
                                 <button
                                     onClick={handleCopySelection}
-                                    className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                                    className="px-2 py-1 bg-white text-xs font-medium text-slate-700 rounded shadow border border-slate-200 hover:bg-slate-50"
                                     title="Copy"
                                 >
-                                    <Copy className="w-4 h-4" />
+                                    Copy
                                 </button>
                                 <button
                                     onClick={handleCutSelection}
-                                    className="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                                    className="px-2 py-1 bg-white text-xs font-medium text-slate-700 rounded shadow border border-slate-200 hover:bg-slate-50"
                                     title="Cut"
                                 >
-                                    <Scissors className="w-4 h-4" />
+                                    Cut
                                 </button>
-                                <div className="w-px h-5 bg-slate-700 mx-1"></div>
                                 <button
                                     onClick={handleDeleteSelection}
-                                    className="w-7 h-7 flex items-center justify-center rounded text-red-400 hover:text-red-300 hover:bg-red-400/20 transition-colors"
+                                    className="px-2 py-1 bg-red-500 text-xs font-medium text-white rounded shadow hover:bg-red-600"
                                     title="Delete"
                                 >
-                                    <Trash2 className="w-4 h-4" />
+                                    Delete
                                 </button>
-                                <div className="w-px h-5 bg-slate-700 mx-1"></div>
                                 <button
                                     onClick={() => setSelection(null)}
-                                    className="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                                    title="Cancel Selection"
+                                    className="px-2 py-1 bg-slate-200 text-xs font-medium text-slate-700 rounded hover:bg-slate-300"
+                                    title="Cancel"
                                 >
-                                    <X className="w-4 h-4" />
+                                    ✕
                                 </button>
                             </div>
                         </div>

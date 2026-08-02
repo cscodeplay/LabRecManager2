@@ -280,8 +280,8 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
                 />
             </div>
 
-            {/* Recording Controls (bottom right corner) */}
-            <div className="absolute bottom-6 right-6 bg-slate-800/95 backdrop-blur-md px-2 py-1 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-1 pointer-events-auto z-50">
+            {/* Recording Controls (top center) */}
+            <div className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-slate-800/95 backdrop-blur-md px-2 py-1 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-1 pointer-events-auto z-50">
                 <button
                     onClick={toggleMic}
                     className={`p-1.5 rounded-full transition-all ${hasMic ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
@@ -331,7 +331,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
                 )}
                 
                 {isRecording && (
-                    <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-full flex items-center gap-1.5 pointer-events-none whitespace-nowrap">
+                    <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-full flex items-center gap-1.5 pointer-events-none whitespace-nowrap">
                         <div className={`w-1.5 h-1.5 rounded-full bg-red-500 ${isPaused ? '' : 'animate-pulse'}`}></div>
                         <span className="text-red-500 font-medium text-xs tracking-wider">{isPaused ? 'PAUSED' : 'REC'}</span>
                     </div>

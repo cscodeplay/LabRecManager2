@@ -14,6 +14,7 @@ export default function RecordingsPage() {
 
     const [recordings, setRecordings] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
     const [copiedId, setCopiedId] = useState(null);
@@ -44,6 +45,7 @@ export default function RecordingsPage() {
             }
         } catch (error) {
             console.error('Failed to fetch recordings:', error);
+            setError('Failed to load recordings. Please try again later.');
             toast.error('Failed to load recordings');
         } finally {
             setLoading(false);
@@ -172,6 +174,20 @@ export default function RecordingsPage() {
                 {loading ? (
                     <div className="flex items-center justify-center py-20">
                         <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
+                    </div>
+                ) : error ? (
+                    <div className="text-center py-20">
+                        <div className="w-16 h-16 mx-auto bg-red-100 rounded-full flex items-center justify-center mb-4">
+                            <span className="text-red-500 text-2xl">⚠️</span>
+                        </div>
+                        <h2 className="text-xl font-semibold text-slate-700 mb-2">Failed to load recordings</h2>
+                        <p className="text-slate-500 mb-6">{error}</p>
+                        <button
+                            onClick={fetchRecordings}
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition"
+                        >
+                            Retry
+                        </button>
                     </div>
                 ) : filteredRecordings.length === 0 ? (
                     <div className="text-center py-20">
