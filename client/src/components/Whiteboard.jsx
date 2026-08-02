@@ -3537,6 +3537,13 @@ export default function Whiteboard({
                                 })()}
                                 {shapePreview.type === 'graph' && (
                                     <g stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} fill="transparent">
+                                        {/* Grid lines */}
+                                        {Array.from({ length: 9 }).map((_, i) => (
+                                            <line key={`h-${i}`} x1={shapePreview.width/10} y1={shapePreview.height/10 + (shapePreview.height*0.8) * (i/8)} x2={shapePreview.width*0.9} y2={shapePreview.height/10 + (shapePreview.height*0.8) * (i/8)} stroke={shapePreview.color} strokeWidth={Math.max(0.5, shapePreview.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
+                                        ))}
+                                        {Array.from({ length: 9 }).map((_, i) => (
+                                            <line key={`v-${i}`} x1={shapePreview.width/10 + (shapePreview.width*0.8) * (i/8)} y1={shapePreview.height/10} x2={shapePreview.width/10 + (shapePreview.width*0.8) * (i/8)} y2={shapePreview.height*0.9} stroke={shapePreview.color} strokeWidth={Math.max(0.5, shapePreview.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
+                                        ))}
                                         {/* Y-axis */}
                                         <line x1={shapePreview.width/10} y1={shapePreview.height/10} x2={shapePreview.width/10} y2={shapePreview.height*0.9} />
                                         <polygon points={`${shapePreview.width/10},${shapePreview.height/10} ${shapePreview.width/10 - 4},${shapePreview.height/10 + 8} ${shapePreview.width/10 + 4},${shapePreview.height/10 + 8}`} fill={shapePreview.color} stroke="none" />
@@ -3577,6 +3584,13 @@ export default function Whiteboard({
                                 return (
                                     <g stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} fill={fill}>
                                         <rect width={shpObj.width} height={shpObj.height} fill={fill} stroke="none" />
+                                        {/* Grid lines */}
+                                        {Array.from({ length: 9 }).map((_, i) => (
+                                            <line key={`h-${i}`} x1={shpObj.width/10} y1={shpObj.height/10 + (shpObj.height*0.8) * (i/8)} x2={shpObj.width*0.9} y2={shpObj.height/10 + (shpObj.height*0.8) * (i/8)} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
+                                        ))}
+                                        {Array.from({ length: 9 }).map((_, i) => (
+                                            <line key={`v-${i}`} x1={shpObj.width/10 + (shpObj.width*0.8) * (i/8)} y1={shpObj.height/10} x2={shpObj.width/10 + (shpObj.width*0.8) * (i/8)} y2={shpObj.height*0.9} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
+                                        ))}
                                         {/* Y-axis */}
                                         <line x1={shpObj.width/10} y1={shpObj.height/10} x2={shpObj.width/10} y2={shpObj.height*0.9} />
                                         <polygon points={`${shpObj.width/10},${shpObj.height/10} ${shpObj.width/10 - 4},${shpObj.height/10 + 8} ${shpObj.width/10 + 4},${shpObj.height/10 + 8}`} fill={shpObj.color} stroke="none" />
