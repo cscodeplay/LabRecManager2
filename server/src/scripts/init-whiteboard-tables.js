@@ -81,6 +81,26 @@ async function initTables() {
             );
         `);
 
+        await prisma.$executeRawUnsafe(`
+            CREATE TABLE IF NOT EXISTS "whiteboard_recording_shares" (
+                "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+                "recording_id" UUID NOT NULL,
+                "shared_by_id" UUID NOT NULL,
+                "target_type" document_share_target_type NOT NULL,
+                "target_class_id" UUID,
+                "target_group_id" UUID,
+                "target_user_id" UUID,
+                "message" TEXT,
+                "shared_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT "whiteboard_recording_shares_pkey" PRIMARY KEY ("id"),
+                CONSTRAINT "whiteboard_recording_shares_recording_id_fkey" FOREIGN KEY ("recording_id") REFERENCES "whiteboard_recordings"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT "whiteboard_recording_shares_shared_by_id_fkey" FOREIGN KEY ("shared_by_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE CASCADE,
+                CONSTRAINT "whiteboard_recording_shares_target_class_id_fkey" FOREIGN KEY ("target_class_id") REFERENCES "classes"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT "whiteboard_recording_shares_target_group_id_fkey" FOREIGN KEY ("target_group_id") REFERENCES "student_groups"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT "whiteboard_recording_shares_target_user_id_fkey" FOREIGN KEY ("target_user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE
+            );
+        `);
+
         console.log('Whiteboard tables verified/created successfully.');
     } catch (e) {
         console.error('Error creating whiteboard tables:', e);

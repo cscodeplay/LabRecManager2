@@ -115,10 +115,44 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const isAdmin = ['admin', 'principal'].includes(req.user.role);
 
-    const whereClause = {
-        schoolId,
-        ...(isAdmin ? {} : { userId })
-    };
+    let whereClause = { schoolId };
+
+    if (!isAdmin) {
+        if (req.user.role === 'student') {
+            const enrollments = await prisma.classEnrollment.findMany({
+                where: { studentId: userId, status: 'active' },
+                select: { classId: true }
+            });
+            const classIds = enrollments.map(e => e.classId);
+
+            const groupMembers = await prisma.groupMember.findMany({
+                where: { studentId: userId },
+                select: { groupId: true }
+            });
+            const groupIds = groupMembers.map(g => g.groupId);
+
+            const orConditions = [
+                { userId } // Own recordings
+            ];
+            
+            if (classIds.length > 0) {
+                orConditions.push({ shares: { some: { targetClassId: { in: classIds } } } });
+            }
+            if (groupIds.length > 0) {
+                orConditions.push({ shares: { some: { targetGroupId: { in: groupIds } } } });
+            }
+            orConditions.push({ shares: { some: { targetUserId: userId } } });
+            
+            whereClause.OR = orConditions;
+        } else {
+            whereClause.userId = userId; // Instructors typically see their own, unless we allow sharing to instructors
+            // Let's also include shares specifically to them just in case
+            whereClause.OR = [
+                { userId },
+                { shares: { some: { targetUserId: userId } } }
+            ];
+        }
+    }
 
     const [recordings, total] = await Promise.all([
         prisma.whiteboardRecording.findMany({
@@ -129,6 +163,13 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             include: {
                 user: {
                     select: { firstName: true, lastName: true }
+                },
+                shares: {
+                    include: {
+                        targetClass: { select: { name: true, section: true } },
+                        targetGroup: { select: { name: true } },
+                        targetUser: { select: { firstName: true, lastName: true } }
+                    }
                 }
             }
         }),
@@ -288,6 +329,104 @@ router.patch('/:id', authenticate, asyncHandler(async (req, res) => {
     });
 
     res.json({ success: true, data: updated });
+}));
+
+/**
+ * @route   POST /api/recordings/:id/share
+ * @desc    Share a recording with targets
+ * @access  Owner or Admin
+ */
+router.post('/:id/share', authenticate, asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { targets } = req.body; // Array of { type: 'class'|'group'|'student', id: string }
+    const userId = req.user.id;
+    const isAdmin = ['admin', 'principal'].includes(req.user.role);
+
+    if (!targets || !Array.isArray(targets) || targets.length === 0) {
+        return res.status(400).json({ success: false, error: 'Valid targets array is required' });
+    }
+
+    const recording = await prisma.whiteboardRecording.findFirst({
+        where: {
+            id,
+            ...(isAdmin ? {} : { userId })
+        }
+    });
+
+    if (!recording) {
+        return res.status(404).json({ success: false, error: 'Recording not found' });
+    }
+
+    const shares = [];
+    const notifications = [];
+
+    for (const target of targets) {
+        const shareData = {
+            recordingId: id,
+            sharedById: userId,
+            targetType: target.type
+        };
+
+        if (target.type === 'class') {
+            shareData.targetClassId = target.id;
+        } else if (target.type === 'group') {
+            shareData.targetGroupId = target.id;
+        } else if (target.type === 'student') {
+            shareData.targetUserId = target.id;
+
+            notifications.push({
+                userId: target.id,
+                title: 'Recording Shared with You',
+                message: `"${recording.title}" has been shared with you by ${req.user.firstName} ${req.user.lastName}.`
+            });
+        }
+
+        shares.push(shareData);
+    }
+
+    const createdShares = await prisma.whiteboardRecordingShare.createMany({
+        data: shares
+    });
+
+    if (notifications.length > 0) {
+        await prisma.notification.createMany({
+            data: notifications
+        });
+    }
+
+    res.status(201).json({
+        success: true,
+        message: `Recording shared with ${targets.length} target(s)`,
+        data: { sharesCreated: createdShares.count }
+    });
+}));
+
+/**
+ * @route   DELETE /api/recordings/:id/share/:shareId
+ * @desc    Remove a recording share
+ * @access  Owner or Admin
+ */
+router.delete('/:id/share/:shareId', authenticate, asyncHandler(async (req, res) => {
+    const { id, shareId } = req.params;
+    const userId = req.user.id;
+    const isAdmin = ['admin', 'principal'].includes(req.user.role);
+
+    const recording = await prisma.whiteboardRecording.findFirst({
+        where: {
+            id,
+            ...(isAdmin ? {} : { userId })
+        }
+    });
+
+    if (!recording) {
+        return res.status(404).json({ success: false, error: 'Recording not found' });
+    }
+
+    await prisma.whiteboardRecordingShare.delete({
+        where: { id: shareId }
+    });
+
+    res.json({ success: true, message: 'Share removed successfully' });
 }));
 
 module.exports = router;

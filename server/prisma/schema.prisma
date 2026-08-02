@@ -158,7 +158,9 @@ model User {
   classTeacherOf                                 Class[]                   @relation("ClassTeacher")
   deviceTests                                    DeviceTest?
   documentSharesSent                             DocumentShare[]           @relation("DocumentSharedBy")
-  documentSharesReceived                         DocumentShare[]           @relation("DocumentSharedToUser")
+  documentShares                                 DocumentShare[]           @relation("DocumentSharedToUser")
+  recordingSharesGiven                           WhiteboardRecordingShare[] @relation("RecordingSharedBy")
+  recordingSharesReceived                        WhiteboardRecordingShare[] @relation("RecordingSharedToUser")
   documents                                      Document[]                @relation("DocumentUploadedBy")
   documentsDeleted                               Document[]                @relation("DocumentDeletedBy")
   foldersCreated                                 DocumentFolder[]          @relation("FolderCreatedBy")
@@ -287,6 +289,7 @@ model Class {
   school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   documentShares     DocumentShare[]
   folderShares       FolderShare[]
+  recordingShares    WhiteboardRecordingShare[]
   feeStructures      FeeStructure[]
   finalLabMarks      FinalLabMarks[]
   labAttendance      LabAttendance[]
@@ -330,6 +333,7 @@ model StudentGroup {
   targets            AssignmentTarget[]
   documentShares     DocumentShare[]
   folderShares       FolderShare[]
+  recordingShares    WhiteboardRecordingShare[]
   members            GroupMember[]
   assignedPc         LabItem?            @relation(fields: [assignedPcId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   class              Class               @relation(fields: [classId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -1862,6 +1866,7 @@ model WhiteboardRecording {
   isPublic      Boolean  @default(true) @map("is_public")
   shareToken    String?  @unique @map("share_token") @db.VarChar(64)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  shares        WhiteboardRecordingShare[]
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
@@ -2287,4 +2292,28 @@ model CodingSubmission {
   student  User             @relation("CodingSubmissionStudent", fields: [studentId], references: [id], onDelete: Cascade)
 
   @@map("coding_submissions")
+}
+
+model WhiteboardRecordingShare {
+  id            String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recordingId   String                     @map("recording_id") @db.Uuid
+  sharedById    String                     @map("shared_by_id") @db.Uuid
+  targetType    document_share_target_type @map("target_type")
+  targetClassId String?                    @map("target_class_id") @db.Uuid
+  targetGroupId String?                    @map("target_group_id") @db.Uuid
+  targetUserId  String?                    @map("target_user_id") @db.Uuid
+  message       String?
+  sharedAt      DateTime?                  @default(now()) @map("shared_at") @db.Timestamp(6)
+
+  recording     WhiteboardRecording        @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  sharedBy      User                       @relation("RecordingSharedBy", fields: [sharedById], references: [id], onDelete: NoAction)
+  targetClass   Class?                     @relation(fields: [targetClassId], references: [id], onDelete: Cascade)
+  targetGroup   StudentGroup?              @relation(fields: [targetGroupId], references: [id], onDelete: Cascade)
+  targetUser    User?                      @relation("RecordingSharedToUser", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@index([recordingId])
+  @@index([targetUserId])
+  @@index([targetClassId])
+  @@index([targetGroupId])
+  @@map("whiteboard_recording_shares")
 }

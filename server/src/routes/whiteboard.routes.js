@@ -119,7 +119,7 @@ router.get('/sessions', authenticate, authorize('admin', 'principal'), asyncHand
  * @desc    Upload a screenshot and save it to the Documents page under a Screenshot folder
  * @access  Admin/Instructor
  */
-router.post('/screenshot', authenticate, authorize('admin', 'principal', 'instructor'), upload.single('file'), asyncHandler(async (req, res) => {
+router.post('/screenshot', authenticate, upload.single('file'), asyncHandler(async (req, res) => {
     const userId = req.user.id;
     const schoolId = req.user.schoolId;
 

@@ -9,6 +9,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
     const [hasMic, setHasMic] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
+    const recordingTimeRef = useRef(0);
     const timerIntervalRef = useRef(null);
     
     const mediaRecorderRef = useRef(null);
@@ -207,9 +208,13 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
             setIsRecording(true);
             setIsPaused(false);
             setRecordingTime(0);
+            recordingTimeRef.current = 0;
             
             timerIntervalRef.current = setInterval(() => {
-                setRecordingTime(prev => prev + 1);
+                setRecordingTime(prev => {
+                    recordingTimeRef.current = prev + 1;
+                    return prev + 1;
+                });
             }, 1000);
             
             toast.success('Recording started');
@@ -234,7 +239,10 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
             mediaRecorderRef.current.resume();
             setIsPaused(false);
             timerIntervalRef.current = setInterval(() => {
-                setRecordingTime(prev => prev + 1);
+                setRecordingTime(prev => {
+                    recordingTimeRef.current = prev + 1;
+                    return prev + 1;
+                });
             }, 1000);
         }
     };
@@ -275,7 +283,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
             if (sessionId) {
                 formData.append('sessionId', sessionId);
             }
-            formData.append('duration', recordingTime);
+            formData.append('duration', recordingTimeRef.current);
 
             const res = await api.post('/recordings/upload', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }

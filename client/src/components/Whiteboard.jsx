@@ -3079,6 +3079,7 @@ export default function Whiteboard({
                                 }}
                                 onMouseDown={(e) => {
                                     if (!isSelected) {
+                                        e.stopPropagation();
                                         setSelectedImageId(imgObj.id);
                                         return;
                                     }
@@ -3251,6 +3252,7 @@ export default function Whiteboard({
                                         return;
                                     }
                                     if (!isSelected) {
+                                        e.stopPropagation();
                                         setSelectedTextId(txtObj.id);
                                         setSelectedImageId(null);
                                         return;
@@ -3746,6 +3748,7 @@ export default function Whiteboard({
                                 }}
                                 onMouseDown={(e) => {
                                     if (!isSelected) {
+                                        e.stopPropagation();
                                         setSelectedShapeId(shpObj.id);
                                         setSelectedImageId(null);
                                         setSelectedTextId(null);

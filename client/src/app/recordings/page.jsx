@@ -7,6 +7,7 @@ import { ArrowLeft, Video, Download, Share2, Trash2, Play, Clock, Calendar, Link
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
+import RecordingShareModal from '@/components/RecordingShareModal';
 
 export default function RecordingsPage() {
     const router = useRouter();
@@ -22,19 +23,18 @@ export default function RecordingsPage() {
 
     const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'lab_assistant' || user?.role === 'principal';
 
+    const [shareModalOpen, setShareModalOpen] = useState(false);
+    const [selectedRecordingId, setSelectedRecordingId] = useState(null);
+    const [isSharing, setIsSharing] = useState(false);
+
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!isAuthenticated) {
             router.push('/login');
             return;
         }
-        if (!isInstructor) {
-            toast.error('Only instructors can access recordings');
-            router.push('/dashboard');
-            return;
-        }
         fetchRecordings();
-    }, [isAuthenticated, _hasHydrated, isInstructor]);
+    }, [isAuthenticated, _hasHydrated]);
 
     const fetchRecordings = async () => {
         try {
@@ -71,6 +71,28 @@ export default function RecordingsPage() {
             toast.success('Recording deleted');
         } catch (error) {
             toast.error('Failed to delete recording');
+        }
+    };
+
+    const handleOpenShare = (id) => {
+        setSelectedRecordingId(id);
+        setShareModalOpen(true);
+    };
+
+    const handleShare = async (targetsPayload) => {
+        try {
+            setIsSharing(true);
+            const res = await api.post(`/recordings/${selectedRecordingId}/share`, { targets: targetsPayload });
+            if (res.data.success) {
+                toast.success('Recording shared successfully!');
+                setShareModalOpen(false);
+                setSelectedRecordingId(null);
+            }
+        } catch (error) {
+            console.error('Failed to share recording:', error);
+            toast.error('Failed to share recording');
+        } finally {
+            setIsSharing(false);
         }
     };
 
@@ -268,7 +290,7 @@ export default function RecordingsPage() {
                                             className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
                                             title="Copy share link"
                                         >
-                                            {copiedId === recording.id ? <Check className="w-4 h-4 text-green-500" /> : <Share2 className="w-4 h-4" />}
+                                            {copiedId === recording.id ? <Check className="w-4 h-4 text-green-500" /> : <Link2 className="w-4 h-4" />}
                                         </button>
                                         <a
                                             href={recording.cloudinaryUrl}
@@ -278,13 +300,24 @@ export default function RecordingsPage() {
                                         >
                                             <Download className="w-4 h-4" />
                                         </a>
-                                        <button
-                                            onClick={() => setDeleteConfirm(recording.id)}
-                                            className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition"
-                                            title="Delete"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        {isInstructor && (
+                                            <button
+                                                onClick={() => handleOpenShare(recording.id)}
+                                                className="p-2 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-lg transition"
+                                                title="Share"
+                                            >
+                                                <Share2 className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        {isInstructor && (
+                                            <button
+                                                onClick={() => setDeleteConfirm(recording.id)}
+                                                className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition"
+                                                title="Delete"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -350,13 +383,24 @@ export default function RecordingsPage() {
                                                 >
                                                     <Download className="w-4 h-4" />
                                                 </a>
-                                                <button
-                                                    onClick={() => setDeleteConfirm(recording.id)}
-                                                    className="p-2 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg transition"
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                                {isInstructor && (
+                                                    <button
+                                                        onClick={() => handleOpenShare(recording.id)}
+                                                        className="p-2 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-lg transition"
+                                                        title="Share"
+                                                    >
+                                                        <Share2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                                {isInstructor && (
+                                                    <button
+                                                        onClick={() => setDeleteConfirm(recording.id)}
+                                                        className="p-2 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg transition"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -390,6 +434,15 @@ export default function RecordingsPage() {
                     </div>
                 </div>
             )}
+
+            {/* Share Modal */}
+            <RecordingShareModal
+                isOpen={shareModalOpen}
+                onClose={() => { setShareModalOpen(false); setSelectedRecordingId(null); }}
+                onShare={handleShare}
+                isSharing={isSharing}
+                recordingId={selectedRecordingId}
+            />
         </div>
     );
 }
