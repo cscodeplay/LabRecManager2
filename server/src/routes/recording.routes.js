@@ -38,26 +38,32 @@ router.post('/upload', authenticate, authorize('instructor', 'admin', 'lab_assis
         });
     }
 
-    // Upload to Cloudinary as video
+    // Upload to Cloudinary using upload_stream for memory buffer
     let result;
     try {
-        result = await require('cloudinary').v2.uploader.upload(req.file.path, {
-            resource_type: 'video',
-            folder: 'ulrms/whiteboard_recordings',
-            public_id: `wb_rec_${userId}_${Date.now()}`,
-            eager: [
-                { width: 320, height: 180, crop: 'fill', format: 'jpg' } // Thumbnail
-            ]
+        result = await new Promise((resolve, reject) => {
+            const uploadStream = require('cloudinary').v2.uploader.upload_stream(
+                {
+                    resource_type: 'video',
+                    folder: 'ulrms/whiteboard_recordings',
+                    public_id: `wb_rec_${userId}_${Date.now()}`,
+                    eager: [
+                        { width: 320, height: 180, crop: 'fill', format: 'jpg' }
+                    ]
+                },
+                (error, result) => {
+                    if (error) reject(error);
+                    else resolve(result);
+                }
+            );
+            
+            const { Readable } = require('stream');
+            const stream = Readable.from(req.file.buffer);
+            stream.pipe(uploadStream);
         });
-        
-        // Clean up the temp file
-        const fs = require('fs');
-        if (fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
-        }
     } catch (uploadError) {
         console.error('Cloudinary upload error:', uploadError);
-        return res.status(500).json({ success: false, message: 'Failed to upload video to Cloudinary' });
+        return res.status(500).json({ success: false, message: 'Failed to upload video to Cloudinary', error: uploadError.message });
     }
 
     // Generate unique share token

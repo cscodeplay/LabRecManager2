@@ -364,7 +364,7 @@ export default function Whiteboard({
                 if (state.pages && state.pages[state.currentPage || 0]) {
                     const canvas = canvasRef.current;
                     if (canvas) {
-                        const ctx = canvas.getContext('2d');
+                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
                         const img = new Image();
                         img.onload = () => {
                             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -453,7 +453,7 @@ export default function Whiteboard({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         // Clear canvas (transparent) - CSS background will show through
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -523,7 +523,7 @@ export default function Whiteboard({
         const canvas = canvasRef.current;
         if (!canvas || !history[index]) return;
 
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         const img = new Image();
         img.onload = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -555,7 +555,7 @@ export default function Whiteboard({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         // Clear canvas (transparent) to show CSS background
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -576,13 +576,13 @@ export default function Whiteboard({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         let imageData;
         if (selection.path) {
             const offCanvas = document.createElement('canvas');
             offCanvas.width = selection.width;
             offCanvas.height = selection.height;
-            const offCtx = offCanvas.getContext('2d');
+            const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
             
             offCtx.beginPath();
             offCtx.moveTo(selection.path[0].x - selection.x, selection.path[0].y - selection.y);
@@ -598,7 +598,7 @@ export default function Whiteboard({
             const offCanvas = document.createElement('canvas');
             offCanvas.width = selection.width;
             offCanvas.height = selection.height;
-            const offCtx = offCanvas.getContext('2d');
+            const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
             offCtx.drawImage(canvas, -selection.x, -selection.y);
             imageData = offCtx.getImageData(0, 0, selection.width, selection.height);
         }
@@ -607,7 +607,7 @@ export default function Whiteboard({
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = selection.width;
         tempCanvas.height = selection.height;
-        tempCanvas.getContext('2d').putImageData(imageData, 0, 0);
+        tempCanvas.getContext('2d', { willReadFrequently: true }).putImageData(imageData, 0, 0);
         const dataURL = tempCanvas.toDataURL();
         
         setClipboardHistory(prev => [{ 
@@ -628,7 +628,7 @@ export default function Whiteboard({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (selection.path) {
             ctx.save();
             ctx.beginPath();
@@ -656,7 +656,7 @@ export default function Whiteboard({
         if (item.type === 'drawing') {
             const canvas = canvasRef.current;
             if (!canvas) return;
-            const ctx = canvas.getContext('2d');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
             
             const x = (canvas.width - item.width) / 2;
             const y = (canvas.height - item.height) / 2;
@@ -664,7 +664,7 @@ export default function Whiteboard({
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = item.width;
             tempCanvas.height = item.height;
-            tempCanvas.getContext('2d').putImageData(item.imageData, 0, 0);
+            tempCanvas.getContext('2d', { willReadFrequently: true }).putImageData(item.imageData, 0, 0);
             
             ctx.drawImage(tempCanvas, x, y);
             saveToHistory();
@@ -712,7 +712,7 @@ export default function Whiteboard({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (selection.path) {
             ctx.save();
             ctx.beginPath();
@@ -1194,7 +1194,7 @@ export default function Whiteboard({
         if (tool === 'pen' || tool === 'eraser' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
             const canvas = canvasRef.current;
             if (!canvas) return;
-            const ctx = canvas.getContext('2d');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
             ctx.imageSmoothingEnabled = true;
 
             // Save pre-stroke canvas image data for shape auto-detection/replacement
@@ -1284,7 +1284,7 @@ export default function Whiteboard({
 
         const canvas = canvasRef.current;
         if (!canvas) return;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         ctx.imageSmoothingEnabled = true;
 
         if (tool === 'highlighter') {
@@ -1377,7 +1377,7 @@ export default function Whiteboard({
         } else if (tool === 'line' || tool === 'arrow') {
             const canvas = canvasRef.current;
             if (!canvas) return;
-            const ctx = canvas.getContext('2d');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
             if (preStrokeImageDataRef.current) {
                 ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
             }
@@ -1441,7 +1441,7 @@ export default function Whiteboard({
 
         const canvas = canvasRef.current;
         if (!canvas) return;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         ctx.imageSmoothingEnabled = true;
 
         const rawPos = getPosition(e);
@@ -1737,7 +1737,7 @@ export default function Whiteboard({
         const exportCanvas = document.createElement('canvas');
         exportCanvas.width = canvas.width;
         exportCanvas.height = canvas.height;
-        const ctx = exportCanvas.getContext('2d');
+        const ctx = exportCanvas.getContext('2d', { willReadFrequently: true });
 
         // 1. Draw background color
         const currentBg = pageBackgrounds[currentPage] || { color: '#ffffff', pattern: 'none' };
@@ -1913,7 +1913,7 @@ export default function Whiteboard({
 
         saveCurrentPage();
 
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (pages[pageIndex]) {
             const img = new Image();
             img.onload = () => {
@@ -1948,7 +1948,7 @@ export default function Whiteboard({
 
         const canvas = canvasRef.current;
         if (canvas) {
-            const ctx = canvas.getContext('2d');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
             // Clear canvas (transparent) to show CSS background
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
