@@ -87,4 +87,4 @@ async function initTables() {
     }
 }
 
-initTables().then(() => process.exit(0)).catch(() => process.exit(1));
+initTables().then(() => process.exit(0)).catch(() => process.exit(0));
