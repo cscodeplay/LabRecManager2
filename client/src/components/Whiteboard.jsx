@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
+import api from '@/lib/api';
 
 // Default colors (rainbow + black/white)
 const DEFAULT_COLORS = [
@@ -100,14 +101,9 @@ function ScreenshotPickerModal({ onClose, onSelect }) {
     useEffect(() => {
         const fetchScreenshots = async () => {
             try {
-                const token = localStorage.getItem('token');
-                // The category might be "Screenshot" as defined in the backend
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/documents?category=Screenshot`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await res.json();
-                if (data.success && data.data) {
-                    setScreenshots(data.data.documents || []);
+                const res = await api.get('/documents?category=Screenshot');
+                if (res.data && res.data.success) {
+                    setScreenshots(res.data.data.documents || []);
                 }
             } catch (err) {
                 console.error("Failed to fetch screenshots", err);
@@ -1978,19 +1974,13 @@ export default function Whiteboard({
             formData.append('file', blob, `screenshot-${new Date().getTime()}.png`);
 
             try {
-                const token = localStorage.getItem('token');
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/screenshot`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: formData
+                const res = await api.post('/whiteboard/screenshot', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
                 });
-                const data = await res.json();
-                if (data.success) {
+                if (res.data && res.data.success) {
                     alert('Screenshot saved to Documents > Screenshots!');
                 } else {
-                    alert('Failed to save screenshot: ' + data.message);
+                    alert('Failed to save screenshot: ' + (res.data.message || 'Unknown error'));
                 }
             } catch (error) {
                 console.error('Screenshot upload error:', error);
@@ -2062,7 +2052,7 @@ export default function Whiteboard({
         const formatted = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' }) + ' - ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
         
         const newText = {
-            id: Date.now(),
+            id: 'datetime-stamp', // Fixed ID to overwrite previous
             text: formatted,
             x: 20,
             y: 20,
@@ -2071,7 +2061,10 @@ export default function Whiteboard({
             isEditing: false
         };
         
-        setTextObjects(prev => [...prev, newText]);
+        setTextObjects(prev => {
+            // Remove previous datetime stamp if exists, and append the new one
+            return [...prev.filter(t => t.id !== 'datetime-stamp'), newText];
+        });
         saveToHistory();
     }, [color, strokeWidth, saveToHistory, setTextObjects]);
 
