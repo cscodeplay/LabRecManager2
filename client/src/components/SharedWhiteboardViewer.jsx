@@ -453,9 +453,9 @@ export default function SharedWhiteboardViewer({
             ))}
             {shapeObjects.map(shpObj => {
                 const renderShapeSVG = () => {
-                    if (shpObj.type === 'rectangle') return <rect x="0" y="0" width={shpObj.width} height={shpObj.height} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
-                    if (shpObj.type === 'circle') return <ellipse cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
-                    if (shpObj.type === 'triangle') return <polygon points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                    if (shpObj.type === 'rectangle') return <rect x="0" y="0" width={shpObj.width} height={shpObj.height} fill={shpObj.fillColor || 'transparent'} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                    if (shpObj.type === 'circle') return <ellipse cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill={shpObj.fillColor || 'transparent'} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                    if (shpObj.type === 'triangle') return <polygon points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill={shpObj.fillColor || 'transparent'} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
                     if (shpObj.type === 'star') {
                         const cx = shpObj.width / 2, cy = shpObj.height / 2, outerRadius = Math.min(cx, cy), innerRadius = outerRadius / 2.5;
                         let points = [];
@@ -464,7 +464,25 @@ export default function SharedWhiteboardViewer({
                             const angle = (i * Math.PI) / 5 - Math.PI / 2;
                             points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
                         }
-                        return <polygon points={points.join(' ')} fill="transparent" stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                        return <polygon points={points.join(' ')} fill={shpObj.fillColor || 'transparent'} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                    }
+                    if (shpObj.type === 'graph') {
+                        const fill = shpObj.fillColor || 'transparent';
+                        return (
+                            <g stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} fill={fill}>
+                                <rect width={shpObj.width} height={shpObj.height} fill={fill} stroke="none" />
+                                {Array.from({ length: 9 }).map((_, i) => (
+                                    <line key={`h-${i}`} x1={shpObj.width/10} y1={shpObj.height/10 + (shpObj.height*0.8) * (i/8)} x2={shpObj.width*0.9} y2={shpObj.height/10 + (shpObj.height*0.8) * (i/8)} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
+                                ))}
+                                {Array.from({ length: 9 }).map((_, i) => (
+                                    <line key={`v-${i}`} x1={shpObj.width/10 + (shpObj.width*0.8) * (i/8)} y1={shpObj.height/10} x2={shpObj.width/10 + (shpObj.width*0.8) * (i/8)} y2={shpObj.height*0.9} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
+                                ))}
+                                <line x1={shpObj.width/10} y1={shpObj.height/10} x2={shpObj.width/10} y2={shpObj.height*0.9} />
+                                <polygon points={`${shpObj.width/10},${shpObj.height/10} ${shpObj.width/10 - 4},${shpObj.height/10 + 8} ${shpObj.width/10 + 4},${shpObj.height/10 + 8}`} fill={shpObj.color} stroke="none" />
+                                <line x1={shpObj.width/10} y1={shpObj.height/2} x2={shpObj.width*0.9} y2={shpObj.height/2} />
+                                <polygon points={`${shpObj.width*0.9},${shpObj.height/2} ${shpObj.width*0.9 - 8},${shpObj.height/2 - 4} ${shpObj.width*0.9 - 8},${shpObj.height/2 + 4}`} fill={shpObj.color} stroke="none" />
+                            </g>
+                        );
                     }
                     return null;
                 };

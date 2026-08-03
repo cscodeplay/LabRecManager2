@@ -19,6 +19,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
     const videoPreviewRef = useRef(null);
     const compositeCanvasRef = useRef(null);
     const requestAnimationFrameRef = useRef(null);
+    const imageCacheRef = useRef({});
 
     // Draggable camera state
     const [position, setPosition] = useState({ x: 24, y: 100 });
@@ -146,22 +147,35 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
 
                 // Draw image objects
                 imageObjects.forEach(imgObj => {
-                    const img = new Image();
-                    img.crossOrigin = 'anonymous';
-                    img.src = imgObj.src;
-                    compositeCtx.save();
-                    const centerX = imgObj.x + imgObj.width / 2;
-                    const centerY = imgObj.y + imgObj.height / 2;
-                    compositeCtx.translate(centerX, centerY);
-                    compositeCtx.rotate((imgObj.rotation || 0) * Math.PI / 180);
-                    compositeCtx.drawImage(img, -imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
-                    compositeCtx.restore();
+                    let img = imageCacheRef.current[imgObj.src];
+                    if (!img) {
+                        img = new Image();
+                        img.crossOrigin = 'anonymous';
+                        img.src = imgObj.src;
+                        imageCacheRef.current[imgObj.src] = img;
+                    }
+                    
+                    if (img.complete && img.naturalWidth !== 0) {
+                        compositeCtx.save();
+                        const centerX = imgObj.x + imgObj.width / 2;
+                        const centerY = imgObj.y + imgObj.height / 2;
+                        compositeCtx.translate(centerX, centerY);
+                        compositeCtx.rotate((imgObj.rotation || 0) * Math.PI / 180);
+                        compositeCtx.drawImage(img, -imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
+                        compositeCtx.restore();
+                    }
                 });
 
                 // Draw shape objects
                 shapeObjects.forEach(shpObj => {
                     compositeCtx.save();
                     compositeCtx.translate(shpObj.x, shpObj.y);
+                    // Handle rotation if any (Whiteboard doesn't support shape rotation yet but just in case)
+                    if (shpObj.rotation) {
+                        compositeCtx.translate(shpObj.width/2, shpObj.height/2);
+                        compositeCtx.rotate(shpObj.rotation * Math.PI / 180);
+                        compositeCtx.translate(-shpObj.width/2, -shpObj.height/2);
+                    }
                     compositeCtx.strokeStyle = shpObj.color;
                     compositeCtx.lineWidth = shpObj.strokeWidth;
                     compositeCtx.fillStyle = shpObj.fillColor || 'transparent';
@@ -176,9 +190,86 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                         compositeCtx.lineTo(0, shpObj.height);
                         compositeCtx.lineTo(shpObj.width, shpObj.height);
                         compositeCtx.closePath();
+                    } else if (shpObj.type === 'star') {
+                        const cx = shpObj.width / 2;
+                        const cy = shpObj.height / 2;
+                        const outerRadius = Math.min(cx, cy);
+                        const innerRadius = outerRadius / 2.5;
+                        for (let i = 0; i < 10; i++) {
+                            const r = i % 2 === 0 ? outerRadius : innerRadius;
+                            const angle = (i * Math.PI) / 5 - Math.PI / 2;
+                            const x = cx + r * Math.cos(angle);
+                            const y = cy + r * Math.sin(angle);
+                            if (i === 0) compositeCtx.moveTo(x, y);
+                            else compositeCtx.lineTo(x, y);
+                        }
+                        compositeCtx.closePath();
+                    } else if (shpObj.type === 'graph') {
+                        // Background
+                        compositeCtx.rect(0, 0, shpObj.width, shpObj.height);
+                        if (shpObj.fillColor) compositeCtx.fill();
+                        
+                        // Grid lines
+                        compositeCtx.beginPath();
+                        compositeCtx.lineWidth = Math.max(0.5, shpObj.strokeWidth * 0.3);
+                        // setDash takes an array
+                        compositeCtx.setLineDash([4, 4]);
+                        compositeCtx.globalAlpha = 0.4;
+                        for(let i=0; i<9; i++) {
+                            // H
+                            compositeCtx.moveTo(shpObj.width/10, shpObj.height/10 + (shpObj.height*0.8) * (i/8));
+                            compositeCtx.lineTo(shpObj.width*0.9, shpObj.height/10 + (shpObj.height*0.8) * (i/8));
+                            // V
+                            compositeCtx.moveTo(shpObj.width/10 + (shpObj.width*0.8) * (i/8), shpObj.height/10);
+                            compositeCtx.lineTo(shpObj.width/10 + (shpObj.width*0.8) * (i/8), shpObj.height*0.9);
+                        }
+                        compositeCtx.stroke();
+                        
+                        compositeCtx.beginPath();
+                        compositeCtx.globalAlpha = 1.0;
+                        compositeCtx.setLineDash([]);
+                        compositeCtx.lineWidth = shpObj.strokeWidth;
+                        // Y axis
+                        compositeCtx.moveTo(shpObj.width/10, shpObj.height/10);
+                        compositeCtx.lineTo(shpObj.width/10, shpObj.height*0.9);
+                        // X axis
+                        compositeCtx.moveTo(shpObj.width/10, shpObj.height/2);
+                        compositeCtx.lineTo(shpObj.width*0.9, shpObj.height/2);
+                        
+                        // Y arrow
+                        compositeCtx.moveTo(shpObj.width/10, shpObj.height/10);
+                        compositeCtx.lineTo(shpObj.width/10 - 4, shpObj.height/10 + 8);
+                        compositeCtx.moveTo(shpObj.width/10, shpObj.height/10);
+                        compositeCtx.lineTo(shpObj.width/10 + 4, shpObj.height/10 + 8);
+                        // X arrow
+                        compositeCtx.moveTo(shpObj.width*0.9, shpObj.height/2);
+                        compositeCtx.lineTo(shpObj.width*0.9 - 8, shpObj.height/2 - 4);
+                        compositeCtx.moveTo(shpObj.width*0.9, shpObj.height/2);
+                        compositeCtx.lineTo(shpObj.width*0.9 - 8, shpObj.height/2 + 4);
                     }
-                    if (shpObj.fillColor) compositeCtx.fill();
+                    
+                    if (shpObj.type !== 'graph') {
+                        if (shpObj.fillColor) compositeCtx.fill();
+                    }
                     compositeCtx.stroke();
+                    
+                    // Draw text inside shape if any
+                    if (shpObj.text !== undefined && shpObj.text !== '') {
+                        compositeCtx.font = `${shpObj.fontSize || 20}px 'Inter', system-ui, sans-serif`;
+                        compositeCtx.fillStyle = shpObj.color;
+                        compositeCtx.textAlign = 'center';
+                        compositeCtx.textBaseline = 'middle';
+                        
+                        const lines = shpObj.text.split('\n');
+                        const lineHeight = (shpObj.fontSize || 20) * 1.3;
+                        let startY = (shpObj.height / 2) - ((lines.length - 1) * lineHeight) / 2;
+                        
+                        lines.forEach(line => {
+                            compositeCtx.fillText(line, shpObj.width / 2, startY);
+                            startY += lineHeight;
+                        });
+                    }
+
                     compositeCtx.restore();
                 });
 
