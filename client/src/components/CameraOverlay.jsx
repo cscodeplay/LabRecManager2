@@ -16,6 +16,7 @@ export default function CameraOverlay({
     const videoRef = useRef(null);
     const containerRef = useRef(null);
     const streamRef = useRef(null);
+    const peerConnectionsRef = useRef({});
 
     // Camera state
     const [isCameraOn, setIsCameraOn] = useState(false);
@@ -159,8 +160,91 @@ export default function CameraOverlay({
     useEffect(() => {
         return () => {
             stopMedia();
+            Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
+            peerConnectionsRef.current = {};
         };
     }, [stopMedia]);
+
+    // WebRTC Host Logic
+    useEffect(() => {
+        if (!socket || !sessionId || !isInstructor) return;
+
+        const createPeerConnection = (targetSocketId) => {
+            const pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('whiteboard:webrtc-ice-candidate', {
+                        sessionId,
+                        targetSocketId,
+                        candidate: event.candidate
+                    });
+                }
+            };
+
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => {
+                    pc.addTrack(track, streamRef.current);
+                });
+            }
+
+            peerConnectionsRef.current[targetSocketId] = pc;
+            return pc;
+        };
+
+        const handleWebrtcJoin = async (data) => {
+            if (data.sessionId !== sessionId) return;
+            const targetSocketId = data.fromSocketId;
+            
+            // Only send video if camera is actually on
+            if (!streamRef.current) return;
+
+            const pc = createPeerConnection(targetSocketId);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            socket.emit('whiteboard:webrtc-offer', {
+                sessionId,
+                targetSocketId,
+                offer
+            });
+        };
+
+        const handleWebrtcAnswer = async (data) => {
+            if (data.sessionId !== sessionId) return;
+            const pc = peerConnectionsRef.current[data.fromSocketId];
+            if (pc) {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            }
+        };
+
+        const handleWebrtcIceCandidate = async (data) => {
+            if (data.sessionId !== sessionId) return;
+            const pc = peerConnectionsRef.current[data.fromSocketId];
+            if (pc && data.candidate) {
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
+        };
+
+        const handleCameraRejected = (data) => {
+            toast.error(data.reason || 'Maximum host cameras reached for this session');
+            stopMedia();
+        };
+
+        socket.on('whiteboard:webrtc-join', handleWebrtcJoin);
+        socket.on('whiteboard:webrtc-answer', handleWebrtcAnswer);
+        socket.on('whiteboard:webrtc-ice-candidate', handleWebrtcIceCandidate);
+        socket.on('whiteboard:camera-rejected', handleCameraRejected);
+
+        return () => {
+            socket.off('whiteboard:webrtc-join', handleWebrtcJoin);
+            socket.off('whiteboard:webrtc-answer', handleWebrtcAnswer);
+            socket.off('whiteboard:webrtc-ice-candidate', handleWebrtcIceCandidate);
+            socket.off('whiteboard:camera-rejected', handleCameraRejected);
+        };
+    }, [socket, sessionId, isInstructor]);
 
     // Dragging handlers
     const handleMouseDown = (e) => {

@@ -539,6 +539,12 @@ export default function Whiteboard({
         saveToHistory();
     }, []);
 
+    // Keep track of latest state in refs to avoid re-triggering sendCanvasState heavily
+    const latestStateRef = useRef({ bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos });
+    useEffect(() => {
+        latestStateRef.current = { bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos };
+    }, [bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos]);
+
     // Broadcast canvas state when sharing starts and periodically while sharing
     useEffect(() => {
         if (!isSharing || !socket || !sessionId) return;
@@ -549,15 +555,16 @@ export default function Whiteboard({
             if (!canvas) return;
 
             const imageData = canvas.toDataURL('image/png');
+            const state = latestStateRef.current;
             socket.emit('whiteboard:canvas-state', {
                 sessionId,
                 imageData,
-                bgColor,
-                bgPattern,
-                imageObjects,
-                textObjects,
-                shapeObjects,
-                laserPos
+                bgColor: state.bgColor,
+                bgPattern: state.bgPattern,
+                imageObjects: state.imageObjects,
+                textObjects: state.textObjects,
+                shapeObjects: state.shapeObjects,
+                laserPos: state.laserPos
             });
         };
 
@@ -575,7 +582,7 @@ export default function Whiteboard({
         return () => {
             socket.off('whiteboard:request-state', handleStateRequest);
         };
-    }, [isSharing, socket, sessionId, bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos]);
+    }, [isSharing, socket, sessionId]);
 
     // Granular sync for HTML overlay objects
     useEffect(() => {
@@ -4214,6 +4221,7 @@ export default function Whiteboard({
             {/* AV Recorder (Instructor Only) */}
             {isInstructor && (
                 <WhiteboardRecorder 
+                    socket={socket}
                     canvasRef={canvasRef} 
                     sessionId={sessionId || whiteboardId}
                     shapeObjects={shapeObjects}

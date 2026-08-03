@@ -3,7 +3,7 @@ import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play } from 'lucid
 import { toast } from 'react-hot-toast';
 import api from '@/lib/api';
 
-const WhiteboardRecorder = ({ canvasRef, sessionId, shapeObjects = [], textObjects = [], imageObjects = [], onRecordingComplete }) => {
+const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], textObjects = [], imageObjects = [], onRecordingComplete }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [hasCamera, setHasCamera] = useState(false);
     const [hasMic, setHasMic] = useState(false);
@@ -112,6 +112,10 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, shapeObjects = [], textObjec
         try {
             recordedChunksRef.current = [];
             
+            if (socket) {
+                socket.emit('whiteboard:recording-started', { sessionId, startTime: Date.now() });
+            }
+
             // Create a hidden composite canvas for recording
             const mainCanvas = canvasRef.current;
             // The canvas logical size (width/height attributes) is what we want to record
@@ -311,11 +315,15 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, shapeObjects = [], textObjec
     };
 
     const stopRecording = () => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        if (mediaRecorderRef.current && isRecording) {
             mediaRecorderRef.current.stop();
             setIsRecording(false);
             setIsPaused(false);
             
+            if (socket) {
+                socket.emit('whiteboard:recording-stopped', { sessionId });
+            }
+
             if (requestAnimationFrameRef.current) {
                 cancelAnimationFrame(requestAnimationFrameRef.current);
                 requestAnimationFrameRef.current = null;

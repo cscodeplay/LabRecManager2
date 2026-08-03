@@ -167,6 +167,9 @@ app.get('/api/health', async (req, res) => {
 
 const whiteboardChatHistory = new Map();
 
+// Store active host cameras: { sessionId: [socketId1, socketId2] }
+const activeHostCameras = {};
+
 // Socket.io connection handling for viva sessions
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -259,6 +262,57 @@ io.on('connection', (socket) => {
     // Leave the room
     socket.leave(`whiteboard-${sessionId}`);
     socket.whiteboardSession = null;
+  });
+
+  // Recording events
+  socket.on('whiteboard:recording-started', (data) => {
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:recording-started', data);
+  });
+
+  socket.on('whiteboard:recording-stopped', (data) => {
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:recording-stopped', data);
+  });
+
+  // WebRTC events
+  socket.on('whiteboard:camera-start', (data) => {
+    const { sessionId } = data;
+    if (!activeHostCameras[sessionId]) {
+      activeHostCameras[sessionId] = [];
+    }
+    
+    // Check if we are already at max 2 devices
+    if (!activeHostCameras[sessionId].includes(socket.id)) {
+      if (activeHostCameras[sessionId].length >= 2) {
+        socket.emit('whiteboard:camera-rejected', { reason: 'Maximum of 2 host cameras allowed' });
+        return;
+      }
+      activeHostCameras[sessionId].push(socket.id);
+    }
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:camera-start', data);
+  });
+
+  socket.on('whiteboard:camera-stop', (data) => {
+    const { sessionId } = data;
+    if (activeHostCameras[sessionId]) {
+      activeHostCameras[sessionId] = activeHostCameras[sessionId].filter(id => id !== socket.id);
+    }
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:camera-stop', data);
+  });
+
+  socket.on('whiteboard:webrtc-offer', (data) => {
+    io.to(data.targetSocketId).emit('whiteboard:webrtc-offer', { ...data, fromSocketId: socket.id });
+  });
+
+  socket.on('whiteboard:webrtc-answer', (data) => {
+    io.to(data.targetSocketId).emit('whiteboard:webrtc-answer', { ...data, fromSocketId: socket.id });
+  });
+
+  socket.on('whiteboard:webrtc-ice-candidate', (data) => {
+    io.to(data.targetSocketId).emit('whiteboard:webrtc-ice-candidate', { ...data, fromSocketId: socket.id });
+  });
+
+  socket.on('whiteboard:webrtc-join', (data) => {
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:webrtc-join', { ...data, fromSocketId: socket.id });
   });
 
   // Drawing event from instructor - broadcast to viewers

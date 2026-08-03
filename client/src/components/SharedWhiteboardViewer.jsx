@@ -1,8 +1,46 @@
 'use client';
 
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { Pencil, X, Maximize2, Minimize2, User } from 'lucide-react';
+import { Pencil, X, Maximize2, Minimize2, User, MicOff } from 'lucide-react';
 import WhiteboardChatWindow from '@/components/WhiteboardChatWindow';
+
+// Helper component to render a MediaStream
+const HostVideoRenderer = ({ stream }) => {
+    const videoRef = useRef(null);
+
+    useEffect(() => {
+        if (videoRef.current && stream) {
+            videoRef.current.srcObject = stream;
+        }
+    }, [stream]);
+
+    if (!stream) return null;
+
+    // Check if video track exists and is enabled
+    const hasVideo = stream.getVideoTracks().length > 0 && stream.getVideoTracks()[0].enabled;
+    const hasAudio = stream.getAudioTracks().length > 0 && stream.getAudioTracks()[0].enabled;
+
+    return (
+        <div className="relative w-48 h-36 bg-slate-900 rounded-lg overflow-hidden shadow-lg border-2 border-slate-700 m-2 pointer-events-auto">
+            <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                className={`w-full h-full object-cover ${hasVideo ? '' : 'hidden'}`}
+            />
+            {!hasVideo && (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
+                    <User className="w-12 h-12 text-slate-500" />
+                </div>
+            )}
+            {!hasAudio && (
+                <div className="absolute bottom-2 right-2 bg-red-500 rounded-full p-1 shadow-sm">
+                    <MicOff className="w-3 h-3 text-white" />
+                </div>
+            )}
+        </div>
+    );
+};
 
 export default function SharedWhiteboardViewer({
     isOpen,
@@ -26,6 +64,23 @@ export default function SharedWhiteboardViewer({
     const [textObjects, setTextObjects] = useState([]);
     const [shapeObjects, setShapeObjects] = useState([]);
     const [laserPos, setLaserPos] = useState(null);
+
+    // Host A/V state
+    const [hostStreams, setHostStreams] = useState({});
+    const peerConnectionsRef = useRef({});
+
+    // Recording state
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingStartTime, setRecordingStartTime] = useState(null);
+    const [recordingDuration, setRecordingDuration] = useState(0);
+
+    const formatDuration = (seconds) => {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = seconds % 60;
+        if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
 
     const getBackgroundStyle = () => {
         let backgroundImage = 'none';
@@ -226,6 +281,97 @@ export default function SharedWhiteboardViewer({
             setIsActive(false);
         };
 
+        const handleRecordingStarted = (data) => {
+            if (data.sessionId !== sessionId) return;
+            setIsRecording(true);
+            setRecordingStartTime(data.startTime);
+        };
+
+        const handleRecordingStopped = (data) => {
+            if (data.sessionId !== sessionId) return;
+            setIsRecording(false);
+            setRecordingStartTime(null);
+            setRecordingDuration(0);
+        };
+
+        const handleCameraStart = (data) => {
+            if (data.sessionId !== sessionId) return;
+            // The host has started their camera. We should connect to them via WebRTC.
+            socket.emit('whiteboard:webrtc-join', { sessionId });
+        };
+
+        const handleCameraStop = (data) => {
+            if (data.sessionId !== sessionId) return;
+            setHostStreams(prev => {
+                const next = { ...prev };
+                delete next[data.fromSocketId || 'unknown'];
+                // Since we don't always know fromSocketId cleanly here if the event didn't pass it,
+                // we might just clear everything if we assume single host, but we have max 2 limit.
+                // We actually don't need to do anything here because the peer connection will close and onremovetrack will fire.
+                return next;
+            });
+        };
+
+        const handleWebrtcOffer = async (data) => {
+            if (data.sessionId !== sessionId) return;
+            const targetSocketId = data.fromSocketId;
+            
+            let pc = peerConnectionsRef.current[targetSocketId];
+            if (!pc) {
+                pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.emit('whiteboard:webrtc-ice-candidate', {
+                            sessionId,
+                            targetSocketId,
+                            candidate: event.candidate
+                        });
+                    }
+                };
+
+                pc.ontrack = (event) => {
+                    setHostStreams(prev => ({
+                        ...prev,
+                        [targetSocketId]: event.streams[0]
+                    }));
+                };
+
+                pc.onconnectionstatechange = () => {
+                    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                        setHostStreams(prev => {
+                            const next = { ...prev };
+                            delete next[targetSocketId];
+                            return next;
+                        });
+                        delete peerConnectionsRef.current[targetSocketId];
+                    }
+                };
+
+                peerConnectionsRef.current[targetSocketId] = pc;
+            }
+
+            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            socket.emit('whiteboard:webrtc-answer', {
+                sessionId,
+                targetSocketId,
+                answer
+            });
+        };
+
+        const handleWebrtcIceCandidate = async (data) => {
+            if (data.sessionId !== sessionId) return;
+            const pc = peerConnectionsRef.current[data.fromSocketId];
+            if (pc && data.candidate) {
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
+        };
+
         socket.on('whiteboard:draw', handleDraw);
         socket.on('whiteboard:clear', handleClear);
         socket.on('whiteboard:background-change', handleBackgroundChange);
@@ -233,9 +379,17 @@ export default function SharedWhiteboardViewer({
         socket.on('whiteboard:objects-update', handleObjectsUpdate);
         socket.on('whiteboard:laser-update', handleLaserUpdate);
         socket.on('whiteboard:ended', handleEndSharing);
+        socket.on('whiteboard:recording-started', handleRecordingStarted);
+        socket.on('whiteboard:recording-stopped', handleRecordingStopped);
+        socket.on('whiteboard:camera-start', handleCameraStart);
+        socket.on('whiteboard:camera-stop', handleCameraStop);
+        socket.on('whiteboard:webrtc-offer', handleWebrtcOffer);
+        socket.on('whiteboard:webrtc-ice-candidate', handleWebrtcIceCandidate);
 
         // Request current canvas state when joining
         socket.emit('whiteboard:request-state', { sessionId });
+        // Request WebRTC connection if host already has camera on
+        socket.emit('whiteboard:webrtc-join', { sessionId });
 
         return () => {
             socket.off('whiteboard:draw', handleDraw);
@@ -245,8 +399,32 @@ export default function SharedWhiteboardViewer({
             socket.off('whiteboard:objects-update', handleObjectsUpdate);
             socket.off('whiteboard:laser-update', handleLaserUpdate);
             socket.off('whiteboard:ended', handleEndSharing);
+            socket.off('whiteboard:recording-started', handleRecordingStarted);
+            socket.off('whiteboard:recording-stopped', handleRecordingStopped);
+            socket.off('whiteboard:camera-start', handleCameraStart);
+            socket.off('whiteboard:camera-stop', handleCameraStop);
+            socket.off('whiteboard:webrtc-offer', handleWebrtcOffer);
+            socket.off('whiteboard:webrtc-ice-candidate', handleWebrtcIceCandidate);
+            
+            // Clean up peer connections
+            Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
+            peerConnectionsRef.current = {};
         };
     }, [socket, sessionId]);
+
+    // Update recording duration locally
+    useEffect(() => {
+        let interval;
+        if (isRecording && recordingStartTime) {
+            interval = setInterval(() => {
+                setRecordingDuration(Math.floor((Date.now() - recordingStartTime) / 1000));
+            }, 1000);
+        } else {
+            setRecordingDuration(0);
+        }
+        return () => clearInterval(interval);
+    }, [isRecording, recordingStartTime]);
+
 
     if (!isOpen) return null;
 
@@ -301,6 +479,13 @@ export default function SharedWhiteboardViewer({
                     </div>
                 );
             })}
+
+            {/* Host Video Streams overlay */}
+            <div className="absolute top-4 right-4 flex flex-col gap-2 z-50">
+                {Object.values(hostStreams).map((stream, idx) => (
+                    <HostVideoRenderer key={stream.id || idx} stream={stream} />
+                ))}
+            </div>
         </div>
     );
 
@@ -321,6 +506,12 @@ export default function SharedWhiteboardViewer({
                                     <span className="flex items-center gap-1 text-xs bg-red-500 px-2 py-0.5 rounded-full">
                                         <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
                                         LIVE
+                                    </span>
+                                )}
+                                {isRecording && (
+                                    <span className="flex items-center gap-1 text-xs bg-red-600 px-2 py-0.5 rounded-full shadow-sm border border-red-400">
+                                        <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                                        {formatDuration(recordingDuration)}
                                     </span>
                                 )}
                             </h3>
@@ -395,6 +586,12 @@ export default function SharedWhiteboardViewer({
                                     <span className="flex items-center gap-1 text-xs bg-red-500 px-2 py-0.5 rounded-full">
                                         <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
                                         LIVE
+                                    </span>
+                                )}
+                                {isRecording && (
+                                    <span className="flex items-center gap-1 text-xs bg-red-600 px-2 py-0.5 rounded-full shadow-sm border border-red-400">
+                                        <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                                        {formatDuration(recordingDuration)}
                                     </span>
                                 )}
                             </h3>
