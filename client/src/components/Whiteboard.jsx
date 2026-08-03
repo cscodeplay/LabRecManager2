@@ -564,9 +564,6 @@ export default function Whiteboard({
         // Send immediately when sharing starts
         sendCanvasState();
 
-        // Also send periodically to keep viewers in sync (every 2 seconds)
-        const intervalId = setInterval(sendCanvasState, 2000);
-
         // Listen for state requests from new viewers
         const handleStateRequest = (data) => {
             if (data.sessionId === sessionId) {
@@ -576,10 +573,21 @@ export default function Whiteboard({
         socket.on('whiteboard:request-state', handleStateRequest);
 
         return () => {
-            clearInterval(intervalId);
             socket.off('whiteboard:request-state', handleStateRequest);
         };
     }, [isSharing, socket, sessionId, bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos]);
+
+    // Granular sync for HTML overlay objects
+    useEffect(() => {
+        if (!isSharing || !socket || !sessionId) return;
+        socket.emit('whiteboard:objects-update', {
+            sessionId,
+            imageObjects,
+            textObjects,
+            shapeObjects
+        });
+    }, [isSharing, socket, sessionId, imageObjects, textObjects, shapeObjects]);
+
 
     // Save current state to history
     const saveToHistory = useCallback(() => {
@@ -1305,13 +1313,14 @@ export default function Whiteboard({
                 clearTimeout(laserTimeoutRef.current);
             }
             // Emit laser position
-            emitDrawEvent({
-                type: 'laser',
-                x: pos.x,
-                y: pos.y
-            });
+            if (isSharing && socket && sessionId) {
+                socket.emit('whiteboard:laser-update', {
+                    sessionId,
+                    laserPos: pos
+                });
+            }
         }
-    }, [getPosition, tool, color, strokeWidth, eraserSize, highlighterColor, emitDrawEvent]);
+    }, [getPosition, tool, color, strokeWidth, eraserSize, highlighterColor, emitDrawEvent, isSharing, socket, sessionId]);
 
     // Handle text submission - creates a text object for manipulation
     const handleTextSubmit = useCallback(() => {
@@ -1504,13 +1513,14 @@ export default function Whiteboard({
                 clearTimeout(laserTimeoutRef.current);
             }
             laserTimeoutRef.current = setTimeout(() => setLaserPos(null), 1500);
-            emitDrawEvent({
-                type: 'laser',
-                x: pos.x,
-                y: pos.y
-            });
+            if (isSharing && socket && sessionId) {
+                socket.emit('whiteboard:laser-update', {
+                    sessionId,
+                    laserPos: pos
+                });
+            }
         }
-    }, [isDrawing, getPosition, tool, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, emitDrawEvent]);
+    }, [isDrawing, getPosition, tool, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, emitDrawEvent, isSharing, socket, sessionId]);
 
     // Stop drawing
     const stopDrawing = useCallback((e) => {
@@ -4206,6 +4216,9 @@ export default function Whiteboard({
                 <WhiteboardRecorder 
                     canvasRef={canvasRef} 
                     sessionId={sessionId || whiteboardId}
+                    shapeObjects={shapeObjects}
+                    textObjects={textObjects}
+                    imageObjects={imageObjects}
                     onRecordingComplete={(data) => {
                         console.log('Recording complete:', data);
                     }}

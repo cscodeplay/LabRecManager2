@@ -3,7 +3,7 @@ import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play } from 'lucid
 import { toast } from 'react-hot-toast';
 import api from '@/lib/api';
 
-const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
+const WhiteboardRecorder = ({ canvasRef, sessionId, shapeObjects = [], textObjects = [], imageObjects = [], onRecordingComplete }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [hasCamera, setHasCamera] = useState(false);
     const [hasMic, setHasMic] = useState(false);
@@ -139,7 +139,70 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, onRecordingComplete }) => {
                 
                 // Draw whiteboard
                 compositeCtx.drawImage(mainCanvas, 0, 0);
-                
+
+                // Draw image objects
+                imageObjects.forEach(imgObj => {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.src = imgObj.src;
+                    compositeCtx.save();
+                    const centerX = imgObj.x + imgObj.width / 2;
+                    const centerY = imgObj.y + imgObj.height / 2;
+                    compositeCtx.translate(centerX, centerY);
+                    compositeCtx.rotate((imgObj.rotation || 0) * Math.PI / 180);
+                    compositeCtx.drawImage(img, -imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
+                    compositeCtx.restore();
+                });
+
+                // Draw shape objects
+                shapeObjects.forEach(shpObj => {
+                    compositeCtx.save();
+                    compositeCtx.translate(shpObj.x, shpObj.y);
+                    compositeCtx.strokeStyle = shpObj.color;
+                    compositeCtx.lineWidth = shpObj.strokeWidth;
+                    compositeCtx.fillStyle = shpObj.fillColor || 'transparent';
+
+                    compositeCtx.beginPath();
+                    if (shpObj.type === 'rectangle') {
+                        compositeCtx.rect(0, 0, shpObj.width, shpObj.height);
+                    } else if (shpObj.type === 'circle') {
+                        compositeCtx.ellipse(shpObj.width / 2, shpObj.height / 2, shpObj.width / 2, shpObj.height / 2, 0, 0, 2 * Math.PI);
+                    } else if (shpObj.type === 'triangle') {
+                        compositeCtx.moveTo(shpObj.width / 2, 0);
+                        compositeCtx.lineTo(0, shpObj.height);
+                        compositeCtx.lineTo(shpObj.width, shpObj.height);
+                        compositeCtx.closePath();
+                    }
+                    if (shpObj.fillColor) compositeCtx.fill();
+                    compositeCtx.stroke();
+                    compositeCtx.restore();
+                });
+
+                // Draw text objects
+                textObjects.forEach(txtObj => {
+                    compositeCtx.save();
+                    const centerX = txtObj.x + txtObj.width / 2;
+                    const centerY = txtObj.y + txtObj.height / 2;
+                    compositeCtx.translate(centerX, centerY);
+                    compositeCtx.rotate((txtObj.rotation || 0) * Math.PI / 180);
+
+                    compositeCtx.font = `${txtObj.fontStyle || 'normal'} ${txtObj.fontWeight || 'normal'} ${txtObj.fontSize}px ${txtObj.fontFamily || 'sans-serif'}`;
+                    compositeCtx.fillStyle = txtObj.color;
+                    compositeCtx.textAlign = txtObj.textAlign || 'left';
+                    compositeCtx.textBaseline = 'top';
+
+                    const lines = txtObj.text.split('\n');
+                    const lineHeight = txtObj.fontSize * 1.3;
+                    const startX = -txtObj.width / 2 + 8;
+                    let startY = -txtObj.height / 2 + 8;
+
+                    lines.forEach(line => {
+                        compositeCtx.fillText(line, startX, startY);
+                        startY += lineHeight;
+                    });
+                    compositeCtx.restore();
+                });
+
                 // Draw camera if active and ready
                 if (hasCamera && videoPreviewRef.current && videoPreviewRef.current.readyState >= 2) {
                     const videoWidth = 192; // Match the CSS width

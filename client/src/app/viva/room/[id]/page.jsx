@@ -1823,7 +1823,7 @@ export default function VivaRoomPage() {
 
             {/* Whiteboard Modal */}
             {showWhiteboard && (
-                <div className={`fixed z-50 ${whiteboardFullscreen ? 'inset-0' : 'inset-4 md:inset-8 lg:inset-12'} flex items-center justify-center`}>
+                <div className={`fixed z-[9999] ${whiteboardFullscreen ? 'inset-0' : 'inset-4 md:inset-8 lg:inset-12'} flex items-center justify-center`}>
                     <div
                         className="absolute inset-0 bg-black/50"
                         onClick={() => !whiteboardFullscreen && setShowWhiteboard(false)}

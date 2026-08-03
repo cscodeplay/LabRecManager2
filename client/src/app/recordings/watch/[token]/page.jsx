@@ -144,7 +144,7 @@ export default function WatchRecordingPage() {
                         src={recording.cloudinaryUrl}
                         controls
                         autoPlay
-                        className="w-full aspect-video"
+                        className="w-full h-auto max-h-[80vh] object-contain"
                         controlsList="nodownload"
                     />
                 </div>

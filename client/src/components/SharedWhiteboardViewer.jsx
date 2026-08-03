@@ -209,7 +209,18 @@ export default function SharedWhiteboardViewer({
             img.src = data.imageData;
         };
 
-        // Handle end sharing
+        const handleObjectsUpdate = (data) => {
+            if (data.sessionId !== sessionId) return;
+            if (data.imageObjects) setImageObjects(data.imageObjects);
+            if (data.textObjects) setTextObjects(data.textObjects);
+            if (data.shapeObjects) setShapeObjects(data.shapeObjects);
+        };
+
+        const handleLaserUpdate = (data) => {
+            if (data.sessionId !== sessionId) return;
+            setLaserPos(data.laserPos);
+        };
+
         const handleEndSharing = (data) => {
             if (data.sessionId !== sessionId) return;
             setIsActive(false);
@@ -219,6 +230,8 @@ export default function SharedWhiteboardViewer({
         socket.on('whiteboard:clear', handleClear);
         socket.on('whiteboard:background-change', handleBackgroundChange);
         socket.on('whiteboard:canvas-state', handleCanvasState);
+        socket.on('whiteboard:objects-update', handleObjectsUpdate);
+        socket.on('whiteboard:laser-update', handleLaserUpdate);
         socket.on('whiteboard:ended', handleEndSharing);
 
         // Request current canvas state when joining
@@ -229,6 +242,8 @@ export default function SharedWhiteboardViewer({
             socket.off('whiteboard:clear', handleClear);
             socket.off('whiteboard:background-change', handleBackgroundChange);
             socket.off('whiteboard:canvas-state', handleCanvasState);
+            socket.off('whiteboard:objects-update', handleObjectsUpdate);
+            socket.off('whiteboard:laser-update', handleLaserUpdate);
             socket.off('whiteboard:ended', handleEndSharing);
         };
     }, [socket, sessionId]);

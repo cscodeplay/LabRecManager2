@@ -80,7 +80,7 @@ router.post('/upload', authenticate, authorize('instructor', 'admin', 'lab_assis
             cloudinaryId: result.public_id,
             cloudinaryUrl: result.secure_url,
             thumbnailUrl: result.eager?.[0]?.secure_url || null,
-            duration: parseInt(duration) || null,
+            duration: Math.round(result.duration) || parseInt(duration) || 0,
             fileSize: result.bytes,
             shareToken,
             isPublic: true

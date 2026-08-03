@@ -130,7 +130,7 @@ router.post('/screenshot', authenticate, upload.single('file'), asyncHandler(asy
     try {
         // Upload to Cloudinary
         const result = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
+            const uploadStream = require('cloudinary').v2.uploader.upload_stream(
                 { folder: `labrec/${schoolId}/screenshots`, resource_type: 'image' },
                 (error, result) => {
                     if (error) reject(error);

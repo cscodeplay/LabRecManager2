@@ -299,6 +299,26 @@ io.on('connection', (socket) => {
     });
   });
 
+  // Granular update for HTML overlay objects (shapes, text, images)
+  socket.on('whiteboard:objects-update', (data) => {
+    const { sessionId, imageObjects, textObjects, shapeObjects } = data;
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:objects-update', {
+      sessionId,
+      imageObjects,
+      textObjects,
+      shapeObjects
+    });
+  });
+
+  // Real-time laser pointer position
+  socket.on('whiteboard:laser-update', (data) => {
+    const { sessionId, laserPos } = data;
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:laser-update', {
+      sessionId,
+      laserPos
+    });
+  });
+
   // Student requests current canvas state when joining (Enforces 1 active classroom session lock per student)
   socket.on('whiteboard:request-state', (data) => {
     const { sessionId } = data;
