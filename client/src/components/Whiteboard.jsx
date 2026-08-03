@@ -6,7 +6,7 @@ import {
     Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2, Sparkles, Wand2,
     Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
     Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, Scan,
-    Triangle, Star, Hexagon, Scissors, Copy, Files, ClipboardPaste, LineChart // For shapes and toolbars
+    Triangle, Star, Hexagon, Scissors, Copy, Files, ClipboardPaste, LineChart, CalendarClock // For shapes and toolbars
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -102,7 +102,7 @@ function ScreenshotPickerModal({ onClose, onSelect }) {
             try {
                 const token = localStorage.getItem('token');
                 // The category might be "Screenshot" as defined in the backend
-                const res = await fetch('/api/documents?category=Screenshot', {
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/documents?category=Screenshot`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await res.json();
@@ -602,28 +602,61 @@ export default function Whiteboard({
         if (!canvas) return;
 
         const imageData = canvas.toDataURL();
+        const currentImages = pageImageObjects[currentPage] ? [...pageImageObjects[currentPage]] : [];
+        const currentTexts = pageTextObjects[currentPage] ? [...pageTextObjects[currentPage]] : [];
+        const currentShapes = pageShapeObjects[currentPage] ? [...pageShapeObjects[currentPage]] : [];
 
         setHistory(prev => {
             const newHistory = prev.slice(0, historyIndex + 1);
-            newHistory.push(imageData);
+            newHistory.push({
+                imageData,
+                imageObjects: currentImages,
+                textObjects: currentTexts,
+                shapeObjects: currentShapes
+            });
             return newHistory.slice(-50); // Keep last 50 states
         });
         setHistoryIndex(prev => Math.min(prev + 1, 49));
-    }, [historyIndex]);
+    }, [historyIndex, pageImageObjects, pageTextObjects, pageShapeObjects, currentPage]);
 
     // Restore state from history
     const restoreFromHistory = useCallback((index) => {
         const canvas = canvasRef.current;
         if (!canvas || !history[index]) return;
 
+        const stateSnapshot = history[index];
+        const imgData = typeof stateSnapshot === 'string' ? stateSnapshot : stateSnapshot.imageData;
+
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         const img = new Image();
         img.onload = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0);
+            
+            if (isSharing && socket && sessionId) {
+                socket.emit('whiteboard:canvas-state', {
+                    sessionId,
+                    imageData: imgData
+                });
+            }
         };
-        img.src = history[index];
-    }, [history]);
+        img.src = imgData;
+
+        if (typeof stateSnapshot === 'object') {
+            setPageImageObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.imageObjects }));
+            setPageTextObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.textObjects }));
+            setPageShapeObjects(prev => ({ ...prev, [currentPage]: stateSnapshot.shapeObjects }));
+            
+            if (isSharing && socket && sessionId) {
+                socket.emit('whiteboard:objects-update', {
+                    sessionId,
+                    imageObjects: stateSnapshot.imageObjects,
+                    textObjects: stateSnapshot.textObjects,
+                    shapeObjects: stateSnapshot.shapeObjects
+                });
+            }
+        }
+    }, [history, currentPage, isSharing, socket, sessionId]);
 
     // Undo
     const handleUndo = useCallback(() => {
@@ -1946,7 +1979,7 @@ export default function Whiteboard({
 
             try {
                 const token = localStorage.getItem('token');
-                const res = await fetch('/api/whiteboard/screenshot', {
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/screenshot`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`
@@ -2022,6 +2055,25 @@ export default function Whiteboard({
         if (tool === 'arrow') return 'crosshair';
         return 'crosshair';
     };
+
+    // Insert DateTime Text
+    const handleInsertDateTime = useCallback(() => {
+        const now = new Date();
+        const formatted = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' }) + ' - ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        
+        const newText = {
+            id: Date.now(),
+            text: formatted,
+            x: 20,
+            y: 20,
+            color: color || '#000000',
+            fontSize: Math.max(16, strokeWidth * 6),
+            isEditing: false
+        };
+        
+        setTextObjects(prev => [...prev, newText]);
+        saveToHistory();
+    }, [color, strokeWidth, saveToHistory, setTextObjects]);
 
     // Page navigation functions
     const saveCurrentPage = useCallback(() => {
@@ -2182,10 +2234,15 @@ export default function Whiteboard({
                             { id: 'text', icon: Type, label: 'Text' },
                             { id: 'image', icon: ImageIcon, label: 'Image' },
                             { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
+                            { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime' },
                         ].map(t => (
                             <div key={t.id} className="relative">
                                 <button
                                     onClick={() => {
+                                        if (t.id === 'datetime') {
+                                            handleInsertDateTime();
+                                            return;
+                                        }
                                         if (tool === t.id) {
                                             // Re-click to open popup
                                             if (t.id === 'pen') setShowStrokePicker(!showStrokePicker);
