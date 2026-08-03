@@ -258,9 +258,9 @@ export default function Whiteboard({
         }
     }, [currentPage, isSharing, socket, sessionId, bgPattern]);
 
-    // History for undo/redo
-    const [history, setHistory] = useState([]);
-    const [historyIndex, setHistoryIndex] = useState(-1);
+    // Undo/Redo page-specific history
+    const [pageHistories, setPageHistories] = useState({ 0: [] });
+    const [pageHistoryIndices, setPageHistoryIndices] = useState({ 0: -1 });
 
     // Drawing state
     const [startPos, setStartPos] = useState({ x: 0, y: 0 });
@@ -310,6 +310,7 @@ export default function Whiteboard({
     // Text objects for manipulation (like images)
     const [pageTextObjects, setPageTextObjects] = useState({ 0: [] });
     const [selectedTextId, setSelectedTextId] = useState(null);
+    const [selectedShapeIds, setSelectedShapeIds] = useState([]);
     const [editingTextId, setEditingTextId] = useState(null); // For double-click edit mode
     const [textDragState, setTextDragState] = useState(null);
     const [textInputMode, setTextInputMode] = useState('create'); // 'create' or 'edit'
@@ -323,8 +324,6 @@ export default function Whiteboard({
     
     // Shape objects for manipulation
     const [pageShapeObjects, setPageShapeObjects] = useState({ 0: [] });
-    const [selectedShapeId, setSelectedShapeId] = useState(null);
-    const [shapeDragState, setShapeDragState] = useState(null);
     const [editingShapeTextId, setEditingShapeTextId] = useState(null);
 
     // OCR toggle
@@ -602,25 +601,38 @@ export default function Whiteboard({
         const currentTexts = pageTextObjects[currentPage] ? [...pageTextObjects[currentPage]] : [];
         const currentShapes = pageShapeObjects[currentPage] ? [...pageShapeObjects[currentPage]] : [];
 
-        setHistory(prev => {
-            const newHistory = prev.slice(0, historyIndex + 1);
+        setPageHistories(prev => {
+            const currentHistory = prev[currentPage] || [];
+            const currentIndex = pageHistoryIndices[currentPage] !== undefined ? pageHistoryIndices[currentPage] : -1;
+            const newHistory = currentHistory.slice(0, currentIndex + 1);
             newHistory.push({
                 imageData,
                 imageObjects: currentImages,
                 textObjects: currentTexts,
                 shapeObjects: currentShapes
             });
-            return newHistory.slice(-50); // Keep last 50 states
+            return {
+                ...prev,
+                [currentPage]: newHistory.slice(-50) // Keep last 50 states
+            };
         });
-        setHistoryIndex(prev => Math.min(prev + 1, 49));
-    }, [historyIndex, pageImageObjects, pageTextObjects, pageShapeObjects, currentPage]);
+        
+        setPageHistoryIndices(prev => {
+            const currentIndex = prev[currentPage] !== undefined ? prev[currentPage] : -1;
+            return {
+                ...prev,
+                [currentPage]: Math.min(currentIndex + 1, 49)
+            };
+        });
+    }, [pageHistoryIndices, pageImageObjects, pageTextObjects, pageShapeObjects, currentPage]);
 
     // Restore state from history
     const restoreFromHistory = useCallback((index) => {
         const canvas = canvasRef.current;
-        if (!canvas || !history[index]) return;
+        const currentHistory = pageHistories[currentPage] || [];
+        if (!canvas || !currentHistory[index]) return;
 
-        const stateSnapshot = history[index];
+        const stateSnapshot = currentHistory[index];
         const imgData = typeof stateSnapshot === 'string' ? stateSnapshot : stateSnapshot.imageData;
 
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -652,25 +664,28 @@ export default function Whiteboard({
                 });
             }
         }
-    }, [history, currentPage, isSharing, socket, sessionId]);
+    }, [pageHistories, currentPage, isSharing, socket, sessionId]);
 
     // Undo
     const handleUndo = useCallback(() => {
-        if (historyIndex > 0) {
-            const newIndex = historyIndex - 1;
-            setHistoryIndex(newIndex);
+        const currentIndex = pageHistoryIndices[currentPage] !== undefined ? pageHistoryIndices[currentPage] : -1;
+        if (currentIndex > 0) {
+            const newIndex = currentIndex - 1;
+            setPageHistoryIndices(prev => ({ ...prev, [currentPage]: newIndex }));
             restoreFromHistory(newIndex);
         }
-    }, [historyIndex, restoreFromHistory]);
+    }, [pageHistoryIndices, currentPage, restoreFromHistory]);
 
     // Redo
     const handleRedo = useCallback(() => {
-        if (historyIndex < history.length - 1) {
-            const newIndex = historyIndex + 1;
-            setHistoryIndex(newIndex);
+        const currentIndex = pageHistoryIndices[currentPage] !== undefined ? pageHistoryIndices[currentPage] : -1;
+        const currentHistory = pageHistories[currentPage] || [];
+        if (currentIndex < currentHistory.length - 1) {
+            const newIndex = currentIndex + 1;
+            setPageHistoryIndices(prev => ({ ...prev, [currentPage]: newIndex }));
             restoreFromHistory(newIndex);
         }
-    }, [historyIndex, history.length, restoreFromHistory]);
+    }, [pageHistoryIndices, pageHistories, currentPage, restoreFromHistory]);
 
     // Clear canvas
     const handleClear = useCallback(() => {
@@ -687,7 +702,8 @@ export default function Whiteboard({
         setShapeObjects([]);
         setSelectedImageId(null);
         setSelectedTextId(null);
-        setSelectedShapeId(null);
+        setSelectedShapeIds([]);
+        setEditingTextId(null);
 
         saveToHistory();
     }, [saveToHistory]);
@@ -865,11 +881,8 @@ export default function Whiteboard({
         if (selectedTextId || editingTextId) {
             const activeId = editingTextId || selectedTextId;
             setTextObjects(prev => prev.map(t => t.id === activeId ? { ...t, color: newColor } : t));
-        } else if (selectedShapeId) {
-            setShapeObjects(prev => prev.map(s => s.id === selectedShapeId ? { ...s, color: newColor } : s));
-        } else {
-            setTextObjects(prev => prev.map(t => ({ ...t, color: newColor })));
-            setShapeObjects(prev => prev.map(s => ({ ...s, color: newColor })));
+        } else if (selectedShapeIds.length > 0) {
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, color: newColor } : s));
         }
 
         // Add to recently used (move to front, keep 9 max)
@@ -921,30 +934,31 @@ export default function Whiteboard({
         } else if (selectedTextId) {
             setTextObjects(prev => prev.filter(txt => txt.id !== selectedTextId));
             setSelectedTextId(null);
-        } else if (selectedShapeId) {
-            setShapeObjects(prev => prev.filter(shp => shp.id !== selectedShapeId));
-            setSelectedShapeId(null);
+        } else if (selectedShapeIds.length > 0) {
+            setShapeObjects(prev => prev.filter(shp => !selectedShapeIds.includes(shp.id)));
+            setSelectedShapeIds([]);
         } else if (selection) {
             handleDeleteSelection();
         }
         saveToHistory();
-    }, [selectedImageId, selectedTextId, selectedShapeId, selection, handleDeleteSelection, saveToHistory]);
+    }, [selectedImageId, selectedTextId, selectedShapeIds, selection, handleDeleteSelection, saveToHistory]);
 
     // Unified Copy
     const handleCopy = useCallback(() => {
+        let objToCopy = null;
         if (selectedImageId) {
-            const img = imageObjects.find(i => i.id === selectedImageId);
-            if (img) setClipboardHistory(prev => [{ id: Date.now(), type: 'image', data: { ...img }, dataURL: img.src }, ...prev].slice(0, 10));
+            objToCopy = imageObjects.find(img => img.id === selectedImageId);
+            if (objToCopy) setClipboardHistory(prev => [{ id: Date.now(), type: 'image', data: { ...objToCopy }, dataURL: objToCopy.src }, ...prev].slice(0, 10));
         } else if (selectedTextId) {
-            const txt = textObjects.find(t => t.id === selectedTextId);
-            if (txt) setClipboardHistory(prev => [{ id: Date.now(), type: 'text', data: { ...txt } }, ...prev].slice(0, 10));
-        } else if (selectedShapeId) {
-            const shp = shapeObjects.find(s => s.id === selectedShapeId);
-            if (shp) setClipboardHistory(prev => [{ id: Date.now(), type: 'shape', data: { ...shp } }, ...prev].slice(0, 10));
+            objToCopy = textObjects.find(t => t.id === selectedTextId);
+            if (objToCopy) setClipboardHistory(prev => [{ id: Date.now(), type: 'text', data: { ...objToCopy } }, ...prev].slice(0, 10));
+        } else if (selectedShapeIds.length > 0) {
+            objToCopy = shapeObjects.find(s => selectedShapeIds.includes(s.id));
+            if (objToCopy) setClipboardHistory(prev => [{ id: Date.now(), type: 'shape', data: { ...objToCopy } }, ...prev].slice(0, 10));
         } else if (selection) {
             handleCopySelection();
         }
-    }, [selectedImageId, selectedTextId, selectedShapeId, selection, imageObjects, textObjects, shapeObjects, handleCopySelection]);
+    }, [selectedImageId, selectedTextId, selectedShapeIds, selection, imageObjects, textObjects, shapeObjects, handleCopySelection]);
 
     // Unified Cut
     const handleCut = useCallback(() => {
@@ -971,7 +985,7 @@ export default function Whiteboard({
             const activeTag = document.activeElement.tagName.toLowerCase();
             const isInput = activeTag === 'input' || activeTag === 'textarea';
 
-            if (isInput && !selectedTextId && !selectedShapeId) return; // let default inputs work
+            if (isInput && !selectedTextId && selectedShapeIds.length === 0) return; // let default inputs work
 
             if (modKey && e.key.toLowerCase() === 'c') {
                 e.preventDefault();
@@ -988,7 +1002,7 @@ export default function Whiteboard({
                 e.preventDefault();
                 handleDuplicate();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (!isInput || selectedImageId || selection) {
+                if (!isInput || selectedImageId || selection || selectedShapeIds.length > 0) {
                     // Only prevent backspace/delete if not in an input, OR if we have an image/selection active (which can't be typed into)
                     e.preventDefault();
                     handleDelete();
@@ -996,14 +1010,13 @@ export default function Whiteboard({
             } else if (e.key === 'Escape') {
                 setSelectedImageId(null);
                 setSelectedTextId(null);
-                setSelectedShapeId(null);
-                setSelection(null);
+                setSelectedShapeIds([]);
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageId, selectedTextId, selectedShapeId, selection, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete]);
+    }, [selectedImageId, selectedTextId, selectedShapeIds, selection, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete]);
 
     // Image manipulation mouse handlers
     useEffect(() => {
@@ -1242,7 +1255,7 @@ export default function Whiteboard({
         setSelectedImageId(null);
         setSelectedTextId(null);
         setEditingTextId(null);
-        setSelectedShapeId(null);
+        setSelectedShapeIds([]);
     }, []);
 
     // Get position from event (works for both mouse and touch)
@@ -1795,7 +1808,7 @@ export default function Whiteboard({
                 };
                 
                 setShapeObjects(prev => [...prev, newShapeObj]);
-                setSelectedShapeId(newShapeObj.id);
+                setSelectedShapeIds([newShapeObj.id]);
                 saveToHistory();
 
                 // Emit event to network
@@ -2798,17 +2811,17 @@ export default function Whiteboard({
                     <div className="flex items-center gap-0.5">
                         <button
                             onClick={handleUndo}
-                            disabled={historyIndex <= 0}
                             className="p-1 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
                             title="Undo"
+                            disabled={(pageHistoryIndices[currentPage] !== undefined ? pageHistoryIndices[currentPage] : -1) <= 0}
                         >
                             <Undo2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                             onClick={handleRedo}
-                            disabled={historyIndex >= history.length - 1}
                             className="p-1 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
                             title="Redo"
+                            disabled={(pageHistoryIndices[currentPage] !== undefined ? pageHistoryIndices[currentPage] : -1) >= ((pageHistories[currentPage] || []).length - 1)}
                         >
                             <Redo2 className="w-3.5 h-3.5" />
                         </button>
@@ -3269,7 +3282,9 @@ export default function Whiteboard({
                                             className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                deleteSelectedImage();
+                                                setImageObjects(prev => prev.filter(i => i.id !== imgObj.id));
+                                                setSelectedImageId(null);
+                                                saveToHistory();
                                             }}
                                         >
                                             <X className="w-3 h-3 text-white" />
@@ -3746,7 +3761,7 @@ export default function Whiteboard({
 
                     {/* Shape Objects Layer - Selectable, Movable, Resizable, Rotatable */}
                     {shapeObjects.map((shpObj) => {
-                        const isSelected = selectedShapeId === shpObj.id;
+                        const isSelected = selectedShapeIds.includes(shpObj.id);
                         const handleSize = 10;
                         const renderShapeSVG = () => {
                             const fill = shpObj.fillColor || 'transparent';
@@ -3806,17 +3821,16 @@ export default function Whiteboard({
                                     zIndex: isSelected ? 20 : 10,
                                     pointerEvents: tool === 'select' || isSelected ? 'auto' : 'none',
                                 }}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedShapeId(shpObj.id);
-                                    setSelectedImageId(null);
-                                    setSelectedTextId(null);
-                                    setEditingTextId(null);
-                                }}
-                                onMouseDown={(e) => {
-                                    if (!isSelected) {
+                                onPointerDown={(e) => {
+                                    if (tool === 'select') {
                                         e.stopPropagation();
-                                        setSelectedShapeId(shpObj.id);
+                                        if (e.ctrlKey || e.metaKey) {
+                                            setSelectedShapeIds(prev => prev.includes(shpObj.id) ? prev.filter(id => id !== shpObj.id) : [...prev, shpObj.id]);
+                                        } else {
+                                            setSelectedShapeIds([shpObj.id]);
+                                        }
+                                    }
+                                    if (tool === 'select' || tool === 'laser') {
                                         setSelectedImageId(null);
                                         setSelectedTextId(null);
                                         setEditingTextId(null);
@@ -3878,7 +3892,7 @@ export default function Whiteboard({
                                             <input
                                                 type="color"
                                                 value={shpObj.color}
-                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, color: e.target.value } : s))}
+                                                onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, color: e.target.value } : s))}
                                                 className="w-7 h-7 p-0.5 border border-slate-700 rounded cursor-pointer bg-slate-800"
                                                 title="Border Color"
                                             />
@@ -3887,12 +3901,12 @@ export default function Whiteboard({
                                                 <input
                                                     type="color"
                                                     value={shpObj.fillColor || '#ffffff'}
-                                                    onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fillColor: e.target.value } : s))}
+                                                    onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: e.target.value } : s))}
                                                     className="w-7 h-7 p-0.5 border border-slate-700 rounded cursor-pointer bg-slate-800"
                                                     title="Fill Color"
                                                 />
                                                 <button
-                                                    onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fillColor: 'transparent' } : s))}
+                                                    onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: 'transparent' } : s))}
                                                     className="absolute -top-6 left-0 text-xs bg-slate-900 text-white px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap border border-slate-700 pointer-events-none group-hover:pointer-events-auto transition-opacity"
                                                 >
                                                     Clear Fill
@@ -3901,7 +3915,7 @@ export default function Whiteboard({
                                             {/* Stroke Width */}
                                             <select
                                                 value={shpObj.strokeWidth}
-                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, strokeWidth: parseInt(e.target.value) } : s))}
+                                                onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, strokeWidth: parseInt(e.target.value) } : s))}
                                                 className="h-7 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white outline-none"
                                                 title="Border Width"
                                             >
@@ -3914,49 +3928,46 @@ export default function Whiteboard({
                                             <input
                                                 type="color"
                                                 value={shpObj.textColor || shpObj.color}
-                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, textColor: e.target.value } : s))}
+                                                onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, textColor: e.target.value } : s))}
                                                 className="w-7 h-7 p-0.5 border border-slate-700 rounded cursor-pointer bg-slate-800"
                                                 title="Text Color"
                                             />
                                             {/* Font Family */}
                                             <select
                                                 value={shpObj.fontFamily || 'sans-serif'}
-                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontFamily: e.target.value } : s))}
-                                                className="h-7 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white w-20 outline-none"
-                                                title="Font Family"
+                                                onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontFamily: e.target.value } : s))}
+                                                className="h-7 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white outline-none w-24"
                                             >
-                                                <option value="sans-serif">Sans</option>
+                                                <option value="sans-serif">Sans Serif</option>
                                                 <option value="serif">Serif</option>
-                                                <option value="monospace">Mono</option>
+                                                <option value="monospace">Monospace</option>
                                                 <option value="cursive">Cursive</option>
                                             </select>
-                                            {/* Bold */}
+                                            
                                             <button
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontWeight: s.fontWeight === 'bold' ? 'normal' : 'bold' } : s))}
-                                                className={`w-7 h-7 flex items-center justify-center rounded text-sm font-bold transition-colors ${shpObj.fontWeight === 'bold' ? 'bg-primary-500/20 text-primary-400' : 'hover:bg-white/10'}`}
+                                                onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontWeight: s.fontWeight === 'bold' ? 'normal' : 'bold' } : s))}
+                                                className={`p-1 rounded ${shpObj.fontWeight === 'bold' ? 'bg-slate-700' : 'hover:bg-slate-800'}`}
                                                 title="Bold"
                                             >
-                                                B
+                                                <span className="font-bold">B</span>
                                             </button>
-                                            {/* Italic */}
                                             <button
-                                                onClick={() => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontStyle: s.fontStyle === 'italic' ? 'normal' : 'italic' } : s))}
-                                                className={`w-7 h-7 flex items-center justify-center rounded text-sm italic transition-colors ${shpObj.fontStyle === 'italic' ? 'bg-primary-500/20 text-primary-400' : 'hover:bg-white/10'}`}
+                                                onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontStyle: s.fontStyle === 'italic' ? 'normal' : 'italic' } : s))}
+                                                className={`p-1 rounded ${shpObj.fontStyle === 'italic' ? 'bg-slate-700' : 'hover:bg-slate-800'}`}
                                                 title="Italic"
                                             >
-                                                I
+                                                <span className="italic">I</span>
                                             </button>
+                                            
                                             {/* Font Size */}
-                                            <select
+                                            <input
+                                                type="number"
+                                                min="8" max="100"
                                                 value={shpObj.fontSize || 20}
-                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, fontSize: parseInt(e.target.value) } : s))}
+                                                onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fontSize: parseInt(e.target.value) } : s))}
                                                 className="h-7 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white outline-none"
                                                 title="Font Size"
-                                            >
-                                                {[10, 12, 14, 16, 20, 24, 32, 48].map(size => (
-                                                    <option key={size} value={size}>{size}</option>
-                                                ))}
-                                            </select>
+                                            />
                                             
                                             <div className="w-px h-5 bg-slate-700 mx-1"></div>
 
@@ -3987,11 +3998,14 @@ export default function Whiteboard({
 
                                             {/* Delete Button */}
                                             <button
-                                                onClick={handleDelete}
-                                                className="w-7 h-7 flex items-center justify-center rounded text-red-400 hover:text-red-300 hover:bg-red-400/20 transition-colors"
-                                                title="Delete"
+                                                onClick={() => {
+                                                    setShapeObjects(prev => prev.filter(s => !selectedShapeIds.includes(s.id)));
+                                                    setSelectedShapeIds([]);
+                                                }}
+                                                className="p-1 text-red-400 hover:text-red-300 hover:bg-slate-800 rounded"
+                                                title="Delete Shape"
                                             >
-                                                <Trash2 className="w-4 h-4" />
+                                                <Trash2 size={16} />
                                             </button>
                                             <div className="w-px h-5 bg-slate-700 mx-1"></div>
                                             <button
@@ -4085,18 +4099,6 @@ export default function Whiteboard({
                                                 </div>
                                             )}
                                         </div>
-                                        {/* Delete Button */}
-                                        <button
-                                            className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setShapeObjects(prev => prev.filter(s => s.id !== shpObj.id));
-                                                setSelectedShapeId(null);
-                                                saveToHistory();
-                                            }}
-                                        >
-                                            <X className="w-3 h-3 text-white" />
-                                        </button>
                                     </>
                                 )}
                             </div>
