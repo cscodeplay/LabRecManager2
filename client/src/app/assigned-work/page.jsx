@@ -74,10 +74,10 @@ export default function AssignedWorkPage() {
             setClasses(classesData);
             setStudents(studentsData);
 
-            // Load groups from all classes
+            // Load groups from all classes concurrently
             const allGroups = [];
-            for (const cls of classesData) {
-                if (!cls?.id) continue;
+            await Promise.all(classesData.map(async (cls) => {
+                if (!cls?.id) return;
                 try {
                     const groupRes = await api.get(`/classes/${cls.id}/groups`);
                     const grps = groupRes.data?.data?.groups || groupRes.data?.groups || (Array.isArray(groupRes.data) ? groupRes.data : []);
@@ -87,7 +87,7 @@ export default function AssignedWorkPage() {
                         }
                     });
                 } catch (e) { /* ignore */ }
-            }
+            }));
             setGroups(allGroups);
 
             // Create lookup maps

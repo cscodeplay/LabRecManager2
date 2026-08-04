@@ -45,15 +45,26 @@ export default function WhiteboardPage() {
             return;
         }
 
+        // Initialize personal session ID if not set
+        if (user?.id && !sessionId) {
+            setSessionId(`personal_${user.id}`);
+        }
+
         // Initialize socket connection
         initializeSocket();
+
+        const handleFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
 
         return () => {
             if (socketRef.current) {
                 socketRef.current.disconnect();
             }
+            document.removeEventListener('fullscreenchange', handleFullscreenChange);
         };
-    }, [isAuthenticated, _hasHydrated, isInstructor]);
+    }, [isAuthenticated, _hasHydrated, isInstructor, user]);
 
     const initializeSocket = () => {
         const socketUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -67,6 +78,8 @@ export default function WhiteboardPage() {
             // Join user room for notifications
             if (user?.id) {
                 socketRef.current.emit('join-user', user.id);
+                // Trigger joining personal whiteboard room so events are relayed properly
+                socketRef.current.emit('whiteboard:request-state', { sessionId: `personal_${user.id}` });
             }
         });
     };
@@ -99,8 +112,23 @@ export default function WhiteboardPage() {
                 sessionId
             });
         }
-        setSessionId(null);
+        setSessionId(`personal_${user?.id}`);
         toast.success('Stopped sharing whiteboard');
+    };
+
+    const handleToggleFullscreen = async () => {
+        try {
+            if (!document.fullscreenElement) {
+                await document.documentElement.requestFullscreen();
+            } else {
+                if (document.exitFullscreen) {
+                    await document.exitFullscreen();
+                }
+            }
+        } catch (err) {
+            console.error('Error toggling fullscreen:', err);
+            setIsFullscreen(!isFullscreen);
+        }
     };
 
     const handleSave = (imageData) => {
@@ -153,12 +181,12 @@ export default function WhiteboardPage() {
 
             {/* Whiteboard Area */}
             <main className="flex-1 p-4 flex items-center justify-center">
-                <div className={`${isFullscreen ? 'fixed inset-0 z-[9999] bg-white' : 'w-full h-full'}`}>
+                <div className={`${isFullscreen ? 'fixed inset-0 z-[9999] bg-slate-100 flex items-center justify-center' : 'w-full h-full'}`}>
                     <Whiteboard
                         width={1200}
                         height={700}
                         isFullscreen={isFullscreen}
-                        onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
+                        onToggleFullscreen={handleToggleFullscreen}
                         onSave={handleSave}
                         isInstructor={true}
                         isSharing={isSharing}
