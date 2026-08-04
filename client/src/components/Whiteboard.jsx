@@ -324,6 +324,7 @@ export default function Whiteboard({
     
     // Shape objects for manipulation
     const [pageShapeObjects, setPageShapeObjects] = useState({ 0: [] });
+    const [shapeDragState, setShapeDragState] = useState(null);
     const [editingShapeTextId, setEditingShapeTextId] = useState(null);
 
     // OCR toggle
