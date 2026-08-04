@@ -84,22 +84,59 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
         };
     }, []);
 
-    const toggleCamera = () => {
-        if (streamRef.current) {
-            const videoTrack = streamRef.current.getVideoTracks()[0];
-            if (videoTrack) {
-                videoTrack.enabled = !videoTrack.enabled;
-                setHasCamera(videoTrack.enabled);
+    const toggleCamera = async () => {
+        if (!streamRef.current) {
+            streamRef.current = new MediaStream();
+        }
+
+        if (hasCamera) {
+            const videoTracks = streamRef.current.getVideoTracks();
+            videoTracks.forEach(track => {
+                track.stop();
+                streamRef.current.removeTrack(track);
+            });
+            setHasCamera(false);
+        } else {
+            try {
+                const newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const newVideoTrack = newStream.getVideoTracks()[0];
+                if (newVideoTrack) {
+                    streamRef.current.addTrack(newVideoTrack);
+                    setHasCamera(true);
+                    if (videoPreviewRef.current) {
+                        videoPreviewRef.current.srcObject = streamRef.current;
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to re-enable camera", err);
+                toast.error("Failed to access camera");
             }
         }
     };
 
-    const toggleMic = () => {
-        if (streamRef.current) {
-            const audioTrack = streamRef.current.getAudioTracks()[0];
-            if (audioTrack) {
-                audioTrack.enabled = !audioTrack.enabled;
-                setHasMic(audioTrack.enabled);
+    const toggleMic = async () => {
+        if (!streamRef.current) {
+            streamRef.current = new MediaStream();
+        }
+
+        if (hasMic) {
+            const audioTracks = streamRef.current.getAudioTracks();
+            audioTracks.forEach(track => {
+                track.stop();
+                streamRef.current.removeTrack(track);
+            });
+            setHasMic(false);
+        } else {
+            try {
+                const newStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const newAudioTrack = newStream.getAudioTracks()[0];
+                if (newAudioTrack) {
+                    streamRef.current.addTrack(newAudioTrack);
+                    setHasMic(true);
+                }
+            } catch (err) {
+                console.error("Failed to re-enable mic", err);
+                toast.error("Failed to access microphone");
             }
         }
     };
