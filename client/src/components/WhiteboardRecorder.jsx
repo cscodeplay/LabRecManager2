@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play , GripVertical } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import api from '@/lib/api';
 
@@ -56,7 +56,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                 sum += dataArrayRef.current[i];
             }
             const average = sum / bufferLength;
-            setMicLevel(average / 255);
+            setMicLevel(Math.min(1, (average / 255) * 3.5)); // amplified for visibility
             animFrameRef.current = requestAnimationFrame(updateMicLevel);
         };
         updateMicLevel();
@@ -135,6 +135,13 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
             }
         }
     };
+
+    
+    useEffect(() => {
+        if (hasCamera && videoPreviewRef.current && streamRef.current) {
+            videoPreviewRef.current.srcObject = streamRef.current;
+        }
+    }, [hasCamera]);
 
     const toggleMic = async () => {
         if (!streamRef.current) {
@@ -265,6 +272,49 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                             else compositeCtx.lineTo(x, y);
                         }
                         compositeCtx.closePath();
+                    } else if (shpObj.type === 'path') {
+                        if (shpObj.points && shpObj.points.length > 0) {
+                            const pts = shpObj.points;
+                            compositeCtx.moveTo(pts[0].x, pts[0].y);
+                            if (shpObj.smooth && pts.length > 2) {
+                                for (let i = 1; i < pts.length - 1; i++) {
+                                    const xc = (pts[i].x + pts[i + 1].x) / 2;
+                                    const yc = (pts[i].y + pts[i + 1].y) / 2;
+                                    compositeCtx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+                                }
+                                compositeCtx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+                            } else {
+                                for (let i = 1; i < pts.length; i++) {
+                                    compositeCtx.lineTo(pts[i].x, pts[i].y);
+                                }
+                            }
+                            if (shpObj.isHighlighter) {
+                                compositeCtx.globalAlpha = 0.5;
+                            }
+                            compositeCtx.lineCap = 'round';
+                            compositeCtx.lineJoin = 'round';
+                        }
+                    } else if (shpObj.type === 'line') {
+                        compositeCtx.moveTo(shpObj.startX, shpObj.startY);
+                        compositeCtx.lineTo(shpObj.endX, shpObj.endY);
+                        compositeCtx.lineCap = 'round';
+                    } else if (shpObj.type === 'arrow') {
+                        compositeCtx.moveTo(shpObj.startX, shpObj.startY);
+                        compositeCtx.lineTo(shpObj.endX, shpObj.endY);
+                        const angle = Math.atan2(shpObj.endY - shpObj.startY, shpObj.endX - shpObj.startX);
+                        const headLength = shpObj.strokeWidth * 4;
+                        const p1 = { x: shpObj.endX, y: shpObj.endY };
+                        const p2 = { x: shpObj.endX - headLength * Math.cos(angle - Math.PI / 6), y: shpObj.endY - headLength * Math.sin(angle - Math.PI / 6) };
+                        const p3 = { x: shpObj.endX - headLength * Math.cos(angle + Math.PI / 6), y: shpObj.endY - headLength * Math.sin(angle + Math.PI / 6) };
+                        compositeCtx.stroke();
+                        compositeCtx.beginPath();
+                        compositeCtx.moveTo(p1.x, p1.y);
+                        compositeCtx.lineTo(p2.x, p2.y);
+                        compositeCtx.lineTo(p3.x, p3.y);
+                        compositeCtx.closePath();
+                        compositeCtx.fillStyle = shpObj.color;
+                        compositeCtx.fill();
+                        compositeCtx.beginPath();
                     } else if (shpObj.type === 'graph') {
                         // Background
                         compositeCtx.rect(0, 0, shpObj.width, shpObj.height);
@@ -544,11 +594,11 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
             onPointerCancel={handlePointerUp}
         >
             {/* Recording Controls */}
-            <div className="bg-slate-800/95 backdrop-blur-md px-2 py-1 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-1"
-                 onPointerDown={(e) => e.stopPropagation()} // Prevent dragging when interacting with controls
-                 style={{ cursor: 'default' }}
-            >
-                <button
+            <div className="bg-slate-800/95 backdrop-blur-md px-2 py-1 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-1">
+                <div className="px-1 text-slate-500 hover:text-slate-300 cursor-grab active:cursor-grabbing">
+                    <GripVertical className="w-4 h-4" />
+                </div>
+                <button onPointerDown={(e) => e.stopPropagation()}
                     onClick={toggleMic}
                     className={`p-1.5 rounded-full transition-all ${hasMic ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
                     title={hasMic ? 'Mute Microphone' : 'Unmute Microphone'}
@@ -562,7 +612,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                         )}
                     </div>
                 </button>
-                <button
+                <button onPointerDown={(e) => e.stopPropagation()}
                     onClick={toggleCamera}
                     className={`p-1.5 rounded-full transition-all ${hasCamera ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
                     title={hasCamera ? 'Turn Camera Off' : 'Turn Camera On'}
@@ -578,14 +628,14 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                             <span className={`w-2 h-2 rounded-full bg-red-500 ${isPaused ? '' : 'animate-pulse'}`}></span>
                             {formatTime(recordingTime)}
                         </div>
-                        <button
+                        <button onPointerDown={(e) => e.stopPropagation()}
                             onClick={isPaused ? resumeRecording : togglePause}
                             className={`p-1.5 rounded-full transition-all ${isPaused ? 'text-green-400 hover:bg-green-500/20 bg-green-500/10' : 'text-slate-200 hover:bg-slate-700'}`}
                             title={isPaused ? 'Resume Recording' : 'Pause Recording'}
                         >
                             {isPaused ? <Play className="w-4 h-4 fill-current" /> : <Pause className="w-4 h-4 fill-current" />}
                         </button>
-                        <button
+                        <button onPointerDown={(e) => e.stopPropagation()}
                             onClick={stopRecording}
                             className="p-1.5 text-white bg-red-500 hover:bg-red-600 rounded-full transition-colors"
                             title="Stop Recording"
@@ -594,7 +644,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                         </button>
                     </>
                 ) : (
-                    <button
+                    <button onPointerDown={(e) => e.stopPropagation()}
                         onClick={startRecording}
                         className="p-1.5 text-white hover:bg-slate-700 rounded-full transition-colors group"
                         title="Start Recording"
