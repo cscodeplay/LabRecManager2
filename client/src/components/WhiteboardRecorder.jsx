@@ -437,8 +437,10 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                     const scaleX = width / mainCanvas.clientWidth;
                     const scaleY = height / mainCanvas.clientHeight;
                     
+                    // position.x and position.y are absolute screen coordinates (left, top)
+                    // The video PIP is below the controls (roughly 44px gap)
                     const drawX = position.x * scaleX;
-                    const drawY = height - (position.y * scaleY) - (videoHeight * scaleY);
+                    const drawY = (position.y + 44) * scaleY;
                     
                     // We must respect the scale to match the video element's CSS
                     // Also, the video is horizontally flipped! `transform scale-x-[-1]`

@@ -736,8 +736,14 @@ export default function Whiteboard({
         };
     }, [isSharing, socket, sessionId]);
 
+    const isInitialMountRef = useRef(true);
+
     // Granular sync for HTML overlay objects
     useEffect(() => {
+        if (isInitialMountRef.current) {
+            isInitialMountRef.current = false;
+            return;
+        }
         if (isRemoteUpdateRef.current) {
             isRemoteUpdateRef.current = false;
             return;

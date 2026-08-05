@@ -17,9 +17,10 @@ export default function RecordingsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
-    const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
+    const [viewMode, setViewMode] = useState('list'); // 'grid' or 'list', default to list
     const [copiedId, setCopiedId] = useState(null);
     const [deleteConfirm, setDeleteConfirm] = useState(null);
+    const [selectedRecordings, setSelectedRecordings] = useState(new Set());
 
     const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'lab_assistant' || user?.role === 'principal';
 
@@ -68,9 +69,59 @@ export default function RecordingsPage() {
             await api.delete(`/recordings/${id}`);
             setRecordings(prev => prev.filter(r => r.id !== id));
             setDeleteConfirm(null);
+            setSelectedRecordings(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(id);
+                return newSet;
+            });
             toast.success('Recording deleted');
         } catch (error) {
             toast.error('Failed to delete recording');
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        try {
+            const promises = Array.from(selectedRecordings).map(id => api.delete(`/recordings/${id}`));
+            await Promise.all(promises);
+            setRecordings(prev => prev.filter(r => !selectedRecordings.has(r.id)));
+            setSelectedRecordings(new Set());
+            setDeleteConfirm(null);
+            toast.success('Recordings deleted');
+        } catch (error) {
+            toast.error('Failed to delete some recordings');
+        }
+    };
+
+    const handleBulkDownload = () => {
+        Array.from(selectedRecordings).forEach(id => {
+            const recording = recordings.find(r => r.id === id);
+            if (recording && recording.cloudinaryUrl) {
+                const a = document.createElement('a');
+                a.href = recording.cloudinaryUrl;
+                a.download = `recording-${id}.mp4`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        });
+        toast.success('Downloads started');
+    };
+
+    const toggleSelection = (id) => {
+        setSelectedRecordings(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(id)) newSet.delete(id);
+            else newSet.add(id);
+            return newSet;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedRecordings.size === filteredRecordings.length) {
+            setSelectedRecordings(new Set());
+        } else {
+            setSelectedRecordings(new Set(filteredRecordings.map(r => r.id)));
         }
     };
 
@@ -162,6 +213,29 @@ export default function RecordingsPage() {
                                 className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent w-64"
                             />
                         </div>
+
+                        {/* Bulk Actions */}
+                        {selectedRecordings.size > 0 && (
+                            <div className="flex items-center gap-2 mr-2">
+                                <span className="text-sm font-medium text-slate-500 mr-2">{selectedRecordings.size} selected</span>
+                                <button
+                                    onClick={handleBulkDownload}
+                                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition"
+                                    title="Download Selected"
+                                >
+                                    <Download className="w-4 h-4" />
+                                </button>
+                                {isInstructor && (
+                                    <button
+                                        onClick={() => setDeleteConfirm('bulk')}
+                                        className="p-2 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg transition"
+                                        title="Delete Selected"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+                        )}
 
                         {/* View Toggle */}
                         <div className="flex border border-slate-200 rounded-lg overflow-hidden">
@@ -329,6 +403,14 @@ export default function RecordingsPage() {
                         <table className="w-full">
                             <thead className="bg-slate-50 border-b border-slate-200">
                                 <tr>
+                                    <th className="px-6 py-3 w-12 text-left">
+                                        <input
+                                            type="checkbox"
+                                            checked={filteredRecordings.length > 0 && selectedRecordings.size === filteredRecordings.length}
+                                            onChange={toggleSelectAll}
+                                            className="w-4 h-4 rounded border-slate-300 text-primary-500 focus:ring-primary-500"
+                                        />
+                                    </th>
                                     <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Recording</th>
                                     <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Duration</th>
                                     <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Size</th>
@@ -339,6 +421,14 @@ export default function RecordingsPage() {
                             <tbody className="divide-y divide-slate-200">
                                 {filteredRecordings.map((recording) => (
                                     <tr key={recording.id} className="hover:bg-slate-50">
+                                        <td className="px-6 py-4">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedRecordings.has(recording.id)}
+                                                onChange={() => toggleSelection(recording.id)}
+                                                className="w-4 h-4 rounded border-slate-300 text-primary-500 focus:ring-primary-500"
+                                            />
+                                        </td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-16 h-10 rounded bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -415,7 +505,9 @@ export default function RecordingsPage() {
             {deleteConfirm && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-xl p-6 max-w-sm w-full mx-4">
-                        <h3 className="text-lg font-semibold text-slate-900 mb-2">Delete Recording?</h3>
+                        <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                            {deleteConfirm === 'bulk' ? `Delete ${selectedRecordings.size} Recordings?` : 'Delete Recording?'}
+                        </h3>
                         <p className="text-slate-600 mb-6">This action cannot be undone. The recording will be permanently deleted.</p>
                         <div className="flex gap-3">
                             <button
@@ -425,7 +517,7 @@ export default function RecordingsPage() {
                                 Cancel
                             </button>
                             <button
-                                onClick={() => handleDelete(deleteConfirm)}
+                                onClick={() => deleteConfirm === 'bulk' ? handleBulkDelete() : handleDelete(deleteConfirm)}
                                 className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition"
                             >
                                 Delete
@@ -440,7 +532,6 @@ export default function RecordingsPage() {
                 isOpen={shareModalOpen}
                 onClose={() => { setShareModalOpen(false); setSelectedRecordingId(null); }}
                 onShare={handleShare}
-                isSharing={isSharing}
                 recordingId={selectedRecordingId}
             />
         </div>
