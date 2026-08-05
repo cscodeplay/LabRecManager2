@@ -7,7 +7,9 @@ import {
     Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
     Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, Scan,
     Triangle, Star, Hexagon, Scissors, Copy, Files, ClipboardPaste, LineChart, CalendarClock, RectangleHorizontal,
-    BringToFront, SendToBack
+    BringToFront, SendToBack, AlignLeft, AlignCenterHorizontal, AlignRight,
+    AlignStartVertical, AlignCenterVertical, AlignEndVertical,
+    AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -208,6 +210,7 @@ export default function Whiteboard({
     const [showStrokeStylePicker, setShowStrokeStylePicker] = useState(false);
     const [showEraserPicker, setShowEraserPicker] = useState(false);
     const [showShapePicker, setShowShapePicker] = useState(false);
+    const [showAlignMenu, setShowAlignMenu] = useState(false);
     const [showSelectPicker, setShowSelectPicker] = useState(false);
     const [showHighlighterPicker, setShowHighlighterPicker] = useState(false);
 
@@ -1169,6 +1172,132 @@ export default function Whiteboard({
         }
     }, [selectedShapeIds, saveToHistory]);
 
+    // Alignment tools
+    const handleAlign = useCallback((alignment) => {
+        if (selectedShapeIds.length < 2) return;
+
+        setShapeObjects(prev => {
+            const selected = prev.filter(s => selectedShapeIds.includes(s.id));
+            if (selected.length === 0) return prev;
+
+            let minX = Math.min(...selected.map(s => s.x));
+            let minY = Math.min(...selected.map(s => s.y));
+            let maxX = Math.max(...selected.map(s => s.x + s.width));
+            let maxY = Math.max(...selected.map(s => s.y + s.height));
+
+            return prev.map(s => {
+                if (!selectedShapeIds.includes(s.id)) return s;
+                
+                let newX = s.x;
+                let newY = s.y;
+                
+                switch (alignment) {
+                    case 'left': newX = minX; break;
+                    case 'center': newX = minX + (maxX - minX) / 2 - s.width / 2; break;
+                    case 'right': newX = maxX - s.width; break;
+                    case 'top': newY = minY; break;
+                    case 'middle': newY = minY + (maxY - minY) / 2 - s.height / 2; break;
+                    case 'bottom': newY = maxY - s.height; break;
+                }
+                return { ...s, x: newX, y: newY };
+            });
+        });
+        saveToHistory();
+    }, [selectedShapeIds, saveToHistory]);
+
+    // Distribution tools
+    const handleDistribute = useCallback((axis) => {
+        if (selectedShapeIds.length < 3) return;
+
+        setShapeObjects(prev => {
+            const selected = prev.filter(s => selectedShapeIds.includes(s.id));
+            if (selected.length < 3) return prev;
+
+            // Sort shapes by their coordinate
+            const sorted = [...selected].sort((a, b) => axis === 'horizontal' ? a.x - b.x : a.y - b.y);
+            
+            const first = sorted[0];
+            const last = sorted[sorted.length - 1];
+            
+            if (axis === 'horizontal') {
+                const totalWidth = last.x + last.width - first.x;
+                const elementsWidth = sorted.reduce((sum, s) => sum + s.width, 0);
+                const space = (totalWidth - elementsWidth) / (sorted.length - 1);
+                
+                let currentX = first.x;
+                return prev.map(s => {
+                    if (!selectedShapeIds.includes(s.id)) return s;
+                    const index = sorted.findIndex(sortedShape => sortedShape.id === s.id);
+                    if (index === 0) { currentX += s.width + space; return s; }
+                    if (index === sorted.length - 1) return s;
+                    
+                    const newS = { ...s, x: currentX };
+                    currentX += s.width + space;
+                    return newS;
+                });
+            } else {
+                const totalHeight = last.y + last.height - first.y;
+                const elementsHeight = sorted.reduce((sum, s) => sum + s.height, 0);
+                const space = (totalHeight - elementsHeight) / (sorted.length - 1);
+                
+                let currentY = first.y;
+                return prev.map(s => {
+                    if (!selectedShapeIds.includes(s.id)) return s;
+                    const index = sorted.findIndex(sortedShape => sortedShape.id === s.id);
+                    if (index === 0) { currentY += s.height + space; return s; }
+                    if (index === sorted.length - 1) return s;
+                    
+                    const newS = { ...s, y: currentY };
+                    currentY += s.height + space;
+                    return newS;
+                });
+            }
+        });
+        saveToHistory();
+    }, [selectedShapeIds, saveToHistory]);
+
+    // Lock/Unlock tools
+    const handleToggleLock = useCallback(() => {
+        if (selectedShapeIds.length > 0) {
+            setShapeObjects(prev => {
+                const anyUnlocked = prev.some(s => selectedShapeIds.includes(s.id) && !s.isLocked);
+                const shouldLock = anyUnlocked;
+                return prev.map(s => {
+                    if (selectedShapeIds.includes(s.id)) {
+                        return { ...s, isLocked: shouldLock };
+                    }
+                    return s;
+                });
+            });
+            saveToHistory();
+        }
+    }, [selectedShapeIds, saveToHistory]);
+
+    // Grouping tools
+    const handleGroup = useCallback(() => {
+        if (selectedShapeIds.length < 2) return;
+        const newGroupId = `group-${Date.now()}`;
+        setShapeObjects(prev => prev.map(s => {
+            if (selectedShapeIds.includes(s.id)) {
+                return { ...s, groupId: newGroupId };
+            }
+            return s;
+        }));
+        saveToHistory();
+    }, [selectedShapeIds, saveToHistory]);
+
+    const handleUngroup = useCallback(() => {
+        if (selectedShapeIds.length === 0) return;
+        setShapeObjects(prev => prev.map(s => {
+            if (selectedShapeIds.includes(s.id)) {
+                const { groupId, ...rest } = s;
+                return rest;
+            }
+            return s;
+        }));
+        saveToHistory();
+    }, [selectedShapeIds, saveToHistory]);
+
     // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -2033,18 +2162,24 @@ export default function Whiteboard({
                     const selHeight = maxY - minY;
                     
                     if (selWidth > 5 && selHeight > 5) {
-                        const selectedShapes = shapeObjects.filter(shape => 
+                        let selectedShapes = shapeObjects.filter(shape => 
+                            !shape.isLocked &&
                             shape.x < minX + selWidth && 
                             shape.x + shape.width > minX && 
                             shape.y < minY + selHeight && 
                             shape.y + shape.height > minY
                         ).map(s => s.id);
 
+                        const groupIdsToSelect = new Set(shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId));
+                        if (groupIdsToSelect.size > 0) {
+                            const groupItemIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                            selectedShapes = Array.from(new Set([...selectedShapes, ...groupItemIds]));
+                        }
+
                         if (selectedShapes.length > 0) {
                             setSelectedShapeIds(selectedShapes);
-                        } else {
-                            setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath });
                         }
+                        setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath });
                     }
                 }
                 setLassoPath([]);
@@ -2055,18 +2190,24 @@ export default function Whiteboard({
                 const selHeight = Math.abs(pos.y - startPos.y);
 
                 if (selWidth > 5 && selHeight > 5) {
-                    const selectedShapes = shapeObjects.filter(shape => 
+                    let selectedShapes = shapeObjects.filter(shape => 
+                        !shape.isLocked &&
                         shape.x < x + selWidth && 
                         shape.x + shape.width > x && 
                         shape.y < y + selHeight && 
                         shape.y + shape.height > y
                     ).map(s => s.id);
 
+                    const groupIdsToSelect = new Set(shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId));
+                    if (groupIdsToSelect.size > 0) {
+                        const groupItemIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                        selectedShapes = Array.from(new Set([...selectedShapes, ...groupItemIds]));
+                    }
+
                     if (selectedShapes.length > 0) {
                         setSelectedShapeIds(selectedShapes);
-                    } else {
-                        setSelection({ x, y, width: selWidth, height: selHeight });
                     }
+                    setSelection({ x, y, width: selWidth, height: selHeight });
                 }
             }
         } else if (tool === 'text') {
@@ -2084,7 +2225,7 @@ export default function Whiteboard({
         if (tool !== 'select' && tool !== 'laser' && tool !== 'text' && tool !== 'shape') {
             saveToHistory();
         }
-    }, [isDrawing, getPosition, tool, isAutoShape, color, strokeWidth, strokeStyle, eraserSize, saveToHistory, emitDrawEvent, shapeType, setShapeObjects, isSharing, socket, sessionId]);
+    }, [isDrawing, getPosition, tool, isAutoShape, color, strokeWidth, strokeStyle, eraserSize, saveToHistory, emitDrawEvent, shapeType, setShapeObjects, shapeObjects, isSharing, socket, sessionId]);
 
     // Screenshot - Composites all layers (background, canvas, images, text)
     const handleScreenshot = useCallback(() => {
@@ -2459,9 +2600,47 @@ export default function Whiteboard({
                     <button onClick={handleBringToFront} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Bring to Front"><BringToFront size={16} /></button>
                     <button onClick={handleSendToBack} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Send to Back"><SendToBack size={16} /></button>
                     
+                    {selectedShapeIds.length > 1 && (
+                        <div className="relative">
+                            <button onClick={() => setShowAlignMenu(!showAlignMenu)} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded flex items-center" title="Align"><AlignLeft size={16} /> <ChevronDown size={12} /></button>
+                            {showAlignMenu && (
+                                <div className="absolute bottom-full left-0 mb-2 bg-slate-800 border border-slate-700 rounded-lg p-1 flex gap-1 shadow-xl">
+                                    <button onClick={() => { handleAlign('left'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Align Left"><AlignLeft size={14} /></button>
+                                    <button onClick={() => { handleAlign('center'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Align Center"><AlignCenterHorizontal size={14} /></button>
+                                    <button onClick={() => { handleAlign('right'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Align Right"><AlignRight size={14} /></button>
+                                    <div className="w-px h-6 bg-slate-700 mx-0.5"></div>
+                                    <button onClick={() => { handleAlign('top'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Align Top"><AlignStartVertical size={14} /></button>
+                                    <button onClick={() => { handleAlign('middle'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Align Middle"><AlignCenterVertical size={14} /></button>
+                                    <button onClick={() => { handleAlign('bottom'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Align Bottom"><AlignEndVertical size={14} /></button>
+                                    {selectedShapeIds.length > 2 && (
+                                        <>
+                                            <div className="w-px h-6 bg-slate-700 mx-0.5"></div>
+                                            <button onClick={() => { handleDistribute('horizontal'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Distribute Horizontally"><AlignHorizontalSpaceBetween size={14} /></button>
+                                            <button onClick={() => { handleDistribute('vertical'); setShowAlignMenu(false); }} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="Distribute Vertically"><AlignVerticalSpaceBetween size={14} /></button>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* If shape is selected, show shape formatting */}
                     {selectedShapeIds.length > 0 && (
                         <>
+                            <div className="w-px h-4 bg-slate-700 mx-1"></div>
+                            <button onClick={handleToggleLock} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Toggle Lock">
+                                {shapeObjects.some(s => selectedShapeIds.includes(s.id) && !s.isLocked) ? <Unlock size={16} /> : <Lock size={16} />}
+                            </button>
+                            {selectedShapeIds.length > 1 && (
+                                <button onClick={handleGroup} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Group">
+                                    <Group size={16} />
+                                </button>
+                            )}
+                            {shapeObjects.some(s => selectedShapeIds.includes(s.id) && s.groupId) && (
+                                <button onClick={handleUngroup} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Ungroup">
+                                    <Ungroup size={16} />
+                                </button>
+                            )}
                             <div className="w-px h-4 bg-slate-700 mx-1"></div>
                             <input
                                 type="color"
@@ -3984,18 +4163,31 @@ export default function Whiteboard({
                                     if (tool === 'select') {
                                         e.stopPropagation();
                                         if (e.ctrlKey || e.metaKey) {
-                                            activeSelectionIds = selectedShapeIds.includes(shpObj.id) ? selectedShapeIds.filter(id => id !== shpObj.id) : [...selectedShapeIds, shpObj.id];
+                                            if (shpObj.groupId) {
+                                                const groupIds = shapeObjects.filter(s => s.groupId === shpObj.groupId).map(s => s.id);
+                                                const isGroupSelected = groupIds.every(id => selectedShapeIds.includes(id));
+                                                if (isGroupSelected) {
+                                                    activeSelectionIds = selectedShapeIds.filter(id => !groupIds.includes(id));
+                                                } else {
+                                                    activeSelectionIds = Array.from(new Set([...selectedShapeIds, ...groupIds]));
+                                                }
+                                            } else {
+                                                activeSelectionIds = selectedShapeIds.includes(shpObj.id) ? selectedShapeIds.filter(id => id !== shpObj.id) : [...selectedShapeIds, shpObj.id];
+                                            }
                                             setSelectedShapeIds(activeSelectionIds);
                                         } else {
                                             if (!selectedShapeIds.includes(shpObj.id)) {
-                                                activeSelectionIds = [shpObj.id];
+                                                if (shpObj.groupId) {
+                                                    activeSelectionIds = shapeObjects.filter(s => s.groupId === shpObj.groupId).map(s => s.id);
+                                                } else {
+                                                    activeSelectionIds = [shpObj.id];
+                                                }
                                                 setSelectedShapeIds(activeSelectionIds);
                                             }
                                         }
                                         setSelectedImageId(null);
                                         setSelectedTextIds([]);
                                         setEditingTextId(null);
-                                        // DO NOT return here, allow shapeDragState to be set so we can move it
                                     } else if (tool === 'laser') {
                                         setSelectedImageId(null);
                                         setSelectedTextIds([]);
@@ -4004,13 +4196,15 @@ export default function Whiteboard({
                                     }
                                     if (e.target.dataset.handle) return;
                                     e.stopPropagation();
+                                    if (shpObj.isLocked) return; // Cannot drag locked object
+
                                     setShapeDragState({
                                         id: shpObj.id,
                                         action: 'move',
                                         startX: e.clientX,
                                         startY: e.clientY,
                                         startObj: { ...shpObj },
-                                        startObjs: shapeObjects.filter(s => activeSelectionIds.includes(s.id))
+                                        startObjs: shapeObjects.filter(s => activeSelectionIds.includes(s.id) && !s.isLocked)
                                     });
                                 }}
                             >
