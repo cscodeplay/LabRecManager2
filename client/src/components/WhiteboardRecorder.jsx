@@ -72,23 +72,26 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
     };
 
     const handlePointerDown = (e) => {
+        e.stopPropagation();
         isDragging.current = true;
         dragOffset.current = {
             x: e.clientX - position.x,
-            y: window.innerHeight - e.clientY - position.y
+            y: e.clientY - position.y
         };
         e.target.setPointerCapture(e.pointerId);
     };
 
     const handlePointerMove = (e) => {
+        e.stopPropagation();
         if (!isDragging.current) return;
         setPosition({
             x: Math.max(0, Math.min(window.innerWidth - 192, e.clientX - dragOffset.current.x)),
-            y: Math.max(0, Math.min(window.innerHeight - 144, window.innerHeight - e.clientY - dragOffset.current.y))
+            y: Math.max(0, Math.min(window.innerHeight - 144, e.clientY - dragOffset.current.y))
         });
     };
 
     const handlePointerUp = (e) => {
+        e.stopPropagation();
         isDragging.current = false;
         e.target.releasePointerCapture(e.pointerId);
     };

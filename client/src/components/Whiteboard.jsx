@@ -1275,29 +1275,62 @@ export default function Whiteboard({
     }, [selectedShapeIds, saveToHistory]);
 
     // Grouping tools
+    const moveGroup = useCallback((groupId, dx, dy) => {
+        setShapeObjects(prev => prev.map(s => s.groupId === groupId && !s.isLocked ? { ...s, x: s.x + dx, y: s.y + dy } : s));
+        setTextObjects(prev => prev.map(s => s.groupId === groupId && !s.isLocked ? { ...s, x: s.x + dx, y: s.y + dy } : s));
+        setImageObjects(prev => prev.map(s => s.groupId === groupId && !s.isLocked ? { ...s, x: s.x + dx, y: s.y + dy } : s));
+    }, []);
+
     const handleGroup = useCallback(() => {
-        if (selectedShapeIds.length < 2) return;
+        const totalSelected = selectedShapeIds.length + selectedTextIds.length + (selectedImageId ? 1 : 0);
+        if (totalSelected < 2) return;
         const newGroupId = `group-${Date.now()}`;
-        setShapeObjects(prev => prev.map(s => {
-            if (selectedShapeIds.includes(s.id)) {
-                return { ...s, groupId: newGroupId };
-            }
-            return s;
-        }));
+        
+        if (selectedShapeIds.length > 0) {
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, groupId: newGroupId } : s));
+        }
+        if (selectedTextIds.length > 0) {
+            setTextObjects(prev => prev.map(s => selectedTextIds.includes(s.id) ? { ...s, groupId: newGroupId } : s));
+        }
+        if (selectedImageId) {
+            setImageObjects(prev => prev.map(s => s.id === selectedImageId ? { ...s, groupId: newGroupId } : s));
+        }
         saveToHistory();
-    }, [selectedShapeIds, saveToHistory]);
+    }, [selectedShapeIds, selectedTextIds, selectedImageId, saveToHistory]);
 
     const handleUngroup = useCallback(() => {
-        if (selectedShapeIds.length === 0) return;
-        setShapeObjects(prev => prev.map(s => {
-            if (selectedShapeIds.includes(s.id)) {
-                const { groupId, ...rest } = s;
-                return rest;
-            }
-            return s;
-        }));
+        const totalSelected = selectedShapeIds.length + selectedTextIds.length + (selectedImageId ? 1 : 0);
+        if (totalSelected === 0) return;
+        
+        if (selectedShapeIds.length > 0) {
+            setShapeObjects(prev => prev.map(s => {
+                if (selectedShapeIds.includes(s.id)) {
+                    const { groupId, ...rest } = s;
+                    return rest;
+                }
+                return s;
+            }));
+        }
+        if (selectedTextIds.length > 0) {
+            setTextObjects(prev => prev.map(s => {
+                if (selectedTextIds.includes(s.id)) {
+                    const { groupId, ...rest } = s;
+                    return rest;
+                }
+                return s;
+            }));
+        }
+        if (selectedImageId) {
+            setImageObjects(prev => prev.map(s => {
+                if (s.id === selectedImageId) {
+                    const { groupId, ...rest } = s;
+                    return rest;
+                }
+                return s;
+            }));
+        }
         saveToHistory();
-    }, [selectedShapeIds, saveToHistory]);
+    }, [selectedShapeIds, selectedTextIds, selectedImageId, saveToHistory]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -1350,11 +1383,15 @@ export default function Whiteboard({
             const startObj = imageDragState.startObj;
 
             if (imageDragState.action === 'move') {
-                setImageObjects(prev => prev.map(img =>
-                    img.id === imageDragState.id
-                        ? { ...img, x: startObj.x + dx, y: startObj.y + dy }
-                        : img
-                ));
+                if (startObj.groupId) {
+                    moveGroup(startObj.groupId, dx, dy);
+                } else {
+                    setImageObjects(prev => prev.map(img =>
+                        img.id === imageDragState.id
+                            ? { ...img, x: startObj.x + dx, y: startObj.y + dy }
+                            : img
+                    ));
+                }
             } else if (imageDragState.action === 'rotate') {
                 const canvas = canvasRef.current;
                 if (!canvas) return;
@@ -1426,11 +1463,15 @@ export default function Whiteboard({
             const startObj = textDragState.startObj;
 
             if (textDragState.action === 'move') {
-                setTextObjects(prev => prev.map(txt =>
-                    txt.id === textDragState.id
-                        ? { ...txt, x: startObj.x + dx, y: startObj.y + dy }
-                        : txt
-                ));
+                if (startObj.groupId) {
+                    moveGroup(startObj.groupId, dx, dy);
+                } else {
+                    setTextObjects(prev => prev.map(txt =>
+                        txt.id === textDragState.id
+                            ? { ...txt, x: startObj.x + dx, y: startObj.y + dy }
+                            : txt
+                    ));
+                }
             } else if (textDragState.action === 'rotate') {
                 const canvas = canvasRef.current;
                 if (!canvas) return;
@@ -1503,17 +1544,21 @@ export default function Whiteboard({
             const startObj = shapeDragState.startObj;
 
             if (shapeDragState.action === 'move') {
-                if (shapeDragState.startObjs && shapeDragState.startObjs.length > 0) {
-                    setShapeObjects(prev => prev.map(shp => {
-                        const sObj = shapeDragState.startObjs.find(s => s.id === shp.id);
-                        return sObj ? { ...shp, x: sObj.x + dx, y: sObj.y + dy } : shp;
-                    }));
+                if (startObj.groupId) {
+                    moveGroup(startObj.groupId, dx, dy);
                 } else {
-                    setShapeObjects(prev => prev.map(shp =>
-                        shp.id === shapeDragState.id
-                            ? { ...shp, x: startObj.x + dx, y: startObj.y + dy }
-                            : shp
-                    ));
+                    if (shapeDragState.startObjs && shapeDragState.startObjs.length > 0) {
+                        setShapeObjects(prev => prev.map(shp => {
+                            const sObj = shapeDragState.startObjs.find(s => s.id === shp.id);
+                            return sObj ? { ...shp, x: sObj.x + dx, y: sObj.y + dy } : shp;
+                        }));
+                    } else {
+                        setShapeObjects(prev => prev.map(shp =>
+                            shp.id === shapeDragState.id
+                                ? { ...shp, x: startObj.x + dx, y: startObj.y + dy }
+                                : shp
+                        ));
+                    }
                 }
             } else if (shapeDragState.action === 'rotate') {
                 const canvas = canvasRef.current;
@@ -1913,6 +1958,729 @@ export default function Whiteboard({
         const rawPos = getPosition(e);
         const pos = (rawPos && !isNaN(rawPos.x) && !isNaN(rawPos.y) && rawPos.x !== 0 && rawPos.y !== 0) ? rawPos : currentPos;
 
+        if (tool === 'pen' || tool === 'highlighter') {
+            const pts = currentPathPointsRef.current;
+            if (preStrokeImageDataRef.current) {
+                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+            }
+            
+            let shapeCreated = false;
+
+            if (tool === 'pen' && isAutoShape && pts && pts.length >= 8) {
+                // Auto shape recognition when user closes or connects a path
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                let pathLength = 0;
+
+                for (let i = 0; i < pts.length; i++) {
+                    const pt = pts[i];
+                    if (pt.x < minX) minX = pt.x;
+                    if (pt.x > maxX) maxX = pt.x;
+                    if (pt.y < minY) minY = pt.y;
+                    if (pt.y > maxY) maxY = pt.y;
+                    if (i > 0) {
+                        pathLength += Math.hypot(pt.x - pts[i - 1].x, pt.y - pts[i - 1].y);
+                    }
+                }
+
+                const w = maxX - minX;
+                const h = maxY - minY;
+                const pStart = pts[0];
+                const pEnd = pts[pts.length - 1];
+                const distClose = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
+                const maxDim = Math.max(w, h);
+                const isClosed = distClose < 20 || distClose < 0.15 * maxDim;
+
+                // Shoelace formula for enclosed polygon area
+                let polygonArea = 0;
+                for (let i = 0; i < pts.length; i++) {
+                    const nextPt = pts[(i + 1) % pts.length];
+                    polygonArea += pts[i].x * nextPt.y - nextPt.x * pts[i].y;
+                }
+                polygonArea = Math.abs(polygonArea / 2);
+
+                if (isClosed && maxDim > 20 && pathLength > 30) {
+                    const circularity = (4 * Math.PI * polygonArea) / (pathLength * pathLength);
+                    const aspectRatio = w / (h || 1);
+
+                    // Calculate radius variance to distinguish true Circles from Squares/Rectangles/Semi-circles
+                    const centerX = minX + w / 2;
+                    const centerY = minY + h / 2;
+                    let sumRadius = 0;
+                    for (let i = 0; i < pts.length; i++) {
+                        sumRadius += Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
+                    }
+                    const avgRadius = sumRadius / pts.length;
+                    let sumRadiusDiffSq = 0;
+                    for (let i = 0; i < pts.length; i++) {
+                        const r = Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
+                        sumRadiusDiffSq += (r - avgRadius) * (r - avgRadius);
+                    }
+                    const stdDevRadius = Math.sqrt(sumRadiusDiffSq / pts.length);
+                    const radiusVarianceRatio = stdDevRadius / (avgRadius || 1);
+
+                    // 1. Circle / Ellipse: Must have extremely low radius variance to avoid matching squares
+                    if (circularity > 0.85 && radiusVarianceRatio < 0.12 && aspectRatio >= 0.6 && aspectRatio <= 1.6) {
+                        const newShapeObj = {
+                            id: Date.now(),
+                            type: 'circle',
+                            x: minX, y: minY, width: w, height: h,
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            text: '',
+                            fontSize: 20
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                        shapeCreated = true;
+                    }
+                    // 2. Rectangle / Square: Area fill > 0.68 of bounding box
+                    else if (polygonArea / (w * h) > 0.68) {
+                        const newShapeObj = {
+                            id: Date.now(),
+                            type: 'rectangle',
+                            x: minX, y: minY, width: w, height: h,
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            text: '',
+                            fontSize: 20
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                        shapeCreated = true;
+                    }
+                    // 3. Triangle
+                    else if (polygonArea / (w * h) >= 0.28 && polygonArea / (w * h) <= 0.65) {
+                        const newShapeObj = {
+                            id: Date.now(),
+                            type: 'triangle',
+                            x: minX, y: minY, width: w, height: h,
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            text: '',
+                            fontSize: 20
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                        shapeCreated = true;
+                    }
+                } else if (!isClosed && pathLength > 40) {
+                    const straightDist = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
+                    const straightness = straightDist / pathLength;
+
+                    // 4. Straight Line
+                    if (straightness > 0.88) {
+                        // Creating a path for a straight line
+                        const newShapeObj = {
+                            id: Date.now(),
+                            type: 'path',
+                            x: Math.min(pStart.x, pEnd.x),
+                            y: Math.min(pStart.y, pEnd.y),
+                            width: Math.abs(pStart.x - pEnd.x),
+                            height: Math.abs(pStart.y - pEnd.y),
+                            points: [
+                                { x: pStart.x - Math.min(pStart.x, pEnd.x), y: pStart.y - Math.min(pStart.y, pEnd.y) },
+                                { x: pEnd.x - Math.min(pStart.x, pEnd.x), y: pEnd.y - Math.min(pStart.y, pEnd.y) }
+                            ],
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            smooth: false,
+                            isHighlighter: false
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                        shapeCreated = true;
+                    }
+                }
+            }
+            
+            if (!shapeCreated && pts && pts.length > 1) {
+                // Not an auto shape, save as freehand path
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                pts.forEach(p => {
+                    if (p.x < minX) minX = p.x;
+                    if (p.x > maxX) maxX = p.x;
+                    if (p.y < minY) minY = p.y;
+                    if (p.y > maxY) maxY = p.y;
+                });
+                
+                // Relative points
+                const relPoints = pts.map(p => ({
+                    x: p.x - minX,
+                    y: p.y - minY
+                }));
+                
+                const newShapeObj = {
+                    id: Date.now(),
+                    type: 'path',
+                    x: minX,
+                    y: minY,
+                    width: maxX - minX,
+                    height: maxY - minY,
+                    points: relPoints,
+                    rotation: 0,
+                    color: tool === 'highlighter' ? highlighterColor : color,
+                    strokeWidth: tool === 'highlighter' ? strokeWidth * 4 : strokeWidth,
+                    smooth: true,
+                    isHighlighter: tool === 'highlighter'
+                };
+                setShapeObjects(prev => [...prev, newShapeObj]);
+                if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+            }
+        } else if (tool === 'eraser') {
+            // Eraser already modified the canvas directly during handleMouseMove.
+            // We just let it be. But wait, if they erased a shapeObject, it wouldn't be erased!
+            // That's a known limitation we mentioned.
+        } else if (tool === 'line') {
+            if (preStrokeImageDataRef.current) {
+                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+            }
+            
+            const minX = Math.min(startPos.x, pos.x);
+            const minY = Math.min(startPos.y, pos.y);
+            const w = Math.abs(startPos.x - pos.x) || 1;
+            const h = Math.abs(startPos.y - pos.y) || 1;
+
+            const newShapeObj = {
+                id: Date.now(),
+                type: lineType === 'arrow' ? 'arrow' : 'line',
+                x: minX,
+                y: minY,
+                width: w,
+                height: h,
+                startX: startPos.x - minX,
+                startY: startPos.y - minY,
+                endX: pos.x - minX,
+                endY: pos.y - minY,
+                rotation: 0,
+                color: color,
+                strokeWidth: strokeWidth
+            };
+            setShapeObjects(prev => [...prev, newShapeObj]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+        } else if (tool === 'shape') {
+            setShapePreview({
+                x: Math.min(startPos.x, pos.x),
+                y: Math.min(startPos.y, pos.y),
+                width: Math.abs(pos.x - startPos.x),
+                height: Math.abs(pos.y - startPos.y),
+                type: shapeType,
+                color,
+                strokeWidth
+            });
+        } else if (tool === 'laser') {
+            setLaserPos(pos);
+            if (laserTimeoutRef.current) {
+                clearTimeout(laserTimeoutRef.current);
+            }
+            laserTimeoutRef.current = setTimeout(() => setLaserPos(null), 1500);
+            if (socket && sessionId) {
+                socket.emit('whiteboard:laser-update', {
+                    sessionId,
+                    laserPos: pos
+                });
+            }
+        }
+    }, [isDrawing, getPosition, tool, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, emitDrawEvent, isSharing, socket, sessionId]);
+
+    // Stop drawing
+    const stopDrawing = useCallback((e) => {
+        if (!isDrawing) return;
+        e.preventDefault();
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.imageSmoothingEnabled = true;
+
+        const rawPos = getPosition(e);
+        const pos = (rawPos && !isNaN(rawPos.x) && !isNaN(rawPos.y) && rawPos.x !== 0 && rawPos.y !== 0) ? rawPos : currentPos;
+
+        if (tool === 'pen' || tool === 'highlighter') {
+            const pts = currentPathPointsRef.current;
+            if (preStrokeImageDataRef.current) {
+                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+            }
+            
+            let shapeCreated = false;
+
+            if (tool === 'pen' && isAutoShape && pts && pts.length >= 8) {
+                // Auto shape recognition when user closes or connects a path
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                let pathLength = 0;
+
+                for (let i = 0; i < pts.length; i++) {
+                    const pt = pts[i];
+                    if (pt.x < minX) minX = pt.x;
+                    if (pt.x > maxX) maxX = pt.x;
+                    if (pt.y < minY) minY = pt.y;
+                    if (pt.y > maxY) maxY = pt.y;
+                    if (i > 0) {
+                        pathLength += Math.hypot(pt.x - pts[i - 1].x, pt.y - pts[i - 1].y);
+                    }
+                }
+
+                const w = maxX - minX;
+                const h = maxY - minY;
+                const pStart = pts[0];
+                const pEnd = pts[pts.length - 1];
+                const distClose = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
+                const maxDim = Math.max(w, h);
+                const isClosed = distClose < 20 || distClose < 0.15 * maxDim;
+
+                // Shoelace formula for enclosed polygon area
+                let polygonArea = 0;
+                for (let i = 0; i < pts.length; i++) {
+                    const nextPt = pts[(i + 1) % pts.length];
+                    polygonArea += pts[i].x * nextPt.y - nextPt.x * pts[i].y;
+                }
+                polygonArea = Math.abs(polygonArea / 2);
+
+                if (isClosed && maxDim > 20 && pathLength > 30) {
+                    const circularity = (4 * Math.PI * polygonArea) / (pathLength * pathLength);
+                    const aspectRatio = w / (h || 1);
+
+                    // Calculate radius variance to distinguish true Circles from Squares/Rectangles/Semi-circles
+                    const centerX = minX + w / 2;
+                    const centerY = minY + h / 2;
+                    let sumRadius = 0;
+                    for (let i = 0; i < pts.length; i++) {
+                        sumRadius += Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
+                    }
+                    const avgRadius = sumRadius / pts.length;
+                    let sumRadiusDiffSq = 0;
+                    for (let i = 0; i < pts.length; i++) {
+                        const r = Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
+                        sumRadiusDiffSq += (r - avgRadius) * (r - avgRadius);
+                    }
+                    const stdDevRadius = Math.sqrt(sumRadiusDiffSq / pts.length);
+                    const radiusVarianceRatio = stdDevRadius / (avgRadius || 1);
+
+                    // 1. Circle / Ellipse: Must have extremely low radius variance to avoid matching squares
+                    if (circularity > 0.85 && radiusVarianceRatio < 0.12 && aspectRatio >= 0.6 && aspectRatio <= 1.6) {
+                        const newShapeObj = {
+                            id: Date.now(),
+                            type: 'circle',
+                            x: minX, y: minY, width: w, height: h,
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            text: '',
+                            fontSize: 20
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                        shapeCreated = true;
+                    }
+                    // 2. Rectangle / Square: Area fill > 0.68 of bounding box
+                    else if (polygonArea / (w * h) > 0.68) {
+                        const newShapeObj = {
+                            id: Date.now(),
+                            type: 'rectangle',
+                            x: minX, y: minY, width: w, height: h,
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            text: '',
+                            fontSize: 20
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                        shapeCreated = true;
+                    }
+                    // 3. Triangle
+                    else if (polygonArea / (w * h) >= 0.28 && polygonArea / (w * h) <= 0.65) {
+                        const newShapeObj = {
+                            id: Date.now(),
+                            type: 'triangle',
+                            x: minX, y: minY, width: w, height: h,
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            text: '',
+                            fontSize: 20
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                        shapeCreated = true;
+                    }
+                } else if (!isClosed && pathLength > 40) {
+                    const straightDist = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
+                    const straightness = straightDist / pathLength;
+
+                    // 4. Straight Line
+                    if (straightness > 0.88) {
+                        // Creating a path for a straight line
+                        const newShapeObj = {
+                            id: Date.now(),
+                            type: 'path',
+                            x: Math.min(pStart.x, pEnd.x),
+                            y: Math.min(pStart.y, pEnd.y),
+                            width: Math.abs(pStart.x - pEnd.x),
+                            height: Math.abs(pStart.y - pEnd.y),
+                            points: [
+                                { x: pStart.x - Math.min(pStart.x, pEnd.x), y: pStart.y - Math.min(pStart.y, pEnd.y) },
+                                { x: pEnd.x - Math.min(pStart.x, pEnd.x), y: pEnd.y - Math.min(pStart.y, pEnd.y) }
+                            ],
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            smooth: false,
+                            isHighlighter: false
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                        shapeCreated = true;
+                    }
+                }
+            }
+            
+            if (!shapeCreated && pts && pts.length > 1) {
+                // Not an auto shape, save as freehand path
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                pts.forEach(p => {
+                    if (p.x < minX) minX = p.x;
+                    if (p.x > maxX) maxX = p.x;
+                    if (p.y < minY) minY = p.y;
+                    if (p.y > maxY) maxY = p.y;
+                });
+                
+                // Relative points
+                const relPoints = pts.map(p => ({
+                    x: p.x - minX,
+                    y: p.y - minY
+                }));
+                
+                const newShapeObj = {
+                    id: Date.now(),
+                    type: 'path',
+                    x: minX,
+                    y: minY,
+                    width: maxX - minX,
+                    height: maxY - minY,
+                    points: relPoints,
+                    rotation: 0,
+                    color: tool === 'highlighter' ? highlighterColor : color,
+                    strokeWidth: tool === 'highlighter' ? strokeWidth * 4 : strokeWidth,
+                    smooth: true,
+                    isHighlighter: tool === 'highlighter'
+                };
+                setShapeObjects(prev => [...prev, newShapeObj]);
+                if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+            }
+        } else if (tool === 'eraser') {
+            // Eraser already modified the canvas directly during handleMouseMove.
+            // We just let it be. But wait, if they erased a shapeObject, it wouldn't be erased!
+            // That's a known limitation we mentioned.
+        } else if (tool === 'line') {
+            if (preStrokeImageDataRef.current) {
+                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+            }
+            
+            const minX = Math.min(startPos.x, pos.x);
+            const minY = Math.min(startPos.y, pos.y);
+            const w = Math.abs(startPos.x - pos.x) || 1;
+            const h = Math.abs(startPos.y - pos.y) || 1;
+
+            const newShapeObj = {
+                id: Date.now(),
+                type: lineType === 'arrow' ? 'arrow' : 'line',
+                x: minX,
+                y: minY,
+                width: w,
+                height: h,
+                startX: startPos.x - minX,
+                startY: startPos.y - minY,
+                endX: pos.x - minX,
+                endY: pos.y - minY,
+                rotation: 0,
+                color: color,
+                strokeWidth: strokeWidth
+            };
+            setShapeObjects(prev => [...prev, newShapeObj]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+        } else if (tool === 'shape') {
+            setShapePreview({
+                x: Math.min(startPos.x, pos.x),
+                y: Math.min(startPos.y, pos.y),
+                width: Math.abs(pos.x - startPos.x),
+                height: Math.abs(pos.y - startPos.y),
+                type: shapeType,
+                color,
+                strokeWidth
+            });
+        } else if (tool === 'laser') {
+            setLaserPos(pos);
+            if (laserTimeoutRef.current) {
+                clearTimeout(laserTimeoutRef.current);
+            }
+            laserTimeoutRef.current = setTimeout(() => setLaserPos(null), 1500);
+            if (socket && sessionId) {
+                socket.emit('whiteboard:laser-update', {
+                    sessionId,
+                    laserPos: pos
+                });
+            }
+        }
+    }, [isDrawing, getPosition, tool, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, emitDrawEvent, isSharing, socket, sessionId]);
+
+    // Stop drawing
+    const stopDrawing = useCallback((e) => {
+        if (!isDrawing) return;
+        e.preventDefault();
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.imageSmoothingEnabled = true;
+
+        const rawPos = getPosition(e);
+        const pos = (rawPos && !isNaN(rawPos.x) && !isNaN(rawPos.y) && rawPos.x !== 0 && rawPos.y !== 0) ? rawPos : currentPos;
+
+        if (tool === 'pen' || tool === 'highlighter') {
+            const pts = currentPathPointsRef.current;
+            if (preStrokeImageDataRef.current) {
+                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+            }
+            
+            let shapeCreated = false;
+
+            if (tool === 'pen' && isAutoShape && pts && pts.length >= 8) {
+                // Auto shape recognition when user closes or connects a path
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                let pathLength = 0;
+
+                for (let i = 0; i < pts.length; i++) {
+                    const pt = pts[i];
+                    if (pt.x < minX) minX = pt.x;
+                    if (pt.x > maxX) maxX = pt.x;
+                    if (pt.y < minY) minY = pt.y;
+                    if (pt.y > maxY) maxY = pt.y;
+                    if (i > 0) {
+                        pathLength += Math.hypot(pt.x - pts[i - 1].x, pt.y - pts[i - 1].y);
+                    }
+                }
+
+                const w = maxX - minX;
+                const h = maxY - minY;
+                const pStart = pts[0];
+                const pEnd = pts[pts.length - 1];
+                const distClose = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
+                const maxDim = Math.max(w, h);
+                const isClosed = distClose < 20 || distClose < 0.15 * maxDim;
+
+                // Shoelace formula for enclosed polygon area
+                let polygonArea = 0;
+                for (let i = 0; i < pts.length; i++) {
+                    const nextPt = pts[(i + 1) % pts.length];
+                    polygonArea += pts[i].x * nextPt.y - nextPt.x * pts[i].y;
+                }
+                polygonArea = Math.abs(polygonArea / 2);
+
+                if (isClosed && maxDim > 20 && pathLength > 30) {
+                    const circularity = (4 * Math.PI * polygonArea) / (pathLength * pathLength);
+                    const aspectRatio = w / (h || 1);
+
+                    // Calculate radius variance to distinguish true Circles from Squares/Rectangles/Semi-circles
+                    const centerX = minX + w / 2;
+                    const centerY = minY + h / 2;
+                    let sumRadius = 0;
+                    for (let i = 0; i < pts.length; i++) {
+                        sumRadius += Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
+                    }
+                    const avgRadius = sumRadius / pts.length;
+                    let sumRadiusDiffSq = 0;
+                    for (let i = 0; i < pts.length; i++) {
+                        const r = Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
+                        sumRadiusDiffSq += (r - avgRadius) * (r - avgRadius);
+                    }
+                    const stdDevRadius = Math.sqrt(sumRadiusDiffSq / pts.length);
+                    const radiusVarianceRatio = stdDevRadius / (avgRadius || 1);
+
+                    // 1. Circle / Ellipse: Must have extremely low radius variance to avoid matching squares
+                    if (circularity > 0.85 && radiusVarianceRatio < 0.12 && aspectRatio >= 0.6 && aspectRatio <= 1.6) {
+                        const newShapeObj = {
+                            id: Date.now(),
+                            type: 'circle',
+                            x: minX, y: minY, width: w, height: h,
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            text: '',
+                            fontSize: 20
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                        shapeCreated = true;
+                    }
+                    // 2. Rectangle / Square: Area fill > 0.68 of bounding box
+                    else if (polygonArea / (w * h) > 0.68) {
+                        const newShapeObj = {
+                            id: Date.now(),
+                            type: 'rectangle',
+                            x: minX, y: minY, width: w, height: h,
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            text: '',
+                            fontSize: 20
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                        shapeCreated = true;
+                    }
+                    // 3. Triangle
+                    else if (polygonArea / (w * h) >= 0.28 && polygonArea / (w * h) <= 0.65) {
+                        const newShapeObj = {
+                            id: Date.now(),
+                            type: 'triangle',
+                            x: minX, y: minY, width: w, height: h,
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            text: '',
+                            fontSize: 20
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                        shapeCreated = true;
+                    }
+                } else if (!isClosed && pathLength > 40) {
+                    const straightDist = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
+                    const straightness = straightDist / pathLength;
+
+                    // 4. Straight Line
+                    if (straightness > 0.88) {
+                        // Creating a path for a straight line
+                        const newShapeObj = {
+                            id: Date.now(),
+                            type: 'path',
+                            x: Math.min(pStart.x, pEnd.x),
+                            y: Math.min(pStart.y, pEnd.y),
+                            width: Math.abs(pStart.x - pEnd.x),
+                            height: Math.abs(pStart.y - pEnd.y),
+                            points: [
+                                { x: pStart.x - Math.min(pStart.x, pEnd.x), y: pStart.y - Math.min(pStart.y, pEnd.y) },
+                                { x: pEnd.x - Math.min(pStart.x, pEnd.x), y: pEnd.y - Math.min(pStart.y, pEnd.y) }
+                            ],
+                            rotation: 0,
+                            color: color,
+                            strokeWidth: strokeWidth,
+                            smooth: false,
+                            isHighlighter: false
+                        };
+                        setShapeObjects(prev => [...prev, newShapeObj]);
+                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                        shapeCreated = true;
+                    }
+                }
+            }
+            
+            if (!shapeCreated && pts && pts.length > 1) {
+                // Not an auto shape, save as freehand path
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                pts.forEach(p => {
+                    if (p.x < minX) minX = p.x;
+                    if (p.x > maxX) maxX = p.x;
+                    if (p.y < minY) minY = p.y;
+                    if (p.y > maxY) maxY = p.y;
+                });
+                
+                // Relative points
+                const relPoints = pts.map(p => ({
+                    x: p.x - minX,
+                    y: p.y - minY
+                }));
+                
+                const newShapeObj = {
+                    id: Date.now(),
+                    type: 'path',
+                    x: minX,
+                    y: minY,
+                    width: maxX - minX,
+                    height: maxY - minY,
+                    points: relPoints,
+                    rotation: 0,
+                    color: tool === 'highlighter' ? highlighterColor : color,
+                    strokeWidth: tool === 'highlighter' ? strokeWidth * 4 : strokeWidth,
+                    smooth: true,
+                    isHighlighter: tool === 'highlighter'
+                };
+                setShapeObjects(prev => [...prev, newShapeObj]);
+                if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+            }
+        } else if (tool === 'eraser') {
+            // Eraser already modified the canvas directly during handleMouseMove.
+            // We just let it be. But wait, if they erased a shapeObject, it wouldn't be erased!
+            // That's a known limitation we mentioned.
+        } else if (tool === 'line') {
+            if (preStrokeImageDataRef.current) {
+                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+            }
+            
+            const minX = Math.min(startPos.x, pos.x);
+            const minY = Math.min(startPos.y, pos.y);
+            const w = Math.abs(startPos.x - pos.x) || 1;
+            const h = Math.abs(startPos.y - pos.y) || 1;
+
+            const newShapeObj = {
+                id: Date.now(),
+                type: lineType === 'arrow' ? 'arrow' : 'line',
+                x: minX,
+                y: minY,
+                width: w,
+                height: h,
+                startX: startPos.x - minX,
+                startY: startPos.y - minY,
+                endX: pos.x - minX,
+                endY: pos.y - minY,
+                rotation: 0,
+                color: color,
+                strokeWidth: strokeWidth
+            };
+            setShapeObjects(prev => [...prev, newShapeObj]);
+            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+        } else if (tool === 'shape') {
+            setShapePreview({
+                x: Math.min(startPos.x, pos.x),
+                y: Math.min(startPos.y, pos.y),
+                width: Math.abs(pos.x - startPos.x),
+                height: Math.abs(pos.y - startPos.y),
+                type: shapeType,
+                color,
+                strokeWidth
+            });
+        } else if (tool === 'laser') {
+            setLaserPos(pos);
+            if (laserTimeoutRef.current) {
+                clearTimeout(laserTimeoutRef.current);
+            }
+            laserTimeoutRef.current = setTimeout(() => setLaserPos(null), 1500);
+            if (socket && sessionId) {
+                socket.emit('whiteboard:laser-update', {
+                    sessionId,
+                    laserPos: pos
+                });
+            }
+        }
+    }, [isDrawing, getPosition, tool, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, emitDrawEvent, isSharing, socket, sessionId]);
+
+    // Stop drawing
+    const stopDrawing = useCallback((e) => {
+        if (!isDrawing) return;
+        e.preventDefault();
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.imageSmoothingEnabled = true;
+
+        const rawPos = getPosition(e);
+        const pos = (rawPos && !isNaN(rawPos.x) && !isNaN(rawPos.y) && rawPos.x !== 0 && rawPos.y !== 0) ? rawPos : currentPos;
+
         if (tool === 'pen') {
             const pts = currentPathPointsRef.current;
             if (isAutoShape && pts && pts.length >= 8) {
@@ -2170,16 +2938,44 @@ export default function Whiteboard({
                             shape.y < minY + selHeight && 
                             shape.y + shape.height > minY
                         ).map(s => s.id);
+                        
+                        let selectedTexts = textObjects.filter(txt => 
+                            !txt.isLocked &&
+                            txt.x < minX + selWidth && 
+                            txt.x + txt.width > minX && 
+                            txt.y < minY + selHeight && 
+                            txt.y + txt.height > minY
+                        ).map(s => s.id);
 
-                        const groupIdsToSelect = new Set(shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId));
+                        let selectedImages = imageObjects.filter(img => 
+                            !img.isLocked &&
+                            img.x < minX + selWidth && 
+                            img.x + img.width > minX && 
+                            img.y < minY + selHeight && 
+                            img.y + img.height > minY
+                        ).map(s => s.id);
+
+                        const groupIdsToSelect = new Set([
+                            ...shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId),
+                            ...textObjects.filter(s => selectedTexts.includes(s.id) && s.groupId).map(s => s.groupId),
+                            ...imageObjects.filter(s => selectedImages.includes(s.id) && s.groupId).map(s => s.groupId)
+                        ]);
+
                         if (groupIdsToSelect.size > 0) {
-                            const groupItemIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                            selectedShapes = Array.from(new Set([...selectedShapes, ...groupItemIds]));
+                            const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                            const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                            const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                            selectedShapes = Array.from(new Set([...selectedShapes, ...groupShapeIds]));
+                            selectedTexts = Array.from(new Set([...selectedTexts, ...groupTextIds]));
+                            selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
                         }
 
-                        if (selectedShapes.length > 0) {
-                            setSelectedShapeIds(selectedShapes);
-                        }
+                        if (selectedShapes.length > 0) setSelectedShapeIds(selectedShapes);
+                        else setSelectedShapeIds([]);
+                        if (selectedTexts.length > 0) setSelectedTextIds(selectedTexts);
+                        else setSelectedTextIds([]);
+                        if (selectedImages.length > 0) setSelectedImageId(selectedImages[selectedImages.length - 1]);
+                        else setSelectedImageId(null);
                         setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath });
                     }
                 }
@@ -2199,15 +2995,43 @@ export default function Whiteboard({
                         shape.y + shape.height > y
                     ).map(s => s.id);
 
-                    const groupIdsToSelect = new Set(shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId));
+                    let selectedTexts = textObjects.filter(txt => 
+                        !txt.isLocked &&
+                        txt.x < x + selWidth && 
+                        txt.x + txt.width > x && 
+                        txt.y < y + selHeight && 
+                        txt.y + txt.height > y
+                    ).map(s => s.id);
+
+                    let selectedImages = imageObjects.filter(img => 
+                        !img.isLocked &&
+                        img.x < x + selWidth && 
+                        img.x + img.width > x && 
+                        img.y < y + selHeight && 
+                        img.y + img.height > y
+                    ).map(s => s.id);
+
+                    const groupIdsToSelect = new Set([
+                        ...shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId),
+                        ...textObjects.filter(s => selectedTexts.includes(s.id) && s.groupId).map(s => s.groupId),
+                        ...imageObjects.filter(s => selectedImages.includes(s.id) && s.groupId).map(s => s.groupId)
+                    ]);
+
                     if (groupIdsToSelect.size > 0) {
-                        const groupItemIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                        selectedShapes = Array.from(new Set([...selectedShapes, ...groupItemIds]));
+                        const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                        const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                        const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                        selectedShapes = Array.from(new Set([...selectedShapes, ...groupShapeIds]));
+                        selectedTexts = Array.from(new Set([...selectedTexts, ...groupTextIds]));
+                        selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
                     }
 
-                    if (selectedShapes.length > 0) {
-                        setSelectedShapeIds(selectedShapes);
-                    }
+                    if (selectedShapes.length > 0) setSelectedShapeIds(selectedShapes);
+                    else setSelectedShapeIds([]);
+                    if (selectedTexts.length > 0) setSelectedTextIds(selectedTexts);
+                    else setSelectedTextIds([]);
+                    if (selectedImages.length > 0) setSelectedImageId(selectedImages[selectedImages.length - 1]);
+                    else setSelectedImageId(null);
                     setSelection({ x, y, width: selWidth, height: selHeight });
                 }
             }
@@ -2415,9 +3239,9 @@ export default function Whiteboard({
         if (tool === 'eraser') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${eraserSize}" height="${eraserSize}" viewBox="0 0 ${eraserSize} ${eraserSize}"><rect width="${eraserSize}" height="${eraserSize}" fill="white" stroke="black" stroke-width="1"/></svg>') ${eraserSize / 2} ${eraserSize / 2}, auto`;
         if (tool === 'text') return 'text';
         if (tool === 'laser') return 'none';
-        if (tool === 'highlighter') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${encodeURIComponent(color)}" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>') 2 22, crosshair`;
-        // Pen cursor - pencil icon
-        if (tool === 'pen') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="${encodeURIComponent(color)}" stroke="black" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>') 2 20, crosshair`;
+        if (tool === 'highlighter') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${encodeURIComponent(highlighterColor)}" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>') 2 22, auto`;
+        // Pen cursor - solid circle matching size and color
+        if (tool === 'pen') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${strokeWidth + 2}" height="${strokeWidth + 2}" viewBox="0 0 ${strokeWidth + 2} ${strokeWidth + 2}"><circle cx="${(strokeWidth + 2) / 2}" cy="${(strokeWidth + 2) / 2}" r="${strokeWidth / 2}" fill="${encodeURIComponent(color)}" /></svg>') ${(strokeWidth + 2) / 2} ${(strokeWidth + 2) / 2}, crosshair`;
         if (tool === 'arrow') return 'crosshair';
         return 'crosshair';
     };
@@ -2756,12 +3580,17 @@ export default function Whiteboard({
                             { id: 'image', icon: ImageIcon, label: 'Image' },
                             { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
                             { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime' },
+                            { id: 'recorder', icon: Video, label: 'Toggle Recorder' },
                         ].map(t => (
                             <div key={t.id} className="relative">
                                 <button
                                     onClick={() => {
                                         if (t.id === 'datetime') {
                                             handleInsertDateTime();
+                                            return;
+                                        }
+                                        if (t.id === 'recorder') {
+                                            setShowRecorder(!showRecorder);
                                             return;
                                         }
                                         if (tool === t.id) {
@@ -2786,7 +3615,7 @@ export default function Whiteboard({
                                             setShowImagePicker(t.id === 'image');
                                         }
                                     }}
-                                    className={`p-1 rounded-full transition-colors flex items-center justify-center ${tool === t.id ? 'bg-primary-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                    className={`p-1 rounded-full transition-colors flex items-center justify-center ${tool === t.id || (t.id === 'recorder' && showRecorder) ? 'bg-primary-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                                     title={t.label}
                                 >
                                     <t.icon className="w-3.5 h-3.5" />
@@ -3409,16 +4238,7 @@ export default function Whiteboard({
                                 <Share2 className="w-3.5 h-3.5" />
                             </button>
                         )}
-                        <button
-                            onClick={() => setShowRecorder(!showRecorder)}
-                            className={`p-1 rounded-full transition flex items-center justify-center ${showRecorder
-                                ? 'bg-red-500 hover:bg-red-600 text-white'
-                                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                }`}
-                            title={showRecorder ? 'Close Recorder' : 'Open Recorder'}
-                        >
-                            <Video className="w-3.5 h-3.5" />
-                        </button>
+
                         <button
                             onClick={handleScreenshot}
                             className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
@@ -4221,7 +5041,39 @@ export default function Whiteboard({
                             >
                                 <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
                                     {renderShapeSVG()}
-                                </svg>
+                                    </svg>
+
+                        {tool === 'select' && (
+                            <>
+                                {shpObj.isLocked && (
+                                    <div className="absolute top-1 right-1 bg-white/80 p-0.5 rounded-full shadow pointer-events-none" style={{ zIndex: 30 }}>
+                                        <Lock size={12} className="text-red-500" />
+                                    </div>
+                                )}
+                                {shpObj.groupId && (
+                                    <div className="absolute top-1 left-1 bg-white/80 p-0.5 rounded-full shadow pointer-events-none" style={{ zIndex: 30 }}>
+                                        <Group size={12} className="text-blue-500" />
+                                    </div>
+                                )}
+                            </>
+                        )}
+
+
+                        {tool === 'select' && (
+                            <>
+                                {shpObj.isLocked && (
+                                    <div className="absolute top-1 right-1 bg-white/80 p-0.5 rounded-full shadow pointer-events-none" style={{ zIndex: 30 }}>
+                                        <Lock size={12} className="text-red-500" />
+                                    </div>
+                                )}
+                                {shpObj.groupId && (
+                                    <div className="absolute top-1 left-1 bg-white/80 p-0.5 rounded-full shadow pointer-events-none" style={{ zIndex: 30 }}>
+                                        <Group size={12} className="text-blue-500" />
+                                    </div>
+                                )}
+                            </>
+                        )}
+
                                 
                                 {shpObj.text !== undefined && (
                                     <div className="absolute inset-0 flex items-center justify-center p-2">
