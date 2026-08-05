@@ -211,6 +211,7 @@ export default function Whiteboard({
     const [showEraserPicker, setShowEraserPicker] = useState(false);
     const [showShapePicker, setShowShapePicker] = useState(false);
     const [showAlignMenu, setShowAlignMenu] = useState(false);
+    const [showRecorder, setShowRecorder] = useState(false);
     const [showSelectPicker, setShowSelectPicker] = useState(false);
     const [showHighlighterPicker, setShowHighlighterPicker] = useState(false);
 
@@ -2414,9 +2415,9 @@ export default function Whiteboard({
         if (tool === 'eraser') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${eraserSize}" height="${eraserSize}" viewBox="0 0 ${eraserSize} ${eraserSize}"><rect width="${eraserSize}" height="${eraserSize}" fill="white" stroke="black" stroke-width="1"/></svg>') ${eraserSize / 2} ${eraserSize / 2}, auto`;
         if (tool === 'text') return 'text';
         if (tool === 'laser') return 'none';
-        if (tool === 'highlighter') return 'crosshair';
+        if (tool === 'highlighter') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${encodeURIComponent(color)}" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>') 2 22, crosshair`;
         // Pen cursor - pencil icon
-        if (tool === 'pen') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${encodeURIComponent(color)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>') 2 22, crosshair`;
+        if (tool === 'pen') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="${encodeURIComponent(color)}" stroke="black" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>') 2 20, crosshair`;
         if (tool === 'arrow') return 'crosshair';
         return 'crosshair';
     };
@@ -4496,6 +4497,7 @@ export default function Whiteboard({
             {/* AV Recorder (Instructor Only) */}
             {isInstructor && (
                 <WhiteboardRecorder 
+                    isVisible={showRecorder}
                     socket={socket}
                     canvasRef={canvasRef} 
                     sessionId={sessionId || whiteboardId}

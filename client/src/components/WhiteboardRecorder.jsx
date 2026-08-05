@@ -3,7 +3,7 @@ import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play } from 'lucid
 import { toast } from 'react-hot-toast';
 import api from '@/lib/api';
 
-const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], textObjects = [], imageObjects = [], onRecordingComplete }) => {
+const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], textObjects = [], imageObjects = [], onRecordingComplete, isVisible = false }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [hasCamera, setHasCamera] = useState(false);
     const [hasMic, setHasMic] = useState(false);
@@ -25,6 +25,51 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
     const [position, setPosition] = useState({ x: 24, y: 100 });
     const isDragging = useRef(false);
     const dragOffset = useRef({ x: 0, y: 0 });
+
+    
+    const [micLevel, setMicLevel] = useState(0);
+    const audioContextRef = useRef(null);
+    const analyserRef = useRef(null);
+    const dataArrayRef = useRef(null);
+    const animFrameRef = useRef(null);
+
+    const startAudioAnalysis = (stream) => {
+        if (!audioContextRef.current) {
+            audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioContextRef.current.state === 'suspended') {
+            audioContextRef.current.resume();
+        }
+        analyserRef.current = audioContextRef.current.createAnalyser();
+        analyserRef.current.fftSize = 256;
+        const source = audioContextRef.current.createMediaStreamSource(stream);
+        source.connect(analyserRef.current);
+        
+        const bufferLength = analyserRef.current.frequencyBinCount;
+        dataArrayRef.current = new Uint8Array(bufferLength);
+        
+        const updateMicLevel = () => {
+            if (!analyserRef.current) return;
+            analyserRef.current.getByteFrequencyData(dataArrayRef.current);
+            let sum = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                sum += dataArrayRef.current[i];
+            }
+            const average = sum / bufferLength;
+            setMicLevel(average / 255);
+            animFrameRef.current = requestAnimationFrame(updateMicLevel);
+        };
+        updateMicLevel();
+    };
+
+    const stopAudioAnalysis = () => {
+        if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+        if (analyserRef.current) {
+            analyserRef.current.disconnect();
+            analyserRef.current = null;
+        }
+        setMicLevel(0);
+    };
 
     const handlePointerDown = (e) => {
         isDragging.current = true;
@@ -50,37 +95,11 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
 
     // Initialize media stream for camera/mic
     useEffect(() => {
-        const initMedia = async () => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
-                    audio: true
-                });
-                streamRef.current = stream;
-                setHasCamera(true);
-                setHasMic(true);
-                if (videoPreviewRef.current) {
-                    videoPreviewRef.current.srcObject = stream;
-                }
-            } catch (err) {
-                console.warn('Camera/Mic access denied or unavailable', err);
-                // Fallback to audio only if video fails, or no AV
-                try {
-                    const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    streamRef.current = audioStream;
-                    setHasMic(true);
-                } catch (audioErr) {
-                    console.warn('Mic access denied', audioErr);
-                }
-            }
-        };
-
-        initMedia();
-
         return () => {
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
             }
+            stopAudioAnalysis();
         };
     }, []);
 
@@ -126,6 +145,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                 streamRef.current.removeTrack(track);
             });
             setHasMic(false);
+            stopAudioAnalysis();
         } else {
             try {
                 const newStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -133,6 +153,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                 if (newAudioTrack) {
                     streamRef.current.addTrack(newAudioTrack);
                     setHasMic(true);
+                    startAudioAnalysis(newStream);
                 }
             } catch (err) {
                 console.error("Failed to re-enable mic", err);
@@ -509,34 +530,47 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
         return `${m}:${s}`;
     };
 
+    
     return (
-        <>
+        <div 
+            className={`fixed z-[100] flex flex-col items-center gap-2 pointer-events-auto transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+            style={{ left: `${position.x}px`, top: `${position.y}px`, cursor: isDragging.current ? 'grabbing' : 'grab', touchAction: 'none' }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+        >
             {/* Movable Video Preview Picture-in-Picture */}
-            <div 
-                className={`fixed z-50 w-48 h-36 bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-700 pointer-events-auto transition-opacity duration-300 ${hasCamera ? 'opacity-100' : 'opacity-0 hidden'}`}
-                style={{ left: `${position.x}px`, bottom: `${position.y}px`, cursor: 'grab', touchAction: 'none' }}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
-            >
-                <video 
-                    ref={videoPreviewRef} 
-                    autoPlay 
-                    muted 
-                    playsInline 
-                    className="w-full h-full object-cover transform scale-x-[-1] pointer-events-none"
-                />
-            </div>
+            {hasCamera && (
+                <div className="w-48 h-36 bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-700 pointer-events-none">
+                    <video 
+                        ref={videoPreviewRef} 
+                        autoPlay 
+                        muted 
+                        playsInline 
+                        className="w-full h-full object-cover transform scale-x-[-1]"
+                    />
+                </div>
+            )}
 
-            {/* Recording Controls (top center) */}
-            <div className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-slate-800/95 backdrop-blur-md px-2 py-1 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-1 pointer-events-auto z-50">
+            {/* Recording Controls */}
+            <div className="bg-slate-800/95 backdrop-blur-md px-2 py-1 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-1"
+                 onPointerDown={(e) => e.stopPropagation()} // Prevent dragging when interacting with controls
+                 style={{ cursor: 'default' }}
+            >
                 <button
                     onClick={toggleMic}
                     className={`p-1.5 rounded-full transition-all ${hasMic ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
                     title={hasMic ? 'Mute Microphone' : 'Unmute Microphone'}
                 >
-                    {hasMic ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                    <div className="relative flex items-center justify-center">
+                        {hasMic ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                        {hasMic && (
+                            <div className="absolute inset-0 text-green-400 overflow-hidden" style={{ clipPath: `inset(${100 - (micLevel * 100)}% 0 0 0)` }}>
+                                <Mic className="w-4 h-4 fill-current" />
+                            </div>
+                        )}
+                    </div>
                 </button>
                 <button
                     onClick={toggleCamera}
@@ -578,16 +612,10 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                         <Circle className="w-4 h-4 fill-red-500 text-red-500 group-hover:scale-110 transition-transform" />
                     </button>
                 )}
-                
-                {isRecording && (
-                    <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-full flex items-center gap-1.5 pointer-events-none whitespace-nowrap">
-                        <div className={`w-1.5 h-1.5 rounded-full bg-red-500 ${isPaused ? '' : 'animate-pulse'}`}></div>
-                        <span className="text-red-500 font-medium text-xs tracking-wider">{isPaused ? 'PAUSED' : 'REC'}</span>
-                    </div>
-                )}
             </div>
-        </>
+        </div>
     );
 };
 
 export default WhiteboardRecorder;
+
