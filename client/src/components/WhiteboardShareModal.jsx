@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Users, UsersRound, User, Search, Share2, Square } from 'lucide-react';
 import { classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -116,8 +117,8 @@ export default function WhiteboardShareModal({
 
     if (!isOpen) return null;
 
-    return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    return createPortal(
+        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
             <div className="bg-white rounded-xl max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col shadow-2xl">
                 {/* Header */}
                 <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-amber-500 to-orange-500">
@@ -327,6 +328,7 @@ export default function WhiteboardShareModal({
                     </div>
                 )}
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

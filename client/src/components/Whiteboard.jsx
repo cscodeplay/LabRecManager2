@@ -6,11 +6,12 @@ import {
     Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2, Sparkles, Wand2,
     Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
     Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, Scan,
-    Triangle, Star, Hexagon, Scissors, Copy, Files, ClipboardPaste, LineChart, CalendarClock // For shapes and toolbars
+    Triangle, Star, Hexagon, Scissors, Copy, Files, ClipboardPaste, LineChart, CalendarClock, RectangleHorizontal // For shapes and toolbars
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
 import api from '@/lib/api';
+import { toast } from 'react-hot-toast';
 
 // Default colors (rainbow + black/white)
 const DEFAULT_COLORS = [
@@ -570,13 +571,160 @@ export default function Whiteboard({
         // Listen for state requests from new viewers
         const handleStateRequest = (data) => {
             if (data.sessionId === sessionId) {
-                sendCanvasState();
+                // Send targeted state instead of broadcasting to everyone
+                const canvas = canvasRef.current;
+                const imageData = canvas ? canvas.toDataURL() : null;
+                const state = latestStateRef.current;
+                socket.emit('whiteboard:send-state', {
+                    sessionId,
+                    imageData,
+                    bgColor: state.bgColor,
+                    bgPattern: state.bgPattern,
+                    imageObjects: state.imageObjects,
+                    textObjects: state.textObjects,
+                    shapeObjects: state.shapeObjects,
+                    laserPos: state.laserPos,
+                    targetSocketId: data.requesterId
+                });
             }
         };
-        socket.on('whiteboard:request-state', handleStateRequest);
+
+        // Helper to convert dash styles
+        const getDashArray = (style) => {
+            switch (style) {
+                case 'dashed': return [15, 15];
+                case 'dotted': return [3, 3];
+                default: return [];
+            }
+        };
+
+        // Sync drawing events from other admin devices
+        const handleDraw = (data) => {
+            if (data.sessionId !== sessionId) return;
+
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            if (data.isEraser || data.color === 'eraser') {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.strokeStyle = 'rgba(0,0,0,1)';
+                ctx.lineWidth = data.strokeWidth || 20;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+
+                if (data.isStart) {
+                    ctx.beginPath();
+                    ctx.moveTo(data.x, data.y);
+                } else {
+                    ctx.lineTo(data.x, data.y);
+                    ctx.stroke();
+                }
+                ctx.globalCompositeOperation = 'source-over';
+            } else if (data.type === 'path') {
+                ctx.strokeStyle = data.color || '#000000';
+                ctx.lineWidth = data.strokeWidth || 4;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.setLineDash(getDashArray(data.strokeStyle));
+
+                if (data.isStart) {
+                    ctx.beginPath();
+                    ctx.moveTo(data.x, data.y);
+                } else {
+                    ctx.lineTo(data.x, data.y);
+                    ctx.stroke();
+                }
+            } else if (data.type === 'line') {
+                ctx.strokeStyle = data.color || '#000000';
+                ctx.lineWidth = data.strokeWidth || 4;
+                ctx.lineCap = 'round';
+                ctx.setLineDash(getDashArray(data.strokeStyle));
+                ctx.beginPath();
+                ctx.moveTo(data.startX, data.startY);
+                ctx.lineTo(data.endX, data.endY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            } else if (data.type === 'rectangle') {
+                ctx.strokeStyle = data.color || '#000000';
+                ctx.lineWidth = data.strokeWidth || 4;
+                ctx.setLineDash(getDashArray(data.strokeStyle));
+                ctx.strokeRect(data.x, data.y, data.width, data.height);
+                ctx.setLineDash([]);
+            } else if (data.type === 'ellipse') {
+                ctx.strokeStyle = data.color || '#000000';
+                ctx.lineWidth = data.strokeWidth || 4;
+                ctx.setLineDash(getDashArray(data.strokeStyle));
+                ctx.beginPath();
+                ctx.ellipse(data.centerX, data.centerY, data.radiusX, data.radiusY, 0, 0, 2 * Math.PI);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            } else if (data.type === 'text') {
+                ctx.font = `${data.fontSize || 18}px 'Inter', system-ui, sans-serif`;
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = data.color || '#000000';
+                ctx.fillText(data.text, data.x, data.y);
+            }
+        };
+
+        const handleClear = (data) => {
+            if (data.sessionId !== sessionId) return;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        };
+
+        const handleBackgroundChange = (data) => {
+            if (data.sessionId !== sessionId) return;
+            if (data.bgColor) setBgColor(data.bgColor);
+            if (data.bgPattern) setBgPattern(data.bgPattern);
+        };
+
+        const handleCanvasState = (data) => {
+            if (data.sessionId !== sessionId) return;
+            if (data.bgColor) setBgColor(data.bgColor);
+            if (data.bgPattern) setBgPattern(data.bgPattern);
+            if (data.imageObjects) setImageObjects(data.imageObjects);
+            if (data.textObjects) setTextObjects(data.textObjects);
+            if (data.shapeObjects) setShapeObjects(data.shapeObjects);
+
+            const canvas = canvasRef.current;
+            if (!canvas || !data.imageData) return;
+
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const img = new Image();
+            img.onload = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+            };
+            img.src = data.imageData;
+        };
+
+        const handleObjectsUpdate = (data) => {
+            if (data.sessionId !== sessionId) return;
+            if (data.imageObjects) setImageObjects(data.imageObjects);
+            if (data.textObjects) setTextObjects(data.textObjects);
+            if (data.shapeObjects) setShapeObjects(data.shapeObjects);
+        };
+
+        socket.on('whiteboard:state-requested', handleStateRequest);
+        socket.on('whiteboard:draw', handleDraw);
+        socket.on('whiteboard:clear', handleClear);
+        socket.on('whiteboard:background-change', handleBackgroundChange);
+        socket.on('whiteboard:canvas-state', handleCanvasState);
+        socket.on('whiteboard:objects-update', handleObjectsUpdate);
 
         return () => {
-            socket.off('whiteboard:request-state', handleStateRequest);
+            socket.off('whiteboard:state-requested', handleStateRequest);
+            socket.off('whiteboard:draw', handleDraw);
+            socket.off('whiteboard:clear', handleClear);
+            socket.off('whiteboard:background-change', handleBackgroundChange);
+            socket.off('whiteboard:canvas-state', handleCanvasState);
+            socket.off('whiteboard:objects-update', handleObjectsUpdate);
         };
     }, [isSharing, socket, sessionId]);
 
@@ -1992,13 +2140,13 @@ export default function Whiteboard({
                     headers: { 'Content-Type': 'multipart/form-data' }
                 });
                 if (res.data && res.data.success) {
-                    alert('Screenshot saved to Documents > Screenshots!');
+                    toast.success('Screenshot saved to Documents > Screenshots!');
                 } else {
-                    alert('Failed to save screenshot: ' + (res.data.message || 'Unknown error'));
+                    toast.error('Failed to save screenshot: ' + (res.data.message || 'Unknown error'));
                 }
             } catch (error) {
                 console.error('Screenshot upload error:', error);
-                alert('Error saving screenshot.');
+                toast.error('Error saving screenshot.');
             }
         }, 'image/png');
     }, [currentPage, pageBackgrounds, pageImageObjects, pageTextObjects, selection]);
@@ -2041,7 +2189,7 @@ export default function Whiteboard({
         { id: 'laser', icon: Pointer, label: 'Laser Pointer' },
         { id: 'line', icon: Minus, label: 'Line' },
         { id: 'arrow', icon: MoveRight, label: 'Arrow' },
-        { id: 'rectangle', icon: Square, label: 'Rectangle' },
+        { id: 'rectangle', icon: RectangleHorizontal, label: 'Rectangle' },
         { id: 'circle', icon: Circle, label: 'Circle' },
         { id: 'text', icon: Type, label: 'Text' },
         { id: 'image', icon: ImageIcon, label: 'Insert Image' },
@@ -2348,7 +2496,7 @@ export default function Whiteboard({
                             { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
                             { id: 'eraser', icon: Eraser, label: 'Eraser' },
                             { id: 'line', icon: lineType === 'arrow' ? MoveRight : Minus, label: 'Lines & Arrows' },
-                            { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : Square)), label: 'Shapes' },
+                            { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : RectangleHorizontal)), label: 'Shapes' },
                             { id: 'text', icon: Type, label: 'Text' },
                             { id: 'image', icon: ImageIcon, label: 'Image' },
                             { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
@@ -2461,7 +2609,7 @@ export default function Whiteboard({
                                             className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'rectangle' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
                                             title="Rectangle Select"
                                         >
-                                            <Square className="w-3.5 h-3.5" /> Rect Select
+                                            <RectangleHorizontal className="w-3.5 h-3.5" /> Rect Select
                                         </button>
                                         <button
                                             onClick={() => { setSelectMode('lasso'); setShowSelectPicker(false); }}
@@ -2548,7 +2696,7 @@ export default function Whiteboard({
                                 {tool === t.id && t.id === 'shape' && showShapePicker && (
                                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 grid grid-cols-2 gap-1 w-[120px]">
                                         {[
-                                            { id: 'rectangle', icon: Square, label: 'Rectangle' },
+                                            { id: 'rectangle', icon: RectangleHorizontal, label: 'Rectangle' },
                                             { id: 'circle', icon: Circle, label: 'Circle' },
                                             { id: 'triangle', icon: Triangle, label: 'Triangle' },
                                             { id: 'star', icon: Star, label: 'Star' },
@@ -3013,6 +3161,17 @@ export default function Whiteboard({
                         >
                             <Camera className="w-3.5 h-3.5" />
                         </button>
+                        <button
+                            onClick={onToggleFullscreen}
+                            className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
+                            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                        >
+                            {isFullscreen ? (
+                                <Minimize2 className="w-3.5 h-3.5" />
+                            ) : (
+                                <Maximize2 className="w-3.5 h-3.5" />
+                            )}
+                        </button>
                     </div>
                 </div>
                 
@@ -3059,16 +3218,6 @@ export default function Whiteboard({
 
             {/* Canvas */}
             <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center relative ${isFullscreen ? 'h-full' : ''}`}>
-                {/* Fullscreen Button */}
-                {onToggleFullscreen && (
-                    <button
-                        onClick={onToggleFullscreen}
-                        className={`absolute z-30 p-2.5 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-xl shadow-md border border-slate-200 transition hover:scale-105 ${isFullscreen ? 'top-6 right-6' : 'top-3 right-3'}`}
-                        title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-                    >
-                        {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
-                    </button>
-                )}
 
                 <div 
                     className="relative"
