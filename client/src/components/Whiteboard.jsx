@@ -6,7 +6,8 @@ import {
     Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2, Sparkles, Wand2,
     Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
     Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, Scan,
-    Triangle, Star, Hexagon, Scissors, Copy, Files, ClipboardPaste, LineChart, CalendarClock, RectangleHorizontal // For shapes and toolbars
+    Triangle, Star, Hexagon, Scissors, Copy, Files, ClipboardPaste, LineChart, CalendarClock, RectangleHorizontal,
+    BringToFront, SendToBack
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -1143,6 +1144,30 @@ export default function Whiteboard({
         handleCopy();
         setTimeout(() => handlePaste(), 50);
     }, [handleCopy, handlePaste]);
+
+    // Bring to front
+    const handleBringToFront = useCallback(() => {
+        if (selectedShapeIds.length > 0) {
+            setShapeObjects(prev => {
+                const unselected = prev.filter(s => !selectedShapeIds.includes(s.id));
+                const selected = prev.filter(s => selectedShapeIds.includes(s.id));
+                return [...unselected, ...selected];
+            });
+            saveToHistory();
+        }
+    }, [selectedShapeIds, saveToHistory]);
+
+    // Send to back
+    const handleSendToBack = useCallback(() => {
+        if (selectedShapeIds.length > 0) {
+            setShapeObjects(prev => {
+                const unselected = prev.filter(s => !selectedShapeIds.includes(s.id));
+                const selected = prev.filter(s => selectedShapeIds.includes(s.id));
+                return [...selected, ...unselected];
+            });
+            saveToHistory();
+        }
+    }, [selectedShapeIds, saveToHistory]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -2430,6 +2455,9 @@ export default function Whiteboard({
                     <button onClick={handleCut} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Cut"><Scissors size={16} /></button>
                     <button onClick={handlePaste} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Paste"><ClipboardPaste size={16} /></button>
                     <button onClick={handleDuplicate} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Duplicate"><Files size={16} /></button>
+                    <div className="w-px h-4 bg-slate-700 mx-1"></div>
+                    <button onClick={handleBringToFront} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Bring to Front"><BringToFront size={16} /></button>
+                    <button onClick={handleSendToBack} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Send to Back"><SendToBack size={16} /></button>
                     
                     {/* If shape is selected, show shape formatting */}
                     {selectedShapeIds.length > 0 && (
@@ -3459,7 +3487,7 @@ export default function Whiteboard({
                                     cursor: isSelected ? 'move' : 'pointer',
                                     zIndex: isSelected ? 20 : 10,
                                     // Disable pointer events when select tool is active so selection rectangle can be drawn
-                                    pointerEvents: 'auto',
+                                    pointerEvents: isDrawing ? 'none' : ((tool === 'select' || isSelected) ? 'auto' : 'none'),
                                 }}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -3621,8 +3649,8 @@ export default function Whiteboard({
                                     transform: `rotate(${txtObj.rotation || 0}deg)`,
                                     transformOrigin: 'center center',
                                     cursor: isEditing ? 'text' : isSelected ? 'move' : 'pointer',
-                                    zIndex: isEditing ? 30 : isSelected ? 25 : 15,
-                                    pointerEvents: tool === 'select' || tool === 'text' || isSelected || isEditing ? 'auto' : 'none',
+                                    zIndex: isSelected || isEditing ? 20 : 10,
+                                    pointerEvents: isDrawing ? 'none' : 'auto',
                                     backgroundColor: txtObj.bgColor || 'transparent',
                                 }}
                                 onClick={(e) => {
@@ -3949,7 +3977,7 @@ export default function Whiteboard({
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'pointer',
                                     zIndex: isSelected ? 20 : 10,
-                                    pointerEvents: tool === 'select' || isSelected ? 'auto' : 'none',
+                                    pointerEvents: isDrawing ? 'none' : ((tool === 'select' || isSelected) ? 'auto' : 'none'),
                                 }}
                                 onPointerDown={(e) => {
                                     let activeSelectionIds = selectedShapeIds;
