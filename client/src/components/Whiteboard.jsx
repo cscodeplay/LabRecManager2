@@ -985,6 +985,22 @@ export default function Whiteboard({
                     y: item.data.y + 20
                 }
             ]);
+        } else if (item.type === 'shapes') {
+            const newIds = [];
+            setShapeObjects(prev => [
+                ...prev,
+                ...item.data.map((shape, index) => {
+                    const newId = Date.now() + index;
+                    newIds.push(newId);
+                    return {
+                        ...shape,
+                        id: newId,
+                        x: shape.x + 20,
+                        y: shape.y + 20
+                    };
+                })
+            ]);
+            setTimeout(() => setSelectedShapeIds(newIds), 0);
         }
     }, [saveToHistory]);
 
@@ -1102,8 +1118,10 @@ export default function Whiteboard({
             objToCopy = textObjects.find(t => t.id === (selectedTextIds.length > 0 ? selectedTextIds[0] : null));
             if (objToCopy) setClipboardHistory(prev => [{ id: Date.now(), type: 'text', data: { ...objToCopy } }, ...prev].slice(0, 10));
         } else if (selectedShapeIds.length > 0) {
-            objToCopy = shapeObjects.find(s => selectedShapeIds.includes(s.id));
-            if (objToCopy) setClipboardHistory(prev => [{ id: Date.now(), type: 'shape', data: { ...objToCopy } }, ...prev].slice(0, 10));
+            const objsToCopy = shapeObjects.filter(s => selectedShapeIds.includes(s.id));
+            if (objsToCopy.length > 0) {
+                setClipboardHistory(prev => [{ id: Date.now(), type: 'shapes', data: objsToCopy.map(o => ({...o})) }, ...prev].slice(0, 10));
+            }
         } else if (selection) {
             handleCopySelection();
         }
@@ -1330,11 +1348,18 @@ export default function Whiteboard({
             const startObj = shapeDragState.startObj;
 
             if (shapeDragState.action === 'move') {
-                setShapeObjects(prev => prev.map(shp =>
-                    shp.id === shapeDragState.id
-                        ? { ...shp, x: startObj.x + dx, y: startObj.y + dy }
-                        : shp
-                ));
+                if (shapeDragState.startObjs && shapeDragState.startObjs.length > 0) {
+                    setShapeObjects(prev => prev.map(shp => {
+                        const sObj = shapeDragState.startObjs.find(s => s.id === shp.id);
+                        return sObj ? { ...shp, x: sObj.x + dx, y: sObj.y + dy } : shp;
+                    }));
+                } else {
+                    setShapeObjects(prev => prev.map(shp =>
+                        shp.id === shapeDragState.id
+                            ? { ...shp, x: startObj.x + dx, y: startObj.y + dy }
+                            : shp
+                    ));
+                }
             } else if (shapeDragState.action === 'rotate') {
                 const canvas = canvasRef.current;
                 const rect = canvas.getBoundingClientRect();
@@ -1983,7 +2008,18 @@ export default function Whiteboard({
                     const selHeight = maxY - minY;
                     
                     if (selWidth > 5 && selHeight > 5) {
-                        setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath });
+                        const selectedShapes = shapeObjects.filter(shape => 
+                            shape.x < minX + selWidth && 
+                            shape.x + shape.width > minX && 
+                            shape.y < minY + selHeight && 
+                            shape.y + shape.height > minY
+                        ).map(s => s.id);
+
+                        if (selectedShapes.length > 0) {
+                            setSelectedShapeIds(selectedShapes);
+                        } else {
+                            setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath });
+                        }
                     }
                 }
                 setLassoPath([]);
@@ -1994,7 +2030,18 @@ export default function Whiteboard({
                 const selHeight = Math.abs(pos.y - startPos.y);
 
                 if (selWidth > 5 && selHeight > 5) {
-                    setSelection({ x, y, width: selWidth, height: selHeight });
+                    const selectedShapes = shapeObjects.filter(shape => 
+                        shape.x < x + selWidth && 
+                        shape.x + shape.width > x && 
+                        shape.y < y + selHeight && 
+                        shape.y + shape.height > y
+                    ).map(s => s.id);
+
+                    if (selectedShapes.length > 0) {
+                        setSelectedShapeIds(selectedShapes);
+                    } else {
+                        setSelection({ x, y, width: selWidth, height: selHeight });
+                    }
                 }
             }
         } else if (tool === 'text') {
@@ -3905,12 +3952,17 @@ export default function Whiteboard({
                                     pointerEvents: tool === 'select' || isSelected ? 'auto' : 'none',
                                 }}
                                 onPointerDown={(e) => {
+                                    let activeSelectionIds = selectedShapeIds;
                                     if (tool === 'select') {
                                         e.stopPropagation();
                                         if (e.ctrlKey || e.metaKey) {
-                                            setSelectedShapeIds(prev => prev.includes(shpObj.id) ? prev.filter(id => id !== shpObj.id) : [...prev, shpObj.id]);
+                                            activeSelectionIds = selectedShapeIds.includes(shpObj.id) ? selectedShapeIds.filter(id => id !== shpObj.id) : [...selectedShapeIds, shpObj.id];
+                                            setSelectedShapeIds(activeSelectionIds);
                                         } else {
-                                            setSelectedShapeIds([shpObj.id]);
+                                            if (!selectedShapeIds.includes(shpObj.id)) {
+                                                activeSelectionIds = [shpObj.id];
+                                                setSelectedShapeIds(activeSelectionIds);
+                                            }
                                         }
                                         setSelectedImageId(null);
                                         setSelectedTextIds([]);
@@ -3929,7 +3981,8 @@ export default function Whiteboard({
                                         action: 'move',
                                         startX: e.clientX,
                                         startY: e.clientY,
-                                        startObj: { ...shpObj }
+                                        startObj: { ...shpObj },
+                                        startObjs: shapeObjects.filter(s => activeSelectionIds.includes(s.id))
                                     });
                                 }}
                             >
