@@ -22,7 +22,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
     const imageCacheRef = useRef({});
 
     // Draggable camera state
-    const [position, setPosition] = useState({ x: 24, y: 100 });
+    const [position, setPosition] = useState({ x: 24, y: 24 });
     const isDragging = useRef(false);
     const dragOffset = useRef({ x: 0, y: 0 });
 
@@ -543,19 +543,6 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
         >
-            {/* Movable Video Preview Picture-in-Picture */}
-            {hasCamera && (
-                <div className="w-48 h-36 bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-700 pointer-events-none">
-                    <video 
-                        ref={videoPreviewRef} 
-                        autoPlay 
-                        muted 
-                        playsInline 
-                        className="w-full h-full object-cover transform scale-x-[-1]"
-                    />
-                </div>
-            )}
-
             {/* Recording Controls */}
             <div className="bg-slate-800/95 backdrop-blur-md px-2 py-1 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-1"
                  onPointerDown={(e) => e.stopPropagation()} // Prevent dragging when interacting with controls
@@ -616,6 +603,19 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                     </button>
                 )}
             </div>
+
+            {/* Movable Video Preview Picture-in-Picture */}
+            {hasCamera && (
+                <div className="w-48 h-36 bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-700 pointer-events-none">
+                    <video 
+                        ref={videoPreviewRef} 
+                        autoPlay 
+                        muted 
+                        playsInline 
+                        className="w-full h-full object-cover transform scale-x-[-1]"
+                    />
+                </div>
+            )}
         </div>
     );
 };

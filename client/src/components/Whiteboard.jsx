@@ -4107,6 +4107,47 @@ export default function Whiteboard({
                                     points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
                                 }
                                 return <polygon points={points.join(' ')} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                            } else if (shpObj.type === 'path') {
+                                if (!shpObj.points || shpObj.points.length === 0) return null;
+                                const pts = shpObj.points;
+                                let d = `M ${pts[0].x} ${pts[0].y}`;
+                                if (shpObj.smooth && pts.length > 2) {
+                                    for (let i = 1; i < pts.length - 1; i++) {
+                                        const xc = (pts[i].x + pts[i + 1].x) / 2;
+                                        const yc = (pts[i].y + pts[i + 1].y) / 2;
+                                        d += ` Q ${pts[i].x} ${pts[i].y}, ${xc} ${yc}`;
+                                    }
+                                    d += ` L ${pts[pts.length - 1].x} ${pts[pts.length - 1].y}`;
+                                } else {
+                                    for (let i = 1; i < pts.length; i++) {
+                                        d += ` L ${pts[i].x} ${pts[i].y}`;
+                                    }
+                                }
+                                return (
+                                    <path 
+                                        d={d} 
+                                        fill="none" 
+                                        stroke={shpObj.color} 
+                                        strokeWidth={shpObj.strokeWidth} 
+                                        strokeLinecap="round" 
+                                        strokeLinejoin="round" 
+                                        opacity={shpObj.isHighlighter ? 0.5 : 1}
+                                    />
+                                );
+                            } else if (shpObj.type === 'line') {
+                                return <line x1={shpObj.startX} y1={shpObj.startY} x2={shpObj.endX} y2={shpObj.endY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />;
+                            } else if (shpObj.type === 'arrow') {
+                                const angle = Math.atan2(shpObj.endY - shpObj.startY, shpObj.endX - shpObj.startX);
+                                const headLength = shpObj.strokeWidth * 4;
+                                const p1 = `${shpObj.endX},${shpObj.endY}`;
+                                const p2 = `${shpObj.endX - headLength * Math.cos(angle - Math.PI / 6)},${shpObj.endY - headLength * Math.sin(angle - Math.PI / 6)}`;
+                                const p3 = `${shpObj.endX - headLength * Math.cos(angle + Math.PI / 6)},${shpObj.endY - headLength * Math.sin(angle + Math.PI / 6)}`;
+                                return (
+                                    <g>
+                                        <line x1={shpObj.startX} y1={shpObj.startY} x2={shpObj.endX} y2={shpObj.endY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />
+                                        <polygon points={`${p1} ${p2} ${p3}`} fill={shpObj.color} stroke="none" />
+                                    </g>
+                                );
                             } else if (shpObj.type === 'graph') {
                                 return (
                                     <g stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} fill={fill}>
