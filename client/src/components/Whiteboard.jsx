@@ -3410,6 +3410,16 @@ export default function Whiteboard({
                             </button>
                         )}
                         <button
+                            onClick={() => setShowRecorder(!showRecorder)}
+                            className={`p-1 rounded-full transition flex items-center justify-center ${showRecorder
+                                ? 'bg-red-500 hover:bg-red-600 text-white'
+                                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                }`}
+                            title={showRecorder ? 'Close Recorder' : 'Open Recorder'}
+                        >
+                            <Video className="w-3.5 h-3.5" />
+                        </button>
+                        <button
                             onClick={handleScreenshot}
                             className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
                             title="Take Screenshot (Selection or Full Page)"
