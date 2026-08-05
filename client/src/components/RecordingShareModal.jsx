@@ -127,7 +127,7 @@ export default function RecordingShareModal({
 
                 {/* Body */}
                 <div className="flex-1 overflow-auto p-4">
-                        /* Target Selection View */
+                        {/* Target Selection View */}
                         <div className="space-y-4">
                             {/* Step 1: Select Class */}
                             <div>
@@ -250,12 +250,9 @@ export default function RecordingShareModal({
                                 </div>
                             )}
                         </div>
-                    )}
                 </div>
 
                 {/* Footer */}
-                {!isSharing && (
-                    <div className="p-4 border-t border-slate-200 flex justify-end gap-3">
                 <div className="p-4 border-t border-slate-200 flex justify-end gap-3">
                     <button
                         onClick={onClose}
