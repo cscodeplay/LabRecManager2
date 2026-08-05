@@ -2021,7 +2021,7 @@ export default function Whiteboard({
                     // 1. Circle / Ellipse: Must have extremely low radius variance to avoid matching squares
                     if (circularity > 0.85 && radiusVarianceRatio < 0.12 && aspectRatio >= 0.6 && aspectRatio <= 1.6) {
                         const newShapeObj = {
-                            id: Date.now(),
+                            id: Date.now().toString(),
                             type: 'circle',
                             x: minX, y: minY, width: w, height: h,
                             rotation: 0,
@@ -2037,7 +2037,7 @@ export default function Whiteboard({
                     // 2. Rectangle / Square: Area fill > 0.68 of bounding box
                     else if (polygonArea / (w * h) > 0.68) {
                         const newShapeObj = {
-                            id: Date.now(),
+                            id: Date.now().toString(),
                             type: 'rectangle',
                             x: minX, y: minY, width: w, height: h,
                             rotation: 0,
@@ -2053,7 +2053,7 @@ export default function Whiteboard({
                     // 3. Triangle
                     else if (polygonArea / (w * h) >= 0.28 && polygonArea / (w * h) <= 0.65) {
                         const newShapeObj = {
-                            id: Date.now(),
+                            id: Date.now().toString(),
                             type: 'triangle',
                             x: minX, y: minY, width: w, height: h,
                             rotation: 0,
@@ -2074,7 +2074,7 @@ export default function Whiteboard({
                     if (straightness > 0.88) {
                         // Creating a path for a straight line
                         const newShapeObj = {
-                            id: Date.now(),
+                            id: Date.now().toString(),
                             type: 'path',
                             x: Math.min(pStart.x, pEnd.x),
                             y: Math.min(pStart.y, pEnd.y),
@@ -2114,7 +2114,7 @@ export default function Whiteboard({
                 }));
                 
                 const newShapeObj = {
-                    id: Date.now(),
+                    id: Date.now().toString(),
                     type: 'path',
                     x: minX,
                     y: minY,
@@ -2132,8 +2132,6 @@ export default function Whiteboard({
             }
         } else if (tool === 'eraser') {
             // Eraser already modified the canvas directly during handleMouseMove.
-            // We just let it be. But wait, if they erased a shapeObject, it wouldn't be erased!
-            // That's a known limitation we mentioned.
         } else if (tool === 'line') {
             if (preStrokeImageDataRef.current) {
                 ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
@@ -2145,7 +2143,7 @@ export default function Whiteboard({
             const h = Math.abs(startPos.y - pos.y) || 1;
 
             const newShapeObj = {
-                id: Date.now(),
+                id: Date.now().toString(),
                 type: lineType === 'arrow' ? 'arrow' : 'line',
                 x: minX,
                 y: minY,
@@ -2162,878 +2160,36 @@ export default function Whiteboard({
             setShapeObjects(prev => [...prev, newShapeObj]);
             if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
         } else if (tool === 'shape') {
-            setShapePreview({
-                x: Math.min(startPos.x, pos.x),
-                y: Math.min(startPos.y, pos.y),
-                width: Math.abs(pos.x - startPos.x),
-                height: Math.abs(pos.y - startPos.y),
-                type: shapeType,
-                color,
-                strokeWidth
-            });
-        } else if (tool === 'laser') {
-            setLaserPos(pos);
-            if (laserTimeoutRef.current) {
-                clearTimeout(laserTimeoutRef.current);
-            }
-            laserTimeoutRef.current = setTimeout(() => setLaserPos(null), 1500);
-            if (socket && sessionId) {
-                socket.emit('whiteboard:laser-update', {
-                    sessionId,
-                    laserPos: pos
-                });
-            }
-        }
-    }, [isDrawing, getPosition, tool, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, emitDrawEvent, isSharing, socket, sessionId]);
-
-    // Stop drawing
-    const stopDrawing = useCallback((e) => {
-        if (!isDrawing) return;
-        e.preventDefault();
-
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.imageSmoothingEnabled = true;
-
-        const rawPos = getPosition(e);
-        const pos = (rawPos && !isNaN(rawPos.x) && !isNaN(rawPos.y) && rawPos.x !== 0 && rawPos.y !== 0) ? rawPos : currentPos;
-
-        if (tool === 'pen' || tool === 'highlighter') {
-            const pts = currentPathPointsRef.current;
-            if (preStrokeImageDataRef.current) {
-                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-            }
-            
-            let shapeCreated = false;
-
-            if (tool === 'pen' && isAutoShape && pts && pts.length >= 8) {
-                // Auto shape recognition when user closes or connects a path
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                let pathLength = 0;
-
-                for (let i = 0; i < pts.length; i++) {
-                    const pt = pts[i];
-                    if (pt.x < minX) minX = pt.x;
-                    if (pt.x > maxX) maxX = pt.x;
-                    if (pt.y < minY) minY = pt.y;
-                    if (pt.y > maxY) maxY = pt.y;
-                    if (i > 0) {
-                        pathLength += Math.hypot(pt.x - pts[i - 1].x, pt.y - pts[i - 1].y);
-                    }
-                }
-
-                const w = maxX - minX;
-                const h = maxY - minY;
-                const pStart = pts[0];
-                const pEnd = pts[pts.length - 1];
-                const distClose = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
-                const maxDim = Math.max(w, h);
-                const isClosed = distClose < 20 || distClose < 0.15 * maxDim;
-
-                // Shoelace formula for enclosed polygon area
-                let polygonArea = 0;
-                for (let i = 0; i < pts.length; i++) {
-                    const nextPt = pts[(i + 1) % pts.length];
-                    polygonArea += pts[i].x * nextPt.y - nextPt.x * pts[i].y;
-                }
-                polygonArea = Math.abs(polygonArea / 2);
-
-                if (isClosed && maxDim > 20 && pathLength > 30) {
-                    const circularity = (4 * Math.PI * polygonArea) / (pathLength * pathLength);
-                    const aspectRatio = w / (h || 1);
-
-                    // Calculate radius variance to distinguish true Circles from Squares/Rectangles/Semi-circles
-                    const centerX = minX + w / 2;
-                    const centerY = minY + h / 2;
-                    let sumRadius = 0;
-                    for (let i = 0; i < pts.length; i++) {
-                        sumRadius += Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
-                    }
-                    const avgRadius = sumRadius / pts.length;
-                    let sumRadiusDiffSq = 0;
-                    for (let i = 0; i < pts.length; i++) {
-                        const r = Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
-                        sumRadiusDiffSq += (r - avgRadius) * (r - avgRadius);
-                    }
-                    const stdDevRadius = Math.sqrt(sumRadiusDiffSq / pts.length);
-                    const radiusVarianceRatio = stdDevRadius / (avgRadius || 1);
-
-                    // 1. Circle / Ellipse: Must have extremely low radius variance to avoid matching squares
-                    if (circularity > 0.85 && radiusVarianceRatio < 0.12 && aspectRatio >= 0.6 && aspectRatio <= 1.6) {
-                        const newShapeObj = {
-                            id: Date.now(),
-                            type: 'circle',
-                            x: minX, y: minY, width: w, height: h,
-                            rotation: 0,
-                            color: color,
-                            strokeWidth: strokeWidth,
-                            text: '',
-                            fontSize: 20
-                        };
-                        setShapeObjects(prev => [...prev, newShapeObj]);
-                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-                        shapeCreated = true;
-                    }
-                    // 2. Rectangle / Square: Area fill > 0.68 of bounding box
-                    else if (polygonArea / (w * h) > 0.68) {
-                        const newShapeObj = {
-                            id: Date.now(),
-                            type: 'rectangle',
-                            x: minX, y: minY, width: w, height: h,
-                            rotation: 0,
-                            color: color,
-                            strokeWidth: strokeWidth,
-                            text: '',
-                            fontSize: 20
-                        };
-                        setShapeObjects(prev => [...prev, newShapeObj]);
-                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-                        shapeCreated = true;
-                    }
-                    // 3. Triangle
-                    else if (polygonArea / (w * h) >= 0.28 && polygonArea / (w * h) <= 0.65) {
-                        const newShapeObj = {
-                            id: Date.now(),
-                            type: 'triangle',
-                            x: minX, y: minY, width: w, height: h,
-                            rotation: 0,
-                            color: color,
-                            strokeWidth: strokeWidth,
-                            text: '',
-                            fontSize: 20
-                        };
-                        setShapeObjects(prev => [...prev, newShapeObj]);
-                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-                        shapeCreated = true;
-                    }
-                } else if (!isClosed && pathLength > 40) {
-                    const straightDist = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
-                    const straightness = straightDist / pathLength;
-
-                    // 4. Straight Line
-                    if (straightness > 0.88) {
-                        // Creating a path for a straight line
-                        const newShapeObj = {
-                            id: Date.now(),
-                            type: 'path',
-                            x: Math.min(pStart.x, pEnd.x),
-                            y: Math.min(pStart.y, pEnd.y),
-                            width: Math.abs(pStart.x - pEnd.x),
-                            height: Math.abs(pStart.y - pEnd.y),
-                            points: [
-                                { x: pStart.x - Math.min(pStart.x, pEnd.x), y: pStart.y - Math.min(pStart.y, pEnd.y) },
-                                { x: pEnd.x - Math.min(pStart.x, pEnd.x), y: pEnd.y - Math.min(pStart.y, pEnd.y) }
-                            ],
-                            rotation: 0,
-                            color: color,
-                            strokeWidth: strokeWidth,
-                            smooth: false,
-                            isHighlighter: false
-                        };
-                        setShapeObjects(prev => [...prev, newShapeObj]);
-                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-                        shapeCreated = true;
-                    }
-                }
-            }
-            
-            if (!shapeCreated && pts && pts.length > 1) {
-                // Not an auto shape, save as freehand path
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                pts.forEach(p => {
-                    if (p.x < minX) minX = p.x;
-                    if (p.x > maxX) maxX = p.x;
-                    if (p.y < minY) minY = p.y;
-                    if (p.y > maxY) maxY = p.y;
-                });
-                
-                // Relative points
-                const relPoints = pts.map(p => ({
-                    x: p.x - minX,
-                    y: p.y - minY
-                }));
-                
+            setShapePreview(null);
+            const w = Math.abs(pos.x - startPos.x);
+            const h = Math.abs(pos.y - startPos.y);
+            if (w > 5 || h > 5) {
                 const newShapeObj = {
-                    id: Date.now(),
-                    type: 'path',
-                    x: minX,
-                    y: minY,
-                    width: maxX - minX,
-                    height: maxY - minY,
-                    points: relPoints,
-                    rotation: 0,
-                    color: tool === 'highlighter' ? highlighterColor : color,
-                    strokeWidth: tool === 'highlighter' ? strokeWidth * 4 : strokeWidth,
-                    smooth: true,
-                    isHighlighter: tool === 'highlighter'
-                };
-                setShapeObjects(prev => [...prev, newShapeObj]);
-                if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-            }
-        } else if (tool === 'eraser') {
-            // Eraser already modified the canvas directly during handleMouseMove.
-            // We just let it be. But wait, if they erased a shapeObject, it wouldn't be erased!
-            // That's a known limitation we mentioned.
-        } else if (tool === 'line') {
-            if (preStrokeImageDataRef.current) {
-                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-            }
-            
-            const minX = Math.min(startPos.x, pos.x);
-            const minY = Math.min(startPos.y, pos.y);
-            const w = Math.abs(startPos.x - pos.x) || 1;
-            const h = Math.abs(startPos.y - pos.y) || 1;
-
-            const newShapeObj = {
-                id: Date.now(),
-                type: lineType === 'arrow' ? 'arrow' : 'line',
-                x: minX,
-                y: minY,
-                width: w,
-                height: h,
-                startX: startPos.x - minX,
-                startY: startPos.y - minY,
-                endX: pos.x - minX,
-                endY: pos.y - minY,
-                rotation: 0,
-                color: color,
-                strokeWidth: strokeWidth
-            };
-            setShapeObjects(prev => [...prev, newShapeObj]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-        } else if (tool === 'shape') {
-            setShapePreview({
-                x: Math.min(startPos.x, pos.x),
-                y: Math.min(startPos.y, pos.y),
-                width: Math.abs(pos.x - startPos.x),
-                height: Math.abs(pos.y - startPos.y),
-                type: shapeType,
-                color,
-                strokeWidth
-            });
-        } else if (tool === 'laser') {
-            setLaserPos(pos);
-            if (laserTimeoutRef.current) {
-                clearTimeout(laserTimeoutRef.current);
-            }
-            laserTimeoutRef.current = setTimeout(() => setLaserPos(null), 1500);
-            if (socket && sessionId) {
-                socket.emit('whiteboard:laser-update', {
-                    sessionId,
-                    laserPos: pos
-                });
-            }
-        }
-    }, [isDrawing, getPosition, tool, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, emitDrawEvent, isSharing, socket, sessionId]);
-
-    // Stop drawing
-    const stopDrawing = useCallback((e) => {
-        if (!isDrawing) return;
-        e.preventDefault();
-
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.imageSmoothingEnabled = true;
-
-        const rawPos = getPosition(e);
-        const pos = (rawPos && !isNaN(rawPos.x) && !isNaN(rawPos.y) && rawPos.x !== 0 && rawPos.y !== 0) ? rawPos : currentPos;
-
-        if (tool === 'pen' || tool === 'highlighter') {
-            const pts = currentPathPointsRef.current;
-            if (preStrokeImageDataRef.current) {
-                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-            }
-            
-            let shapeCreated = false;
-
-            if (tool === 'pen' && isAutoShape && pts && pts.length >= 8) {
-                // Auto shape recognition when user closes or connects a path
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                let pathLength = 0;
-
-                for (let i = 0; i < pts.length; i++) {
-                    const pt = pts[i];
-                    if (pt.x < minX) minX = pt.x;
-                    if (pt.x > maxX) maxX = pt.x;
-                    if (pt.y < minY) minY = pt.y;
-                    if (pt.y > maxY) maxY = pt.y;
-                    if (i > 0) {
-                        pathLength += Math.hypot(pt.x - pts[i - 1].x, pt.y - pts[i - 1].y);
-                    }
-                }
-
-                const w = maxX - minX;
-                const h = maxY - minY;
-                const pStart = pts[0];
-                const pEnd = pts[pts.length - 1];
-                const distClose = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
-                const maxDim = Math.max(w, h);
-                const isClosed = distClose < 20 || distClose < 0.15 * maxDim;
-
-                // Shoelace formula for enclosed polygon area
-                let polygonArea = 0;
-                for (let i = 0; i < pts.length; i++) {
-                    const nextPt = pts[(i + 1) % pts.length];
-                    polygonArea += pts[i].x * nextPt.y - nextPt.x * pts[i].y;
-                }
-                polygonArea = Math.abs(polygonArea / 2);
-
-                if (isClosed && maxDim > 20 && pathLength > 30) {
-                    const circularity = (4 * Math.PI * polygonArea) / (pathLength * pathLength);
-                    const aspectRatio = w / (h || 1);
-
-                    // Calculate radius variance to distinguish true Circles from Squares/Rectangles/Semi-circles
-                    const centerX = minX + w / 2;
-                    const centerY = minY + h / 2;
-                    let sumRadius = 0;
-                    for (let i = 0; i < pts.length; i++) {
-                        sumRadius += Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
-                    }
-                    const avgRadius = sumRadius / pts.length;
-                    let sumRadiusDiffSq = 0;
-                    for (let i = 0; i < pts.length; i++) {
-                        const r = Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
-                        sumRadiusDiffSq += (r - avgRadius) * (r - avgRadius);
-                    }
-                    const stdDevRadius = Math.sqrt(sumRadiusDiffSq / pts.length);
-                    const radiusVarianceRatio = stdDevRadius / (avgRadius || 1);
-
-                    // 1. Circle / Ellipse: Must have extremely low radius variance to avoid matching squares
-                    if (circularity > 0.85 && radiusVarianceRatio < 0.12 && aspectRatio >= 0.6 && aspectRatio <= 1.6) {
-                        const newShapeObj = {
-                            id: Date.now(),
-                            type: 'circle',
-                            x: minX, y: minY, width: w, height: h,
-                            rotation: 0,
-                            color: color,
-                            strokeWidth: strokeWidth,
-                            text: '',
-                            fontSize: 20
-                        };
-                        setShapeObjects(prev => [...prev, newShapeObj]);
-                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-                        shapeCreated = true;
-                    }
-                    // 2. Rectangle / Square: Area fill > 0.68 of bounding box
-                    else if (polygonArea / (w * h) > 0.68) {
-                        const newShapeObj = {
-                            id: Date.now(),
-                            type: 'rectangle',
-                            x: minX, y: minY, width: w, height: h,
-                            rotation: 0,
-                            color: color,
-                            strokeWidth: strokeWidth,
-                            text: '',
-                            fontSize: 20
-                        };
-                        setShapeObjects(prev => [...prev, newShapeObj]);
-                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-                        shapeCreated = true;
-                    }
-                    // 3. Triangle
-                    else if (polygonArea / (w * h) >= 0.28 && polygonArea / (w * h) <= 0.65) {
-                        const newShapeObj = {
-                            id: Date.now(),
-                            type: 'triangle',
-                            x: minX, y: minY, width: w, height: h,
-                            rotation: 0,
-                            color: color,
-                            strokeWidth: strokeWidth,
-                            text: '',
-                            fontSize: 20
-                        };
-                        setShapeObjects(prev => [...prev, newShapeObj]);
-                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-                        shapeCreated = true;
-                    }
-                } else if (!isClosed && pathLength > 40) {
-                    const straightDist = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
-                    const straightness = straightDist / pathLength;
-
-                    // 4. Straight Line
-                    if (straightness > 0.88) {
-                        // Creating a path for a straight line
-                        const newShapeObj = {
-                            id: Date.now(),
-                            type: 'path',
-                            x: Math.min(pStart.x, pEnd.x),
-                            y: Math.min(pStart.y, pEnd.y),
-                            width: Math.abs(pStart.x - pEnd.x),
-                            height: Math.abs(pStart.y - pEnd.y),
-                            points: [
-                                { x: pStart.x - Math.min(pStart.x, pEnd.x), y: pStart.y - Math.min(pStart.y, pEnd.y) },
-                                { x: pEnd.x - Math.min(pStart.x, pEnd.x), y: pEnd.y - Math.min(pStart.y, pEnd.y) }
-                            ],
-                            rotation: 0,
-                            color: color,
-                            strokeWidth: strokeWidth,
-                            smooth: false,
-                            isHighlighter: false
-                        };
-                        setShapeObjects(prev => [...prev, newShapeObj]);
-                        if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-                        shapeCreated = true;
-                    }
-                }
-            }
-            
-            if (!shapeCreated && pts && pts.length > 1) {
-                // Not an auto shape, save as freehand path
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                pts.forEach(p => {
-                    if (p.x < minX) minX = p.x;
-                    if (p.x > maxX) maxX = p.x;
-                    if (p.y < minY) minY = p.y;
-                    if (p.y > maxY) maxY = p.y;
-                });
-                
-                // Relative points
-                const relPoints = pts.map(p => ({
-                    x: p.x - minX,
-                    y: p.y - minY
-                }));
-                
-                const newShapeObj = {
-                    id: Date.now(),
-                    type: 'path',
-                    x: minX,
-                    y: minY,
-                    width: maxX - minX,
-                    height: maxY - minY,
-                    points: relPoints,
-                    rotation: 0,
-                    color: tool === 'highlighter' ? highlighterColor : color,
-                    strokeWidth: tool === 'highlighter' ? strokeWidth * 4 : strokeWidth,
-                    smooth: true,
-                    isHighlighter: tool === 'highlighter'
-                };
-                setShapeObjects(prev => [...prev, newShapeObj]);
-                if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-            }
-        } else if (tool === 'eraser') {
-            // Eraser already modified the canvas directly during handleMouseMove.
-            // We just let it be. But wait, if they erased a shapeObject, it wouldn't be erased!
-            // That's a known limitation we mentioned.
-        } else if (tool === 'line') {
-            if (preStrokeImageDataRef.current) {
-                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-            }
-            
-            const minX = Math.min(startPos.x, pos.x);
-            const minY = Math.min(startPos.y, pos.y);
-            const w = Math.abs(startPos.x - pos.x) || 1;
-            const h = Math.abs(startPos.y - pos.y) || 1;
-
-            const newShapeObj = {
-                id: Date.now(),
-                type: lineType === 'arrow' ? 'arrow' : 'line',
-                x: minX,
-                y: minY,
-                width: w,
-                height: h,
-                startX: startPos.x - minX,
-                startY: startPos.y - minY,
-                endX: pos.x - minX,
-                endY: pos.y - minY,
-                rotation: 0,
-                color: color,
-                strokeWidth: strokeWidth
-            };
-            setShapeObjects(prev => [...prev, newShapeObj]);
-            if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
-        } else if (tool === 'shape') {
-            setShapePreview({
-                x: Math.min(startPos.x, pos.x),
-                y: Math.min(startPos.y, pos.y),
-                width: Math.abs(pos.x - startPos.x),
-                height: Math.abs(pos.y - startPos.y),
-                type: shapeType,
-                color,
-                strokeWidth
-            });
-        } else if (tool === 'laser') {
-            setLaserPos(pos);
-            if (laserTimeoutRef.current) {
-                clearTimeout(laserTimeoutRef.current);
-            }
-            laserTimeoutRef.current = setTimeout(() => setLaserPos(null), 1500);
-            if (socket && sessionId) {
-                socket.emit('whiteboard:laser-update', {
-                    sessionId,
-                    laserPos: pos
-                });
-            }
-        }
-    }, [isDrawing, getPosition, tool, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, emitDrawEvent, isSharing, socket, sessionId]);
-
-    // Stop drawing
-    const stopDrawing = useCallback((e) => {
-        if (!isDrawing) return;
-        e.preventDefault();
-
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.imageSmoothingEnabled = true;
-
-        const rawPos = getPosition(e);
-        const pos = (rawPos && !isNaN(rawPos.x) && !isNaN(rawPos.y) && rawPos.x !== 0 && rawPos.y !== 0) ? rawPos : currentPos;
-
-        if (tool === 'pen') {
-            const pts = currentPathPointsRef.current;
-            if (isAutoShape && pts && pts.length >= 8) {
-                // Auto shape recognition when user closes or connects a path
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                let pathLength = 0;
-
-                for (let i = 0; i < pts.length; i++) {
-                    const pt = pts[i];
-                    if (pt.x < minX) minX = pt.x;
-                    if (pt.x > maxX) maxX = pt.x;
-                    if (pt.y < minY) minY = pt.y;
-                    if (pt.y > maxY) maxY = pt.y;
-                    if (i > 0) {
-                        pathLength += Math.hypot(pt.x - pts[i - 1].x, pt.y - pts[i - 1].y);
-                    }
-                }
-
-                const w = maxX - minX;
-                const h = maxY - minY;
-                const pStart = pts[0];
-                const pEnd = pts[pts.length - 1];
-                const distClose = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
-                const maxDim = Math.max(w, h);
-                const isClosed = distClose < 20 || distClose < 0.15 * maxDim;
-
-                // Shoelace formula for enclosed polygon area
-                let polygonArea = 0;
-                for (let i = 0; i < pts.length; i++) {
-                    const nextPt = pts[(i + 1) % pts.length];
-                    polygonArea += pts[i].x * nextPt.y - nextPt.x * pts[i].y;
-                }
-                polygonArea = Math.abs(polygonArea / 2);
-
-                if (isClosed && maxDim > 20 && pathLength > 30) {
-                    const circularity = (4 * Math.PI * polygonArea) / (pathLength * pathLength);
-                    const aspectRatio = w / (h || 1);
-
-                    // Calculate radius variance to distinguish true Circles from Squares/Rectangles/Semi-circles
-                    const centerX = minX + w / 2;
-                    const centerY = minY + h / 2;
-                    let sumRadius = 0;
-                    for (let i = 0; i < pts.length; i++) {
-                        sumRadius += Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
-                    }
-                    const avgRadius = sumRadius / pts.length;
-                    let sumRadiusDiffSq = 0;
-                    for (let i = 0; i < pts.length; i++) {
-                        const r = Math.hypot(pts[i].x - centerX, pts[i].y - centerY);
-                        sumRadiusDiffSq += (r - avgRadius) * (r - avgRadius);
-                    }
-                    const stdDevRadius = Math.sqrt(sumRadiusDiffSq / pts.length);
-                    const radiusVarianceRatio = stdDevRadius / (avgRadius || 1);
-
-                    // 1. Circle / Ellipse: Must have extremely low radius variance to avoid matching squares
-                    if (circularity > 0.85 && radiusVarianceRatio < 0.12 && aspectRatio >= 0.6 && aspectRatio <= 1.6) {
-                        if (preStrokeImageDataRef.current) {
-                            ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-                        }
-                        const radiusX = w / 2;
-                        const radiusY = h / 2;
-
-                        ctx.strokeStyle = color;
-                        ctx.lineWidth = strokeWidth;
-                        ctx.setLineDash(getDashArray(strokeStyle));
-                        ctx.beginPath();
-                        ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-
-                        emitDrawEvent({
-                            type: 'ellipse',
-                            centerX, centerY, radiusX, radiusY, color, strokeWidth, strokeStyle
-                        });
-                    }
-                    // 2. Rectangle / Square: Area fill > 0.68 of bounding box
-                    else if (polygonArea / (w * h) > 0.68) {
-                        if (preStrokeImageDataRef.current) {
-                            ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-                        }
-                        ctx.strokeStyle = color;
-                        ctx.lineWidth = strokeWidth;
-                        ctx.setLineDash(getDashArray(strokeStyle));
-                        ctx.strokeRect(minX, minY, w, h);
-                        ctx.setLineDash([]);
-
-                        emitDrawEvent({
-                            type: 'rectangle',
-                            x: minX, y: minY, width: w, height: h, color, strokeWidth, strokeStyle
-                        });
-                    }
-                    // 3. Triangle
-                    else if (polygonArea / (w * h) >= 0.28 && polygonArea / (w * h) <= 0.65) {
-                        if (preStrokeImageDataRef.current) {
-                            ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-                        }
-                        let topPt = pts[0], leftPt = pts[0], rightPt = pts[0];
-                        pts.forEach(p => {
-                            if (p.y < topPt.y) topPt = p;
-                            if (p.x < leftPt.x) leftPt = p;
-                            if (p.x > rightPt.x) rightPt = p;
-                        });
-
-                        ctx.strokeStyle = color;
-                        ctx.lineWidth = strokeWidth;
-                        ctx.setLineDash(getDashArray(strokeStyle));
-                        ctx.beginPath();
-                        ctx.moveTo(topPt.x, topPt.y);
-                        ctx.lineTo(leftPt.x, leftPt.y);
-                        ctx.lineTo(rightPt.x, rightPt.y);
-                        ctx.closePath();
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-
-                        emitDrawEvent({
-                            type: 'line',
-                            startX: topPt.x, startY: topPt.y, endX: leftPt.x, endY: leftPt.y,
-                            color, strokeWidth, strokeStyle
-                        });
-                        emitDrawEvent({
-                            type: 'line',
-                            startX: leftPt.x, startY: leftPt.y, endX: rightPt.x, endY: rightPt.y,
-                            color, strokeWidth, strokeStyle
-                        });
-                        emitDrawEvent({
-                            type: 'line',
-                            startX: rightPt.x, startY: rightPt.y, endX: topPt.x, endY: topPt.y,
-                            color, strokeWidth, strokeStyle
-                        });
-                    }
-                } else if (!isClosed && pathLength > 40) {
-                    const straightDist = Math.hypot(pStart.x - pEnd.x, pStart.y - pEnd.y);
-                    const straightness = straightDist / pathLength;
-
-                    // 4. Straight Line
-                    if (straightness > 0.88) {
-                        if (preStrokeImageDataRef.current) {
-                            ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-                        }
-                        ctx.strokeStyle = color;
-                        ctx.lineWidth = strokeWidth;
-                        ctx.lineCap = 'round';
-                        ctx.setLineDash(getDashArray(strokeStyle));
-                        ctx.beginPath();
-                        ctx.moveTo(pStart.x, pStart.y);
-                        ctx.lineTo(pEnd.x, pEnd.y);
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-
-                        emitDrawEvent({
-                            type: 'line',
-                            startX: pStart.x, startY: pStart.y, endX: pEnd.x, endY: pEnd.y,
-                            color, strokeWidth, strokeStyle
-                        });
-                    }
-                }
-            }
-        } else if (tool === 'line') {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = strokeWidth;
-            ctx.lineCap = 'round';
-            ctx.setLineDash(getDashArray(strokeStyle));
-            ctx.beginPath();
-            ctx.moveTo(startPos.x, startPos.y);
-            ctx.lineTo(pos.x, pos.y);
-            ctx.stroke();
-            ctx.setLineDash([]);
-
-            if (lineType === 'arrow') {
-                const headLength = strokeWidth * 4;
-                const angle = Math.atan2(pos.y - startPos.y, pos.x - startPos.x);
-                ctx.beginPath();
-                ctx.moveTo(pos.x, pos.y);
-                ctx.lineTo(
-                    pos.x - headLength * Math.cos(angle - Math.PI / 6),
-                    pos.y - headLength * Math.sin(angle - Math.PI / 6)
-                );
-                ctx.lineTo(
-                    pos.x - headLength * Math.cos(angle + Math.PI / 6),
-                    pos.y - headLength * Math.sin(angle + Math.PI / 6)
-                );
-                ctx.closePath();
-                ctx.fillStyle = color;
-                ctx.fill();
-            }
-
-            emitDrawEvent({
-                type: 'line',
-                startX: startPos.x,
-                startY: startPos.y,
-                endX: pos.x,
-                endY: pos.y,
-                color,
-                strokeWidth,
-                strokeStyle,
-                lineType
-            });
-        } else if (tool === 'shape') {
-            let x = Math.min(startPos.x, pos.x);
-            let y = Math.min(startPos.y, pos.y);
-            let w = Math.abs(pos.x - startPos.x);
-            let h = Math.abs(pos.y - startPos.y);
-            
-            // Create default size if it was just a click
-            if (w <= 10 && h <= 10) {
-                w = 100;
-                h = 100;
-                x = pos.x - 50;
-                y = pos.y - 50;
-            }
-            
-            if (w > 0 && h > 0) {
-                const newShapeObj = {
-                    id: Date.now(),
-                    type: shapeType, // 'rectangle', 'circle', 'triangle', 'star'
-                    x, y, width: w, height: h,
+                    id: Date.now().toString(),
+                    type: shapeType,
+                    x: Math.min(startPos.x, pos.x),
+                    y: Math.min(startPos.y, pos.y),
+                    width: w,
+                    height: h,
                     rotation: 0,
                     color: color,
                     strokeWidth: strokeWidth,
-                    text: '', // Embedded text
+                    text: '',
                     fontSize: 20
                 };
-                
                 setShapeObjects(prev => [...prev, newShapeObj]);
-                setSelectedShapeIds([newShapeObj.id]);
-                saveToHistory();
-
-                // Emit event to network
                 if (socket && sessionId) {
-                    socket.emit('whiteboard:shape-add', {
-                        sessionId,
-                        shape: newShapeObj
-                    });
+                    socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
                 }
             }
-            setShapePreview(null);
-        } else if (tool === 'select') {
-            if (selectMode === 'lasso') {
-                if (lassoPath.length > 2) {
-                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                    for (const p of lassoPath) {
-                        if (p.x < minX) minX = p.x;
-                        if (p.y < minY) minY = p.y;
-                        if (p.x > maxX) maxX = p.x;
-                        if (p.y > maxY) maxY = p.y;
-                    }
-                    const selWidth = maxX - minX;
-                    const selHeight = maxY - minY;
-                    
-                    if (selWidth > 5 && selHeight > 5) {
-                        let selectedShapes = shapeObjects.filter(shape => 
-                            !shape.isLocked &&
-                            shape.x < minX + selWidth && 
-                            shape.x + shape.width > minX && 
-                            shape.y < minY + selHeight && 
-                            shape.y + shape.height > minY
-                        ).map(s => s.id);
-                        
-                        let selectedTexts = textObjects.filter(txt => 
-                            !txt.isLocked &&
-                            txt.x < minX + selWidth && 
-                            txt.x + txt.width > minX && 
-                            txt.y < minY + selHeight && 
-                            txt.y + txt.height > minY
-                        ).map(s => s.id);
-
-                        let selectedImages = imageObjects.filter(img => 
-                            !img.isLocked &&
-                            img.x < minX + selWidth && 
-                            img.x + img.width > minX && 
-                            img.y < minY + selHeight && 
-                            img.y + img.height > minY
-                        ).map(s => s.id);
-
-                        const groupIdsToSelect = new Set([
-                            ...shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId),
-                            ...textObjects.filter(s => selectedTexts.includes(s.id) && s.groupId).map(s => s.groupId),
-                            ...imageObjects.filter(s => selectedImages.includes(s.id) && s.groupId).map(s => s.groupId)
-                        ]);
-
-                        if (groupIdsToSelect.size > 0) {
-                            const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                            const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                            const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                            selectedShapes = Array.from(new Set([...selectedShapes, ...groupShapeIds]));
-                            selectedTexts = Array.from(new Set([...selectedTexts, ...groupTextIds]));
-                            selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
-                        }
-
-                        if (selectedShapes.length > 0) setSelectedShapeIds(selectedShapes);
-                        else setSelectedShapeIds([]);
-                        if (selectedTexts.length > 0) setSelectedTextIds(selectedTexts);
-                        else setSelectedTextIds([]);
-                        if (selectedImages.length > 0) setSelectedImageId(selectedImages[selectedImages.length - 1]);
-                        else setSelectedImageId(null);
-                        setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath });
-                    }
-                }
-                setLassoPath([]);
-            } else {
-                const x = Math.min(startPos.x, pos.x);
-                const y = Math.min(startPos.y, pos.y);
-                const selWidth = Math.abs(pos.x - startPos.x);
-                const selHeight = Math.abs(pos.y - startPos.y);
-
-                if (selWidth > 5 && selHeight > 5) {
-                    let selectedShapes = shapeObjects.filter(shape => 
-                        !shape.isLocked &&
-                        shape.x < x + selWidth && 
-                        shape.x + shape.width > x && 
-                        shape.y < y + selHeight && 
-                        shape.y + shape.height > y
-                    ).map(s => s.id);
-
-                    let selectedTexts = textObjects.filter(txt => 
-                        !txt.isLocked &&
-                        txt.x < x + selWidth && 
-                        txt.x + txt.width > x && 
-                        txt.y < y + selHeight && 
-                        txt.y + txt.height > y
-                    ).map(s => s.id);
-
-                    let selectedImages = imageObjects.filter(img => 
-                        !img.isLocked &&
-                        img.x < x + selWidth && 
-                        img.x + img.width > x && 
-                        img.y < y + selHeight && 
-                        img.y + img.height > y
-                    ).map(s => s.id);
-
-                    const groupIdsToSelect = new Set([
-                        ...shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId),
-                        ...textObjects.filter(s => selectedTexts.includes(s.id) && s.groupId).map(s => s.groupId),
-                        ...imageObjects.filter(s => selectedImages.includes(s.id) && s.groupId).map(s => s.groupId)
-                    ]);
-
-                    if (groupIdsToSelect.size > 0) {
-                        const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                        const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                        const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                        selectedShapes = Array.from(new Set([...selectedShapes, ...groupShapeIds]));
-                        selectedTexts = Array.from(new Set([...selectedTexts, ...groupTextIds]));
-                        selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
-                    }
-
-                    if (selectedShapes.length > 0) setSelectedShapeIds(selectedShapes);
-                    else setSelectedShapeIds([]);
-                    if (selectedTexts.length > 0) setSelectedTextIds(selectedTexts);
-                    else setSelectedTextIds([]);
-                    if (selectedImages.length > 0) setSelectedImageId(selectedImages[selectedImages.length - 1]);
-                    else setSelectedImageId(null);
-                    setSelection({ x, y, width: selWidth, height: selHeight });
-                }
+        } else if (tool === 'laser') {
+            setLaserPos(null);
+            if (laserTimeoutRef.current) clearTimeout(laserTimeoutRef.current);
+            if (socket && sessionId) {
+                socket.emit('whiteboard:laser-update', {
+                    sessionId,
+                    laserPos: null
+                });
             }
         } else if (tool === 'text') {
             const x = Math.min(startPos.x, pos.x);
@@ -3050,7 +2206,7 @@ export default function Whiteboard({
         if (tool !== 'select' && tool !== 'laser' && tool !== 'text' && tool !== 'shape') {
             saveToHistory();
         }
-    }, [isDrawing, getPosition, tool, isAutoShape, color, strokeWidth, strokeStyle, eraserSize, saveToHistory, emitDrawEvent, shapeType, setShapeObjects, shapeObjects, isSharing, socket, sessionId]);
+    }, [isDrawing, getPosition, tool, isAutoShape, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, lineType, shapeType, saveToHistory, emitDrawEvent, setShapeObjects, shapeObjects, isSharing, socket, sessionId, startPos, currentPos]);
 
     // Screenshot - Composites all layers (background, canvas, images, text)
     const handleScreenshot = useCallback(() => {
