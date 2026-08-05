@@ -20,6 +20,23 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
     const compositeCanvasRef = useRef(null);
     const requestAnimationFrameRef = useRef(null);
     const imageCacheRef = useRef({});
+    
+    // Refs to hold the latest objects so the recording loop always has access to the most recent state
+    const shapeObjectsRef = useRef(shapeObjects);
+    const textObjectsRef = useRef(textObjects);
+    const imageObjectsRef = useRef(imageObjects);
+
+    useEffect(() => {
+        shapeObjectsRef.current = shapeObjects;
+    }, [shapeObjects]);
+
+    useEffect(() => {
+        textObjectsRef.current = textObjects;
+    }, [textObjects]);
+
+    useEffect(() => {
+        imageObjectsRef.current = imageObjects;
+    }, [imageObjects]);
 
     // Draggable camera state
     const [position, setPosition] = useState({ x: 24, y: 24 });
@@ -214,7 +231,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                 compositeCtx.drawImage(mainCanvas, 0, 0);
 
                 // Draw image objects
-                imageObjects.forEach(imgObj => {
+                imageObjectsRef.current.forEach(imgObj => {
                     let img = imageCacheRef.current[imgObj.src];
                     if (!img) {
                         img = new Image();
@@ -235,7 +252,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                 });
 
                 // Draw shape objects
-                shapeObjects.forEach(shpObj => {
+                shapeObjectsRef.current.forEach(shpObj => {
                     compositeCtx.save();
                     compositeCtx.translate(shpObj.x, shpObj.y);
                     // Handle rotation if any (Whiteboard doesn't support shape rotation yet but just in case)
@@ -385,7 +402,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                 });
 
                 // Draw text objects
-                textObjects.forEach(txtObj => {
+                textObjectsRef.current.forEach(txtObj => {
                     compositeCtx.save();
                     const centerX = txtObj.x + txtObj.width / 2;
                     const centerY = txtObj.y + txtObj.height / 2;
