@@ -48,8 +48,10 @@ router.post('/upload', authenticate, authorize('instructor', 'admin', 'lab_assis
                     folder: 'ulrms/whiteboard_recordings',
                     public_id: `wb_rec_${userId}_${Date.now()}`,
                     eager: [
-                        { width: 320, height: 180, crop: 'fill', format: 'jpg' }
-                    ]
+                        { width: 320, height: 180, crop: 'fill', format: 'jpg' },
+                        { format: 'mp4' }
+                    ],
+                    eager_async: true
                 },
                 (error, result) => {
                     if (error) reject(error);
@@ -78,7 +80,7 @@ router.post('/upload', authenticate, authorize('instructor', 'admin', 'lab_assis
             description: description || null,
             sessionId: sessionId || null,
             cloudinaryId: result.public_id,
-            cloudinaryUrl: result.secure_url,
+            cloudinaryUrl: result.secure_url.replace(/\.webm$/i, '.mp4'),
             thumbnailUrl: result.eager?.[0]?.secure_url || null,
             duration: Math.round(result.duration) || parseInt(duration) || 0,
             fileSize: result.bytes,

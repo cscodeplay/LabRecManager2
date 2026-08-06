@@ -1416,8 +1416,8 @@ export default function Whiteboard({
                 const rect = canvas.getBoundingClientRect();
                 const centerX = startObj.x + startObj.width / 2;
                 const centerY = startObj.y + startObj.height / 2;
-                const canvasCenterX = rect.left + (centerX / canvas.width) * rect.width;
-                const canvasCenterY = rect.top + (centerY / canvas.height) * rect.height;
+                const canvasCenterX = rect.left + centerX;
+                const canvasCenterY = rect.top + centerY;
 
                 const startAngle = Math.atan2(imageDragState.startY - canvasCenterY, imageDragState.startX - canvasCenterX);
                 const currentAngle = Math.atan2(e.clientY - canvasCenterY, e.clientX - canvasCenterX);
@@ -1501,8 +1501,8 @@ export default function Whiteboard({
                 const rect = canvas.getBoundingClientRect();
                 const centerX = startObj.x + startObj.width / 2;
                 const centerY = startObj.y + startObj.height / 2;
-                const canvasCenterX = rect.left + (centerX / canvas.width) * rect.width;
-                const canvasCenterY = rect.top + (centerY / canvas.height) * rect.height;
+                const canvasCenterX = rect.left + centerX;
+                const canvasCenterY = rect.top + centerY;
 
                 const startAngle = Math.atan2(textDragState.startY - canvasCenterY, textDragState.startX - canvasCenterX);
                 const currentAngle = Math.atan2(e.clientY - canvasCenterY, e.clientX - canvasCenterX);
@@ -1596,8 +1596,8 @@ export default function Whiteboard({
                 const centerX = startObj.x + startObj.width / 2;
                 const centerY = startObj.y + startObj.height / 2;
                 
-                const canvasCenterX = rect.left + (centerX / canvas.width) * rect.width;
-                const canvasCenterY = rect.top + (centerY / canvas.height) * rect.height;
+                const canvasCenterX = rect.left + centerX;
+                const canvasCenterY = rect.top + centerY;
 
                 const startAngle = Math.atan2(shapeDragState.startY - canvasCenterY, shapeDragState.startX - canvasCenterX);
                 const currentAngle = Math.atan2(e.clientY - canvasCenterY, e.clientX - canvasCenterX);
@@ -2428,7 +2428,148 @@ export default function Whiteboard({
         ctx.drawImage(canvas, 0, 0);
 
         // 4. Draw image objects
+        const currentShapeObjects = pageShapeObjects[currentPage] || [];
         const currentImageObjects = pageImageObjects[currentPage] || [];
+
+        // Draw shapes to screenshot
+        currentShapeObjects.forEach(shpObj => {
+            ctx.save();
+            const centerX = shpObj.x + shpObj.width / 2;
+            const centerY = shpObj.y + shpObj.height / 2;
+            
+            ctx.translate(centerX, centerY);
+            ctx.rotate((shpObj.rotation || 0) * Math.PI / 180);
+            ctx.translate(-centerX, -centerY);
+            
+            ctx.strokeStyle = shpObj.color;
+            ctx.lineWidth = shpObj.strokeWidth;
+            const fill = shpObj.fillColor || 'transparent';
+            ctx.fillStyle = fill;
+
+            ctx.beginPath();
+            if (shpObj.type === 'path') {
+                if (shpObj.points && shpObj.points.length > 0) {
+                    const pts = shpObj.points;
+                    ctx.moveTo(pts[0].x, pts[0].y);
+                    if (shpObj.isSmoothed) {
+                        for (let i = 1; i < pts.length - 1; i++) {
+                            const xc = (pts[i].x + pts[i + 1].x) / 2;
+                            const yc = (pts[i].y + pts[i + 1].y) / 2;
+                            ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+                        }
+                        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+                    } else {
+                        for (let i = 1; i < pts.length; i++) {
+                            ctx.lineTo(pts[i].x, pts[i].y);
+                        }
+                    }
+                    if (shpObj.isHighlighter) ctx.globalAlpha = 0.5;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.stroke();
+                }
+            } else if (shpObj.type === 'line') {
+                ctx.moveTo(shpObj.startX, shpObj.startY);
+                ctx.lineTo(shpObj.endX, shpObj.endY);
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            } else if (shpObj.type === 'arrow') {
+                ctx.moveTo(shpObj.startX, shpObj.startY);
+                ctx.lineTo(shpObj.endX, shpObj.endY);
+                const angle = Math.atan2(shpObj.endY - shpObj.startY, shpObj.endX - shpObj.startX);
+                const headLength = shpObj.strokeWidth * 4;
+                const p1 = { x: shpObj.endX, y: shpObj.endY };
+                const p2 = { x: shpObj.endX - headLength * Math.cos(angle - Math.PI / 6), y: shpObj.endY - headLength * Math.sin(angle - Math.PI / 6) };
+                const p3 = { x: shpObj.endX - headLength * Math.cos(angle + Math.PI / 6), y: shpObj.endY - headLength * Math.sin(angle + Math.PI / 6) };
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.lineTo(p3.x, p3.y);
+                ctx.closePath();
+                ctx.fillStyle = shpObj.color;
+                ctx.fill();
+                ctx.beginPath();
+            } else if (shpObj.type === 'graph') {
+                ctx.rect(shpObj.x, shpObj.y, shpObj.width, shpObj.height);
+                if (shpObj.fillColor) ctx.fill();
+                ctx.beginPath();
+                ctx.lineWidth = Math.max(0.5, shpObj.strokeWidth * 0.3);
+                ctx.setLineDash([4, 4]);
+                ctx.globalAlpha = 0.4;
+                for(let i=0; i<9; i++) {
+                    ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width/10), shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8));
+                    ctx.lineTo(shpObj.x + (shpObj.x + shpObj.width*0.9), shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8));
+                    ctx.moveTo((shpObj.x + shpObj.width/10) + (shpObj.width*0.8) * (i/8), shpObj.y + shpObj.height/10);
+                    ctx.lineTo((shpObj.x + shpObj.width/10) + (shpObj.width*0.8) * (i/8), shpObj.y + shpObj.height*0.9);
+                }
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.globalAlpha = 1.0;
+                ctx.setLineDash([]);
+                ctx.lineWidth = shpObj.strokeWidth;
+                ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width/10), shpObj.y + shpObj.height/10);
+                ctx.lineTo((shpObj.x + shpObj.width/10), shpObj.y + shpObj.height*0.9);
+                ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width/10), (shpObj.y + shpObj.height/2));
+                ctx.lineTo(shpObj.x + (shpObj.x + shpObj.width*0.9), (shpObj.y + shpObj.height/2));
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width/10), shpObj.y + shpObj.height/10);
+                ctx.lineTo((shpObj.x + shpObj.width/10) - 4, shpObj.y + shpObj.height/10 + 8);
+                ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width/10), shpObj.y + shpObj.height/10);
+                ctx.lineTo((shpObj.x + shpObj.width/10) + 4, shpObj.y + shpObj.height/10 + 8);
+                ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width*0.9), (shpObj.y + shpObj.height/2));
+                ctx.lineTo((shpObj.x + shpObj.width*0.9) - 8, (shpObj.y + shpObj.height/2) - 4);
+                ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width*0.9), (shpObj.y + shpObj.height/2));
+                ctx.lineTo((shpObj.x + shpObj.width*0.9) - 8, (shpObj.y + shpObj.height/2) + 4);
+                ctx.fill();
+            } else if (shpObj.type === 'rect') {
+                ctx.rect(shpObj.x, shpObj.y, shpObj.width, shpObj.height);
+                if (shpObj.fillColor) ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'circle') {
+                ctx.ellipse(shpObj.x + shpObj.width/2, shpObj.y + (shpObj.y + shpObj.height/2), shpObj.width/2, (shpObj.y + shpObj.height/2), 0, 0, Math.PI * 2);
+                if (shpObj.fillColor) ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'triangle') {
+                ctx.moveTo(shpObj.x + shpObj.width/2, shpObj.y);
+                ctx.lineTo(shpObj.x, shpObj.y + shpObj.height);
+                ctx.lineTo(shpObj.x + shpObj.width, shpObj.y + shpObj.height);
+                ctx.closePath();
+                if (shpObj.fillColor) ctx.fill();
+                ctx.stroke();
+            } else if (shpObj.type === 'star') {
+                const cx = shpObj.x + shpObj.width / 2;
+                const cy = shpObj.y + shpObj.height / 2;
+                const outerRadius = Math.min(shpObj.width/2, (shpObj.y + shpObj.height/2));
+                const innerRadius = outerRadius / 2.5;
+                for (let i = 0; i < 10; i++) {
+                    const r = i % 2 === 0 ? outerRadius : innerRadius;
+                    const angle = (i * Math.PI) / 5 - Math.PI / 2;
+                    if (i === 0) ctx.moveTo(cx + r * Math.cos(angle), cy + r * Math.sin(angle));
+                    else ctx.lineTo(cx + r * Math.cos(angle), cy + r * Math.sin(angle));
+                }
+                ctx.closePath();
+                if (shpObj.fillColor) ctx.fill();
+                ctx.stroke();
+            }
+
+            if (shpObj.text !== undefined && shpObj.text !== '') {
+                ctx.font = `${shpObj.fontSize || 20}px 'Inter', system-ui, sans-serif`;
+                ctx.fillStyle = shpObj.textColor || shpObj.color;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const lines = shpObj.text.split('\n');
+                const lineHeight = (shpObj.fontSize || 20) * 1.3;
+                let startY = shpObj.y + (shpObj.height / 2) - ((lines.length - 1) * lineHeight) / 2;
+                lines.forEach(line => {
+                    ctx.fillText(line, shpObj.x + shpObj.width / 2, startY);
+                    startY += lineHeight;
+                });
+            }
+            ctx.restore();
+        });
+
         currentImageObjects.forEach(imgObj => {
             const img = new Image();
             img.crossOrigin = 'anonymous';
@@ -3809,8 +3950,9 @@ export default function Whiteboard({
                                     height: imgObj.height,
                                     transform: `rotate(${imgObj.rotation}deg)`,
                                     transformOrigin: 'center center',
-                                    cursor: isSelected ? 'move' : 'pointer',
+                                    cursor: isSelected ? 'move' : 'crosshair',
                                     zIndex: isSelected ? 20 : 10,
+                                    pointerEvents: 'none',
                                     // Disable pointer events when select tool is active so selection rectangle can be drawn
                                     pointerEvents: 'none',
                                 }}
@@ -3847,6 +3989,7 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none" />
+                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setImageDragState({ id: imgObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...imgObj } }); }} />
 
                                         {/* Corner Resize Handles */}
                                         {['nw', 'ne', 'sw', 'se'].map(corner => {
@@ -3922,7 +4065,7 @@ export default function Whiteboard({
                                             <div className="w-px h-5 bg-blue-500" />
                                             <div
                                                 data-handle="rotate"
-                                                className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center cursor-grab hover:bg-blue-600"
+                                                className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center cursor-grab hover:bg-blue-600" style={{ cursor: 'grab' }}
                                                 onMouseDown={(e) => {
                                                     e.stopPropagation();
                                                     setImageDragState({
@@ -3973,9 +4116,9 @@ export default function Whiteboard({
                                     minHeight: txtObj.height,
                                     transform: `rotate(${txtObj.rotation || 0}deg)`,
                                     transformOrigin: 'center center',
-                                    cursor: isEditing ? 'text' : isSelected ? 'move' : 'pointer',
+                                    cursor: isEditing ? 'text' : isSelected ? 'move' : 'crosshair',
                                     zIndex: isSelected || isEditing ? 20 : 10,
-                                    pointerEvents: isDrawing ? 'none' : 'auto',
+                                    pointerEvents: 'none',
                                     backgroundColor: txtObj.bgColor || 'transparent',
                                 }}
                                 onClick={(e) => {
@@ -4058,6 +4201,7 @@ export default function Whiteboard({
                                     <div
                                         className="w-full h-full p-2 whitespace-pre-wrap break-words select-none"
                                         style={{
+                                            pointerEvents: (tool === 'select' || isSelected) ? 'auto' : 'none',
                                             color: txtObj.color,
                                             fontSize: `${txtObj.fontSize}px`,
                                             fontWeight: txtObj.fontWeight || 'normal',
@@ -4075,6 +4219,7 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-green-500 pointer-events-none" />
+                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj } }); }} />
 
 
                                         {/* Corner Resize Handles */}
@@ -4153,7 +4298,7 @@ export default function Whiteboard({
                                             <div className="w-px h-5 bg-green-500" />
                                             <div
                                                 data-handle="rotate"
-                                                className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center cursor-grab hover:bg-green-600"
+                                                className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center cursor-grab hover:bg-green-600" style={{ cursor: 'grab' }}
                                                 onMouseDown={(e) => {
                                                     e.stopPropagation();
                                                     e.preventDefault();
@@ -4219,7 +4364,7 @@ export default function Whiteboard({
                                         const angle = (i * Math.PI) / 5 - Math.PI / 2;
                                         points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
                                     }
-                                    return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} points={points.join(' ')} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />;
+                                    return <polygon style={{ pointerEvents: 'none' }} points={points.join(' ')} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />;
                                 })()}
                                 {shapePreview.type === 'graph' && (
                                     <g stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} fill="transparent">
@@ -4251,12 +4396,12 @@ export default function Whiteboard({
                             if (shpObj.type === 'rectangle') {
                                 return <rect style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
                             } else if (shpObj.type === 'circle') {
-                                return <ellipse style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                return <ellipse style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} cx={shpObj.width/2} cy={(shpObj.y + shpObj.height/2)} rx={shpObj.width/2} ry={(shpObj.y + shpObj.height/2)} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
                             } else if (shpObj.type === 'triangle') {
                                 return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
                             } else if (shpObj.type === 'star') {
-                                const cx = shpObj.width / 2;
-                                const cy = shpObj.height / 2;
+                                const cx = shpObj.x + shpObj.width / 2;
+                                const cy = shpObj.y + shpObj.height / 2;
                                 const outerRadius = Math.min(cx, cy);
                                 const innerRadius = outerRadius / 2.5;
                                 let points = [];
@@ -4321,20 +4466,20 @@ export default function Whiteboard({
                             } else if (shpObj.type === 'graph') {
                                 return (
                                     <g stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} fill={fill}>
-                                        <rect width={shpObj.width} height={shpObj.height} fill={fill} stroke="none" />
+                                        <rect width={shpObj.width} height={shpObj.height} fill={fill || 'transparent'} stroke="none" style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} />
                                         {/* Grid lines */}
                                         {Array.from({ length: 9 }).map((_, i) => (
-                                            <line key={`h-${i}`} x1={shpObj.width/10} y1={shpObj.height/10 + (shpObj.height*0.8) * (i/8)} x2={shpObj.width*0.9} y2={shpObj.height/10 + (shpObj.height*0.8) * (i/8)} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
+                                            <line key={`h-${i}`} x1={(shpObj.x + shpObj.width/10)} y1={shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8)} x2={(shpObj.x + shpObj.width*0.9)} y2={shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8)} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
                                         ))}
                                         {Array.from({ length: 9 }).map((_, i) => (
-                                            <line key={`v-${i}`} x1={shpObj.width/10 + (shpObj.width*0.8) * (i/8)} y1={shpObj.height/10} x2={shpObj.width/10 + (shpObj.width*0.8) * (i/8)} y2={shpObj.height*0.9} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
+                                            <line key={`v-${i}`} x1={(shpObj.x + shpObj.width/10) + (shpObj.width*0.8) * (i/8)} y1={shpObj.y + shpObj.height/10} x2={(shpObj.x + shpObj.width/10) + (shpObj.width*0.8) * (i/8)} y2={shpObj.y + shpObj.height*0.9} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
                                         ))}
                                         {/* Y-axis */}
-                                        <line x1={shpObj.width/10} y1={shpObj.height/10} x2={shpObj.width/10} y2={shpObj.height*0.9} />
-                                        <polygon points={`${shpObj.width/10},${shpObj.height/10} ${shpObj.width/10 - 4},${shpObj.height/10 + 8} ${shpObj.width/10 + 4},${shpObj.height/10 + 8}`} fill={shpObj.color} stroke="none" />
+                                        <line x1={(shpObj.x + shpObj.width/10)} y1={shpObj.y + shpObj.height/10} x2={(shpObj.x + shpObj.width/10)} y2={shpObj.y + shpObj.height*0.9} />
+                                        <polygon points={`${(shpObj.x + shpObj.width/10)},${shpObj.y + shpObj.height/10} ${(shpObj.x + shpObj.width/10) - 4},${shpObj.y + shpObj.height/10 + 8} ${(shpObj.x + shpObj.width/10) + 4},${shpObj.y + shpObj.height/10 + 8}`} fill={shpObj.color} stroke="none" />
                                         {/* X-axis */}
-                                        <line x1={shpObj.width/10} y1={shpObj.height/2} x2={shpObj.width*0.9} y2={shpObj.height/2} />
-                                        <polygon points={`${shpObj.width*0.9},${shpObj.height/2} ${shpObj.width*0.9 - 8},${shpObj.height/2 - 4} ${shpObj.width*0.9 - 8},${shpObj.height/2 + 4}`} fill={shpObj.color} stroke="none" />
+                                        <line x1={(shpObj.x + shpObj.width/10)} y1={(shpObj.y + shpObj.height/2)} x2={(shpObj.x + shpObj.width*0.9)} y2={(shpObj.y + shpObj.height/2)} />
+                                        <polygon points={`${(shpObj.x + shpObj.width*0.9)},${(shpObj.y + shpObj.height/2)} ${(shpObj.x + shpObj.width*0.9) - 8},${(shpObj.y + shpObj.height/2) - 4} ${(shpObj.x + shpObj.width*0.9) - 8},${(shpObj.y + shpObj.height/2) + 4}`} fill={shpObj.color} stroke="none" />
                                     </g>
                                 );
                             }
@@ -4352,7 +4497,7 @@ export default function Whiteboard({
                                     height: shpObj.height,
                                     transform: `rotate(${shpObj.rotation || 0}deg)`,
                                     transformOrigin: 'center center',
-                                    cursor: isSelected ? 'move' : 'pointer',
+                                    cursor: isSelected ? 'move' : 'crosshair',
                                     zIndex: isSelected ? 20 : 10,
                                     pointerEvents: 'none',
                                 }}
@@ -4467,6 +4612,7 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-purple-500 pointer-events-none" />
+                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setShapeDragState({ id: shpObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...shpObj }, startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
                                         
 
                                         
@@ -4531,7 +4677,7 @@ export default function Whiteboard({
                                             <div className="w-px h-5 bg-purple-500" />
                                             <div
                                                 data-handle="rotate"
-                                                className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center cursor-grab hover:bg-purple-600"
+                                                className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center cursor-grab hover:bg-purple-600" style={{ cursor: 'grab' }}
                                                 onMouseDown={(e) => {
                                                     e.stopPropagation();
                                                     e.preventDefault();
