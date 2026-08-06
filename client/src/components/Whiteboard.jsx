@@ -3812,7 +3812,7 @@ export default function Whiteboard({
                                     cursor: isSelected ? 'move' : 'pointer',
                                     zIndex: isSelected ? 20 : 10,
                                     // Disable pointer events when select tool is active so selection rectangle can be drawn
-                                    pointerEvents: isDrawing ? 'none' : ((tool === 'select' || isSelected) ? 'auto' : 'none'),
+                                    pointerEvents: 'none',
                                 }}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -4204,7 +4204,7 @@ export default function Whiteboard({
                                 height: shapePreview.height,
                             }}
                         >
-                            <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+                            <svg width="100%" height="100%" style={{ overflow: 'visible', pointerEvents: 'none' }}>
                                 {shapePreview.type === 'rectangle' && <rect x="0" y="0" width={shapePreview.width} height={shapePreview.height} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
                                 {shapePreview.type === 'circle' && <ellipse cx={shapePreview.width/2} cy={shapePreview.height/2} rx={shapePreview.width/2} ry={shapePreview.height/2} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
                                 {shapePreview.type === 'triangle' && <polygon points={`${shapePreview.width/2},0 0,${shapePreview.height} ${shapePreview.width},${shapePreview.height}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
@@ -4219,7 +4219,7 @@ export default function Whiteboard({
                                         const angle = (i * Math.PI) / 5 - Math.PI / 2;
                                         points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
                                     }
-                                    return <polygon points={points.join(' ')} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />;
+                                    return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} points={points.join(' ')} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />;
                                 })()}
                                 {shapePreview.type === 'graph' && (
                                     <g stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} fill="transparent">
@@ -4249,11 +4249,11 @@ export default function Whiteboard({
                         const renderShapeSVG = () => {
                             const fill = shpObj.fillColor || 'transparent';
                             if (shpObj.type === 'rectangle') {
-                                return <rect x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                return <rect style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
                             } else if (shpObj.type === 'circle') {
-                                return <ellipse cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                return <ellipse style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
                             } else if (shpObj.type === 'triangle') {
-                                return <polygon points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
                             } else if (shpObj.type === 'star') {
                                 const cx = shpObj.width / 2;
                                 const cy = shpObj.height / 2;
@@ -4265,7 +4265,7 @@ export default function Whiteboard({
                                     const angle = (i * Math.PI) / 5 - Math.PI / 2;
                                     points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
                                 }
-                                return <polygon points={points.join(' ')} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} points={points.join(' ')} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
                             } else if (shpObj.type === 'path') {
                                 if (!shpObj.points || shpObj.points.length === 0) return null;
                                 const pts = shpObj.points;
@@ -4354,7 +4354,7 @@ export default function Whiteboard({
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'pointer',
                                     zIndex: isSelected ? 20 : 10,
-                                    pointerEvents: isDrawing ? 'none' : ((tool === 'select' || isSelected) ? 'auto' : 'none'),
+                                    pointerEvents: 'none',
                                 }}
                                 onPointerDown={(e) => {
                                     let activeSelectionIds = selectedShapeIds;
@@ -4406,7 +4406,7 @@ export default function Whiteboard({
                                     });
                                 }}
                             >
-                                <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+                                <svg width="100%" height="100%" style={{ overflow: 'visible', pointerEvents: 'none' }}>
                                     {renderShapeSVG()}
                                     </svg>
 

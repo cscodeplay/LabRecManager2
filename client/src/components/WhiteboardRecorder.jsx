@@ -441,17 +441,31 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                     
                     // position.x and position.y are absolute screen coordinates (left, top)
                     // The video PIP is below the controls (roughly 44px gap)
-                    const drawX = position.x * scaleX;
-                    const drawY = (position.y + 44) * scaleY;
+                    // Calculate bounds relative to the main canvas
+                    const rect = mainCanvas.getBoundingClientRect();
+                    
+                    // position.x and position.y are relative to the viewport.
+                    // We need them relative to the canvas origin.
+                    const relativeX = position.x - rect.left;
+                    const relativeY = (position.y + 44) - rect.top; // +44 for the toolbar height
+
+                    const rawDrawX = relativeX * scaleX;
+                    const rawDrawY = relativeY * scaleY;
+
+                    // Clamp to make sure the video fits entirely inside the canvas bounds
+                    const scaledVideoW = videoWidth * scaleX;
+                    const scaledVideoH = videoHeight * scaleY;
+                    const clampedDrawX = Math.max(0, Math.min(rawDrawX, width - scaledVideoW));
+                    const clampedDrawY = Math.max(0, Math.min(rawDrawY, height - scaledVideoH));
                     
                     // We must respect the scale to match the video element's CSS
                     // Also, the video is horizontally flipped! `transform scale-x-[-1]`
                     compositeCtx.save();
                     // Move to the position
-                    compositeCtx.translate(drawX + (videoWidth * scaleX), drawY);
+                    compositeCtx.translate(clampedDrawX + scaledVideoW, clampedDrawY);
                     compositeCtx.scale(-1, 1);
                     // Draw video
-                    compositeCtx.drawImage(videoPreviewRef.current, 0, 0, videoWidth * scaleX, videoHeight * scaleY);
+                    compositeCtx.drawImage(videoPreviewRef.current, 0, 0, scaledVideoW, scaledVideoH);
                     compositeCtx.restore();
                 }
                 
@@ -568,7 +582,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                 screenStreamRef.current.getTracks().forEach(track => track.stop());
                 screenStreamRef.current = null;
             }
-            toast.loading('Uploading recording...', { id: 'recording-upload' });
+            
         }
     };
 
@@ -611,7 +625,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
         } catch (err) {
             setUploadProgress(null);
             console.error('Error uploading recording:', err);
-            toast.error('Failed to upload recording', { id: 'recording-upload' });
+            toast.error('Failed to upload recording');
         }
     };
 
@@ -631,6 +645,18 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
         >
+            {uploadProgress !== null && (
+                <div className="absolute -top-8 left-0 right-0 bg-slate-800 rounded-full shadow-lg border border-slate-700/50 p-1 flex items-center gap-2 px-3 overflow-hidden">
+                    <div className="text-xs text-primary-400 font-medium whitespace-nowrap">Uploading</div>
+                    <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                        <div 
+                            className="h-full bg-primary-500 rounded-full transition-all duration-300"
+                            style={{ width: `${uploadProgress}%` }}
+                        ></div>
+                    </div>
+                    <div className="text-xs text-slate-400">{uploadProgress}%</div>
+                </div>
+            )}
             {/* Recording Controls */}
             <div className="bg-slate-800/95 backdrop-blur-md px-2 py-1 rounded-full shadow-xl border border-slate-700/50 flex items-center gap-1">
                 <div className="px-1 text-slate-500 hover:text-slate-300 cursor-grab active:cursor-grabbing">
