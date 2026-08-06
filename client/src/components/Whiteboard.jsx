@@ -1906,6 +1906,45 @@ export default function Whiteboard({
 
             if (tool === 'eraser') {
                 ctx.globalCompositeOperation = 'source-over';
+                
+                const eraserRadius = eraserSize / 2;
+                const eraserX = pos.x;
+                const eraserY = pos.y;
+                
+                setShapeObjects(prev => prev.filter(shape => {
+                    // Check if eraser circle overlaps with shape bounding box
+                    const closestX = Math.max(shape.x, Math.min(eraserX, shape.x + shape.width));
+                    const closestY = Math.max(shape.y, Math.min(eraserY, shape.y + shape.height));
+                    const distX = eraserX - closestX;
+                    const distY = eraserY - closestY;
+                    const distSq = distX * distX + distY * distY;
+                    const intersects = distSq <= eraserRadius * eraserRadius;
+                    
+                    if (intersects && socket && sessionId) {
+                        socket.emit('whiteboard:shape-delete', { sessionId, shapeId: shape.id });
+                    }
+                    return !intersects;
+                }));
+                
+                // Also remove text objects under eraser
+                setTextObjects(prev => prev.filter(txt => {
+                    const closestX = Math.max(txt.x, Math.min(eraserX, txt.x + txt.width));
+                    const closestY = Math.max(txt.y, Math.min(eraserY, txt.y + txt.height));
+                    const distX = eraserX - closestX;
+                    const distY = eraserY - closestY;
+                    const distSq = distX * distX + distY * distY;
+                    return distSq > eraserRadius * eraserRadius;
+                }));
+                
+                // Also remove image objects under eraser
+                setImageObjects(prev => prev.filter(img => {
+                    const closestX = Math.max(img.x, Math.min(eraserX, img.x + img.width));
+                    const closestY = Math.max(img.y, Math.min(eraserY, img.y + img.height));
+                    const distX = eraserX - closestX;
+                    const distY = eraserY - closestY;
+                    const distSq = distX * distX + distY * distY;
+                    return distSq > eraserRadius * eraserRadius;
+                }));
             }
 
             emitDrawEvent({
@@ -2498,37 +2537,41 @@ export default function Whiteboard({
                 ctx.setLineDash([4, 4]);
                 ctx.globalAlpha = 0.4;
                 for(let i=0; i<9; i++) {
-                    ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width/10), shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8));
-                    ctx.lineTo(shpObj.x + (shpObj.x + shpObj.width*0.9), shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8));
-                    ctx.moveTo((shpObj.x + shpObj.width/10) + (shpObj.width*0.8) * (i/8), shpObj.y + shpObj.height/10);
-                    ctx.lineTo((shpObj.x + shpObj.width/10) + (shpObj.width*0.8) * (i/8), shpObj.y + shpObj.height*0.9);
+                    ctx.moveTo(shpObj.x + shpObj.width/10, shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8));
+                    ctx.lineTo(shpObj.x + shpObj.width*0.9, shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8));
+                    ctx.moveTo(shpObj.x + shpObj.width/10 + (shpObj.width*0.8) * (i/8), shpObj.y + shpObj.height/10);
+                    ctx.lineTo(shpObj.x + shpObj.width/10 + (shpObj.width*0.8) * (i/8), shpObj.y + shpObj.height*0.9);
                 }
                 ctx.stroke();
                 ctx.beginPath();
                 ctx.globalAlpha = 1.0;
                 ctx.setLineDash([]);
                 ctx.lineWidth = shpObj.strokeWidth;
-                ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width/10), shpObj.y + shpObj.height/10);
-                ctx.lineTo((shpObj.x + shpObj.width/10), shpObj.y + shpObj.height*0.9);
-                ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width/10), (shpObj.y + shpObj.height/2));
-                ctx.lineTo(shpObj.x + (shpObj.x + shpObj.width*0.9), (shpObj.y + shpObj.height/2));
+                // Y-axis
+                ctx.moveTo(shpObj.x + shpObj.width/10, shpObj.y + shpObj.height/10);
+                ctx.lineTo(shpObj.x + shpObj.width/10, shpObj.y + shpObj.height*0.9);
+                // X-axis
+                ctx.moveTo(shpObj.x + shpObj.width/10, shpObj.y + shpObj.height/2);
+                ctx.lineTo(shpObj.x + shpObj.width*0.9, shpObj.y + shpObj.height/2);
                 ctx.stroke();
                 ctx.beginPath();
-                ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width/10), shpObj.y + shpObj.height/10);
-                ctx.lineTo((shpObj.x + shpObj.width/10) - 4, shpObj.y + shpObj.height/10 + 8);
-                ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width/10), shpObj.y + shpObj.height/10);
-                ctx.lineTo((shpObj.x + shpObj.width/10) + 4, shpObj.y + shpObj.height/10 + 8);
-                ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width*0.9), (shpObj.y + shpObj.height/2));
-                ctx.lineTo((shpObj.x + shpObj.width*0.9) - 8, (shpObj.y + shpObj.height/2) - 4);
-                ctx.moveTo(shpObj.x + (shpObj.x + shpObj.width*0.9), (shpObj.y + shpObj.height/2));
-                ctx.lineTo((shpObj.x + shpObj.width*0.9) - 8, (shpObj.y + shpObj.height/2) + 4);
+                // Y-axis arrow
+                ctx.moveTo(shpObj.x + shpObj.width/10, shpObj.y + shpObj.height/10);
+                ctx.lineTo(shpObj.x + shpObj.width/10 - 4, shpObj.y + shpObj.height/10 + 8);
+                ctx.moveTo(shpObj.x + shpObj.width/10, shpObj.y + shpObj.height/10);
+                ctx.lineTo(shpObj.x + shpObj.width/10 + 4, shpObj.y + shpObj.height/10 + 8);
+                // X-axis arrow
+                ctx.moveTo(shpObj.x + shpObj.width*0.9, shpObj.y + shpObj.height/2);
+                ctx.lineTo(shpObj.x + shpObj.width*0.9 - 8, shpObj.y + shpObj.height/2 - 4);
+                ctx.moveTo(shpObj.x + shpObj.width*0.9, shpObj.y + shpObj.height/2);
+                ctx.lineTo(shpObj.x + shpObj.width*0.9 - 8, shpObj.y + shpObj.height/2 + 4);
                 ctx.fill();
             } else if (shpObj.type === 'rect') {
                 ctx.rect(shpObj.x, shpObj.y, shpObj.width, shpObj.height);
                 if (shpObj.fillColor) ctx.fill();
                 ctx.stroke();
             } else if (shpObj.type === 'circle') {
-                ctx.ellipse(shpObj.x + shpObj.width/2, shpObj.y + (shpObj.y + shpObj.height/2), shpObj.width/2, (shpObj.y + shpObj.height/2), 0, 0, Math.PI * 2);
+                ctx.ellipse(shpObj.x + shpObj.width/2, shpObj.y + shpObj.height/2, shpObj.width/2, shpObj.height/2, 0, 0, Math.PI * 2);
                 if (shpObj.fillColor) ctx.fill();
                 ctx.stroke();
             } else if (shpObj.type === 'triangle') {
@@ -2541,7 +2584,7 @@ export default function Whiteboard({
             } else if (shpObj.type === 'star') {
                 const cx = shpObj.x + shpObj.width / 2;
                 const cy = shpObj.y + shpObj.height / 2;
-                const outerRadius = Math.min(shpObj.width/2, (shpObj.y + shpObj.height/2));
+                const outerRadius = Math.min(shpObj.width/2, shpObj.height/2);
                 const innerRadius = outerRadius / 2.5;
                 for (let i = 0; i < 10; i++) {
                     const r = i % 2 === 0 ? outerRadius : innerRadius;
@@ -4396,12 +4439,12 @@ export default function Whiteboard({
                             if (shpObj.type === 'rectangle') {
                                 return <rect style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
                             } else if (shpObj.type === 'circle') {
-                                return <ellipse style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} cx={shpObj.width/2} cy={(shpObj.y + shpObj.height/2)} rx={shpObj.width/2} ry={(shpObj.y + shpObj.height/2)} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                return <ellipse style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} cx={shpObj.width/2} cy={shpObj.height/2} rx={shpObj.width/2} ry={shpObj.height/2} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
                             } else if (shpObj.type === 'triangle') {
                                 return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
                             } else if (shpObj.type === 'star') {
-                                const cx = shpObj.x + shpObj.width / 2;
-                                const cy = shpObj.y + shpObj.height / 2;
+                                const cx = shpObj.width / 2;
+                                const cy = shpObj.height / 2;
                                 const outerRadius = Math.min(cx, cy);
                                 const innerRadius = outerRadius / 2.5;
                                 let points = [];
@@ -4437,17 +4480,31 @@ export default function Whiteboard({
                                 const scaleX = shpObj.width / origW;
                                 const scaleY = shpObj.height / origH;
                                 return (
-                                    <path 
-                                        d={d} 
-                                        fill="none" 
-                                        stroke={shpObj.color} 
-                                        strokeWidth={shpObj.strokeWidth} 
-                                        strokeLinecap="round" 
-                                        strokeLinejoin="round" 
-                                        opacity={shpObj.isHighlighter ? 0.5 : 1}
-                                        transform={`scale(${scaleX}, ${scaleY})`}
-                                        vectorEffect="non-scaling-stroke"
-                                    />
+                                    <g>
+                                        {/* Invisible wide hit-test path for easier clicking */}
+                                        <path 
+                                            d={d} 
+                                            fill="none" 
+                                            stroke="transparent" 
+                                            strokeWidth={Math.max(shpObj.strokeWidth + 16, 20)} 
+                                            strokeLinecap="round" 
+                                            strokeLinejoin="round" 
+                                            transform={`scale(${scaleX}, ${scaleY})`}
+                                            style={{ pointerEvents: (tool === 'select') ? 'stroke' : 'none' }}
+                                        />
+                                        <path 
+                                            d={d} 
+                                            fill="none" 
+                                            stroke={shpObj.color} 
+                                            strokeWidth={shpObj.strokeWidth} 
+                                            strokeLinecap="round" 
+                                            strokeLinejoin="round" 
+                                            opacity={shpObj.isHighlighter ? 0.5 : 1}
+                                            transform={`scale(${scaleX}, ${scaleY})`}
+                                            vectorEffect="non-scaling-stroke"
+                                            style={{ pointerEvents: 'none' }}
+                                        />
+                                    </g>
                                 );
                             } else if (shpObj.type === 'line') {
                                 return <line x1={shpObj.startX} y1={shpObj.startY} x2={shpObj.endX} y2={shpObj.endY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />;
@@ -4469,17 +4526,17 @@ export default function Whiteboard({
                                         <rect width={shpObj.width} height={shpObj.height} fill={fill || 'transparent'} stroke="none" style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} />
                                         {/* Grid lines */}
                                         {Array.from({ length: 9 }).map((_, i) => (
-                                            <line key={`h-${i}`} x1={(shpObj.x + shpObj.width/10)} y1={shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8)} x2={(shpObj.x + shpObj.width*0.9)} y2={shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8)} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
+                                            <line key={`h-${i}`} x1={shpObj.width/10} y1={shpObj.height/10 + (shpObj.height*0.8) * (i/8)} x2={shpObj.width*0.9} y2={shpObj.height/10 + (shpObj.height*0.8) * (i/8)} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
                                         ))}
                                         {Array.from({ length: 9 }).map((_, i) => (
-                                            <line key={`v-${i}`} x1={(shpObj.x + shpObj.width/10) + (shpObj.width*0.8) * (i/8)} y1={shpObj.y + shpObj.height/10} x2={(shpObj.x + shpObj.width/10) + (shpObj.width*0.8) * (i/8)} y2={shpObj.y + shpObj.height*0.9} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
+                                            <line key={`v-${i}`} x1={shpObj.width/10 + (shpObj.width*0.8) * (i/8)} y1={shpObj.height/10} x2={shpObj.width/10 + (shpObj.width*0.8) * (i/8)} y2={shpObj.height*0.9} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
                                         ))}
                                         {/* Y-axis */}
-                                        <line x1={(shpObj.x + shpObj.width/10)} y1={shpObj.y + shpObj.height/10} x2={(shpObj.x + shpObj.width/10)} y2={shpObj.y + shpObj.height*0.9} />
-                                        <polygon points={`${(shpObj.x + shpObj.width/10)},${shpObj.y + shpObj.height/10} ${(shpObj.x + shpObj.width/10) - 4},${shpObj.y + shpObj.height/10 + 8} ${(shpObj.x + shpObj.width/10) + 4},${shpObj.y + shpObj.height/10 + 8}`} fill={shpObj.color} stroke="none" />
+                                        <line x1={shpObj.width/10} y1={shpObj.height/10} x2={shpObj.width/10} y2={shpObj.height*0.9} />
+                                        <polygon points={`${shpObj.width/10},${shpObj.height/10} ${shpObj.width/10 - 4},${shpObj.height/10 + 8} ${shpObj.width/10 + 4},${shpObj.height/10 + 8}`} fill={shpObj.color} stroke="none" />
                                         {/* X-axis */}
-                                        <line x1={(shpObj.x + shpObj.width/10)} y1={(shpObj.y + shpObj.height/2)} x2={(shpObj.x + shpObj.width*0.9)} y2={(shpObj.y + shpObj.height/2)} />
-                                        <polygon points={`${(shpObj.x + shpObj.width*0.9)},${(shpObj.y + shpObj.height/2)} ${(shpObj.x + shpObj.width*0.9) - 8},${(shpObj.y + shpObj.height/2) - 4} ${(shpObj.x + shpObj.width*0.9) - 8},${(shpObj.y + shpObj.height/2) + 4}`} fill={shpObj.color} stroke="none" />
+                                        <line x1={shpObj.width/10} y1={shpObj.height/2} x2={shpObj.width*0.9} y2={shpObj.height/2} />
+                                        <polygon points={`${shpObj.width*0.9},${shpObj.height/2} ${shpObj.width*0.9 - 8},${shpObj.height/2 - 4} ${shpObj.width*0.9 - 8},${shpObj.height/2 + 4}`} fill={shpObj.color} stroke="none" />
                                     </g>
                                 );
                             }
@@ -4499,7 +4556,7 @@ export default function Whiteboard({
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'crosshair',
                                     zIndex: isSelected ? 20 : 10,
-                                    pointerEvents: 'none',
+                                    pointerEvents: tool === 'select' ? 'auto' : 'none',
                                 }}
                                 onPointerDown={(e) => {
                                     let activeSelectionIds = selectedShapeIds;
@@ -4554,22 +4611,6 @@ export default function Whiteboard({
                                 <svg width="100%" height="100%" style={{ overflow: 'visible', pointerEvents: 'none' }}>
                                     {renderShapeSVG()}
                                     </svg>
-
-                        {tool === 'select' && (
-                            <>
-                                {shpObj.isLocked && (
-                                    <div className="absolute top-1 right-1 bg-white/80 p-0.5 rounded-full shadow pointer-events-none" style={{ zIndex: 30 }}>
-                                        <Lock size={12} className="text-red-500" />
-                                    </div>
-                                )}
-                                {shpObj.groupId && (
-                                    <div className="absolute top-1 left-1 bg-white/80 p-0.5 rounded-full shadow pointer-events-none" style={{ zIndex: 30 }}>
-                                        <Group size={12} className="text-blue-500" />
-                                    </div>
-                                )}
-                            </>
-                        )}
-
 
                         {tool === 'select' && (
                             <>
