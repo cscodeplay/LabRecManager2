@@ -4394,11 +4394,11 @@ export default function Whiteboard({
                         const renderShapeSVG = () => {
                             const fill = shpObj.fillColor || 'transparent';
                             if (shpObj.type === 'rectangle') {
-                                return <rect style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                return <rect style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} x="0" y="0" width={shpObj.width} height={shpObj.height} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
                             } else if (shpObj.type === 'circle') {
-                                return <ellipse style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} cx={shpObj.width/2} cy={(shpObj.y + shpObj.height/2)} rx={shpObj.width/2} ry={(shpObj.y + shpObj.height/2)} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                                return <ellipse style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} cx={shpObj.width/2} cy={(shpObj.y + shpObj.height/2)} rx={shpObj.width/2} ry={(shpObj.y + shpObj.height/2)} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
                             } else if (shpObj.type === 'triangle') {
-                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${shpObj.width/2},0 0,${shpObj.height} ${shpObj.width},${shpObj.height}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
                             } else if (shpObj.type === 'star') {
                                 const cx = shpObj.x + shpObj.width / 2;
                                 const cy = shpObj.y + shpObj.height / 2;
@@ -4410,7 +4410,7 @@ export default function Whiteboard({
                                     const angle = (i * Math.PI) / 5 - Math.PI / 2;
                                     points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
                                 }
-                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} points={points.join(' ')} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={points.join(' ')} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
                             } else if (shpObj.type === 'path') {
                                 if (!shpObj.points || shpObj.points.length === 0) return null;
                                 const pts = shpObj.points;
@@ -4466,7 +4466,7 @@ export default function Whiteboard({
                             } else if (shpObj.type === 'graph') {
                                 return (
                                     <g stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} fill={fill}>
-                                        <rect width={shpObj.width} height={shpObj.height} fill={fill || 'transparent'} stroke="none" style={{ pointerEvents: (tool === 'select' || isSelected) ? 'all' : 'none' }} />
+                                        <rect width={shpObj.width} height={shpObj.height} fill={fill || 'transparent'} stroke="none" style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} />
                                         {/* Grid lines */}
                                         {Array.from({ length: 9 }).map((_, i) => (
                                             <line key={`h-${i}`} x1={(shpObj.x + shpObj.width/10)} y1={shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8)} x2={(shpObj.x + shpObj.width*0.9)} y2={shpObj.y + shpObj.height/10 + (shpObj.height*0.8) * (i/8)} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
