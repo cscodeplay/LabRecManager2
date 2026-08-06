@@ -53,16 +53,13 @@ export default function WhiteboardPage() {
         // Initialize socket connection
         initializeSocket();
 
-        const handleFullscreenChange = () => {
-            setIsFullscreen(!!document.fullscreenElement);
-        };
-        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        
 
         return () => {
             if (socketRef.current) {
                 socketRef.current.disconnect();
             }
-            document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            
         };
     }, [isAuthenticated, _hasHydrated, isInstructor, user]);
 
@@ -116,19 +113,8 @@ export default function WhiteboardPage() {
         toast.success('Stopped sharing whiteboard');
     };
 
-    const handleToggleFullscreen = async () => {
-        try {
-            if (!document.fullscreenElement) {
-                await document.documentElement.requestFullscreen();
-            } else {
-                if (document.exitFullscreen) {
-                    await document.exitFullscreen();
-                }
-            }
-        } catch (err) {
-            console.error('Error toggling fullscreen:', err);
-            setIsFullscreen(!isFullscreen);
-        }
+    const handleToggleFullscreen = () => {
+        setIsFullscreen(!isFullscreen);
     };
 
     const handleSave = (imageData) => {

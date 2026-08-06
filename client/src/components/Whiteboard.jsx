@@ -1801,6 +1801,13 @@ export default function Whiteboard({
         if (tool === 'select') {
             if (selectMode === 'lasso') {
                 setLassoPath(prev => [...prev, { x: pos.x, y: pos.y }]);
+            } else {
+                setSelection({
+                    x: Math.min(startPos.x, pos.x),
+                    y: Math.min(startPos.y, pos.y),
+                    width: Math.abs(pos.x - startPos.x),
+                    height: Math.abs(pos.y - startPos.y)
+                });
             }
             return;
         }
@@ -1943,125 +1950,6 @@ export default function Whiteboard({
                 color,
                 strokeWidth
             });
-        
-        } else if (tool === 'select') {
-            if (selectMode === 'lasso') {
-                if (lassoPath.length > 2) {
-                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                    for (const p of lassoPath) {
-                        if (p.x < minX) minX = p.x;
-                        if (p.y < minY) minY = p.y;
-                        if (p.x > maxX) maxX = p.x;
-                        if (p.y > maxY) maxY = p.y;
-                    }
-                    const selWidth = maxX - minX;
-                    const selHeight = maxY - minY;
-                    
-                    if (selWidth > 5 && selHeight > 5) {
-                        let selectedShapes = shapeObjects.filter(shape => 
-                            !shape.isLocked &&
-                            shape.x < minX + selWidth && 
-                            shape.x + shape.width > minX && 
-                            shape.y < minY + selHeight && 
-                            shape.y + shape.height > minY
-                        ).map(s => s.id);
-                        
-                        let selectedTexts = textObjects.filter(txt => 
-                            !txt.isLocked &&
-                            txt.x < minX + selWidth && 
-                            txt.x + txt.width > minX && 
-                            txt.y < minY + selHeight && 
-                            txt.y + txt.height > minY
-                        ).map(s => s.id);
-
-                        let selectedImages = imageObjects.filter(img => 
-                            !img.isLocked &&
-                            img.x < minX + selWidth && 
-                            img.x + img.width > minX && 
-                            img.y < minY + selHeight && 
-                            img.y + img.height > minY
-                        ).map(s => s.id);
-
-                        const groupIdsToSelect = new Set([
-                            ...shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId),
-                            ...textObjects.filter(s => selectedTexts.includes(s.id) && s.groupId).map(s => s.groupId),
-                            ...imageObjects.filter(s => selectedImages.includes(s.id) && s.groupId).map(s => s.groupId)
-                        ]);
-
-                        if (groupIdsToSelect.size > 0) {
-                            const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                            const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                            const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                            selectedShapes = Array.from(new Set([...selectedShapes, ...groupShapeIds]));
-                            selectedTexts = Array.from(new Set([...selectedTexts, ...groupTextIds]));
-                            selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
-                        }
-
-                        if (selectedShapes.length > 0) setSelectedShapeIds(selectedShapes);
-                        else setSelectedShapeIds([]);
-                        if (selectedTexts.length > 0) setSelectedTextIds(selectedTexts);
-                        else setSelectedTextIds([]);
-                        if (selectedImages.length > 0) setSelectedImageId(selectedImages[selectedImages.length - 1]);
-                        else setSelectedImageId(null);
-                        setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath });
-                    }
-                }
-                setLassoPath([]);
-            } else {
-                const x = Math.min(startPos.x, pos.x);
-                const y = Math.min(startPos.y, pos.y);
-                const selWidth = Math.abs(pos.x - startPos.x);
-                const selHeight = Math.abs(pos.y - startPos.y);
-
-                if (selWidth > 5 && selHeight > 5) {
-                    let selectedShapes = shapeObjects.filter(shape => 
-                        !shape.isLocked &&
-                        shape.x < x + selWidth && 
-                        shape.x + shape.width > x && 
-                        shape.y < y + selHeight && 
-                        shape.y + shape.height > y
-                    ).map(s => s.id);
-
-                    let selectedTexts = textObjects.filter(txt => 
-                        !txt.isLocked &&
-                        txt.x < x + selWidth && 
-                        txt.x + txt.width > x && 
-                        txt.y < y + selHeight && 
-                        txt.y + txt.height > y
-                    ).map(s => s.id);
-
-                    let selectedImages = imageObjects.filter(img => 
-                        !img.isLocked &&
-                        img.x < x + selWidth && 
-                        img.x + img.width > x && 
-                        img.y < y + selHeight && 
-                        img.y + img.height > y
-                    ).map(s => s.id);
-
-                    const groupIdsToSelect = new Set([
-                        ...shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId),
-                        ...textObjects.filter(s => selectedTexts.includes(s.id) && s.groupId).map(s => s.groupId),
-                        ...imageObjects.filter(s => selectedImages.includes(s.id) && s.groupId).map(s => s.groupId)
-                    ]);
-
-                    if (groupIdsToSelect.size > 0) {
-                        const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                        const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                        const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                        selectedShapes = Array.from(new Set([...selectedShapes, ...groupShapeIds]));
-                        selectedTexts = Array.from(new Set([...selectedTexts, ...groupTextIds]));
-                        selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
-                    }
-
-                    if (selectedShapes.length > 0) setSelectedShapeIds(selectedShapes);
-                    else setSelectedShapeIds([]);
-                    if (selectedTexts.length > 0) setSelectedTextIds(selectedTexts);
-                    else setSelectedTextIds([]);
-                    if (selectedImages.length > 0) setSelectedImageId(selectedImages[selectedImages.length - 1]);
-                    else setSelectedImageId(null);
-                    setSelection({ x, y, width: selWidth, height: selHeight });
-                }
-            }
         } else if (tool === 'laser') {
             setLaserPos(pos);
             if (laserTimeoutRef.current) {
@@ -2212,6 +2100,8 @@ export default function Whiteboard({
                             y: Math.min(pStart.y, pEnd.y),
                             width: Math.abs(pStart.x - pEnd.x),
                             height: Math.abs(pStart.y - pEnd.y),
+                            originalWidth: Math.abs(pStart.x - pEnd.x),
+                            originalHeight: Math.abs(pStart.y - pEnd.y),
                             points: [
                                 { x: pStart.x - Math.min(pStart.x, pEnd.x), y: pStart.y - Math.min(pStart.y, pEnd.y) },
                                 { x: pEnd.x - Math.min(pStart.x, pEnd.x), y: pEnd.y - Math.min(pStart.y, pEnd.y) }
@@ -2252,6 +2142,8 @@ export default function Whiteboard({
                     y: minY,
                     width: maxX - minX,
                     height: maxY - minY,
+                    originalWidth: maxX - minX,
+                    originalHeight: maxY - minY,
                     points: relPoints,
                     rotation: 0,
                     color: tool === 'highlighter' ? highlighterColor : color,
@@ -2322,6 +2214,126 @@ export default function Whiteboard({
                     sessionId,
                     laserPos: null
                 });
+            }
+        
+        
+        } else if (tool === 'select') {
+            if (selectMode === 'lasso') {
+                if (lassoPath.length > 2) {
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                    for (const p of lassoPath) {
+                        if (p.x < minX) minX = p.x;
+                        if (p.y < minY) minY = p.y;
+                        if (p.x > maxX) maxX = p.x;
+                        if (p.y > maxY) maxY = p.y;
+                    }
+                    const selWidth = maxX - minX;
+                    const selHeight = maxY - minY;
+                    
+                    if (selWidth > 5 && selHeight > 5) {
+                        let selectedShapes = shapeObjects.filter(shape => 
+                            !shape.isLocked &&
+                            shape.x < minX + selWidth && 
+                            shape.x + shape.width > minX && 
+                            shape.y < minY + selHeight && 
+                            shape.y + shape.height > minY
+                        ).map(s => s.id);
+                        
+                        let selectedTexts = textObjects.filter(txt => 
+                            !txt.isLocked &&
+                            txt.x < minX + selWidth && 
+                            txt.x + txt.width > minX && 
+                            txt.y < minY + selHeight && 
+                            txt.y + txt.height > minY
+                        ).map(s => s.id);
+
+                        let selectedImages = imageObjects.filter(img => 
+                            !img.isLocked &&
+                            img.x < minX + selWidth && 
+                            img.x + img.width > minX && 
+                            img.y < minY + selHeight && 
+                            img.y + img.height > minY
+                        ).map(s => s.id);
+
+                        const groupIdsToSelect = new Set([
+                            ...shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId),
+                            ...textObjects.filter(s => selectedTexts.includes(s.id) && s.groupId).map(s => s.groupId),
+                            ...imageObjects.filter(s => selectedImages.includes(s.id) && s.groupId).map(s => s.groupId)
+                        ]);
+
+                        if (groupIdsToSelect.size > 0) {
+                            const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                            const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                            const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                            selectedShapes = Array.from(new Set([...selectedShapes, ...groupShapeIds]));
+                            selectedTexts = Array.from(new Set([...selectedTexts, ...groupTextIds]));
+                            selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
+                        }
+
+                        if (selectedShapes.length > 0) setSelectedShapeIds(selectedShapes);
+                        else setSelectedShapeIds([]);
+                        if (selectedTexts.length > 0) setSelectedTextIds(selectedTexts);
+                        else setSelectedTextIds([]);
+                        if (selectedImages.length > 0) setSelectedImageId(selectedImages[selectedImages.length - 1]);
+                        else setSelectedImageId(null);
+                        setSelection(null);
+                    }
+                }
+                setLassoPath([]);
+            } else {
+                const x = Math.min(startPos.x, pos.x);
+                const y = Math.min(startPos.y, pos.y);
+                const selWidth = Math.abs(pos.x - startPos.x);
+                const selHeight = Math.abs(pos.y - startPos.y);
+
+                if (selWidth > 5 && selHeight > 5) {
+                    let selectedShapes = shapeObjects.filter(shape => 
+                        !shape.isLocked &&
+                        shape.x < x + selWidth && 
+                        shape.x + shape.width > x && 
+                        shape.y < y + selHeight && 
+                        shape.y + shape.height > y
+                    ).map(s => s.id);
+
+                    let selectedTexts = textObjects.filter(txt => 
+                        !txt.isLocked &&
+                        txt.x < x + selWidth && 
+                        txt.x + txt.width > x && 
+                        txt.y < y + selHeight && 
+                        txt.y + txt.height > y
+                    ).map(s => s.id);
+
+                    let selectedImages = imageObjects.filter(img => 
+                        !img.isLocked &&
+                        img.x < x + selWidth && 
+                        img.x + img.width > x && 
+                        img.y < y + selHeight && 
+                        img.y + img.height > y
+                    ).map(s => s.id);
+
+                    const groupIdsToSelect = new Set([
+                        ...shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId),
+                        ...textObjects.filter(s => selectedTexts.includes(s.id) && s.groupId).map(s => s.groupId),
+                        ...imageObjects.filter(s => selectedImages.includes(s.id) && s.groupId).map(s => s.groupId)
+                    ]);
+
+                    if (groupIdsToSelect.size > 0) {
+                        const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                        const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                        const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                        selectedShapes = Array.from(new Set([...selectedShapes, ...groupShapeIds]));
+                        selectedTexts = Array.from(new Set([...selectedTexts, ...groupTextIds]));
+                        selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
+                    }
+
+                    if (selectedShapes.length > 0) setSelectedShapeIds(selectedShapes);
+                    else setSelectedShapeIds([]);
+                    if (selectedTexts.length > 0) setSelectedTextIds(selectedTexts);
+                    else setSelectedTextIds([]);
+                    if (selectedImages.length > 0) setSelectedImageId(selectedImages[selectedImages.length - 1]);
+                    else setSelectedImageId(null);
+                    setSelection(null);
+                }
             }
         } else if (tool === 'text') {
             const x = Math.min(startPos.x, pos.x);
@@ -4255,6 +4267,15 @@ export default function Whiteboard({
                                         d += ` L ${pts[i].x} ${pts[i].y}`;
                                     }
                                 }
+                                
+                                const maxPx = Math.max(...pts.map(p => p.x));
+                                const minPx = Math.min(...pts.map(p => p.x));
+                                const maxPy = Math.max(...pts.map(p => p.y));
+                                const minPy = Math.min(...pts.map(p => p.y));
+                                const origW = shpObj.originalWidth || (maxPx - minPx) || 1;
+                                const origH = shpObj.originalHeight || (maxPy - minPy) || 1;
+                                const scaleX = shpObj.width / origW;
+                                const scaleY = shpObj.height / origH;
                                 return (
                                     <path 
                                         d={d} 
@@ -4264,6 +4285,8 @@ export default function Whiteboard({
                                         strokeLinecap="round" 
                                         strokeLinejoin="round" 
                                         opacity={shpObj.isHighlighter ? 0.5 : 1}
+                                        transform={`scale(${scaleX}, ${scaleY})`}
+                                        vectorEffect="non-scaling-stroke"
                                     />
                                 );
                             } else if (shpObj.type === 'line') {
