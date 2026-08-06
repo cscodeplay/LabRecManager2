@@ -1396,12 +1396,17 @@ export default function Whiteboard({
             const startObj = imageDragState.startObj;
 
             if (imageDragState.action === 'move') {
+                const deltaX = e.clientX - (imageDragState.lastX || imageDragState.startX);
+                const deltaY = e.clientY - (imageDragState.lastY || imageDragState.startY);
+                imageDragState.lastX = e.clientX;
+                imageDragState.lastY = e.clientY;
+
                 if (startObj.groupId) {
-                    moveGroup(startObj.groupId, dx, dy);
+                    moveGroup(startObj.groupId, deltaX, deltaY);
                 } else {
                     setImageObjects(prev => prev.map(img =>
                         img.id === imageDragState.id
-                            ? { ...img, x: startObj.x + dx, y: startObj.y + dy }
+                            ? { ...img, x: startObj.x + (e.clientX - imageDragState.startX), y: startObj.y + (e.clientY - imageDragState.startY) }
                             : img
                     ));
                 }
@@ -1476,12 +1481,17 @@ export default function Whiteboard({
             const startObj = textDragState.startObj;
 
             if (textDragState.action === 'move') {
+                const deltaX = e.clientX - (textDragState.lastX || textDragState.startX);
+                const deltaY = e.clientY - (textDragState.lastY || textDragState.startY);
+                textDragState.lastX = e.clientX;
+                textDragState.lastY = e.clientY;
+
                 if (startObj.groupId) {
-                    moveGroup(startObj.groupId, dx, dy);
+                    moveGroup(startObj.groupId, deltaX, deltaY);
                 } else {
                     setTextObjects(prev => prev.map(txt =>
                         txt.id === textDragState.id
-                            ? { ...txt, x: startObj.x + dx, y: startObj.y + dy }
+                            ? { ...txt, x: startObj.x + (e.clientX - textDragState.startX), y: startObj.y + (e.clientY - textDragState.startY) }
                             : txt
                     ));
                 }
@@ -1557,18 +1567,23 @@ export default function Whiteboard({
             const startObj = shapeDragState.startObj;
 
             if (shapeDragState.action === 'move') {
+                const deltaX = e.clientX - (shapeDragState.lastX || shapeDragState.startX);
+                const deltaY = e.clientY - (shapeDragState.lastY || shapeDragState.startY);
+                shapeDragState.lastX = e.clientX;
+                shapeDragState.lastY = e.clientY;
+
                 if (startObj.groupId) {
-                    moveGroup(startObj.groupId, dx, dy);
+                    moveGroup(startObj.groupId, deltaX, deltaY);
                 } else {
                     if (shapeDragState.startObjs && shapeDragState.startObjs.length > 0) {
                         setShapeObjects(prev => prev.map(shp => {
                             const sObj = shapeDragState.startObjs.find(s => s.id === shp.id);
-                            return sObj ? { ...shp, x: sObj.x + dx, y: sObj.y + dy } : shp;
+                            return sObj ? { ...shp, x: sObj.x + (e.clientX - shapeDragState.startX), y: sObj.y + (e.clientY - shapeDragState.startY) } : shp;
                         }));
                     } else {
                         setShapeObjects(prev => prev.map(shp =>
                             shp.id === shapeDragState.id
-                                ? { ...shp, x: startObj.x + dx, y: startObj.y + dy }
+                                ? { ...shp, x: startObj.x + (e.clientX - shapeDragState.startX), y: startObj.y + (e.clientY - shapeDragState.startY) }
                                 : shp
                         ));
                     }

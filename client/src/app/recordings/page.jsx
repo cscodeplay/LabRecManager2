@@ -55,7 +55,7 @@ export default function RecordingsPage() {
 
     const handleCopyLink = async (recording) => {
         try {
-            const shareUrl = `${window.location.origin}/recordings/watch/${recording.shareToken}`;
+            const shareUrl = `${(process.env.NEXT_PUBLIC_BASE_URL || window.location.origin)}/recordings/watch/${recording.shareToken}`;
             await navigator.clipboard.writeText(shareUrl);
             setCopiedId(recording.id);
             toast.success('Share link copied!');

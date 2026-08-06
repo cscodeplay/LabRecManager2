@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play , GripVertical } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import api from '@/lib/api';
+import fixWebmDuration from 'fix-webm-duration';
 
 const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], textObjects = [], imageObjects = [], onRecordingComplete, isVisible = false }) => {
     const [isRecording, setIsRecording] = useState(false);
@@ -9,6 +10,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
     const [hasMic, setHasMic] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
+    const [uploadProgress, setUploadProgress] = useState(null);
     const recordingTimeRef = useRef(0);
     const timerIntervalRef = useRef(null);
     
@@ -488,7 +490,15 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
 
             mediaRecorder.onstop = async () => {
                 const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-                await uploadRecording(blob);
+                const durationMs = recordingTimeRef.current * 1000;
+                
+                if (durationMs > 0) {
+                    fixWebmDuration(blob, durationMs, async (fixedBlob) => {
+                        await uploadRecording(fixedBlob);
+                    });
+                } else {
+                    await uploadRecording(blob);
+                }
             };
 
             mediaRecorderRef.current = mediaRecorder;
@@ -564,6 +574,8 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
 
     const uploadRecording = async (blob) => {
         try {
+            setUploadProgress(0);
+            
             // Convert Blob to File for upload API
             const file = new File([blob], `whiteboard_recording_${Date.now()}.webm`, {
                 type: 'video/webm'
@@ -578,8 +590,14 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
             formData.append('duration', recordingTimeRef.current);
 
             const res = await api.post('/recordings/upload', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+                headers: { 'Content-Type': 'multipart/form-data' },
+                onUploadProgress: (progressEvent) => {
+                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                    setUploadProgress(percentCompleted);
+                }
             });
+            setUploadProgress(null);
+
             
             if (res.data.success) {
                 toast.success('Recording saved successfully!', { id: 'recording-upload' });
@@ -591,6 +609,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                 throw new Error(res.data.error || 'Upload failed');
             }
         } catch (err) {
+            setUploadProgress(null);
             console.error('Error uploading recording:', err);
             toast.error('Failed to upload recording', { id: 'recording-upload' });
         }
