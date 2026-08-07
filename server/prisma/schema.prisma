@@ -53,6 +53,7 @@ model School {
   timetables            Timetable[]
   schoolCalendar        SchoolCalendar[]
   lecturePlans          LecturePlan[]
+  whiteboardFiles       WhiteboardFile[]
 
   @@map("schools")
 }
@@ -222,6 +223,7 @@ model User {
   studentTrainingProgress                        StudentTrainingProgress[] @relation("StudentTrainingProgress")
   studentUnitMasteries                           StudentUnitMastery[]      @relation("StudentUnitMastery")
   codingSubmissions                              CodingSubmission[]        @relation("CodingSubmissionStudent")
+  whiteboardFiles                                WhiteboardFile[]          @relation("WhiteboardFileOwner")
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")
@@ -1286,6 +1288,28 @@ model WhiteboardSession {
   @@index([hostId], map: "idx_whiteboard_sessions_host")
   @@index([status], map: "idx_whiteboard_sessions_status")
   @@map("whiteboard_sessions")
+}
+
+model WhiteboardFile {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId      String    @map("school_id") @db.Uuid
+  ownerId       String    @map("owner_id") @db.Uuid
+  title         String    @default("Untitled Whiteboard") @db.VarChar(255)
+  description   String?   @db.Text
+  canvasData    String?   @map("canvas_data") @db.Text
+  thumbnailUrl  String?   @map("thumbnail_url") @db.Text
+  pageCount     Int?      @default(1) @map("page_count")
+  isArchived    Boolean?  @default(false) @map("is_archived")
+  lastOpenedAt  DateTime? @default(now()) @map("last_opened_at") @db.Timestamp(6)
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  owner         User      @relation("WhiteboardFileOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  school        School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@index([schoolId])
+  @@map("whiteboard_files")
 }
 
 model WhiteboardParticipant {

@@ -405,7 +405,26 @@ export default function Whiteboard({
         const loadState = async () => {
             try {
                 let saved = null;
-                if (whiteboardId === 'admin-standalone') {
+                
+                // If it's a valid whiteboard UUID format, load from files API
+                if (whiteboardId && whiteboardId !== 'admin-standalone' && !whiteboardId.startsWith('standalone_')) {
+                    let token = null;
+                    try {
+                        const authStore = JSON.parse(localStorage.getItem('auth-storage'));
+                        token = authStore?.state?.accessToken;
+                    } catch (e) {}
+
+                    if (token) {
+                        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files/${whiteboardId}`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        const data = await res.json();
+                        if (data.success && data.data?.canvasData) {
+                            saved = data.data.canvasData;
+                        }
+                    }
+                } else if (whiteboardId === 'admin-standalone') {
+                    // Legacy code path - leaving intact just in case
                     let token = null;
                     try {
                         const authStore = JSON.parse(localStorage.getItem('auth-storage'));
@@ -499,7 +518,40 @@ export default function Whiteboard({
                 
                 const stateStr = JSON.stringify(state);
                 
-                if (whiteboardId === 'admin-standalone') {
+                if (whiteboardId && whiteboardId !== 'admin-standalone' && !whiteboardId.startsWith('standalone_')) {
+                    let token = null;
+                    try {
+                        const authStore = JSON.parse(localStorage.getItem('auth-storage'));
+                        token = authStore?.state?.accessToken;
+                    } catch (e) {}
+
+                    if (token) {
+                        // Generate thumbnail from current page
+                        let thumbnailUrl = null;
+                        if (canvas) {
+                            // Scale down canvas for thumbnail
+                            const tempCanvas = document.createElement('canvas');
+                            const tempCtx = tempCanvas.getContext('2d');
+                            tempCanvas.width = 300;
+                            tempCanvas.height = 300 * (canvas.height / canvas.width);
+                            tempCtx.drawImage(canvas, 0, 0, tempCanvas.width, tempCanvas.height);
+                            thumbnailUrl = tempCanvas.toDataURL('image/jpeg', 0.5);
+                        }
+
+                        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files/${whiteboardId}/save`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ 
+                                canvasData: stateStr,
+                                pageCount: totalPages,
+                                thumbnailUrl: thumbnailUrl
+                            })
+                        }).catch(e => console.error('Failed to sync whiteboard to DB:', e));
+                    }
+                } else if (whiteboardId === 'admin-standalone') {
                     let token = null;
                     try {
                         const authStore = JSON.parse(localStorage.getItem('auth-storage'));
@@ -2826,6 +2878,119 @@ export default function Whiteboard({
         }
         saveToHistory();
     }, [totalPages, saveCurrentPage, saveToHistory]);
+
+    
+    const deletePage = useCallback((indexToDelete) => {
+        if (totalPages <= 1) {
+            toast.error("Cannot delete the only page");
+            return;
+        }
+        
+        saveCurrentPage();
+
+        // 1. Remove from arrays and shift subsequent items
+        setPages(prev => {
+            const newPages = [...prev];
+            newPages.splice(indexToDelete, 1);
+            return newPages;
+        });
+
+        // 2. Shift all object/background maps
+        const shiftMap = (mapUpdater) => {
+            mapUpdater(prev => {
+                const newMap = { ...prev };
+                delete newMap[indexToDelete];
+                
+                // Shift all keys greater than indexToDelete down by 1
+                const keys = Object.keys(newMap).map(Number).sort((a, b) => a - b);
+                for (const key of keys) {
+                    if (key > indexToDelete) {
+                        newMap[key - 1] = newMap[key];
+                        delete newMap[key];
+                    }
+                }
+                return newMap;
+            });
+        };
+
+        shiftMap(setPageBackgrounds);
+        shiftMap(setPageImageObjects);
+        shiftMap(setPageTextObjects);
+        shiftMap(setPageShapeObjects);
+
+        setTotalPages(prev => prev - 1);
+        
+        // 3. Update current page if needed
+        if (currentPage === indexToDelete) {
+            // Load the previous page (or next page if we deleted the 0th page)
+            const nextIdx = Math.max(0, indexToDelete - 1);
+            loadPage(nextIdx);
+        } else if (currentPage > indexToDelete) {
+            setCurrentPage(prev => prev - 1);
+            loadPage(currentPage - 1);
+        }
+    }, [totalPages, currentPage, saveCurrentPage, loadPage]);
+
+    const reorderPage = useCallback((dragIndex, hoverIndex) => {
+        saveCurrentPage();
+        
+        setPages(prev => {
+            const newPages = [...prev];
+            const [draggedPage] = newPages.splice(dragIndex, 1);
+            newPages.splice(hoverIndex, 0, draggedPage);
+            return newPages;
+        });
+
+        const swapMap = (mapUpdater) => {
+            mapUpdater(prev => {
+                const newMap = { ...prev };
+                
+                // Get the items we're moving
+                const draggedItem = newMap[dragIndex];
+                
+                // Remove dragged item temporarily
+                delete newMap[dragIndex];
+                
+                // If dragging up (e.g. index 3 to 1)
+                if (dragIndex > hoverIndex) {
+                    for (let i = dragIndex - 1; i >= hoverIndex; i--) {
+                        if (newMap[i] !== undefined) newMap[i + 1] = newMap[i];
+                    }
+                } 
+                // If dragging down (e.g. index 1 to 3)
+                else {
+                    for (let i = dragIndex + 1; i <= hoverIndex; i++) {
+                        if (newMap[i] !== undefined) newMap[i - 1] = newMap[i];
+                    }
+                }
+                
+                // Place the dragged item in its new home
+                if (draggedItem !== undefined) {
+                    newMap[hoverIndex] = draggedItem;
+                } else {
+                    delete newMap[hoverIndex];
+                }
+                
+                return newMap;
+            });
+        };
+
+        swapMap(setPageBackgrounds);
+        swapMap(setPageImageObjects);
+        swapMap(setPageTextObjects);
+        swapMap(setPageShapeObjects);
+
+        if (currentPage === dragIndex) {
+            setCurrentPage(hoverIndex);
+            loadPage(hoverIndex);
+        } else if (currentPage > dragIndex && currentPage <= hoverIndex) {
+            setCurrentPage(prev => prev - 1);
+            loadPage(currentPage - 1);
+        } else if (currentPage < dragIndex && currentPage >= hoverIndex) {
+            setCurrentPage(prev => prev + 1);
+            loadPage(currentPage + 1);
+        }
+    }, [currentPage, saveCurrentPage, loadPage]);
 
     const goToPrevPage = useCallback(() => {
         if (currentPage > 0) loadPage(currentPage - 1);

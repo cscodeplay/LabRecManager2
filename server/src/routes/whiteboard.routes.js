@@ -69,6 +69,209 @@ router.put('/personal', authenticate, authorize('admin', 'principal', 'instructo
     res.json({ success: true, message: 'Saved successfully' });
 }));
 
+// ====== WHITEBOARD FILE MANAGEMENT ======
+
+/**
+ * @route   GET /api/whiteboard/files
+ * @desc    Get all whiteboard files for the current user
+ * @access  Admin/Instructor
+ */
+router.get('/files', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const files = await prisma.whiteboardFile.findMany({
+        where: { ownerId: userId, isArchived: false },
+        orderBy: { lastOpenedAt: 'desc' },
+        select: {
+            id: true,
+            title: true,
+            description: true,
+            thumbnailUrl: true,
+            pageCount: true,
+            lastOpenedAt: true,
+            createdAt: true,
+            updatedAt: true
+        }
+    });
+    res.json({ success: true, data: files });
+}));
+
+/**
+ * @route   POST /api/whiteboard/files
+ * @desc    Create a new whiteboard file
+ * @access  Admin/Instructor
+ */
+router.post('/files', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const { title, description } = req.body;
+    const file = await prisma.whiteboardFile.create({
+        data: {
+            schoolId: req.user.schoolId,
+            ownerId: req.user.id,
+            title: title || 'Untitled Whiteboard',
+            description,
+            pageCount: 1
+        }
+    });
+    res.status(201).json({ success: true, data: file });
+}));
+
+/**
+ * @route   GET /api/whiteboard/files/:id
+ * @desc    Get full data for a single whiteboard file
+ * @access  Admin/Instructor
+ */
+router.get('/files/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const file = await prisma.whiteboardFile.findUnique({
+        where: { id: req.params.id }
+    });
+    
+    if (!file || file.ownerId !== req.user.id) {
+        return res.status(404).json({ success: false, message: 'Whiteboard not found' });
+    }
+    
+    // Update last opened
+    await prisma.whiteboardFile.update({
+        where: { id: file.id },
+        data: { lastOpenedAt: new Date() }
+    });
+    
+    res.json({ success: true, data: file });
+}));
+
+/**
+ * @route   PUT /api/whiteboard/files/:id
+ * @desc    Update whiteboard metadata
+ * @access  Admin/Instructor
+ */
+router.put('/files/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const { title, description, isArchived } = req.body;
+    
+    const file = await prisma.whiteboardFile.findUnique({
+        where: { id: req.params.id }
+    });
+    
+    if (!file || file.ownerId !== req.user.id) {
+        return res.status(404).json({ success: false, message: 'Whiteboard not found' });
+    }
+    
+    const updated = await prisma.whiteboardFile.update({
+        where: { id: file.id },
+        data: { title, description, isArchived }
+    });
+    
+    res.json({ success: true, data: updated });
+}));
+
+/**
+ * @route   PUT /api/whiteboard/files/:id/save
+ * @desc    Save canvas data and update thumbnail
+ * @access  Admin/Instructor
+ */
+router.put('/files/:id/save', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const { canvasData, thumbnailUrl, pageCount } = req.body;
+    
+    const file = await prisma.whiteboardFile.findUnique({
+        where: { id: req.params.id }
+    });
+    
+    if (!file || file.ownerId !== req.user.id) {
+        return res.status(404).json({ success: false, message: 'Whiteboard not found' });
+    }
+    
+    const updated = await prisma.whiteboardFile.update({
+        where: { id: file.id },
+        data: { canvasData, thumbnailUrl, pageCount }
+    });
+    
+    res.json({ success: true, message: 'Saved successfully' });
+}));
+
+/**
+ * @route   DELETE /api/whiteboard/files/:id
+ * @desc    Delete a whiteboard file
+ * @access  Admin/Instructor
+ */
+router.delete('/files/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const file = await prisma.whiteboardFile.findUnique({
+        where: { id: req.params.id }
+    });
+    
+    if (!file || file.ownerId !== req.user.id) {
+        return res.status(404).json({ success: false, message: 'Whiteboard not found' });
+    }
+    
+    await prisma.whiteboardFile.delete({
+        where: { id: file.id }
+    });
+    
+    res.json({ success: true, message: 'Deleted successfully' });
+}));
+
+/**
+ * @route   POST /api/whiteboard/files/:id/duplicate
+ * @desc    Duplicate a whiteboard file
+ * @access  Admin/Instructor
+ */
+router.post('/files/:id/duplicate', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const file = await prisma.whiteboardFile.findUnique({
+        where: { id: req.params.id }
+    });
+    
+    if (!file || file.ownerId !== req.user.id) {
+        return res.status(404).json({ success: false, message: 'Whiteboard not found' });
+    }
+    
+    const duplicate = await prisma.whiteboardFile.create({
+        data: {
+            schoolId: file.schoolId,
+            ownerId: file.ownerId,
+            title: `${file.title} (Copy)`,
+            description: file.description,
+            canvasData: file.canvasData,
+            thumbnailUrl: file.thumbnailUrl,
+            pageCount: file.pageCount
+        }
+    });
+    
+    res.status(201).json({ success: true, data: duplicate });
+}));
+
+/**
+ * @route   POST /api/whiteboard/migrate-personal
+ * @desc    Migrate legacy personal workspace to whiteboard file
+ * @access  Admin/Instructor
+ */
+router.post('/migrate-personal', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const schoolId = req.user.schoolId;
+
+    const session = await prisma.whiteboardSession.findFirst({
+        where: { schoolId, title: 'Personal Workspace', hostId: userId },
+        orderBy: { createdAt: 'desc' }
+    });
+
+    if (!session || !session.canvasData) {
+        return res.json({ success: true, message: 'Nothing to migrate' });
+    }
+
+    const existingFile = await prisma.whiteboardFile.findFirst({
+        where: { ownerId: userId, title: 'Personal Workspace (Legacy)' }
+    });
+
+    if (!existingFile) {
+        await prisma.whiteboardFile.create({
+            data: {
+                schoolId,
+                ownerId: userId,
+                title: 'Personal Workspace (Legacy)',
+                description: 'Migrated from legacy workspace',
+                canvasData: session.canvasData
+            }
+        });
+    }
+
+    res.json({ success: true, message: 'Migrated successfully' });
+}));
+
 /**
  * @route   GET /api/whiteboard/sessions
  * @desc    Get all active whiteboard sessions (admin only)
