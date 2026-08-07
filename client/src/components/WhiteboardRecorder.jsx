@@ -688,7 +688,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                 
                 {isRecording ? (
                     <>
-                        <div className="text-red-500 text-xs font-mono font-medium mx-2 flex items-center gap-2">
+                        <div className={`text-red-500 text-xs font-mono font-medium mx-2 flex items-center gap-2 ${isPaused ? 'animate-pulse opacity-75' : ''}`}>
                             <span className={`w-2 h-2 rounded-full bg-red-500 ${isPaused ? '' : 'animate-pulse'}`}></span>
                             {formatTime(recordingTime)}
                         </div>

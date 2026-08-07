@@ -224,6 +224,7 @@ model User {
   studentUnitMasteries                           StudentUnitMastery[]      @relation("StudentUnitMastery")
   codingSubmissions                              CodingSubmission[]        @relation("CodingSubmissionStudent")
   whiteboardFiles                                WhiteboardFile[]          @relation("WhiteboardFileOwner")
+  adminNotes                                     AdminNote[]               @relation("AdminNotesAuthor")
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")

@@ -43,6 +43,7 @@ const timetableRoutes = require('./routes/timetable.routes');
 const teachingRoutes = require('./routes/teaching.routes');
 const trainingRoutes = require('./routes/training.routes');
 const chatbotRoutes = require('./routes/chatbot.routes');
+const adminNotesRoutes = require('./routes/admin-notes.routes');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -98,6 +99,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/syllabus', syllabusRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/admin-notes', adminNotesRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
 app.use('/api/grade-scales', gradeScaleRoutes);
 app.use('/api/admin', adminRoutes);

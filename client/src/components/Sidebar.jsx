@@ -36,6 +36,7 @@ const navItems = {
         { href: '/admin/timetable', labelKey: 'nav.timetable', icon: Clock },
         { href: '/admin/calendar', labelKey: 'nav.calendar', icon: CalendarDays },
         { href: '/reports', labelKey: 'nav.reports', icon: BarChart3 },
+        { href: '/admin/notes', labelKey: 'Admin Notes', icon: FileText },
         { href: '/settings', labelKey: 'nav.settings', icon: Settings },
     ],
     principal: [
@@ -52,6 +53,7 @@ const navItems = {
         { href: '/admin/timetable', labelKey: 'nav.timetable', icon: Clock },
         { href: '/admin/calendar', labelKey: 'nav.calendar', icon: CalendarDays },
         { href: '/reports', labelKey: 'nav.reports', icon: BarChart3 },
+        { href: '/admin/notes', labelKey: 'Admin Notes', icon: FileText },
         { href: '/settings', labelKey: 'nav.settings', icon: Settings },
     ],
     instructor: [

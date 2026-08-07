@@ -221,6 +221,50 @@ export default function Whiteboard({
     const [selectMode, setSelectMode] = useState('rectangle'); // rectangle, lasso
     const [showImagePicker, setShowImagePicker] = useState(false);
     const [showScreenshotModal, setShowScreenshotModal] = useState(false);
+    const [screenshotPreview, setScreenshotPreview] = useState(null);
+    const [screenshotBlob, setScreenshotBlob] = useState(null);
+    const [isSavingScreenshot, setIsSavingScreenshot] = useState(false);
+    
+    const playShutterSound = () => {
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        } catch(e) {}
+    };
+    
+    const saveScreenshot = async () => {
+        if (!screenshotBlob) return;
+        setIsSavingScreenshot(true);
+        const formData = new FormData();
+        formData.append('file', screenshotBlob, `screenshot-${new Date().getTime()}.png`);
+        try {
+            const res = await api.post('/whiteboard/screenshot', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            if (res.data && res.data.success) {
+                toast.success('Screenshot saved to Documents > Screenshots!');
+                setScreenshotPreview(null);
+                setScreenshotBlob(null);
+            } else {
+                toast.error('Failed to save screenshot: ' + (res.data.message || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Screenshot upload error:', error);
+            toast.error('Error saving screenshot.');
+        } finally {
+            setIsSavingScreenshot(false);
+        }
+    };
 
     // Multi-page state - must be before anything that uses currentPage
     const [pages, setPages] = useState([null]); // Array of canvas data URLs
@@ -1405,7 +1449,7 @@ export default function Whiteboard({
             const activeTag = document.activeElement.tagName.toLowerCase();
             const isInput = activeTag === 'input' || activeTag === 'textarea';
 
-            if (isInput && !(selectedTextIds.length > 0 ? selectedTextIds[0] : null) && selectedShapeIds.length === 0) return; // let default inputs work
+            if (isInput) return; // let default inputs work
 
             if (modKey && e.key.toLowerCase() === 'c') {
                 e.preventDefault();
@@ -1632,6 +1676,12 @@ export default function Whiteboard({
                             const sObj = shapeDragState.startObjs.find(s => s.id === shp.id);
                             return sObj ? { ...shp, x: sObj.x + (e.clientX - shapeDragState.startX), y: sObj.y + (e.clientY - shapeDragState.startY) } : shp;
                         }));
+                        if (shapeDragState.startTextObjs && shapeDragState.startTextObjs.length > 0) {
+                            setTextObjects(prev => prev.map(txt => {
+                                const tObj = shapeDragState.startTextObjs.find(t => t.id === txt.id);
+                                return tObj ? { ...txt, x: tObj.x + (e.clientX - shapeDragState.startX), y: tObj.y + (e.clientY - shapeDragState.startY) } : txt;
+                            }));
+                        }
                     } else {
                         setShapeObjects(prev => prev.map(shp =>
                             shp.id === shapeDragState.id
@@ -2540,6 +2590,8 @@ export default function Whiteboard({
             ctx.beginPath();
             if (shpObj.type === 'path') {
                 if (shpObj.points && shpObj.points.length > 0) {
+                    ctx.save();
+                    ctx.translate(shpObj.x || 0, shpObj.y || 0);
                     const pts = shpObj.points;
                     ctx.moveTo(pts[0].x, pts[0].y);
                     if (shpObj.isSmoothed) {
@@ -2558,6 +2610,7 @@ export default function Whiteboard({
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
                     ctx.stroke();
+                    ctx.restore();
                 }
             } else if (shpObj.type === 'line') {
                 ctx.moveTo(shpObj.startX, shpObj.startY);
@@ -2718,25 +2771,11 @@ export default function Whiteboard({
             finalCanvas = cropCanvas;
         }
 
-        // Upload screenshot
-        finalCanvas.toBlob(async (blob) => {
+        playShutterSound();
+        finalCanvas.toBlob((blob) => {
             if (!blob) return;
-            const formData = new FormData();
-            formData.append('file', blob, `screenshot-${new Date().getTime()}.png`);
-
-            try {
-                const res = await api.post('/whiteboard/screenshot', formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                });
-                if (res.data && res.data.success) {
-                    toast.success('Screenshot saved to Documents > Screenshots!');
-                } else {
-                    toast.error('Failed to save screenshot: ' + (res.data.message || 'Unknown error'));
-                }
-            } catch (error) {
-                console.error('Screenshot upload error:', error);
-                toast.error('Error saving screenshot.');
-            }
+            setScreenshotBlob(blob);
+            setScreenshotPreview(URL.createObjectURL(blob));
         }, 'image/png');
     }, [currentPage, pageBackgrounds, pageImageObjects, pageTextObjects, selection]);
 
@@ -3079,7 +3118,7 @@ export default function Whiteboard({
             {/* Common Format Bar for selected items */}
             {(selectedShapeIds.length > 0 || selectedTextIds.length > 0) && (
                 <div className="absolute bottom-[4.5rem] left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/50 px-3 py-1.5 flex items-center gap-2 rounded-xl z-40 max-w-[95%] overflow-visible whitespace-nowrap hide-scrollbar transition-all text-slate-200">
-                    <button onClick={handleDeleteSelection} className="p-1 text-red-400 hover:text-red-300 hover:bg-slate-800 rounded" title="Delete Selection"><Trash2 size={16} /></button>
+                    <button onClick={handleDelete} className="p-1 text-red-400 hover:text-red-300 hover:bg-slate-800 rounded" title="Delete Selection"><Trash2 size={16} /></button>
                     <div className="w-px h-4 bg-slate-700 mx-1"></div>
                     <button onClick={handleCopy} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Copy"><Copy size={16} /></button>
                     <button onClick={handleCut} className="p-1 text-slate-300 hover:text-white hover:bg-white/10 rounded" title="Cut"><Scissors size={16} /></button>
@@ -3148,10 +3187,7 @@ export default function Whiteboard({
                                 />
                                 <button
                                     onClick={() => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, fillColor: 'transparent' } : s))}
-                                    className="text-xs bg-slate-800 px-1 py-1 ml-1 rounded hover:bg-slate-700 border border-slate-600"
-                                    title="No Fill"
-                                >
-                                    <Trash2 size={12} />
+                                    className="text-xs bg-slate-800 px-1 py-1 ml-1 rounded hover:bg-slate-700 border border-slate-600" title="No Fill"><X size={12} />
                                 </button>
                             </div>
                             <select
@@ -4427,7 +4463,7 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-green-500 pointer-events-none" />
-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj } }); }} />
+                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
 
 
                                         {/* Corner Resize Handles */}
@@ -4521,11 +4557,14 @@ export default function Whiteboard({
                                             >
                                                 <RotateCw className="w-3 h-3 text-white" />
                                             </div>
-                                            {textDragState?.id === txtObj.id && textDragState?.action === 'rotate' && (
-                                                <div className="absolute top-6 text-xs bg-slate-800 text-white px-1.5 py-0.5 rounded shadow-lg whitespace-nowrap z-50">
-                                                    {Math.round(txtObj.rotation || 0)}°
-                                                </div>
-                                            )}
+                                            <input
+                                                type="number"
+                                                value={Math.round(txtObj.rotation || 0)}
+                                                onChange={(e) => setTextObjects(prev => prev.map(t => t.id === txtObj.id ? { ...t, rotation: parseInt(e.target.value) || 0 } : t))}
+                                                onPointerDown={(e) => e.stopPropagation()}
+                                                onKeyDown={(e) => e.stopPropagation()}
+                                                className="absolute top-6 w-12 text-center text-xs bg-slate-800 text-white px-1 py-0.5 rounded shadow-lg z-50 border border-slate-600 outline-none appearance-none"
+                                            />
                                         </div>
 
                                         {/* Delete Button */}
@@ -4818,7 +4857,7 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-purple-500 pointer-events-none" />
-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setShapeDragState({ id: shpObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...shpObj }, startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
+                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setShapeDragState({ id: shpObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...shpObj }, startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)) }); }} />
                                         
 
                                         
@@ -4898,11 +4937,14 @@ export default function Whiteboard({
                                             >
                                                 <RotateCw className="w-3 h-3 text-white" />
                                             </div>
-                                            {shapeDragState?.id === shpObj.id && shapeDragState?.action === 'rotate' && (
-                                                <div className="absolute top-6 text-xs bg-slate-800 text-white px-1.5 py-0.5 rounded shadow-lg whitespace-nowrap z-50">
-                                                    {Math.round(shpObj.rotation || 0)}°
-                                                </div>
-                                            )}
+                                            <input
+                                                type="number"
+                                                value={Math.round(shpObj.rotation || 0)}
+                                                onChange={(e) => setShapeObjects(prev => prev.map(s => s.id === shpObj.id ? { ...s, rotation: parseInt(e.target.value) || 0 } : s))}
+                                                onPointerDown={(e) => e.stopPropagation()}
+                                                onKeyDown={(e) => e.stopPropagation()}
+                                                className="absolute top-6 w-12 text-center text-xs bg-slate-800 text-white px-1 py-0.5 rounded shadow-lg z-50 border border-slate-600 outline-none appearance-none"
+                                            />
                                         </div>
                                     </>
                                 )}
@@ -5092,6 +5134,33 @@ export default function Whiteboard({
             )}
 
             {/* Screenshot Modal */}
+            {screenshotPreview && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80">
+                    <div className="bg-slate-900 rounded-lg shadow-2xl p-6 max-w-4xl w-full mx-4 flex flex-col max-h-[90vh]">
+                        <h3 className="text-xl font-semibold text-white mb-4">Screenshot Preview</h3>
+                        <div className="flex-1 overflow-auto bg-slate-800 rounded border border-slate-700 p-2 flex items-center justify-center min-h-[200px]">
+                            <img src={screenshotPreview} alt="Screenshot" className="max-w-full max-h-[60vh] object-contain shadow-lg" />
+                        </div>
+                        <div className="flex justify-end gap-3 mt-6">
+                            <button 
+                                onClick={() => { setScreenshotPreview(null); setScreenshotBlob(null); }}
+                                className="px-4 py-2 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                                disabled={isSavingScreenshot}
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={saveScreenshot}
+                                className="px-6 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition flex items-center gap-2"
+                                disabled={isSavingScreenshot}
+                            >
+                                {isSavingScreenshot ? 'Saving...' : 'Save Screenshot'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
             {showScreenshotModal && (
                 <ScreenshotPickerModal 
                     onClose={() => setShowScreenshotModal(false)}

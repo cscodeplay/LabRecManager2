@@ -6,7 +6,7 @@ const path = require('path');
 const prisma = new PrismaClient();
 
 async function main() {
-  const sqlFile = path.join(__dirname, '../database/add_whiteboard_files.sql');
+  const sqlFile = path.join(__dirname, '../database/add_admin_notes.sql');
   let sql = fs.readFileSync(sqlFile, 'utf8');
   
   const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);

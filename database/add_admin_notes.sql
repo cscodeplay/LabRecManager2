@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS admin_notes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    author_id UUID NOT NULL,
+    created_at TIMESTAMP(6) WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP(6) WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_admin_notes_author FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
+);
