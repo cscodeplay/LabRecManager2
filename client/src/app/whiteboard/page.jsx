@@ -383,9 +383,9 @@ export default function WhiteboardPage() {
                             <div 
                                 key={file.id} 
                                 onClick={() => setActiveFileId(file.id)}
-                                className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer group flex flex-col"
+                                className="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer group flex flex-col relative"
                             >
-                                <div className="aspect-video bg-slate-100 relative overflow-hidden border-b border-slate-100 flex items-center justify-center">
+                                <div className="aspect-video bg-slate-100 relative rounded-t-xl overflow-hidden border-b border-slate-100 flex items-center justify-center">
                                     {file.thumbnailUrl ? (
                                         <img src={file.thumbnailUrl} alt={file.title} className="w-full h-full object-contain bg-white" />
                                     ) : (
