@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Pencil, Users, Share2, Video, VideoOff, Plus, MoreVertical, Trash2, Copy, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Pencil, Users, Share2, Video, VideoOff, Plus, MoreVertical, Trash2, Copy, Image as ImageIcon, Edit3 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import toast from 'react-hot-toast';
 import io from 'socket.io-client';
@@ -159,6 +159,35 @@ export default function WhiteboardPage() {
         } catch (e) {
             console.error('Failed to delete whiteboard:', e);
             toast.error('Failed to delete whiteboard');
+        }
+    };
+
+    const handleRenameFile = async (id, currentTitle, e) => {
+        e.stopPropagation();
+        const newTitle = window.prompt('Enter a new name for this whiteboard:', currentTitle);
+        
+        if (newTitle === null || newTitle.trim() === '' || newTitle.trim() === currentTitle) {
+            return;
+        }
+
+        try {
+            const token = useAuthStore.getState().accessToken;
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files/${id}`, {
+                method: 'PUT',
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ title: newTitle.trim() })
+            });
+            const data = await res.json();
+            if (data.success) {
+                toast.success('Whiteboard renamed');
+                setFiles(files.map(f => f.id === id ? { ...f, title: newTitle.trim() } : f));
+            }
+        } catch (e) {
+            console.error('Failed to rename whiteboard:', e);
+            toast.error('Failed to rename whiteboard');
         }
     };
 
@@ -376,6 +405,12 @@ export default function WhiteboardPage() {
                                             </button>
                                             
                                             <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-slate-200 rounded-lg shadow-xl py-1 hidden group-hover/menu:block z-10">
+                                                <button 
+                                                    onClick={(e) => handleRenameFile(file.id, file.title, e)}
+                                                    className="w-full px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                                >
+                                                    <Edit3 className="w-3.5 h-3.5" /> Rename
+                                                </button>
                                                 <button 
                                                     onClick={(e) => handleDuplicateFile(file.id, e)}
                                                     className="w-full px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
