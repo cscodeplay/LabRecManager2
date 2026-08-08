@@ -2342,3 +2342,20 @@ model WhiteboardRecordingShare {
   @@index([targetGroupId])
   @@map("whiteboard_recording_shares")
 }
+
+model AdminNote {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title     String   @db.VarChar(255)
+  content   String   @db.Text
+  category  String   @default("general") @db.VarChar(50)
+  isPinned  Boolean  @default(false) @map("is_pinned")
+  authorId  String   @map("author_id") @db.Uuid
+  author    User     @relation("AdminNotesAuthor", fields: [authorId], references: [id])
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  @@index([authorId])
+  @@index([category])
+  @@index([isPinned])
+  @@map("admin_notes")
+}
