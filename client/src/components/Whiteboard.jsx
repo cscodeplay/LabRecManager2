@@ -1560,6 +1560,12 @@ export default function Whiteboard({
             } else if (modKey && e.key.toLowerCase() === 'd') {
                 e.preventDefault();
                 handleDuplicate();
+            } else if (modKey && e.key === ']') {
+                e.preventDefault();
+                handleBringToFront();
+            } else if (modKey && e.key === '[') {
+                e.preventDefault();
+                handleSendToBack();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 if (!isInput || selectedImageId || selection || selectedShapeIds.length > 0) {
                     // Only prevent backspace/delete if not in an input, OR if we have an image/selection active (which can't be typed into)
@@ -1575,7 +1581,7 @@ export default function Whiteboard({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageId, (selectedTextIds.length > 0 ? selectedTextIds[0] : null), selectedShapeIds, selection, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete]);
+    }, [selectedImageId, (selectedTextIds.length > 0 ? selectedTextIds[0] : null), selectedShapeIds, selection, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack]);
 
     // Image manipulation mouse handlers
     useEffect(() => {
@@ -2527,13 +2533,22 @@ export default function Whiteboard({
             const w = Math.abs(pos.x - startPos.x);
             const h = Math.abs(pos.y - startPos.y);
             if (w > 5 || h > 5) {
+                let finalW = w;
+                let finalH = h;
+                if (shapeType === 'ruler') {
+                    finalW = Math.min(w, 20 * 38); // 20 units max
+                    finalH = 60; // fixed height
+                } else if (shapeType === 'protractor') {
+                    finalW = 300; // fixed width
+                    finalH = 300; // fixed height (width/height equal for radius calculation, but it's a semicircle)
+                }
                 const newShapeObj = {
                     id: Date.now().toString(),
                     type: shapeType,
                     x: Math.min(startPos.x, pos.x),
                     y: Math.min(startPos.y, pos.y),
-                    width: w,
-                    height: h,
+                    width: finalW,
+                    height: finalH,
                     rotation: 0,
                     color: color,
                     strokeWidth: strokeWidth,
@@ -4205,21 +4220,13 @@ export default function Whiteboard({
             <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center relative ${isFullscreen ? 'h-full' : ''}`}>
 
                 <div 
-                    className="relative"
+                    className="relative rounded-lg shadow-lg overflow-hidden"
                     style={{
                         width: canvasWidth,
                         height: canvasHeight,
                         transform: isFullscreen ? `scale(${fullscreenScale})` : 'none',
-                        transformOrigin: 'center center'
-                    }}
-                >
-                    <canvas
-                        ref={canvasRef}
-                        width={canvasWidth}
-                        height={canvasHeight}
-                        className="rounded-lg shadow-lg touch-none"
-                        style={{
-                            backgroundColor: bgColor,
+                        transformOrigin: 'center center',
+                        backgroundColor: bgColor,
                             backgroundImage: (() => {
                                 switch (bgPattern) {
                                     case 'dotted':
@@ -4273,6 +4280,16 @@ export default function Whiteboard({
                         onTouchMove={draw}
                         onTouchEnd={stopDrawing}
                         onClick={handleCanvasClick}
+                    >
+                    <canvas
+                        ref={canvasRef}
+                        width={canvasWidth}
+                        height={canvasHeight}
+                        className="absolute inset-0 touch-none pointer-events-none"
+                        style={{
+                            zIndex: 50,
+                            backgroundColor: 'transparent'
+                        }}
                     />
 
                     {/* Live Preview Overlay - Shows dotted shape preview while drawing */}
@@ -4392,11 +4409,10 @@ export default function Whiteboard({
                                         top: imgObj.y,
                                         width: imgObj.width,
                                         height: imgObj.height,
-                                        zIndex: imgObj.zIndex || 10,
+                                        zIndex: imgObj.zIndex || (isSelected ? 20 : 10),
                                     transform: `rotate(${imgObj.rotation}deg)`,
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'crosshair',
-                                    zIndex: isSelected ? 20 : 10,
                                     pointerEvents: 'none',
                                     // Disable pointer events when select tool is active so selection rectangle can be drawn
                                     pointerEvents: 'none',
@@ -4565,16 +4581,15 @@ export default function Whiteboard({
                                     style={{
                                         left: txtObj.x,
                                         top: txtObj.y,
-                                        zIndex: txtObj.zIndex || 20,
-                                    width: txtObj.width,
-                                    minHeight: txtObj.height,
-                                    transform: `rotate(${txtObj.rotation || 0}deg)`,
-                                    transformOrigin: 'center center',
-                                    cursor: isEditing ? 'text' : isSelected ? 'move' : 'crosshair',
-                                    zIndex: isSelected || isEditing ? 20 : 10,
-                                    pointerEvents: 'none',
-                                    backgroundColor: txtObj.bgColor || 'transparent',
-                                }}
+                                        width: txtObj.width,
+                                        minHeight: txtObj.height,
+                                        transform: `rotate(${txtObj.rotation || 0}deg)`,
+                                        transformOrigin: 'center center',
+                                        zIndex: txtObj.zIndex || (isSelected || isEditing ? 20 : 10),
+                                        cursor: isEditing ? 'text' : isSelected ? 'move' : 'crosshair',
+                                        pointerEvents: 'none',
+                                        backgroundColor: txtObj.bgColor || 'transparent',
+                                    }}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     if (!isEditing) {
@@ -5006,11 +5021,11 @@ export default function Whiteboard({
                                         <line x1={cx - 10} y1={cy} x2={cx + 10} y2={cy} stroke={shpObj.color} />
                                         {/* Degree markings */}
                                         {Array.from({ length: 181 }).map((_, i) => {
-                                            if (i % 5 !== 0) return null;
                                             const angle = (i * Math.PI) / 180;
                                             const isTen = i % 10 === 0;
+                                            const isFive = i % 5 === 0 && !isTen;
                                             const outerR = r;
-                                            const innerR = isTen ? r - 10 : r - 5;
+                                            const innerR = isTen ? 10 : (isFive ? r - 10 : r - 5);
                                             const x1 = cx - outerR * Math.cos(angle);
                                             const y1 = cy - outerR * Math.sin(angle);
                                             const x2 = cx - innerR * Math.cos(angle);
@@ -5043,7 +5058,7 @@ export default function Whiteboard({
                                     transform: `rotate(${shpObj.rotation || 0}deg)`,
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'crosshair',
-                                    zIndex: isSelected ? 20 : 10,
+                                    zIndex: shpObj.zIndex || (isSelected ? 20 : 10),
                                     pointerEvents: tool === 'select' ? 'auto' : 'none',
                                 }}
                                 onPointerDown={(e) => {
@@ -5145,7 +5160,7 @@ export default function Whiteboard({
                                         
 
                                         
-                                        {!shpObj.isLocked && (
+                                        {!shpObj.isLocked && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && (
                                             <>
                                         {/* Corner Resize Handles */}
                                         {['nw', 'ne', 'sw', 'se'].map(corner => {

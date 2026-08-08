@@ -10,6 +10,7 @@ import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
 import WhiteboardShareModal from '@/components/WhiteboardShareModal';
 import CameraOverlay from '@/components/CameraOverlay';
+import api from '@/lib/api';
 
 export default function WhiteboardPage() {
     const router = useRouter();
@@ -95,13 +96,9 @@ export default function WhiteboardPage() {
     const fetchFiles = async () => {
         try {
             setLoadingFiles(true);
-            const token = useAuthStore.getState().accessToken;
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            if (data.success) {
-                setFiles(data.data);
+            const res = await api.get('/whiteboard/files');
+            if (res.data.success) {
+                setFiles(res.data.data);
             }
         } catch (e) {
             console.error('Failed to fetch whiteboard files:', e);
@@ -113,13 +110,8 @@ export default function WhiteboardPage() {
 
     const migrateLegacyWorkspace = async () => {
         try {
-            const token = useAuthStore.getState().accessToken;
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/migrate-personal`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            if (data.success && data.message === 'Migrated successfully') {
+            const res = await api.post('/whiteboard/migrate-personal');
+            if (res.data.success && res.data.message === 'Migrated successfully') {
                 fetchFiles();
             }
         } catch (e) {
@@ -129,18 +121,9 @@ export default function WhiteboardPage() {
 
     const handleCreateNew = async () => {
         try {
-            const token = useAuthStore.getState().accessToken;
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ title: 'Untitled Whiteboard' })
-            });
-            const data = await res.json();
-            if (data.success) {
-                setActiveFileId(data.data.id);
+            const res = await api.post('/whiteboard/files', { title: 'Untitled Whiteboard' });
+            if (res.data.success) {
+                setActiveFileId(res.data.data.id);
             }
         } catch (e) {
             console.error('Failed to create whiteboard:', e);
@@ -153,13 +136,8 @@ export default function WhiteboardPage() {
         if (!confirm('Are you sure you want to delete this whiteboard?')) return;
         
         try {
-            const token = useAuthStore.getState().accessToken;
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            if (data.success) {
+            const res = await api.delete(`/whiteboard/files/${id}`);
+            if (res.data.success) {
                 toast.success('Whiteboard deleted');
                 setFiles(files.filter(f => f.id !== id));
             }
@@ -178,17 +156,8 @@ export default function WhiteboardPage() {
         }
 
         try {
-            const token = useAuthStore.getState().accessToken;
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files/${id}`, {
-                method: 'PUT',
-                headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ title: newTitle.trim() })
-            });
-            const data = await res.json();
-            if (data.success) {
+            const res = await api.put(`/whiteboard/files/${id}`, { title: newTitle.trim() });
+            if (res.data.success) {
                 toast.success('Whiteboard renamed');
                 setFiles(files.map(f => f.id === id ? { ...f, title: newTitle.trim() } : f));
             }
@@ -201,13 +170,8 @@ export default function WhiteboardPage() {
     const handleDuplicateFile = async (id, e) => {
         e.stopPropagation();
         try {
-            const token = useAuthStore.getState().accessToken;
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files/${id}/duplicate`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            if (data.success) {
+            const res = await api.post(`/whiteboard/files/${id}/duplicate`);
+            if (res.data.success) {
                 toast.success('Whiteboard duplicated');
                 fetchFiles();
             }
