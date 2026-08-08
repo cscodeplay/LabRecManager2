@@ -60,6 +60,13 @@ export default function WhiteboardPage() {
         // Fetch files
         fetchFiles();
 
+        // Set active session for floating icon
+        localStorage.setItem('active_whiteboard_session', JSON.stringify({
+            title: 'My Whiteboard',
+            url: window.location.pathname,
+            timestamp: Date.now()
+        }));
+
         // Migrate legacy personal workspace automatically in the background
         migrateLegacyWorkspace();
 

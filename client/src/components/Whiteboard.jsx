@@ -119,7 +119,7 @@ function ScreenshotPickerModal({ onClose, onSelect }) {
     }, []);
 
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
+        <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-[100]">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col overflow-hidden">
                 <div className="flex justify-between items-center p-4 border-b border-slate-200">
                     <h3 className="text-lg font-semibold text-slate-800">Insert Screenshot</h3>
@@ -223,6 +223,7 @@ export default function Whiteboard({
     const [showScreenshotModal, setShowScreenshotModal] = useState(false);
     const [screenshotPreview, setScreenshotPreview] = useState(null);
     const [screenshotBlob, setScreenshotBlob] = useState(null);
+    const [screenshotName, setScreenshotName] = useState('');
     const [isSavingScreenshot, setIsSavingScreenshot] = useState(false);
     
     const playShutterSound = () => {
@@ -246,7 +247,7 @@ export default function Whiteboard({
         if (!screenshotBlob) return;
         setIsSavingScreenshot(true);
         const formData = new FormData();
-        formData.append('file', screenshotBlob, `screenshot-${new Date().getTime()}.png`);
+        formData.append('file', screenshotBlob, screenshotName || `screenshot-${new Date().getTime()}.png`);
         try {
             const res = await api.post('/whiteboard/screenshot', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
@@ -668,7 +669,12 @@ export default function Whiteboard({
         };
 
         // Send immediately when sharing starts
-        sendCanvasState();
+        if (isSharing) {
+            sendCanvasState();
+        } else {
+            // If viewer, request current state from host
+            socket.emit('whiteboard:request-state', { sessionId, requesterId: socket.id });
+        }
 
         // Listen for state requests from new viewers
         const handleStateRequest = (data) => {
@@ -1258,29 +1264,39 @@ export default function Whiteboard({
         setTimeout(() => handlePaste(), 50);
     }, [handleCopy, handlePaste]);
 
-    // Bring to front
     const handleBringToFront = useCallback(() => {
+        const allObjects = [...shapeObjects.map(o => o.zIndex || 30), ...textObjects.map(o => o.zIndex || 20), ...imageObjects.map(o => o.zIndex || 10)];
+        const maxZ = allObjects.length > 0 ? Math.max(...allObjects) : 30;
+        const newZ = maxZ + 1;
+        
         if (selectedShapeIds.length > 0) {
-            setShapeObjects(prev => {
-                const unselected = prev.filter(s => !selectedShapeIds.includes(s.id));
-                const selected = prev.filter(s => selectedShapeIds.includes(s.id));
-                return [...unselected, ...selected];
-            });
-            saveToHistory();
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, zIndex: newZ } : s));
         }
-    }, [selectedShapeIds, saveToHistory]);
+        if (selectedTextIds.length > 0) {
+            setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, zIndex: newZ } : t));
+        }
+        if (selectedImageId) {
+            setImageObjects(prev => prev.map(i => i.id === selectedImageId ? { ...i, zIndex: newZ } : i));
+        }
+        saveToHistory();
+    }, [shapeObjects, textObjects, imageObjects, selectedShapeIds, selectedTextIds, selectedImageId, saveToHistory]);
 
-    // Send to back
     const handleSendToBack = useCallback(() => {
+        const allObjects = [...shapeObjects.map(o => o.zIndex || 30), ...textObjects.map(o => o.zIndex || 20), ...imageObjects.map(o => o.zIndex || 10)];
+        const minZ = allObjects.length > 0 ? Math.min(...allObjects) : 10;
+        const newZ = minZ - 1;
+        
         if (selectedShapeIds.length > 0) {
-            setShapeObjects(prev => {
-                const unselected = prev.filter(s => !selectedShapeIds.includes(s.id));
-                const selected = prev.filter(s => selectedShapeIds.includes(s.id));
-                return [...selected, ...unselected];
-            });
-            saveToHistory();
+            setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, zIndex: newZ } : s));
         }
-    }, [selectedShapeIds, saveToHistory]);
+        if (selectedTextIds.length > 0) {
+            setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, zIndex: newZ } : t));
+        }
+        if (selectedImageId) {
+            setImageObjects(prev => prev.map(i => i.id === selectedImageId ? { ...i, zIndex: newZ } : i));
+        }
+        saveToHistory();
+    }, [shapeObjects, textObjects, imageObjects, selectedShapeIds, selectedTextIds, selectedImageId, saveToHistory]);
 
     // Alignment tools
     const handleAlign = useCallback((alignment) => {
@@ -3190,14 +3206,16 @@ export default function Whiteboard({
                                     className="text-xs bg-slate-800 px-1 py-1 ml-1 rounded hover:bg-slate-700 border border-slate-600" title="No Fill"><X size={12} />
                                 </button>
                             </div>
-                            <select
-                                value={selectedShapeIds.length === 1 ? (shapeObjects.find(s => s.id === selectedShapeIds[0])?.strokeWidth || 2) : 2}
-                                onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, strokeWidth: parseInt(e.target.value) } : s))}
-                                className="h-6 px-1 text-xs border border-slate-700 rounded bg-slate-800 text-white outline-none"
-                                title="Border Width"
-                            >
-                                {[1, 2, 4, 6, 8].map(w => <option key={w} value={w}>{w}px</option>)}
-                            </select>
+                            <div className="flex items-center bg-slate-800 border border-slate-700 rounded h-6 px-1" title="Border Width">
+                                <span className="text-xs text-slate-400 mr-1">px</span>
+                                <input
+                                    type="number"
+                                    min="1" max="50"
+                                    value={selectedShapeIds.length === 1 ? (shapeObjects.find(s => s.id === selectedShapeIds[0])?.strokeWidth || 2) : 2}
+                                    onChange={(e) => setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, strokeWidth: parseInt(e.target.value) || 2 } : s))}
+                                    className="w-10 text-xs bg-transparent text-white outline-none text-center"
+                                />
+                            </div>
                         </>
                     )}
 
@@ -3205,20 +3223,23 @@ export default function Whiteboard({
                     {(selectedTextIds.length > 0 || selectedShapeIds.length > 0) && (
                         <>
                             <div className="w-px h-4 bg-slate-700 mx-1"></div>
-                            <input
-                                type="color"
-                                value={selectedTextIds.length > 0 ? (textObjects.find(t => t.id === selectedTextIds[0])?.color || '#000000') : (shapeObjects.find(s => s.id === selectedShapeIds[0])?.textColor || '#000000')}
-                                onChange={(e) => {
-                                    if (selectedTextIds.length > 0) {
-                                        setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, color: e.target.value } : t));
-                                    }
-                                    if (selectedShapeIds.length > 0) {
-                                        setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, textColor: e.target.value } : s));
-                                    }
-                                }}
-                                className="w-6 h-6 p-0 border border-slate-700 rounded cursor-pointer bg-slate-800"
-                                title="Text Color"
-                            />
+                            <div className="relative w-7 h-7 flex flex-col items-center justify-center rounded hover:bg-slate-700 bg-slate-800 border border-slate-700 cursor-pointer overflow-hidden" title="Text Color">
+                                <span className="font-bold text-[14px] leading-none select-none text-slate-200 mt-0.5">A</span>
+                                <div className="w-4 h-1 mt-[2px] rounded-sm" style={{ backgroundColor: selectedTextIds.length > 0 ? (textObjects.find(t => t.id === selectedTextIds[0])?.color || '#000000') : (shapeObjects.find(s => s.id === selectedShapeIds[0])?.textColor || '#000000') }}></div>
+                                <input
+                                    type="color"
+                                    value={selectedTextIds.length > 0 ? (textObjects.find(t => t.id === selectedTextIds[0])?.color || '#000000') : (shapeObjects.find(s => s.id === selectedShapeIds[0])?.textColor || '#000000')}
+                                    onChange={(e) => {
+                                        if (selectedTextIds.length > 0) {
+                                            setTextObjects(prev => prev.map(t => selectedTextIds.includes(t.id) ? { ...t, color: e.target.value } : t));
+                                        }
+                                        if (selectedShapeIds.length > 0) {
+                                            setShapeObjects(prev => prev.map(s => selectedShapeIds.includes(s.id) ? { ...s, textColor: e.target.value } : s));
+                                        }
+                                    }}
+                                    className="absolute inset-[-10px] w-12 h-12 opacity-0 cursor-pointer"
+                                />
+                            </div>
                             <button
                                 onClick={() => {
                                     if (selectedTextIds.length > 0) {
@@ -4187,11 +4208,12 @@ export default function Whiteboard({
                             <div
                                 key={imgObj.id}
                                 className="absolute"
-                                style={{
-                                    left: imgObj.x,
-                                    top: imgObj.y,
-                                    width: imgObj.width,
-                                    height: imgObj.height,
+                                    style={{
+                                        left: imgObj.x,
+                                        top: imgObj.y,
+                                        width: imgObj.width,
+                                        height: imgObj.height,
+                                        zIndex: imgObj.zIndex || 10,
                                     transform: `rotate(${imgObj.rotation}deg)`,
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'crosshair',
@@ -4233,7 +4255,7 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none" />
-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setImageDragState({ id: imgObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...imgObj } }); }} />
+                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); if (imgObj.isLocked) return; setImageDragState({ id: imgObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...imgObj } }); }} />
 
                                         {/* Corner Resize Handles */}
                                         {['nw', 'ne', 'sw', 'se'].map(corner => {
@@ -4353,9 +4375,10 @@ export default function Whiteboard({
                             <div
                                 key={txtObj.id}
                                 className="absolute"
-                                style={{
-                                    left: txtObj.x,
-                                    top: txtObj.y,
+                                    style={{
+                                        left: txtObj.x,
+                                        top: txtObj.y,
+                                        zIndex: txtObj.zIndex || 20,
                                     width: txtObj.width,
                                     minHeight: txtObj.height,
                                     transform: `rotate(${txtObj.rotation || 0}deg)`,
@@ -4463,7 +4486,7 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-green-500 pointer-events-none" />
-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
+                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); if (txtObj.isLocked) return; setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
 
 
                                         {/* Corner Resize Handles */}
@@ -4711,16 +4734,20 @@ export default function Whiteboard({
                                     </g>
                                 );
                             } else if (shpObj.type === 'line') {
-                                return <line x1={shpObj.startX} y1={shpObj.startY} x2={shpObj.endX} y2={shpObj.endY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />;
+                                return <line x1={shpObj.startX - shpObj.x} y1={shpObj.startY - shpObj.y} x2={shpObj.endX - shpObj.x} y2={shpObj.endY - shpObj.y} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />;
                             } else if (shpObj.type === 'arrow') {
-                                const angle = Math.atan2(shpObj.endY - shpObj.startY, shpObj.endX - shpObj.startX);
+                                const localStartX = shpObj.startX - shpObj.x;
+                                const localStartY = shpObj.startY - shpObj.y;
+                                const localEndX = shpObj.endX - shpObj.x;
+                                const localEndY = shpObj.endY - shpObj.y;
+                                const angle = Math.atan2(localEndY - localStartY, localEndX - localStartX);
                                 const headLength = shpObj.strokeWidth * 4;
-                                const p1 = `${shpObj.endX},${shpObj.endY}`;
-                                const p2 = `${shpObj.endX - headLength * Math.cos(angle - Math.PI / 6)},${shpObj.endY - headLength * Math.sin(angle - Math.PI / 6)}`;
-                                const p3 = `${shpObj.endX - headLength * Math.cos(angle + Math.PI / 6)},${shpObj.endY - headLength * Math.sin(angle + Math.PI / 6)}`;
+                                const p1 = `${localEndX},${localEndY}`;
+                                const p2 = `${localEndX - headLength * Math.cos(angle - Math.PI / 6)},${localEndY - headLength * Math.sin(angle - Math.PI / 6)}`;
+                                const p3 = `${localEndX - headLength * Math.cos(angle + Math.PI / 6)},${localEndY - headLength * Math.sin(angle + Math.PI / 6)}`;
                                 return (
                                     <g>
-                                        <line x1={shpObj.startX} y1={shpObj.startY} x2={shpObj.endX} y2={shpObj.endY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />
+                                        <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />
                                         <polygon points={`${p1} ${p2} ${p3}`} fill={shpObj.color} stroke="none" />
                                     </g>
                                 );
@@ -4857,7 +4884,7 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-purple-500 pointer-events-none" />
-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setShapeDragState({ id: shpObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...shpObj }, startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)) }); }} />
+                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); if (shpObj.isLocked) return; setShapeDragState({ id: shpObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...shpObj }, startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)) }); }} />
                                         
 
                                         
@@ -5135,9 +5162,18 @@ export default function Whiteboard({
 
             {/* Screenshot Modal */}
             {screenshotPreview && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80">
+                <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80">
                     <div className="bg-slate-900 rounded-lg shadow-2xl p-6 max-w-4xl w-full mx-4 flex flex-col max-h-[90vh]">
                         <h3 className="text-xl font-semibold text-white mb-4">Screenshot Preview</h3>
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-slate-400 mb-1">Filename</label>
+                            <input 
+                                type="text" 
+                                value={screenshotName} 
+                                onChange={(e) => setScreenshotName(e.target.value)} 
+                                className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                            />
+                        </div>
                         <div className="flex-1 overflow-auto bg-slate-800 rounded border border-slate-700 p-2 flex items-center justify-center min-h-[200px]">
                             <img src={screenshotPreview} alt="Screenshot" className="max-w-full max-h-[60vh] object-contain shadow-lg" />
                         </div>
