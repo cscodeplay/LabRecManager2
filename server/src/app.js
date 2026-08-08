@@ -174,6 +174,18 @@ app.get('/api/health', async (req, res) => {
 
 const whiteboardChatHistory = new Map();
 
+// Store active whiteboard sessions and their participants
+const whiteboardSessions = new Map();
+
+function getSession(sessionId) {
+  if (!whiteboardSessions.has(sessionId)) {
+    whiteboardSessions.set(sessionId, {
+      participants: new Map() // socketId -> { id, name, role, permissions }
+    });
+  }
+  return whiteboardSessions.get(sessionId);
+}
+
 // Store active host cameras: { sessionId: [socketId1, socketId2] }
 const activeHostCameras = {};
 
