@@ -584,7 +584,7 @@ export default function ProcurementPage() {
             const res = await procurementAPI.getPreviewData(selectedRequest.id);
             const { school, request, comparison, vendors, totalApproved, committee } = res.data.data;
             const vendorNames = vendors.map(v => v.name);
-            const today = new Date().toLocaleDateString('en-IN');
+            const today = new Date().toLocaleDateString();
             const isComplete = request.status === 'received' || request.status === 'completed';
 
             const html = `
@@ -638,7 +638,7 @@ export default function ProcurementPage() {
                     <div class="section-title">1. REQUEST FOR NEW PURCHASE</div>
                     <div class="meta-info">
                         <p><strong>Reference No:</strong> PR-${request.id?.slice(0, 8).toUpperCase() || 'XXXXXX'}</p>
-                        <p><strong>Date:</strong> ${new Date(request.createdAt).toLocaleDateString('en-IN')}</p>
+                        <p><strong>Date:</strong> ${new Date(request.createdAt).toLocaleDateString()}</p>
                         <p><strong>Department:</strong> ${request.department || 'N/A'}</p>
                         <p><strong>Budget Code:</strong> ${request.budgetCode || 'N/A'}</p>
                     </div>
@@ -871,7 +871,7 @@ export default function ProcurementPage() {
                     <table style="margin-bottom: 15px;">
                         <tr><td style="width: 150px; font-weight: bold;">Proceeding of:</td><td>Committee to Recommend ${request.title}</td></tr>
                         <tr><td style="font-weight: bold;">Assembled at:</td><td>${school?.name || 'Institution Name'}${school?.district ? ', ' + school.district : ''}</td></tr>
-                        <tr><td style="font-weight: bold;">On:</td><td>${request.proceedingsDate ? new Date(request.proceedingsDate).toLocaleDateString('en-IN') : today}</td></tr>
+                        <tr><td style="font-weight: bold;">On:</td><td>${request.proceedingsDate ? new Date(request.proceedingsDate).toLocaleDateString() : today}</td></tr>
                         <tr><td style="font-weight: bold;">For the purpose of:</td><td>To Recommend ${request.title}</td></tr>
                         <tr><td style="font-weight: bold;">By the order of:</td><td>Vide Memo no. <strong>${request.memoVideNo || '________'}</strong></td></tr>
                     </table>
@@ -925,7 +925,7 @@ export default function ProcurementPage() {
                     <div class="section-title">7. PURCHASE ORDER</div>
                     <div class="meta-info">
                         <p><strong>PO Number:</strong> ${request.poNumber || 'PO-' + request.id?.slice(0, 8).toUpperCase()}</p>
-                        <p><strong>PO Date:</strong> ${request.orderedAt ? new Date(request.orderedAt).toLocaleDateString('en-IN') : today}</p>
+                        <p><strong>PO Date:</strong> ${request.orderedAt ? new Date(request.orderedAt).toLocaleDateString() : today}</p>
                         <p><strong>Budget Code:</strong> ${request.budgetCode || 'N/A'}</p>
                         <p><strong>Department:</strong> ${request.department || 'N/A'}</p>
                     </div>
@@ -992,7 +992,7 @@ export default function ProcurementPage() {
                     <div class="section-title">8. BILL / INVOICE RECEIVED</div>
                     <div class="meta-info">
                         <p><strong>Bill/Invoice Number:</strong> ${request.billNumber}</p>
-                        <p><strong>Bill Date:</strong> ${request.billDate ? new Date(request.billDate).toLocaleDateString('en-IN') : '-'}</p>
+                        <p><strong>Bill Date:</strong> ${request.billDate ? new Date(request.billDate).toLocaleDateString() : '-'}</p>
                         <p><strong>Vendor:</strong> ${vendors[0]?.name || '-'}</p>
                         <p><strong>Vendor GSTIN:</strong> ${vendors[0]?.gstin || '-'}</p>
                     </div>
@@ -1020,7 +1020,7 @@ export default function ProcurementPage() {
                     <div class="summary-box">
                         <p><strong>Payment Method:</strong> ${request.paymentMethod || 'Bank Transfer'}</p>
                         <p><strong>Cheque Number:</strong> ${request.chequeNumber || 'N/A'}</p>
-                        <p><strong>Payment Date:</strong> ${request.paymentDate ? new Date(request.paymentDate).toLocaleDateString('en-IN') : '________________'}</p>
+                        <p><strong>Payment Date:</strong> ${request.paymentDate ? new Date(request.paymentDate).toLocaleDateString() : '________________'}</p>
                     </div>
                     
                     <div class="signatures">
@@ -1118,7 +1118,7 @@ export default function ProcurementPage() {
                 toast.error('Vendor not found');
                 return;
             }
-            const today = new Date().toLocaleDateString('en-IN');
+            const today = new Date().toLocaleDateString();
 
             const html = `
             <html>

@@ -119,7 +119,7 @@ export default function WhiteboardChatWindow({
             role: isInstructor ? 'instructor' : 'student',
             target: activeTarget,
             text: inputMsg.trim(),
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            timestamp: new Date().toISOString()
         };
 
         if (socket && sessionId) {
@@ -255,7 +255,14 @@ export default function WhiteboardChatWindow({
                                             {m.role === 'instructor' && (
                                                 <span className="bg-amber-100 text-amber-800 font-bold px-1 rounded text-[9px]">HOST</span>
                                             )}
-                                            <span>• {m.timestamp}</span>
+                                            <span>• {(() => {
+                                                if (!m.timestamp) return '';
+                                                if (typeof m.timestamp === 'string' && m.timestamp.includes(':') && !m.timestamp.includes('T')) {
+                                                    return m.timestamp;
+                                                }
+                                                const d = new Date(m.timestamp);
+                                                return isNaN(d.getTime()) ? m.timestamp : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                            })()}</span>
                                         </div>
                                         <div
                                             className={`px-3 py-2 rounded-2xl max-w-[85%] break-words ${

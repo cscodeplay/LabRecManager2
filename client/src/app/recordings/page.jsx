@@ -156,7 +156,7 @@ export default function RecordingsPage() {
     };
 
     const formatDate = (date) => {
-        return new Date(date).toLocaleDateString('en-US', {
+        return new Date(date).toLocaleDateString(undefined, {
             year: 'numeric',
             month: 'short',
             day: 'numeric'

@@ -43,7 +43,7 @@ export default function ImportHistoryPage() {
     };
 
     const formatDate = (dateStr) => {
-        return new Date(dateStr).toLocaleString('en-IN', {
+        return new Date(dateStr).toLocaleString(undefined, {
             dateStyle: 'medium',
             timeStyle: 'short'
         });

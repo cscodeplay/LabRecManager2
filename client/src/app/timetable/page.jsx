@@ -320,7 +320,7 @@ export default function TimetablePage() {
                                         {h.titleHindi && <span className="text-xs text-slate-500 ml-2">{h.titleHindi}</span>}
                                     </div>
                                     <span className="text-xs text-slate-500">
-                                        {new Date(h.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                        {new Date(h.date).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
                                     </span>
                                 </div>
                             ))}

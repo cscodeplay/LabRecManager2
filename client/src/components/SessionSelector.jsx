@@ -129,7 +129,7 @@ export default function SessionSelector() {
                                                     {session.yearLabel}
                                                 </p>
                                                 <p className="text-xs text-slate-500">
-                                                    {new Date(session.startDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })} - {new Date(session.endDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                                                    {new Date(session.startDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })} - {new Date(session.endDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
                                                 </p>
                                             </div>
                                         </div>

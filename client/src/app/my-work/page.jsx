@@ -249,7 +249,7 @@ export default function MyAssignedWorkPage() {
                                                 )}
                                                 {assignment.dueDate && (
                                                     <span className="flex items-center gap-1 text-xs text-slate-400">
-                                                        📅 {new Date(assignment.dueDate).toLocaleString('en-IN', {
+                                                        📅 {new Date(assignment.dueDate).toLocaleString(undefined, {
                                                             day: 'numeric', month: 'short', year: 'numeric',
                                                             hour: '2-digit', minute: '2-digit'
                                                         })}
@@ -273,7 +273,7 @@ export default function MyAssignedWorkPage() {
                                             <div className="flex flex-wrap gap-4 text-xs text-slate-500 mt-2">
                                                 {assignment.hasSubmitted && assignment.submittedAt && (
                                                     <span className="flex items-center gap-1 text-emerald-600">
-                                                        ✅ Submitted: {new Date(assignment.submittedAt).toLocaleString('en-IN', {
+                                                        ✅ Submitted: {new Date(assignment.submittedAt).toLocaleString(undefined, {
                                                             day: 'numeric', month: 'short', year: 'numeric',
                                                             hour: '2-digit', minute: '2-digit'
                                                         })}
@@ -293,7 +293,7 @@ export default function MyAssignedWorkPage() {
                                                         )}
                                                         {assignment.grade.gradedAt && (
                                                             <span>
-                                                                📝 {new Date(assignment.grade.gradedAt).toLocaleString('en-IN', {
+                                                                📝 {new Date(assignment.grade.gradedAt).toLocaleString(undefined, {
                                                                     day: 'numeric', month: 'short', year: 'numeric',
                                                                     hour: '2-digit', minute: '2-digit'
                                                                 })}

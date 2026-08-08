@@ -344,7 +344,7 @@ export default function TicketsPage() {
                                             )}
                                             <span className="flex items-center gap-1">
                                                 <Clock size={14} />
-                                                {new Date(ticket.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                                {new Date(ticket.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
                                             </span>
                                             {ticket._count?.comments > 0 && (
                                                 <span className="flex items-center gap-1">
@@ -589,7 +589,7 @@ export default function TicketsPage() {
                                     </div>
                                     <div>
                                         <p className="text-slate-400">Created</p>
-                                        <p className="font-medium">{new Date(selectedTicket.createdAt).toLocaleString('en-IN')}</p>
+                                        <p className="font-medium">{new Date(selectedTicket.createdAt).toLocaleString()}</p>
                                     </div>
                                     {selectedTicket.lab && (
                                         <div>
@@ -641,7 +641,7 @@ export default function TicketsPage() {
                                                         </span>
                                                     </span>
                                                     <span className="text-xs text-slate-400">
-                                                        {new Date(comment.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                        {new Date(comment.createdAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                                     </span>
                                                 </div>
                                                 <p className="text-sm text-slate-700">{comment.content}</p>

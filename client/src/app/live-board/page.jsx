@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/lib/store';
 import { Pencil, ArrowLeft, AlertCircle, Radio } from 'lucide-react';
-import SharedWhiteboardViewer from '@/components/SharedWhiteboardViewer';
+import Whiteboard from '@/components/Whiteboard';
 import io from 'socket.io-client';
 
 export default function LiveBoardPage() {
@@ -113,13 +113,15 @@ export default function LiveBoardPage() {
                             </div>
                         </div>
                         <div className="bg-white rounded-xl shadow-lg overflow-hidden" style={{ height: 'calc(100vh - 200px)', minHeight: '500px' }}>
-                            <SharedWhiteboardViewer
-                                isOpen={true}
+                            <Whiteboard
                                 onClose={() => { }}
-                                instructorName={sharedSession.instructorName}
                                 socket={socket}
                                 sessionId={sharedSession.sessionId}
-                                isInline={true}
+                                isSharing={false}
+                                isInstructor={false}
+                                isStudent={true}
+                                userName={user?.name || 'Student'}
+                                permissions={sharedSession.permissions || { canDraw: true, canShareAudio: false, canShareVideo: false }}
                             />
                         </div>
                     </div>

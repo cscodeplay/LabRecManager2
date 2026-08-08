@@ -94,7 +94,7 @@ export default function QueryLogsPage() {
     };
 
     const formatDate = (date) => {
-        return new Date(date).toLocaleString('en-IN', {
+        return new Date(date).toLocaleString(undefined, {
             day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit'
         });
     };

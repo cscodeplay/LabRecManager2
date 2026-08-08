@@ -322,7 +322,7 @@ export default function AdminCalendarPage() {
                                             <h4 className="font-medium text-slate-900 dark:text-slate-100 truncate">{event.title}</h4>
                                             {event.titleHindi && <p className="text-xs text-slate-500 truncate">{event.titleHindi}</p>}
                                             <p className="text-xs text-slate-400 mt-0.5">
-                                                {new Date(event.date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
+                                                {new Date(event.date).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
                                             </p>
                                         </div>
                                         <span className={`px-2 py-1 rounded text-[10px] font-medium border ${typeInfo.color}`}>

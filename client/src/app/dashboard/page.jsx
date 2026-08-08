@@ -95,7 +95,7 @@ export default function DashboardPage() {
                         <Link href="/admin/site-updates" className="text-right text-xs text-white/70 hover:text-white transition">
                             <p>{t('dashboard.lastUpdated')}</p>
                             <p className="font-mono">
-                                {new Date(siteUpdate.updatedAt).toLocaleString('en-IN', {
+                                {new Date(siteUpdate.updatedAt).toLocaleString(undefined, {
                                     day: 'numeric', month: 'short', year: 'numeric',
                                     hour: '2-digit', minute: '2-digit'
                                 })}

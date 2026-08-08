@@ -1912,74 +1912,10 @@ export default function Whiteboard({
         return () => clearInterval(interval);
     }, []);
 
-    
-    const snapToGuides = useCallback((pos, shapes) => {
-        const snapDistance = 20;
-        for (const shp of shapes) {
-            if (shp.type !== 'ruler' && shp.type !== 'protractor') continue;
-            
-            const cx = shp.x + shp.width / 2;
-            const cy = shp.y + shp.height / 2;
-            const rot = (shp.rotation || 0) * Math.PI / 180;
-            
-            // Global to local
-            const dx = pos.x - cx;
-            const dy = pos.y - cy;
-            let localX = dx * Math.cos(-rot) - dy * Math.sin(-rot) + shp.width / 2;
-            let localY = dx * Math.sin(-rot) + dy * Math.cos(-rot) + shp.height / 2;
-            
-            let snapped = false;
-            if (shp.type === 'ruler') {
-                if (localX >= -snapDistance && localX <= shp.width + snapDistance) {
-                    if (Math.abs(localY) < snapDistance) {
-                        localY = 0; snapped = true;
-                    } else if (Math.abs(localY - shp.height) < snapDistance) {
-                        localY = shp.height; snapped = true;
-                    }
-                }
-            } else if (shp.type === 'protractor') {
-                const pcx = shp.width / 2;
-                const pcy = shp.height / 2;
-                const r = Math.min(shp.width, shp.height) / 2;
-                const pdx = localX - pcx;
-                const pdy = localY - pcy;
-                const dist = Math.sqrt(pdx * pdx + pdy * pdy);
-                
-                // Snap to curve (upper half)
-                if (Math.abs(dist - r) < snapDistance && pdy <= snapDistance) {
-                    const clampedPdy = Math.min(0, pdy);
-                    const angle = Math.atan2(clampedPdy, pdx);
-                    localX = pcx + r * Math.cos(angle);
-                    localY = pcy + r * Math.sin(angle);
-                    snapped = true;
-                } 
-                // Snap to straight bottom edge
-                else if (Math.abs(pdy) < snapDistance && pdx >= -r - snapDistance && pdx <= r + snapDistance) {
-                    localY = pcy;
-                    snapped = true;
-                }
-            }
-            
-            if (snapped) {
-                // Local to global
-                const ndx = localX - shp.width / 2;
-                const ndy = localY - shp.height / 2;
-                return {
-                    x: cx + ndx * Math.cos(rot) - ndy * Math.sin(rot),
-                    y: cy + ndx * Math.sin(rot) + ndy * Math.cos(rot)
-                };
-            }
-        }
-        return pos;
-    }, []);
-
     const startDrawing = useCallback((e) => {
         if (!localPermissions.canDraw) return;
         e.preventDefault();
-        let pos = getPosition(e);
-        if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
-            pos = snapToGuides(pos, shapeObjects);
-        }
+        const pos = getPosition(e);
 
         // If text input is open and they click outside, let the blur event commit it.
         // Don't start a new drawing/text action.
@@ -2091,10 +2027,7 @@ export default function Whiteboard({
         if (!isDrawing) return;
         e.preventDefault();
 
-        let pos = getPosition(e);
-        if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
-            pos = snapToGuides(pos, shapeObjects);
-        }
+        const pos = getPosition(e);
         setCurrentPos(pos);
 
         if (tool === 'select') {
@@ -3704,8 +3637,8 @@ export default function Whiteboard({
                             accept="image/png, image/jpeg, image/gif, image/webp"
                             className="hidden"
                         />
-                        </div>
                     </div>
+                        </div>
 
                     {/* Vertical Divider */}
                     
@@ -3936,8 +3869,8 @@ export default function Whiteboard({
                                         ))}
                                     </div>
                                 </div>
-                            )}
-                        </div>
+                                )}
+                            </div>
                     </div>
 
                     
@@ -4436,8 +4369,6 @@ export default function Whiteboard({
                                         <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none" />
                                         <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!localPermissions.canDraw) return; e.stopPropagation(); e.preventDefault(); if (imgObj.isLocked) return; setImageDragState({ id: imgObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...imgObj } }); }} />
 
-                                        {!imgObj.isLocked && (
-                                            <>
                                         {/* Corner Resize Handles */}
                                         {['nw', 'ne', 'sw', 'se'].map(corner => {
                                             const pos = {
@@ -4471,8 +4402,6 @@ export default function Whiteboard({
                                             );
                                         })}
 
-                                            </>
-                                        )}
                                         {/* Edge Resize Handles */}
                                         {['n', 'e', 's', 'w'].map(edge => {
                                             const pos = {
@@ -4530,22 +4459,18 @@ export default function Whiteboard({
                                             </div>
                                         </div>
 
-                                        {!imgObj.isLocked && (
-                                            <>
-                                                {/* Delete Button */}
-                                                <button
-                                                    className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setImageObjects(prev => prev.filter(i => i.id !== imgObj.id));
-                                                        setSelectedImageId(null);
-                                                        saveToHistory();
-                                                    }}
-                                                >
-                                                    <X className="w-3 h-3 text-white" />
-                                                </button>
-                                            </>
-                                        )}
+                                        {/* Delete Button */}
+                                        <button
+                                            className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setImageObjects(prev => prev.filter(i => i.id !== imgObj.id));
+                                                setSelectedImageId(null);
+                                                saveToHistory();
+                                            }}
+                                        >
+                                            <X className="w-3 h-3 text-white" />
+                                        </button>
                                     </>
                                 )}
                             </div>
@@ -4676,8 +4601,6 @@ export default function Whiteboard({
                                         <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!localPermissions.canDraw) return; e.stopPropagation(); e.preventDefault(); if (txtObj.isLocked) return; setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
 
 
-                                        {!txtObj.isLocked && (
-                                            <>
                                         {/* Corner Resize Handles */}
                                         {['nw', 'ne', 'sw', 'se'].map(corner => {
                                             const pos = {
@@ -4711,8 +4634,7 @@ export default function Whiteboard({
                                                 />
                                             );
                                         })}
-                                            </>
-                                        )}
+
                                         {/* Edge Resize Handles */}
                                         {['n', 'e', 's', 'w'].map(edge => {
                                             const pos = {
@@ -4749,8 +4671,6 @@ export default function Whiteboard({
 
                                         
 
-                                        {!txtObj.isLocked && (
-                                            <>
                                         {/* Delete Button */}
                                         <button
                                             className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg"
@@ -4762,9 +4682,7 @@ export default function Whiteboard({
                                             }}
                                         >
                                             <X className="w-3 h-3 text-white" />
-                                                </button>
-                                            </>
-                                        )}
+                                        </button>
                                     </>
                                 )}
                             </div>
@@ -5145,8 +5063,7 @@ export default function Whiteboard({
                                         
 
                                         
-                                        {!shpObj.isLocked && (
-                                            <>
+                                        {!shpObj.isLocked && <>
                                         {/* Corner Resize Handles */}
                                         {['nw', 'ne', 'sw', 'se'].map(corner => {
                                             const pos = {
@@ -5175,8 +5092,6 @@ export default function Whiteboard({
                                                 />
                                             );
                                         })}
-                                            </>
-                                        )}
                                         {/* Edge Resize Handles */}
                                         {['n', 'e', 's', 'w'].map(edge => {
                                             const pos = {
@@ -5234,6 +5149,7 @@ export default function Whiteboard({
                                                 className="absolute top-6 w-12 text-center text-xs bg-slate-800 text-white px-1 py-0.5 rounded shadow-lg z-50 border border-slate-600 outline-none appearance-none"
                                             />
                                         </div>
+                                        </>}
                                     </>
                                 )}
                             </div>

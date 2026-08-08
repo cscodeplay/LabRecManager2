@@ -1,0 +1,480 @@
+diff --git a/client/src/components/Whiteboard.jsx b/client/src/components/Whiteboard.jsx
+index 16eb95b..53d4ede 100644
+--- a/client/src/components/Whiteboard.jsx
++++ b/client/src/components/Whiteboard.jsx
+@@ -2,6 +2,7 @@
+ 
+ import { useRef, useState, useEffect, useCallback } from 'react';
+ import {
++    Ruler, Compass,
+     Pencil, Eraser, Circle, Square, Minus, Type, Undo2, Redo2, Trash2, Download, Save,
+     Palette, ChevronDown, X, Maximize2, Minimize2, Share2, MousePointer2, Sparkles, Wand2,
+     Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
+@@ -13,8 +14,10 @@ import {
+ } from 'lucide-react';
+ import WhiteboardChatWindow from './WhiteboardChatWindow';
+ import WhiteboardRecorder from './WhiteboardRecorder';
++import AdminPermissionsPanel from './AdminPermissionsPanel';
+ import api from '@/lib/api';
+ import { toast } from 'react-hot-toast';
++import { useAuthStore } from '@/lib/store';
+ 
+ // Default colors (rainbow + black/white)
+ const DEFAULT_COLORS = [
+@@ -169,6 +172,26 @@ function ScreenshotPickerModal({ onClose, onSelect }) {
+     );
+ }
+ 
++
++// Helper component to render a MediaStream
++const HostVideoRenderer = ({ stream }) => {
++    const videoRef = useRef(null);
++    useEffect(() => {
++        if (videoRef.current && stream) {
++            videoRef.current.srcObject = stream;
++        }
++    }, [stream]);
++    if (!stream) return null;
++    const hasVideo = stream.getVideoTracks().length > 0 && stream.getVideoTracks()[0].enabled;
++    const hasAudio = stream.getAudioTracks().length > 0 && stream.getAudioTracks()[0].enabled;
++    return (
++        <div className="absolute top-4 left-4 z-[50] w-48 h-36 bg-slate-900 rounded-lg overflow-hidden shadow-lg border-2 border-slate-700 pointer-events-auto">
++            <video ref={videoRef} autoPlay playsInline className={`w-full h-full object-cover ${hasVideo ? '' : 'hidden'}`} />
++            {!hasVideo && <div className="absolute inset-0 flex items-center justify-center bg-slate-800"><User className="w-12 h-12 text-slate-500" /></div>}
++            {!hasAudio && <div className="absolute bottom-2 right-2 bg-red-500 rounded-full p-1 shadow-sm"><MicOff className="w-3 h-3 text-white" /></div>}
++        </div>
++    );
++};
+ export default function Whiteboard({
+     onSave,
+     onClose,
+@@ -191,7 +214,10 @@ export default function Whiteboard({
+     isCameraOn = false,
+     isMicOn = false,
+     // Persistence prop - unique ID for this whiteboard (e.g., `wb_${userId}`)
+-    whiteboardId = null
++    whiteboardId = null,
++    permissions = { canDraw: true, canShareAudio: true, canShareVideo: true },
++    isStudent = false,
++    userName = 'Instructor'
+ }) {
+     const canvasRef = useRef(null);
+     const containerRef = useRef(null);
+@@ -329,6 +355,14 @@ export default function Whiteboard({
+     const [showClipboard, setShowClipboard] = useState(false);
+     // Laser pointer state
+     const [laserPos, setLaserPos] = useState(null);
++    const [remoteCursors, setRemoteCursors] = useState({});
++
++    const [localPermissions, setLocalPermissions] = useState(permissions);
++    
++    useEffect(() => {
++        setLocalPermissions(permissions);
++    }, [permissions]);
++
+     const [isAutoShape, setIsAutoShape] = useState(false);
+     const laserTimeoutRef = useRef(null);
+     const isRemoteUpdateRef = useRef(false);
+@@ -646,6 +680,38 @@ export default function Whiteboard({
+     }, [bgColor, bgPattern, imageObjects, textObjects, shapeObjects, laserPos]);
+ 
+     // Broadcast canvas state when sharing starts and periodically while sharing
++    
++    const { user } = useAuthStore();
++    useEffect(() => {
++
++        // Join session for permission tracking
++        if (socket && sessionId) {
++            socket.emit('whiteboard:join-session', {
++                sessionId,
++                userId: user?.id,
++                userName: user?.name || 'Student',
++                role: isInstructor ? 'instructor' : 'student'
++            });
++            
++            const handlePermissionsUpdate = (data) => {
++                // If it's for us
++                if (data.userId === user?.id || data.userId === socket.id) {
++                    // We need to update local permissions state.
++                    // But wait, permissions is passed as a prop from live-board/page.jsx!
++                    // Let's emit an event up, or handle it via a custom event, or maintain local permissions state!
++                    setLocalPermissions(data.permissions);
++                }
++            };
++            
++            socket.on('whiteboard:permissions-updated', handlePermissionsUpdate);
++            
++            return () => {
++                socket.off('whiteboard:permissions-updated', handlePermissionsUpdate);
++            }
++        }
++
++    }, [socket, sessionId, isInstructor, user]);
++
+     useEffect(() => {
+         if (!socket || !sessionId) return;
+ 
+@@ -821,6 +887,16 @@ export default function Whiteboard({
+             if (data.shapeObjects) setShapeObjects(data.shapeObjects);
+         };
+ 
++        
++        const handleCursorUpdate = (data) => {
++            if (data.sessionId !== sessionId || data.socketId === socket.id) return;
++            setRemoteCursors(prev => ({
++                ...prev,
++                [data.socketId]: { x: data.x, y: data.y, userName: data.userName, tool: data.tool, timestamp: Date.now() }
++            }));
++        };
++        socket.on('whiteboard:cursor-update', handleCursorUpdate);
++
+         socket.on('whiteboard:state-requested', handleStateRequest);
+         socket.on('whiteboard:draw', handleDraw);
+         socket.on('whiteboard:clear', handleClear);
+@@ -829,6 +905,9 @@ export default function Whiteboard({
+         socket.on('whiteboard:objects-update', handleObjectsUpdate);
+ 
+         return () => {
++            
++            socket.off('whiteboard:cursor-update', handleCursorUpdate);
++
+             socket.off('whiteboard:state-requested', handleStateRequest);
+             socket.off('whiteboard:draw', handleDraw);
+             socket.off('whiteboard:clear', handleClear);
+@@ -1814,7 +1893,27 @@ export default function Whiteboard({
+     }, [isSharing, socket, sessionId]);
+ 
+     // Start drawing
++    
++    useEffect(() => {
++        const interval = setInterval(() => {
++            const now = Date.now();
++            setRemoteCursors(prev => {
++                let changed = false;
++                const next = { ...prev };
++                for (const id in next) {
++                    if (now - next[id].timestamp > 3000) {
++                        delete next[id];
++                        changed = true;
++                    }
++                }
++                return changed ? next : prev;
++            });
++        }, 1000);
++        return () => clearInterval(interval);
++    }, []);
++
+     const startDrawing = useCallback((e) => {
++        if (!localPermissions.canDraw) return;
+         e.preventDefault();
+         const pos = getPosition(e);
+ 
+@@ -2220,9 +2319,10 @@ export default function Whiteboard({
+                             color: color,
+                             strokeWidth: strokeWidth,
+                             text: '',
+-                            fontSize: 20
+-                        };
+-                        setShapeObjects(prev => [...prev, newShapeObj]);
++                            fontSize: 20,
++                    stepSize: shapeType === 'graph' ? 5 : undefined
++                };
++                setShapeObjects(prev => [...prev, newShapeObj]);
+                         if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
+                         shapeCreated = true;
+                     }
+@@ -2855,7 +2955,7 @@ export default function Whiteboard({
+     // Insert DateTime Text
+     const handleInsertDateTime = useCallback(() => {
+         const now = new Date();
+-        const formatted = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' }) + ' - ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
++        const formatted = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' }) + ' - ' + now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+         
+         const newText = {
+             id: 'datetime-stamp', // Fixed ID to overwrite previous
+@@ -3302,7 +3402,15 @@ export default function Whiteboard({
+                             { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
+                             { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime' },
+                             { id: 'recorder', icon: Video, label: 'Toggle Recorder' },
+-                        ].map(t => (
++                            ...(isStudent && localPermissions?.canShareAudio ? [{ id: 'mic', icon: isMicOn ? Mic : MicOff, label: 'Toggle Microphone' }] : []),
++                            ...(isStudent && localPermissions?.canShareVideo ? [{ id: 'camera', icon: isCameraOn ? Video : VideoOff, label: 'Toggle Camera' }] : []),
++                            ...(isStudent ? [{ id: 'fullscreen', icon: isFullscreen ? Minimize2 : Maximize2, label: 'Toggle Fullscreen' }] : []),
++                        ].filter(t => {
++                                if (!localPermissions?.canDraw) {
++                                    return ['select', 'laser', 'fullscreen', 'mic', 'camera'].includes(t.id);
++                                }
++                                return true;
++                            }).map(t => (
+                             <div key={t.id} className="relative">
+                                 <button
+                                     onClick={() => {
+@@ -3506,6 +3614,8 @@ export default function Whiteboard({
+                                             { id: 'triangle', icon: Triangle, label: 'Triangle' },
+                                             { id: 'star', icon: Star, label: 'Star' },
+                                             { id: 'graph', icon: LineChart, label: '2D Graph' },
++                                            { id: 'ruler', icon: Ruler, label: 'Ruler' },
++                                            { id: 'protractor', icon: Compass, label: 'Protractor' },
+                                         ].map(s => (
+                                             <button
+                                                 key={s.id}
+@@ -3758,8 +3868,8 @@ export default function Whiteboard({
+                                         ))}
+                                     </div>
+                                 </div>
+-                            )}
+-                        </div>
++                                )}
++                            </div>
+                     </div>
+ 
+                     
+@@ -3967,6 +4077,7 @@ export default function Whiteboard({
+                         >
+                             <Camera className="w-3.5 h-3.5" />
+                         </button>
++                        {!isStudent && (
+                         <button
+                             onClick={onToggleFullscreen}
+                             className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
+@@ -3978,6 +4089,7 @@ export default function Whiteboard({
+                                 <Maximize2 className="w-3.5 h-3.5" />
+                             )}
+                         </button>
++                        )}
+                     </div>
+                 </div>
+                 
+@@ -4020,7 +4132,6 @@ export default function Whiteboard({
+                         </button>
+                     </div>
+                 )}
+-            </div>
+ 
+             {/* Canvas */}
+             <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center relative ${isFullscreen ? 'h-full' : ''}`}>
+@@ -4255,7 +4366,7 @@ export default function Whiteboard({
+                                 {isSelected && (
+                                     <>
+                                         <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none" />
+-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); if (imgObj.isLocked) return; setImageDragState({ id: imgObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...imgObj } }); }} />
++                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!localPermissions.canDraw) return; e.stopPropagation(); e.preventDefault(); if (imgObj.isLocked) return; setImageDragState({ id: imgObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...imgObj } }); }} />
+ 
+                                         {/* Corner Resize Handles */}
+                                         {['nw', 'ne', 'sw', 'se'].map(corner => {
+@@ -4486,7 +4597,7 @@ export default function Whiteboard({
+                                 {isSelected && (
+                                     <>
+                                         <div className="absolute inset-0 border-2 border-green-500 pointer-events-none" />
+-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); if (txtObj.isLocked) return; setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
++                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!localPermissions.canDraw) return; e.stopPropagation(); e.preventDefault(); if (txtObj.isLocked) return; setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
+ 
+ 
+                                         {/* Corner Resize Handles */}
+@@ -4557,38 +4668,7 @@ export default function Whiteboard({
+                                             );
+                                         })}
+ 
+-                                        {/* Rotate Handle */}
+-                                        <div
+-                                            className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center z-30"
+-                                            style={{ bottom: -35 }}
+-                                        >
+-                                            <div className="w-px h-5 bg-green-500" />
+-                                            <div
+-                                                data-handle="rotate"
+-                                                className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center cursor-grab hover:bg-green-600" style={{ cursor: 'grab' }}
+-                                                onMouseDown={(e) => {
+-                                                    e.stopPropagation();
+-                                                    e.preventDefault();
+-                                                    setTextDragState({
+-                                                        id: txtObj.id,
+-                                                        action: 'rotate',
+-                                                        startX: e.clientX,
+-                                                        startY: e.clientY,
+-                                                        startObj: { ...txtObj }
+-                                                    });
+-                                                }}
+-                                            >
+-                                                <RotateCw className="w-3 h-3 text-white" />
+-                                            </div>
+-                                            <input
+-                                                type="number"
+-                                                value={Math.round(txtObj.rotation || 0)}
+-                                                onChange={(e) => setTextObjects(prev => prev.map(t => t.id === txtObj.id ? { ...t, rotation: parseInt(e.target.value) || 0 } : t))}
+-                                                onPointerDown={(e) => e.stopPropagation()}
+-                                                onKeyDown={(e) => e.stopPropagation()}
+-                                                className="absolute top-6 w-12 text-center text-xs bg-slate-800 text-white px-1 py-0.5 rounded shadow-lg z-50 border border-slate-600 outline-none appearance-none"
+-                                            />
+-                                        </div>
++                                        
+ 
+                                         {/* Delete Button */}
+                                         <button
+@@ -4752,22 +4832,116 @@ export default function Whiteboard({
+                                     </g>
+                                 );
+                             } else if (shpObj.type === 'graph') {
++                                const step = shpObj.stepSize || 5;
++                                const xAxisY = shpObj.height / 2;
++                                const yAxisX = shpObj.width / 10;
++                                const graphWidth = shpObj.width * 0.8;
++                                const graphHeight = shpObj.height * 0.8;
++                                
++                                // Calculate how many steps fit in half height and full width
++                                const numStepsX = Math.floor(graphWidth / 40); // Approx 40px per tick
++                                const numStepsY = Math.floor(graphHeight / 2 / 40);
++                                
++                                const stepPxX = graphWidth / numStepsX;
++                                const stepPxY = (graphHeight / 2) / numStepsY;
++                                
+                                 return (
+                                     <g stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} fill={fill}>
+                                         <rect width={shpObj.width} height={shpObj.height} fill={fill || 'transparent'} stroke="none" style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} />
+-                                        {/* Grid lines */}
+-                                        {Array.from({ length: 9 }).map((_, i) => (
+-                                            <line key={`h-${i}`} x1={shpObj.width/10} y1={shpObj.height/10 + (shpObj.height*0.8) * (i/8)} x2={shpObj.width*0.9} y2={shpObj.height/10 + (shpObj.height*0.8) * (i/8)} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
++                                        {/* Grid lines and ticks for X axis */}
++                                        {Array.from({ length: numStepsX + 1 }).map((_, i) => (
++                                            <g key={`x-${i}`}>
++                                                <line x1={yAxisX + i * stepPxX} y1={shpObj.height*0.1} x2={yAxisX + i * stepPxX} y2={shpObj.height*0.9} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
++                                                <line x1={yAxisX + i * stepPxX} y1={xAxisY - 5} x2={yAxisX + i * stepPxX} y2={xAxisY + 5} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />
++                                                {i > 0 && <text x={yAxisX + i * stepPxX} y={xAxisY + 15} fill={shpObj.color} stroke="none" fontSize="10" textAnchor="middle">{i * step}</text>}
++                                            </g>
+                                         ))}
+-                                        {Array.from({ length: 9 }).map((_, i) => (
+-                                            <line key={`v-${i}`} x1={shpObj.width/10 + (shpObj.width*0.8) * (i/8)} y1={shpObj.height/10} x2={shpObj.width/10 + (shpObj.width*0.8) * (i/8)} y2={shpObj.height*0.9} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
++                                        {/* Grid lines and ticks for Y axis (positive) */}
++                                        {Array.from({ length: numStepsY + 1 }).map((_, i) => (
++                                            <g key={`yp-${i}`}>
++                                                <line x1={yAxisX} y1={xAxisY - i * stepPxY} x2={yAxisX + graphWidth} y2={xAxisY - i * stepPxY} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
++                                                <line x1={yAxisX - 5} y1={xAxisY - i * stepPxY} x2={yAxisX + 5} y2={xAxisY - i * stepPxY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />
++                                                {i > 0 && <text x={yAxisX - 8} y={xAxisY - i * stepPxY + 3} fill={shpObj.color} stroke="none" fontSize="10" textAnchor="end">{i * step}</text>}
++                                            </g>
++                                        ))}
++                                        {/* Grid lines and ticks for Y axis (negative) */}
++                                        {Array.from({ length: numStepsY + 1 }).map((_, i) => (
++                                            <g key={`yn-${i}`}>
++                                                {i > 0 && (
++                                                    <>
++                                                        <line x1={yAxisX} y1={xAxisY + i * stepPxY} x2={yAxisX + graphWidth} y2={xAxisY + i * stepPxY} stroke={shpObj.color} strokeWidth={Math.max(0.5, shpObj.strokeWidth * 0.3)} strokeDasharray="4 4" opacity="0.4" />
++                                                        <line x1={yAxisX - 5} y1={xAxisY + i * stepPxY} x2={yAxisX + 5} y2={xAxisY + i * stepPxY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />
++                                                        <text x={yAxisX - 8} y={xAxisY + i * stepPxY + 3} fill={shpObj.color} stroke="none" fontSize="10" textAnchor="end">{-i * step}</text>
++                                                    </>
++                                                )}
++                                            </g>
+                                         ))}
+                                         {/* Y-axis */}
+-                                        <line x1={shpObj.width/10} y1={shpObj.height/10} x2={shpObj.width/10} y2={shpObj.height*0.9} />
+-                                        <polygon points={`${shpObj.width/10},${shpObj.height/10} ${shpObj.width/10 - 4},${shpObj.height/10 + 8} ${shpObj.width/10 + 4},${shpObj.height/10 + 8}`} fill={shpObj.color} stroke="none" />
++                                        <line x1={yAxisX} y1={shpObj.height*0.1} x2={yAxisX} y2={shpObj.height*0.9} />
++                                        <polygon points={`${yAxisX},${shpObj.height*0.1} ${yAxisX - 4},${shpObj.height*0.1 + 8} ${yAxisX + 4},${shpObj.height*0.1 + 8}`} fill={shpObj.color} stroke="none" />
+                                         {/* X-axis */}
+-                                        <line x1={shpObj.width/10} y1={shpObj.height/2} x2={shpObj.width*0.9} y2={shpObj.height/2} />
+-                                        <polygon points={`${shpObj.width*0.9},${shpObj.height/2} ${shpObj.width*0.9 - 8},${shpObj.height/2 - 4} ${shpObj.width*0.9 - 8},${shpObj.height/2 + 4}`} fill={shpObj.color} stroke="none" />
++                                        <line x1={yAxisX} y1={xAxisY} x2={yAxisX + graphWidth} y2={xAxisY} />
++                                        <polygon points={`${yAxisX + graphWidth},${xAxisY} ${yAxisX + graphWidth - 8},${xAxisY - 4} ${yAxisX + graphWidth - 8},${xAxisY + 4}`} fill={shpObj.color} stroke="none" />
++                                        {/* Origin */}
++                                        <text x={yAxisX - 8} y={xAxisY + 12} fill={shpObj.color} stroke="none" fontSize="10" textAnchor="end">0</text>
++                                    </g>
++                                );
++                            } else if (shpObj.type === 'ruler') {
++                                const cmPixels = 38; // Approx px per cm
++                                const numCm = Math.floor(shpObj.width / cmPixels);
++                                return (
++                                    <g stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} fill={fill}>
++                                        <rect width={shpObj.width} height={shpObj.height} fill={fill || 'rgba(255, 255, 255, 0.4)'} stroke={shpObj.color} style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.1))' }} />
++                                        {/* Ruler markings */}
++                                        {Array.from({ length: numCm * 10 }).map((_, i) => {
++                                            const x = i * (cmPixels / 10);
++                                            if (x > shpObj.width - 2) return null;
++                                            const isCm = i % 10 === 0;
++                                            const isHalf = i % 5 === 0 && !isCm;
++                                            const tickHeight = isCm ? 15 : (isHalf ? 10 : 5);
++                                            return (
++                                                <g key={`tick-${i}`}>
++                                                    <line x1={x} y1={0} x2={x} y2={tickHeight} stroke={shpObj.color} strokeWidth={isCm ? Math.max(1, shpObj.strokeWidth) : Math.max(0.5, shpObj.strokeWidth * 0.5)} />
++                                                    {isCm && <text x={x} y={tickHeight + 12} fill={shpObj.color} stroke="none" fontSize="10" textAnchor="middle">{i / 10}</text>}
++                                                </g>
++                                            );
++                                        })}
++                                    </g>
++                                );
++                            } else if (shpObj.type === 'protractor') {
++                                const r = Math.min(shpObj.width, shpObj.height) / 2;
++                                const cx = shpObj.width / 2;
++                                const cy = shpObj.height / 2;
++                                return (
++                                    <g stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} fill={fill}>
++                                        {/* Semicircle */}
++                                        <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy} Z`} fill={fill || 'rgba(255, 255, 255, 0.4)'} stroke={shpObj.color} style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.1))' }} />
++                                        {/* Inner semicircle */}
++                                        <path d={`M ${cx - r + 30} ${cy} A ${r - 30} ${r - 30} 0 0 1 ${cx + r - 30} ${cy}`} fill="none" stroke={shpObj.color} />
++                                        {/* Center mark */}
++                                        <line x1={cx} y1={cy} x2={cx} y2={cy - 10} stroke={shpObj.color} />
++                                        <line x1={cx - 10} y1={cy} x2={cx + 10} y2={cy} stroke={shpObj.color} />
++                                        {/* Degree markings */}
++                                        {Array.from({ length: 181 }).map((_, i) => {
++                                            if (i % 5 !== 0) return null;
++                                            const angle = (i * Math.PI) / 180;
++                                            const isTen = i % 10 === 0;
++                                            const outerR = r;
++                                            const innerR = isTen ? r - 10 : r - 5;
++                                            const x1 = cx - outerR * Math.cos(angle);
++                                            const y1 = cy - outerR * Math.sin(angle);
++                                            const x2 = cx - innerR * Math.cos(angle);
++                                            const y2 = cy - innerR * Math.sin(angle);
++                                            const textR = r - 20;
++                                            const tx = cx - textR * Math.cos(angle);
++                                            const ty = cy - textR * Math.sin(angle);
++                                            return (
++                                                <g key={`deg-${i}`}>
++                                                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={shpObj.color} strokeWidth={isTen ? Math.max(1, shpObj.strokeWidth) : Math.max(0.5, shpObj.strokeWidth * 0.5)} />
++                                                    {isTen && <text x={tx} y={ty} fill={shpObj.color} stroke="none" fontSize="8" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${i - 90} ${tx} ${ty})`}>{i}</text>}
++                                                </g>
++                                            );
++                                        })}
+                                     </g>
+                                 );
+                             }
+@@ -4884,10 +5058,11 @@ export default function Whiteboard({
+                                 {isSelected && (
+                                     <>
+                                         <div className="absolute inset-0 border-2 border-purple-500 pointer-events-none" />
+-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); if (shpObj.isLocked) return; setShapeDragState({ id: shpObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...shpObj }, startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)) }); }} />
++                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!localPermissions.canDraw) return; e.stopPropagation(); e.preventDefault(); if (shpObj.isLocked) return; setShapeDragState({ id: shpObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...shpObj }, startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)) }); }} />
+                                         
+ 
+                                         
++                                        {!shpObj.isLocked && <>
+                                         {/* Corner Resize Handles */}
+                                         {['nw', 'ne', 'sw', 'se'].map(corner => {
+                                             const pos = {
+@@ -4973,6 +5148,7 @@ export default function Whiteboard({
+                                                 className="absolute top-6 w-12 text-center text-xs bg-slate-800 text-white px-1 py-0.5 rounded shadow-lg z-50 border border-slate-600 outline-none appearance-none"
+                                             />
+                                         </div>
++                                        </>}
+                                     </>
+                                 )}
+                             </div>
+@@ -4980,6 +5156,19 @@ export default function Whiteboard({
+                     })}
+ 
+                     {/* Laser Pointer Overlay */}
++                    
++                    {/* Remote Cursors */}
++                    {Object.entries(remoteCursors).map(([id, cursor]) => (
++                        <div key={id} className="absolute pointer-events-none z-50 flex items-center" style={{ left: cursor.x, top: cursor.y }}>
++                            <svg className="w-5 h-5 text-indigo-500 drop-shadow-md" fill="currentColor" viewBox="0 0 24 24">
++                                <path d="M7 2l12 11.2-5.8.5 3.3 7.3-2.2.9-3.2-7.4-4.4 5z"/>
++                            </svg>
++                            <span className="ml-1 px-1.5 py-0.5 bg-indigo-500 text-white text-[10px] font-bold rounded-sm shadow-sm opacity-90 whitespace-nowrap">
++                                {cursor.userName}
++                            </span>
++                        </div>
++                    ))}
++
+                     {laserPos && (
+                         <div
+                             className="absolute pointer-events-none z-10"

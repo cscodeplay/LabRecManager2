@@ -209,6 +209,54 @@ io.on('connection', (socket) => {
   // ===========================================
 
   // Instructor starts sharing whiteboard
+  
+  socket.on('whiteboard:join-session', (data) => {
+    const { sessionId, userId, userName, role } = data;
+    const session = getSession(sessionId);
+    socket.join(`whiteboard-${sessionId}`);
+    
+    session.participants.set(socket.id, {
+      id: userId || socket.id,
+      name: userName || 'Unknown',
+      role: role || 'student',
+      permissions: { canDraw: true, canShareAudio: false, canShareVideo: false }
+    });
+    
+    // Broadcast updated participants list to instructor
+    io.to(`whiteboard-${sessionId}`).emit('whiteboard:participants-update', {
+      participants: Array.from(session.participants.values())
+    });
+  });
+
+  socket.on('whiteboard:get-participants', (data) => {
+    const { sessionId } = data;
+    const session = getSession(sessionId);
+    socket.emit('whiteboard:participants-list', {
+      participants: Array.from(session.participants.values())
+    });
+  });
+
+  socket.on('whiteboard:update-permissions', (data) => {
+    const { sessionId, targetUserId, permissions } = data;
+    const session = getSession(sessionId);
+    
+    // Update locally
+    let targetSocketId = null;
+    for (const [sId, p] of session.participants.entries()) {
+      if (p.id === targetUserId) {
+        p.permissions = permissions;
+        targetSocketId = sId;
+        break;
+      }
+    }
+    
+    // Notify everyone (especially the target)
+    io.to(`whiteboard-${sessionId}`).emit('whiteboard:permissions-updated', {
+      userId: targetUserId,
+      permissions
+    });
+  });
+
   socket.on('whiteboard:start-share', (data) => {
     const { sessionId, instructorId, instructorName, targetType, targets, classId } = data;
 
@@ -375,6 +423,17 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('whiteboard:cursor-update', (data) => {
+    const { sessionId, socketId, x, y, userName, tool } = data;
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:cursor-update', {
+      socketId,
+      x,
+      y,
+      userName,
+      tool
+    });
+  });
+
   // Student requests current canvas state when joining (Enforces 1 active classroom session lock per student)
   socket.on('whiteboard:request-state', (data) => {
     const { sessionId } = data;
@@ -438,6 +497,16 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    // Remove from whiteboard sessions
+    for (const [sessionId, session] of whiteboardSessions.entries()) {
+      if (session.participants.has(socket.id)) {
+        session.participants.delete(socket.id);
+        io.to(`whiteboard-${sessionId}`).emit('whiteboard:participants-update', {
+          participants: Array.from(session.participants.values())
+        });
+      }
+    }
+
     console.log('User disconnected:', socket.id);
   });
 });

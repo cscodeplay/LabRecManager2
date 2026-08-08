@@ -592,7 +592,7 @@ export default function LabsPage() {
                                                         </span>
                                                     </div>
                                                     <span className="text-xs text-slate-400">
-                                                        {new Date(entry.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                        {new Date(entry.createdAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                                     </span>
                                                 </div>
                                                 <p className="text-sm text-slate-700 mb-2">
@@ -625,18 +625,18 @@ export default function LabsPage() {
                                                 <div className="grid grid-cols-2 gap-2 mb-2 text-xs">
                                                     <div className="bg-white rounded p-2 border">
                                                         <p className="text-slate-400 mb-1">Started</p>
-                                                        <p className="font-medium text-slate-700">{entry.startedAt ? new Date(entry.startedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</p>
+                                                        <p className="font-medium text-slate-700">{entry.startedAt ? new Date(entry.startedAt).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</p>
                                                     </div>
                                                     <div className="bg-white rounded p-2 border">
                                                         <p className="text-slate-400 mb-1">Ended</p>
-                                                        <p className="font-medium text-slate-700">{entry.endedAt ? new Date(entry.endedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</p>
+                                                        <p className="font-medium text-slate-700">{entry.endedAt ? new Date(entry.endedAt).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</p>
                                                     </div>
                                                 </div>
                                                 {entry.reason && <p className="text-sm text-slate-600 mb-2">💬 {entry.reason}</p>}
                                                 <div className="flex flex-wrap gap-3 text-xs text-slate-500">
-                                                    {entry.expectedEndDate && <span>⏰ Expected: {new Date(entry.expectedEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
+                                                    {entry.expectedEndDate && <span>⏰ Expected: {new Date(entry.expectedEndDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
                                                     {entry.performedBy && <span>👤 {entry.performedBy.firstName} {entry.performedBy.lastName}</span>}
-                                                    <span className="text-slate-400">📅 Created: {new Date(entry.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                                                    <span className="text-slate-400">📅 Created: {new Date(entry.createdAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                                                 </div>
                                             </div>
                                         ))}
@@ -656,7 +656,7 @@ export default function LabsPage() {
                                                         </span>
                                                     </div>
                                                     <span className="text-xs text-slate-400">
-                                                        {new Date(entry.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                        {new Date(entry.createdAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                                     </span>
                                                 </div>
                                                 <p className="text-sm text-slate-700 mb-2">{entry.description}</p>
@@ -696,7 +696,7 @@ export default function LabsPage() {
                                                         </span>
                                                     </div>
                                                     <span className="text-xs text-slate-400">
-                                                        {new Date(entry.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                        {new Date(entry.createdAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                                     </span>
                                                 </div>
                                                 <p className="text-sm text-slate-700 mb-2">{entry.description}</p>

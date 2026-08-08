@@ -144,7 +144,7 @@ export default function LecturePlansPage() {
                                     <div className="mt-4 space-y-2 text-sm text-slate-600 dark:text-slate-400 flex-1">
                                         <div className="flex items-center gap-2">
                                             <Calendar className="w-4 h-4 text-slate-400" />
-                                            {new Date(plan.scheduledDate).toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                                            {new Date(plan.scheduledDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <Clock className="w-4 h-4 text-slate-400" />

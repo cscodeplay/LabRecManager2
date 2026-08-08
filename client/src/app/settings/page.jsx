@@ -373,8 +373,8 @@ export default function SettingsPage() {
         const endYear = end.getFullYear();
         return {
             yearLabel: `${startYear}-${String(endYear).slice(-2)}`,
-            startDate: start.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-            endDate: end.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+            startDate: start.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }),
+            endDate: end.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
         };
     }, [newSession.startDate]);
 
@@ -1272,9 +1272,9 @@ export default function SettingsPage() {
                                                                         )}
                                                                     </div>
                                                                     <p className="text-sm text-slate-500">
-                                                                        {new Date(session.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                        {new Date(session.startDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
                                                                         {' → '}
-                                                                        {new Date(session.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                        {new Date(session.endDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
                                                                     </p>
                                                                 </div>
                                                             </div>

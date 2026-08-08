@@ -83,7 +83,7 @@ export default function NotificationsPage() {
 
     const formatTime = (dateString) => {
         const date = new Date(dateString);
-        return date.toLocaleString('en-IN', {
+        return date.toLocaleString(undefined, {
             day: 'numeric', month: 'short', year: 'numeric',
             hour: '2-digit', minute: '2-digit'
         });

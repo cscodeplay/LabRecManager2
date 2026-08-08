@@ -890,7 +890,7 @@ export default function DocumentsPage() {
         }
     };
 
-    const formatDate = (date) => new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const formatDate = (date) => new Date(date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
     // Filter documents by date range
     const filteredDocuments = (activeTab === 'my' ? documents : sharedDocuments).filter(item => {

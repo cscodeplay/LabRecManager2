@@ -258,7 +258,7 @@ export default function AdminStudentsPage() {
                                     )}
                                 </div>
                                 <p className="text-sm text-slate-500">
-                                    {new Date(selectedSession.startDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })} - {new Date(selectedSession.endDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                                    {new Date(selectedSession.startDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })} - {new Date(selectedSession.endDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
                                 </p>
                             </div>
                         </div>

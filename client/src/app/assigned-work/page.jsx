@@ -511,7 +511,7 @@ export default function AssignedWorkPage() {
                                                         {target.dueDate && (
                                                             <span className="ml-2 inline-flex items-center gap-1 text-amber-600 font-medium">
                                                                 <Calendar className="w-3 h-3" />
-                                                                Due: {new Date(target.dueDate).toLocaleString('en-IN', {
+                                                                Due: {new Date(target.dueDate).toLocaleString(undefined, {
                                                                     dateStyle: 'medium',
                                                                     timeStyle: 'short'
                                                                 })}
@@ -595,7 +595,7 @@ export default function AssignedWorkPage() {
                                     {viewModal.target?.dueDate && (
                                         <div className="flex items-center gap-2">
                                             <Calendar className="w-4 h-4 text-amber-500" />
-                                            <span>Due: {new Date(viewModal.target.dueDate).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                                            <span>Due: {new Date(viewModal.target.dueDate).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
                                         </div>
                                     )}
                                     {viewModal.target?.assignedAt && (

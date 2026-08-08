@@ -324,7 +324,7 @@ export default function ReportsPage() {
             <body>
                 <div class="header">
                     <h1>LabRec Management System — Official Custom Report</h1>
-                    <p>Generated on: ${new Date().toLocaleString('en-IN')} | Filters: Class: ${selectedClassId || 'All'}, Gender: ${genderFilter.toUpperCase()}, Date Range: ${dateRange.toUpperCase()}</p>
+                    <p>Generated on: ${new Date().toLocaleString()} | Filters: Class: ${selectedClassId || 'All'}, Gender: ${genderFilter.toUpperCase()}, Date Range: ${dateRange.toUpperCase()}</p>
                 </div>
         `;
 

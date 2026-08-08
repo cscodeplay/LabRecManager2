@@ -661,8 +661,8 @@ export default function AdminTimetablePage() {
                                 <CheckCircle className="w-4 h-4 text-emerald-500" />
                                 <strong>{timetable.name}</strong>
                             </span>
-                            <span>From: {new Date(timetable.effectiveFrom).toLocaleDateString('en-IN')}</span>
-                            {timetable.effectiveTo && <span>To: {new Date(timetable.effectiveTo).toLocaleDateString('en-IN')}</span>}
+                            <span>From: {new Date(timetable.effectiveFrom).toLocaleDateString()}</span>
+                            {timetable.effectiveTo && <span>To: {new Date(timetable.effectiveTo).toLocaleDateString()}</span>}
                         </div>
                     )}
                 </div>
@@ -924,7 +924,7 @@ export default function AdminTimetablePage() {
                                                             {!isActive && !isPast && <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">UPCOMING</span>}
                                                         </h4>
                                                         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                                                            {sf.toLocaleDateString('en-IN')} — {st ? st.toLocaleDateString('en-IN') : 'Ongoing'}
+                                                            {sf.toLocaleDateString()} — {st ? st.toLocaleDateString() : 'Ongoing'}
                                                         </p>
                                                     </div>
                                                     <div>
