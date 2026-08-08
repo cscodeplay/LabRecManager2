@@ -126,7 +126,12 @@ app.use('/api/admin/chatbot', chatbotRoutes);
 
 const prisma = require('./config/database');
 
-// Health check endpoint (Keep-Alive)
+// Simple Health check endpoint for UptimeRobot
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
+// Comprehensive Health check endpoint (Keep-Alive)
 app.get('/api/health', async (req, res) => {
   const startTime = Date.now();
   try {
