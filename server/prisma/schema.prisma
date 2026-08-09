@@ -1275,6 +1275,8 @@ model WhiteboardSession {
   targetGroupId String?                 @map("target_group_id") @db.Uuid
   startedAt     DateTime?               @default(now()) @map("started_at") @db.Timestamp(6)
   endedAt       DateTime?               @map("ended_at") @db.Timestamp(6)
+  scheduledAt   DateTime?               @map("scheduled_at") @db.Timestamp(6)
+  durationMinutes Int?                  @map("duration_minutes")
   recordingUrl  String?                 @map("recording_url")
   isRecording   Boolean?                @default(false) @map("is_recording")
   canvasData    String?                 @map("canvas_data")

@@ -21,7 +21,10 @@ export default function WhiteboardPage() {
     const [isSharing, setIsSharing] = useState(false);
     const [shareTargets, setShareTargets] = useState([]);
     const [sessionId, setSessionId] = useState(null);
+    const [sharedFileId, setSharedFileId] = useState(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [editingFileId, setEditingFileId] = useState(null);
+    const [editTitle, setEditTitle] = useState('');
 
     // File Management State
     const [activeFileId, setActiveFileId] = useState(null);
@@ -147,23 +150,34 @@ export default function WhiteboardPage() {
         }
     };
 
-    const handleRenameFile = async (id, currentTitle, e) => {
+    const handleRenameFileStart = (id, currentTitle, e) => {
         e.stopPropagation();
-        const newTitle = window.prompt('Enter a new name for this whiteboard:', currentTitle);
+        setEditingFileId(id);
+        setEditTitle(currentTitle);
+    };
+
+    const handleRenameFileSubmit = async (id, e) => {
+        if (e) {
+            e.stopPropagation();
+            if (e.type === 'keydown' && e.key !== 'Enter') return;
+        }
         
-        if (newTitle === null || newTitle.trim() === '' || newTitle.trim() === currentTitle) {
+        if (!editTitle.trim()) {
+            setEditingFileId(null);
             return;
         }
 
         try {
-            const res = await api.put(`/whiteboard/files/${id}`, { title: newTitle.trim() });
+            const res = await api.put(`/whiteboard/files/${id}`, { title: editTitle.trim() });
             if (res.data.success) {
                 toast.success('Whiteboard renamed');
-                setFiles(files.map(f => f.id === id ? { ...f, title: newTitle.trim() } : f));
+                setFiles(files.map(f => f.id === id ? { ...f, title: editTitle.trim() } : f));
             }
         } catch (e) {
             console.error('Failed to rename whiteboard:', e);
             toast.error('Failed to rename whiteboard');
+        } finally {
+            setEditingFileId(null);
         }
     };
 
@@ -185,6 +199,7 @@ export default function WhiteboardPage() {
         const newSessionId = `wb_standalone_${user?.id}_${Date.now()}`;
         setSessionId(newSessionId);
         setIsSharing(true);
+        setSharedFileId(activeFileId);
         setShareTargets(shareData.targetNames);
         setShowShareModal(false);
 
@@ -203,6 +218,7 @@ export default function WhiteboardPage() {
 
     const handleStopSharing = () => {
         setIsSharing(false);
+        setSharedFileId(null);
         setShareTargets([]);
         if (socketRef.current && sessionId) {
             socketRef.current.emit('whiteboard:stop-share', {
@@ -357,6 +373,12 @@ export default function WhiteboardPage() {
                                 className="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer group flex flex-col relative"
                             >
                                 <div className="aspect-video bg-slate-100 relative rounded-t-xl overflow-hidden border-b border-slate-100 flex items-center justify-center">
+                                    {isSharing && sharedFileId === file.id && (
+                                        <div className="absolute top-2 left-2 z-10 flex items-center gap-1 text-xs bg-red-500 text-white font-bold px-2 py-1 rounded shadow-md animate-pulse">
+                                            <span className="w-1.5 h-1.5 bg-white rounded-full" />
+                                            LIVE
+                                        </div>
+                                    )}
                                     {file.thumbnailUrl ? (
                                         <img src={file.thumbnailUrl} alt={file.title} className="w-full h-full object-contain bg-white" />
                                     ) : (
@@ -365,10 +387,23 @@ export default function WhiteboardPage() {
                                 </div>
                                 <div className="p-4 flex-1 flex flex-col">
                                     <div className="flex items-start justify-between gap-2 mb-2">
-                                        <h3 className="font-semibold text-slate-800 line-clamp-1 flex-1">{file.title}</h3>
+                                        {editingFileId === file.id ? (
+                                            <input
+                                                type="text"
+                                                value={editTitle}
+                                                onChange={(e) => setEditTitle(e.target.value)}
+                                                onKeyDown={(e) => handleRenameFileSubmit(file.id, e)}
+                                                onBlur={(e) => handleRenameFileSubmit(file.id, e)}
+                                                onClick={(e) => e.stopPropagation()}
+                                                autoFocus
+                                                className="font-semibold text-slate-800 flex-1 border border-primary-500 rounded px-1 outline-none w-full"
+                                            />
+                                        ) : (
+                                            <h3 className="font-semibold text-slate-800 line-clamp-1 flex-1">{file.title}</h3>
+                                        )}
                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <button 
-                                                onClick={(e) => handleRenameFile(file.id, file.title, e)}
+                                                onClick={(e) => handleRenameFileStart(file.id, file.title, e)}
                                                 className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded transition"
                                                 title="Rename"
                                             >

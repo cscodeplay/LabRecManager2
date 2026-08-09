@@ -25,6 +25,18 @@ export default function WhiteboardShareModal({
     const [selectedTargets, setSelectedTargets] = useState([]);
     const [studentSearch, setStudentSearch] = useState('');
 
+    // Scheduling state
+    const [isScheduled, setIsScheduled] = useState(false);
+    const [scheduledAt, setScheduledAt] = useState('');
+    const [durationMinutes, setDurationMinutes] = useState(60);
+
+    // Default permissions
+    const [permissions, setPermissions] = useState({
+        canDraw: true,
+        canShareAudio: false,
+        canShareVideo: false
+    });
+
     useEffect(() => {
         if (isOpen) {
             loadClasses();
@@ -85,7 +97,9 @@ export default function WhiteboardShareModal({
         const shareData = {
             targetType,
             targets: selectedTargets,
-            classId: selectedClass
+            classId: selectedClass,
+            permissions,
+            ...(isScheduled && scheduledAt ? { scheduledAt, durationMinutes } : {})
         };
 
         // Build target names for display
@@ -302,6 +316,67 @@ export default function WhiteboardShareModal({
                                         {targetType === 'group' && `${selectedTargets.length} group(s)`}
                                         {targetType === 'student' && `${selectedTargets.length} student(s)`}
                                     </p>
+                                </div>
+                            )}
+
+                            {/* Scheduling and Permissions */}
+                            {selectedTargets.length > 0 && (
+                                <div className="space-y-4 pt-4 border-t border-slate-200">
+                                    <div>
+                                        <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={isScheduled} 
+                                                onChange={e => setIsScheduled(e.target.checked)}
+                                                className="rounded text-amber-500 focus:ring-amber-500"
+                                            />
+                                            Schedule for later
+                                        </label>
+                                        
+                                        {isScheduled && (
+                                            <div className="grid grid-cols-2 gap-4 mt-3">
+                                                <div>
+                                                    <label className="block text-xs text-slate-500 mb-1">Date & Time</label>
+                                                    <input 
+                                                        type="datetime-local" 
+                                                        value={scheduledAt}
+                                                        onChange={e => setScheduledAt(e.target.value)}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-amber-500"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-slate-500 mb-1">Duration (minutes)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        min="15"
+                                                        value={durationMinutes}
+                                                        onChange={e => setDurationMinutes(e.target.value)}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-amber-500"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                                            Default Permissions
+                                        </label>
+                                        <div className="flex flex-col gap-2">
+                                            <label className="flex items-center gap-2 text-sm text-slate-600">
+                                                <input type="checkbox" checked={permissions.canDraw} onChange={e => setPermissions({...permissions, canDraw: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500" />
+                                                Allow Drawing
+                                            </label>
+                                            <label className="flex items-center gap-2 text-sm text-slate-600">
+                                                <input type="checkbox" checked={permissions.canShareAudio} onChange={e => setPermissions({...permissions, canShareAudio: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500" />
+                                                Allow Audio / Mic
+                                            </label>
+                                            <label className="flex items-center gap-2 text-sm text-slate-600">
+                                                <input type="checkbox" checked={permissions.canShareVideo} onChange={e => setPermissions({...permissions, canShareVideo: e.target.checked})} className="rounded text-amber-500 focus:ring-amber-500" />
+                                                Allow Video / Camera
+                                            </label>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </div>

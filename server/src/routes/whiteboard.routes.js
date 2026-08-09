@@ -429,7 +429,7 @@ router.get('/sessions/:id', authenticate, authorize('admin', 'principal'), async
  * @access  Instructor/Admin
  */
 router.post('/sessions', authenticate, authorize('instructor', 'admin', 'lab_assistant'), asyncHandler(async (req, res) => {
-    const { title, targetType, targetClassId, targetGroupId } = req.body;
+    const { title, targetType, targetClassId, targetGroupId, scheduledAt, durationMinutes } = req.body;
     const hostId = req.user.id;
     const schoolId = req.user.schoolId;
 
@@ -441,7 +441,9 @@ router.post('/sessions', authenticate, authorize('instructor', 'admin', 'lab_ass
             targetType,
             targetClassId,
             targetGroupId,
-            status: 'active'
+            scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+            durationMinutes: durationMinutes ? parseInt(durationMinutes, 10) : null,
+            status: scheduledAt ? 'scheduled' : 'active'
         },
         include: {
             host: { select: { id: true, firstName: true, lastName: true } }

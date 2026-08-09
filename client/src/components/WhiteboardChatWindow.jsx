@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send, Users, ChevronDown, ChevronUp, GripHorizontal, ArrowLeft, User } from 'lucide-react';
+import { MessageSquare, X, Send, Users, ChevronDown, ChevronUp, GripHorizontal, ArrowLeft, User, Mic, MicOff, Video, VideoOff, UserMinus } from 'lucide-react';
 
 export default function WhiteboardChatWindow({
     socket,
@@ -21,6 +21,7 @@ export default function WhiteboardChatWindow({
     const [position, setPosition] = useState({ x: 20, y: 100 });
     const [isDragging, setIsDragging] = useState(false);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+    const [participants, setParticipants] = useState([]);
 
     const chatRef = useRef(null);
     const messagesEndRef = useRef(null);
@@ -58,14 +59,20 @@ export default function WhiteboardChatWindow({
             setMessages(history || []);
         };
 
+        const handleParticipantsUpdate = (data) => {
+            setParticipants(data.participants || []);
+        };
+
         socket.on('whiteboard:chat-message', handleChatMessage);
         socket.on('whiteboard:chat-history', handleChatHistory);
+        socket.on('whiteboard:participants-update', handleParticipantsUpdate);
 
         return () => {
             socket.off('whiteboard:chat-message', handleChatMessage);
             socket.off('whiteboard:chat-history', handleChatHistory);
+            socket.off('whiteboard:participants-update', handleParticipantsUpdate);
         };
-    }, [socket]);
+    }, [socket, sessionId, isInstructor, currentUser]);
     
     useEffect(() => {
         if (socket && sessionId) {
@@ -134,6 +141,13 @@ export default function WhiteboardChatWindow({
     const handleSelectTarget = (targetName) => {
         setActiveTarget(targetName);
         setView('chat');
+    };
+
+    const handleRemoveParticipant = (targetUserId) => {
+        if (!socket || !sessionId) return;
+        if (confirm('Remove this participant from the live classroom?')) {
+            socket.emit('whiteboard:remove-participant', { sessionId, targetUserId });
+        }
     };
 
     if (!isOpen) {
@@ -212,7 +226,7 @@ export default function WhiteboardChatWindow({
                     </div>
 
                     {groupList.length > 0 && (
-                        <div className="p-3 bg-white flex-1">
+                        <div className="p-3 bg-white flex-1 border-b border-slate-200">
                             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Groups / Students</p>
                             <div className="space-y-1">
                                 {groupList.map(g => (
@@ -226,6 +240,37 @@ export default function WhiteboardChatWindow({
                                         </div>
                                         <span className="text-sm font-medium text-slate-700">{g.name}</span>
                                     </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {isInstructor && participants.length > 0 && (
+                        <div className="p-3 bg-white flex-1">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Live Participants ({participants.length})</p>
+                            <div className="space-y-1">
+                                {participants.map(p => (
+                                    <div key={p.id} className="w-full p-2 rounded-lg flex items-center justify-between transition hover:bg-slate-50 border border-transparent hover:border-slate-100">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                                                <User className="w-3 h-3" />
+                                            </div>
+                                            <span className="text-sm font-medium text-slate-700">{p.name}</span>
+                                        </div>
+                                        {p.role !== 'host' && (
+                                            <div className="flex items-center gap-1">
+                                                <button title={p.isMicOn ? "Mic On" : "Mic Off"} className="p-1 rounded text-slate-400 cursor-default">
+                                                    {p.isMicOn ? <Mic className="w-3.5 h-3.5 text-emerald-500" /> : <MicOff className="w-3.5 h-3.5" />}
+                                                </button>
+                                                <button title={p.isCameraOn ? "Cam On" : "Cam Off"} className="p-1 rounded text-slate-400 cursor-default">
+                                                    {p.isCameraOn ? <Video className="w-3.5 h-3.5 text-emerald-500" /> : <VideoOff className="w-3.5 h-3.5" />}
+                                                </button>
+                                                <button onClick={() => handleRemoveParticipant(p.id)} title="Remove Participant" className="p-1 rounded hover:bg-red-100 text-slate-400 hover:text-red-600 transition">
+                                                    <UserMinus className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 ))}
                             </div>
                         </div>

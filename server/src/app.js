@@ -236,7 +236,10 @@ io.on('connection', (socket) => {
       id: userId || socket.id,
       name: userName || 'Unknown',
       role: role || 'student',
-      permissions: { canDraw: true, canShareAudio: false, canShareVideo: false }
+      permissions: { canDraw: true, canShareAudio: false, canShareVideo: false },
+      joinedAt: Date.now(),
+      isMicOn: false,
+      isCameraOn: false
     });
     
     // Broadcast updated participants list to instructor
@@ -272,6 +275,45 @@ io.on('connection', (socket) => {
       userId: targetUserId,
       permissions
     });
+  });
+
+  socket.on('whiteboard:media-status', (data) => {
+    const { sessionId, isMicOn, isCameraOn } = data;
+    const session = getSession(sessionId);
+    
+    if (session.participants.has(socket.id)) {
+      const p = session.participants.get(socket.id);
+      p.isMicOn = isMicOn;
+      p.isCameraOn = isCameraOn;
+      io.to(`whiteboard-${sessionId}`).emit('whiteboard:participants-update', {
+        participants: Array.from(session.participants.values())
+      });
+    }
+  });
+
+  socket.on('whiteboard:remove-participant', (data) => {
+    const { sessionId, targetUserId } = data;
+    const session = getSession(sessionId);
+    
+    let targetSocketId = null;
+    for (const [sId, p] of session.participants.entries()) {
+      if (p.id === targetUserId) {
+        targetSocketId = sId;
+        break;
+      }
+    }
+    
+    if (targetSocketId) {
+      session.participants.delete(targetSocketId);
+      
+      // Notify the removed participant to disconnect
+      io.to(targetSocketId).emit('whiteboard:kicked', { sessionId });
+      
+      // Notify others
+      io.to(`whiteboard-${sessionId}`).emit('whiteboard:participants-update', {
+        participants: Array.from(session.participants.values())
+      });
+    }
   });
 
   socket.on('whiteboard:start-share', (data) => {
