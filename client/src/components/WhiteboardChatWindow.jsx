@@ -9,7 +9,8 @@ export default function WhiteboardChatWindow({
     currentUser = { name: 'User', role: 'student' },
     isInstructor = false,
     availableGroups = [], // Represents sharingTargets (invited)
-    onClose = () => {}
+    onClose = () => {},
+    onManagePermissions
 }) {
     const [view, setView] = useState('participants'); // 'participants' or 'chat'
     const [activeTarget, setActiveTarget] = useState('Everyone');
@@ -195,12 +196,24 @@ export default function WhiteboardChatWindow({
             {view === 'participants' ? (
                 /* Participants List View */
                 <div className="flex-1 overflow-y-auto">
+                    <div className="px-4 py-2 flex justify-end">
+                        {isInstructor && onManagePermissions && (
+                            <button 
+                                onClick={onManagePermissions}
+                                className="text-xs font-medium bg-primary-50 text-primary-600 hover:bg-primary-100 px-3 py-1.5 rounded-md flex items-center gap-1 transition"
+                            >
+                                <Users className="w-3.5 h-3.5" />
+                                Manage Permissions
+                            </button>
+                        )}
+                    </div>
+
                     {/* Active/Live */}
                     <div className="px-4 py-3">
                         <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Active ({liveCount})</p>
                         <div className="space-y-1">
                             {participants.map(p => (
-                                <div key={p.id} className="w-full p-2 rounded-lg flex items-center justify-between hover:bg-slate-50 group">
+                                <div key={p.id} className="w-full p-2 rounded-lg flex items-center justify-between hover:bg-slate-50 group cursor-pointer" onClick={() => { setActiveTarget(p.name); setView('chat'); }}>
                                     <div className="flex items-center gap-3">
                                         <div className="relative">
                                             <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
@@ -237,7 +250,7 @@ export default function WhiteboardChatWindow({
                             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Inactive / Invited ({offlineCount})</p>
                             <div className="space-y-1">
                                 {offlineTargets.map(g => (
-                                    <div key={g.id} className="w-full p-2 rounded-lg flex items-center justify-between opacity-60 grayscale">
+                                    <div key={g.id} className="w-full p-2 rounded-lg flex items-center justify-between opacity-60 grayscale cursor-pointer" onClick={() => { setActiveTarget(g.name); setView('chat'); }}>
                                         <div className="flex items-center gap-3">
                                             <div className="relative">
                                                 <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">

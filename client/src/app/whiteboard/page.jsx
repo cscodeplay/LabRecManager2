@@ -63,6 +63,26 @@ export default function WhiteboardPage() {
 
         // Fetch files
         fetchFiles();
+        
+        // Restore active file if refreshed
+        const savedFileId = sessionStorage.getItem('active_whiteboard_file');
+        if (savedFileId) {
+            setActiveFileId(savedFileId);
+        }
+        const savedSessionId = sessionStorage.getItem('active_whiteboard_session_id');
+        if (savedSessionId) {
+            setSessionId(savedSessionId);
+        }
+        const savedIsSharing = sessionStorage.getItem('active_whiteboard_is_sharing');
+        if (savedIsSharing === 'true') {
+            setIsSharing(true);
+            setSharedFileId(savedFileId);
+            try {
+                const targets = JSON.parse(sessionStorage.getItem('active_whiteboard_share_targets') || '[]');
+                setShareTargets(targets);
+            } catch(e) {}
+        }
+
 
         // Set active session for floating icon
         localStorage.setItem('active_whiteboard_session', JSON.stringify({
@@ -110,6 +130,21 @@ export default function WhiteboardPage() {
             setLoadingFiles(false);
         }
     };
+
+    
+    useEffect(() => {
+        if (activeFileId) {
+            sessionStorage.setItem('active_whiteboard_file', activeFileId);
+            sessionStorage.setItem('active_whiteboard_session_id', sessionId || '');
+            sessionStorage.setItem('active_whiteboard_is_sharing', isSharing ? 'true' : 'false');
+            sessionStorage.setItem('active_whiteboard_share_targets', JSON.stringify(shareTargets || []));
+        } else {
+            sessionStorage.removeItem('active_whiteboard_file');
+            sessionStorage.removeItem('active_whiteboard_session_id');
+            sessionStorage.removeItem('active_whiteboard_is_sharing');
+            sessionStorage.removeItem('active_whiteboard_share_targets');
+        }
+    }, [activeFileId, sessionId, isSharing, shareTargets]);
 
     const migrateLegacyWorkspace = async () => {
         try {
