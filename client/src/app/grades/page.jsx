@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Award, Search, FileText, TrendingUp, Calendar, CheckCircle, Eye, Clock, X, History, Edit3, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Award, Search, FileText, TrendingUp, Calendar, CheckCircle, Eye, Clock, X, History, Edit3, Info, ChevronDown, ChevronUp, Send } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { gradesAPI, gradeScalesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -232,14 +232,14 @@ export default function GradesPage() {
                                     <button
                                         onClick={loadScaleHistory}
                                         disabled={loadingScaleHistory}
-                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 text-white text-sm font-medium hover:from-orange-600 hover:to-amber-600 transition-all"
+                                        className="p-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white transition shadow-sm disabled:opacity-50"
+                                        title="View Changes History"
                                     >
                                         {loadingScaleHistory ? (
-                                            <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                                            <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
                                         ) : (
-                                            <History className="w-4 h-4" />
+                                            <History className="w-5 h-5" />
                                         )}
-                                        View Changes History
                                     </button>
                                 </div>
                                 {/* Current Grade Scale Table */}
@@ -297,7 +297,8 @@ export default function GradesPage() {
                                             </div>
                                             <button
                                                 onClick={() => setShowScaleHistory(false)}
-                                                className="text-slate-400 hover:text-slate-600"
+                                                className="p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-xl transition"
+                                                title="Close History"
                                             >
                                                 <X className="w-5 h-5" />
                                             </button>
@@ -473,11 +474,10 @@ export default function GradesPage() {
                                         {/* History Button - Visible for all users */}
                                         <button
                                             onClick={() => viewHistory(grade.id)}
-                                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 text-white font-medium shadow-lg hover:shadow-xl hover:from-orange-600 hover:to-amber-600 transition-all"
+                                            className="p-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition"
                                             title="View modification history"
                                         >
                                             <History className="w-5 h-5" />
-                                            <span className="text-sm">History</span>
                                         </button>
                                         <div className="text-right">
                                             <p className="text-3xl font-bold text-slate-900">
@@ -550,9 +550,10 @@ export default function GradesPage() {
                                                     toast.error('Failed to publish grade');
                                                 }
                                             }}
-                                            className="btn btn-primary"
+                                            className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                                            title="Publish to Student"
                                         >
-                                            Publish to Student
+                                            <Send className="w-5 h-5" />
                                         </button>
                                     </div>
                                 )}

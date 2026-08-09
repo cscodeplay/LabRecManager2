@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
-import { Users, GraduationCap, Search, Plus, Eye, UserPlus, Calendar, Lock } from 'lucide-react';
+import { Users, GraduationCap, Search, Plus, Eye, UserPlus, Calendar, Lock, ArrowLeft } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -55,18 +55,17 @@ export default function ClassesPage() {
 
     return (
         <div className="min-h-screen bg-slate-50">
-            <header className="bg-white border-b border-slate-100 sticky top-0 z-10">
+            <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
                 <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <Link href="/dashboard" className="text-slate-500 hover:text-slate-700">
-                            ← {t('common.back')}
+                        <Link href="/dashboard" className="p-2 -ml-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition" title={t('common.back')}>
+                            <ArrowLeft className="w-5 h-5" />
                         </Link>
                         <h1 className="text-xl font-semibold text-slate-900">{t('classes.title')}</h1>
                     </div>
                     {isAdmin && (
-                        <Link href="/classes/create" className="btn btn-primary">
-                            <Plus className="w-4 h-4" />
-                            {t('classes.addClass')}
+                        <Link href="/classes/create" className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center" title={t('classes.addClass')}>
+                            <Plus className="w-5 h-5" />
                         </Link>
                     )}
                 </div>
@@ -137,48 +136,50 @@ export default function ClassesPage() {
                 ) : (
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {filteredClasses.map((cls) => (
-                            <div key={cls.id} className="card card-hover p-6">
-                                <div className="flex items-start justify-between mb-4">
-                                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-bold text-lg">
-                                        {cls.gradeLevel}
-                                        {cls.section && <span className="text-sm ml-0.5">{cls.section}</span>}
+                            <div key={cls.id} className="card hover:shadow-md hover:border-slate-300 transition group flex flex-col overflow-hidden">
+                                <div className="p-5 flex-1">
+                                    <div className="flex items-start justify-between mb-4">
+                                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
+                                            {cls.gradeLevel}
+                                            {cls.section && <span className="text-sm ml-0.5">{cls.section}</span>}
+                                        </div>
+                                        <span className="text-sm text-slate-500 font-medium px-2.5 py-1 bg-slate-100 rounded-full">{cls.stream || t('classes.general')}</span>
                                     </div>
-                                    <span className="text-sm text-slate-500">{cls.stream || t('classes.general')}</span>
+
+                                    <h3 className="text-lg font-semibold text-slate-900 mb-1">{cls.name}</h3>
+                                    {cls.nameHindi && (
+                                        <p className="text-sm text-slate-600 mb-3">{cls.nameHindi}</p>
+                                    )}
+
+                                    <div className="flex items-center gap-4 text-sm text-slate-500 mb-4">
+                                        <span className="flex items-center gap-1.5">
+                                            <Users className="w-4 h-4" />
+                                            {cls._count?.enrollments || 0} {t('classes.students')}
+                                        </span>
+                                    </div>
+
+                                    {cls.classTeacher && (
+                                        <p className="text-sm text-slate-600 mb-2">
+                                            <span className="font-medium text-slate-700">{t('classes.teacher')}:</span> {cls.classTeacher.firstName} {cls.classTeacher.lastName}
+                                        </p>
+                                    )}
                                 </div>
 
-                                <h3 className="text-lg font-semibold text-slate-900 mb-1">{cls.name}</h3>
-                                {cls.nameHindi && (
-                                    <p className="text-sm text-slate-600 mb-3">{cls.nameHindi}</p>
-                                )}
-
-                                <div className="flex items-center gap-4 text-sm text-slate-500 mb-4">
-                                    <span className="flex items-center gap-1">
-                                        <Users className="w-4 h-4" />
-                                        {cls._count?.enrollments || 0} {t('classes.students')}
-                                    </span>
-                                </div>
-
-                                {cls.classTeacher && (
-                                    <p className="text-sm text-slate-600 mb-4">
-                                        {t('classes.teacher')}: {cls.classTeacher.firstName} {cls.classTeacher.lastName}
-                                    </p>
-                                )}
-
-                                <div className="flex gap-2 pt-4 border-t border-slate-100 justify-end">
+                                <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-1 text-slate-500">
                                     <Link
                                         href={`/classes/${cls.id}`}
-                                        className="btn btn-secondary p-2.5 flex items-center justify-center rounded-lg shadow-2xs"
+                                        className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
                                         title={t('classes.view')}
                                     >
-                                        <Eye className="w-4 h-4" />
+                                        <Eye className="w-5 h-5" />
                                     </Link>
                                     {isAdmin && (
                                         <Link
                                             href={`/classes/${cls.id}`}
-                                            className="btn btn-primary p-2.5 flex items-center justify-center rounded-lg shadow-2xs"
+                                            className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
                                             title={t('classes.students')}
                                         >
-                                            <UserPlus className="w-4 h-4" />
+                                            <UserPlus className="w-5 h-5" />
                                         </Link>
                                     )}
                                 </div>

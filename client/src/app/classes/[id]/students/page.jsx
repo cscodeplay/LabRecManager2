@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Users, Search, UserPlus, RefreshCw, GraduationCap } from 'lucide-react';
+import { ArrowLeft, Users, Search, UserPlus, RefreshCw, GraduationCap, Mail } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -66,24 +66,24 @@ export default function ClassStudentsPage() {
             <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
                 <div className="max-w-7xl mx-auto px-4 py-4">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <Link href={`/classes/${params.id}`} className="text-slate-400 hover:text-slate-600">
+                        <div className="flex items-center gap-4">
+                            <Link href={`/classes/${params.id}`} className="p-2 -ml-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition" title="Back to Class">
                                 <ArrowLeft className="w-5 h-5" />
                             </Link>
                             <div>
-                                <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                                <h1 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
                                     <Users className="w-5 h-5 text-primary-600" />
                                     {className} - Students
                                 </h1>
                                 <p className="text-sm text-slate-500">{students.length} students enrolled</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <button onClick={loadData} className="btn btn-secondary p-2.5" title="Refresh Roster">
-                                <RefreshCw className="w-4 h-4" />
+                        <div className="flex items-center gap-1 text-slate-500">
+                            <button onClick={loadData} className="p-2 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition" title="Refresh Roster">
+                                <RefreshCw className="w-5 h-5" />
                             </button>
-                            <Link href={`/classes/${params.id}`} className="btn btn-primary p-2.5" title="Open Class Roster & Management">
-                                <UserPlus className="w-4 h-4" />
+                            <Link href={`/classes/${params.id}`} className="p-2 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition" title="Open Class Management">
+                                <UserPlus className="w-5 h-5" />
                             </Link>
                         </div>
                     </div>
@@ -92,9 +92,9 @@ export default function ClassStudentsPage() {
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Search */}
-                <div className="mb-6">
-                    <div className="relative max-w-md">
-                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <div className="card p-4 mb-6">
+                    <div className="relative">
+                        <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input
                             type="text"
                             placeholder="Search students..."
@@ -108,40 +108,51 @@ export default function ClassStudentsPage() {
                 {/* Students Grid */}
                 {filteredStudents.length === 0 ? (
                     <div className="card p-12 text-center">
-                        <GraduationCap className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-                        <h3 className="text-lg font-medium text-slate-700 mb-1">No students found</h3>
-                        <p className="text-slate-500 text-sm">
+                        <GraduationCap className="w-16 h-16 mx-auto text-slate-300 mb-4" />
+                        <h3 className="text-lg font-medium text-slate-700 mb-2">No students found</h3>
+                        <p className="text-slate-500">
                             {searchQuery ? 'Try a different search' : 'No students are enrolled in this class yet'}
                         </p>
-                        <Link href="/admin/students" className="btn btn-primary mt-4 inline-flex">
-                            <UserPlus className="w-4 h-4" /> Add Students
-                        </Link>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {filteredStudents.map(student => (
-                            <div key={student.id} className="card p-4 hover:shadow-md transition-shadow">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center">
-                                        <span className="text-primary-700 font-semibold">
-                                            {student.firstName?.[0]}{student.lastName?.[0]}
-                                        </span>
+                            <div key={student.id} className="card hover:shadow-md hover:border-slate-300 transition group flex flex-col overflow-hidden">
+                                <div className="p-5 flex-1">
+                                    <div className="flex items-start gap-4">
+                                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center shrink-0">
+                                            <span className="text-primary-700 font-semibold text-lg">
+                                                {student.firstName?.[0]}{student.lastName?.[0]}
+                                            </span>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-start justify-between">
+                                                <div>
+                                                    <h3 className="font-semibold text-slate-900 truncate">
+                                                        {student.firstName} {student.lastName}
+                                                    </h3>
+                                                    <p className="text-sm text-slate-500 truncate mb-1">{student.email}</p>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex items-center justify-between mt-2">
+                                                <p className="text-xs text-slate-400 font-mono flex items-center gap-1">
+                                                    <span className="font-medium text-slate-500">ID:</span> {student.studentId || student.admissionNumber || '-'}
+                                                </p>
+                                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${student.isActive
+                                                        ? 'bg-emerald-100 text-emerald-700'
+                                                        : 'bg-slate-100 text-slate-500'
+                                                    }`}>
+                                                    {student.isActive ? 'Active' : 'Inactive'}
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                        <h3 className="font-medium text-slate-900 truncate">
-                                            {student.firstName} {student.lastName}
-                                        </h3>
-                                        <p className="text-sm text-slate-500 truncate">{student.email}</p>
-                                        <p className="text-xs text-slate-400 font-mono">
-                                            {student.studentId || student.admissionNumber || '-'}
-                                        </p>
-                                    </div>
-                                    <span className={`px-2 py-1 rounded-full text-xs ${student.isActive
-                                            ? 'bg-emerald-100 text-emerald-700'
-                                            : 'bg-slate-100 text-slate-500'
-                                        }`}>
-                                        {student.isActive ? 'Active' : 'Inactive'}
-                                    </span>
+                                </div>
+                                <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-1 text-slate-500">
+                                    <Link href={`mailto:${student.email}`} className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors" title="Email Student">
+                                        <Mail className="w-5 h-5" />
+                                    </Link>
                                 </div>
                             </div>
                         ))}

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { UsersRound, ArrowLeft, Check, Search, Save } from 'lucide-react';
+import { UsersRound, ArrowLeft, Check, Search, Save, X, Star } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -142,13 +142,22 @@ export default function CreateGroupPage() {
 
     return (
         <div className="min-h-screen bg-slate-50">
-            <PageHeader title="Create Student Group" />
+            <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+                <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <Link href={`/classes/${params.id}`} className="p-2 -ml-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition" title="Back to Class">
+                            <ArrowLeft className="w-5 h-5" />
+                        </Link>
+                        <h1 className="text-xl font-semibold text-slate-900">Create Student Group</h1>
+                    </div>
+                </div>
+            </header>
 
             <main className="max-w-4xl mx-auto px-4 py-6">
                 {/* Class Info */}
-                <div className="card p-4 mb-6 bg-gradient-to-r from-primary-50 to-primary-100">
+                <div className="card p-5 mb-6">
                     <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-primary-500 flex items-center justify-center text-white font-bold text-lg">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
                             {classData?.gradeLevel}{classData?.section}
                         </div>
                         <div>
@@ -234,30 +243,30 @@ export default function CreateGroupPage() {
                         </div>
 
                         {/* Students Grid */}
-                        <div className="grid md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto">
+                        <div className="grid md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2">
                             {filteredStudents.map((student) => {
                                 const isSelected = selectedStudents.includes(student.id);
                                 return (
                                     <div
                                         key={student.id}
                                         onClick={() => toggleStudent(student.id)}
-                                        className={`p-3 rounded-lg border-2 cursor-pointer transition ${isSelected
+                                        className={`p-4 rounded-xl border-2 cursor-pointer transition ${isSelected
                                             ? 'border-primary-500 bg-primary-50'
                                             : 'border-slate-200 hover:border-slate-300 bg-white'
                                             }`}
                                     >
                                         <div className="flex items-center gap-3">
-                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${isSelected
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-medium shrink-0 ${isSelected
                                                 ? 'bg-primary-500 text-white'
                                                 : 'bg-slate-200 text-slate-600'
                                                 }`}>
-                                                {isSelected ? <Check className="w-4 h-4" /> : student.firstName?.[0]}
+                                                {isSelected ? <Check className="w-5 h-5" /> : student.firstName?.[0]}
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <p className="font-medium text-slate-900 truncate">
+                                                <p className="font-semibold text-slate-900 truncate">
                                                     {student.firstName} {student.lastName}
                                                 </p>
-                                                <p className="text-xs text-slate-500">{student.studentId || student.admissionNumber}</p>
+                                                <p className="text-sm text-slate-500">{student.studentId || student.admissionNumber}</p>
                                             </div>
                                             {isSelected && (
                                                 <button
@@ -266,12 +275,13 @@ export default function CreateGroupPage() {
                                                         e.stopPropagation();
                                                         setLeaderId(leaderId === student.id ? '' : student.id);
                                                     }}
-                                                    className={`px-2 py-1 text-xs rounded ${leaderId === student.id
-                                                        ? 'bg-amber-500 text-white'
-                                                        : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                                                    title={leaderId === student.id ? 'Group Leader' : 'Set as Leader'}
+                                                    className={`p-2 rounded-lg transition-colors ${leaderId === student.id
+                                                        ? 'bg-amber-100 text-amber-600'
+                                                        : 'bg-white text-slate-400 hover:bg-slate-100 hover:text-slate-600'
                                                         }`}
                                                 >
-                                                    {leaderId === student.id ? '★ Leader' : 'Set Leader'}
+                                                    <Star className={`w-5 h-5 ${leaderId === student.id ? 'fill-amber-600' : ''}`} />
                                                 </button>
                                             )}
                                         </div>
@@ -288,28 +298,23 @@ export default function CreateGroupPage() {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex justify-end gap-3">
-                        <Link href={`/classes/${params.id}`} className="btn btn-secondary">
-                            Cancel
+                    <div className="flex justify-end gap-3 pt-4">
+                        <Link href={`/classes/${params.id}`} className="p-3 text-slate-500 hover:bg-slate-200 bg-slate-100 rounded-xl transition" title="Cancel">
+                            <X className="w-5 h-5" />
                         </Link>
                         <button
                             type="submit"
                             disabled={saving || selectedStudents.length === 0}
-                            className="btn btn-primary"
+                            className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm disabled:opacity-50 disabled:hover:bg-primary-600"
+                            title="Save Group"
                         >
                             {saving ? (
-                                <span className="flex items-center gap-2">
-                                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                    </svg>
-                                    Creating...
-                                </span>
+                                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
                             ) : (
-                                <span className="flex items-center gap-2">
-                                    <Save className="w-4 h-4" />
-                                    Create Group
-                                </span>
+                                <Save className="w-5 h-5" />
                             )}
                         </button>
                     </div>

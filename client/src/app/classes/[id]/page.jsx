@@ -426,10 +426,10 @@ export default function ClassDetailPage() {
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Class Info Card */}
-                <div className="card p-6 mb-6">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="card overflow-hidden mb-6 flex flex-col">
+                    <div className="p-6 flex-1">
                         <div className="flex items-center gap-4">
-                            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-bold text-2xl">
+                            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-bold text-2xl shadow-sm">
                                 {classData.gradeLevel}
                                 {classData.section && <span className="text-lg ml-0.5">{classData.section}</span>}
                             </div>
@@ -439,14 +439,14 @@ export default function ClassDetailPage() {
                                     <p className="text-slate-600">{classData.nameHindi}</p>
                                 )}
                                 <div className="flex items-center gap-4 mt-2 text-sm text-slate-500">
-                                    <span className="px-2 py-1 bg-primary-100 text-primary-700 rounded-full font-medium">
+                                    <span className="px-2 py-1 bg-slate-100 rounded-full font-medium text-slate-600">
                                         {classData.stream || 'General'}
                                     </span>
-                                    <span className="flex items-center gap-1">
+                                    <span className="flex items-center gap-1.5">
                                         <Users className="w-4 h-4" />
                                         {students.length} Students
                                     </span>
-                                    <span className="flex items-center gap-1">
+                                    <span className="flex items-center gap-1.5">
                                         <UsersRound className="w-4 h-4" />
                                         {groups.length} Groups
                                     </span>
@@ -463,71 +463,75 @@ export default function ClassDetailPage() {
                                 </div>
                             </div>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            {(isAdmin || isInstructor) && (
-                                <>
-                                    <button
-                                        onClick={() => setShowAddStudentModal(true)}
-                                        className="btn btn-primary p-2.5"
-                                        title="Add Student"
-                                    >
-                                        <UserPlus className="w-5 h-5" />
-                                    </button>
-                                    <Link
-                                        href={`/admin/students/import?classId=${params.id}`}
-                                        className="btn btn-secondary p-2.5"
-                                        title="Import Students CSV"
-                                    >
-                                        <Upload className="w-5 h-5" />
-                                    </Link>
-                                    <button
-                                        onClick={handleExportCSV}
-                                        className="btn btn-secondary p-2.5"
-                                        title="Export Students CSV"
-                                    >
-                                        <Download className="w-5 h-5" />
-                                    </button>
-                                    <Link
-                                        href={`/classes/${params.id}/groups/create`}
-                                        className="btn btn-secondary p-2.5"
-                                        title="Create Group"
-                                    >
-                                        <UsersRound className="w-5 h-5" />
-                                    </Link>
-                                    <button
-                                        onClick={handleAutoGenerateGroups}
-                                        disabled={autoGrouping || students.length < 2}
-                                        className={`btn p-2.5 transition-all duration-500 relative overflow-hidden ${
-                                            autoGrouping
-                                                ? 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/50 border-0 ring-2 ring-purple-400 ring-offset-2 animate-pulse'
-                                                : 'btn-secondary'
-                                        }`}
-                                        title="Auto Generate Gender-Segregated Groups (Boys & Girls Separated)"
-                                    >
-                                        <Shuffle className={`w-5 h-5 ${autoGrouping ? 'animate-spin' : ''}`} />
-                                    </button>
-                                    <button
-                                        onClick={handleAutoAssignPcs}
-                                        disabled={autoAssigningPcs || groups.length === 0}
-                                        className={`btn p-2.5 transition-all duration-500 relative overflow-hidden ${
-                                            autoAssigningPcs
-                                                ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/50 border-0 ring-2 ring-teal-400 ring-offset-2 animate-pulse'
-                                                : 'btn-secondary'
-                                        }`}
-                                        title="Auto Assign PCs Contiguously (Boys Zone & Girls Zone)"
-                                    >
-                                        <Monitor className={`w-5 h-5 ${autoAssigningPcs ? 'animate-bounce' : ''}`} />
-                                    </button>
-                                    <Link
-                                        href={`/assignments/assign?classId=${params.id}`}
-                                        className="btn btn-primary p-2.5"
-                                        title="Assign Work"
-                                    >
-                                        <Plus className="w-5 h-5" />
-                                    </Link>
-                                </>
-                            )}
-                        </div>
+                    </div>
+                    
+                    {/* Action Bar */}
+                    <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-1 text-slate-500">
+                        {(isAdmin || isInstructor) && (
+                            <>
+                                <button
+                                    onClick={() => setShowAddStudentModal(true)}
+                                    className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                    title="Add Student"
+                                >
+                                    <UserPlus className="w-5 h-5" />
+                                </button>
+                                <Link
+                                    href={`/admin/students/import?classId=${params.id}`}
+                                    className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors block"
+                                    title="Import Students CSV"
+                                >
+                                    <Upload className="w-5 h-5" />
+                                </Link>
+                                <button
+                                    onClick={handleExportCSV}
+                                    className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                    title="Export Students CSV"
+                                >
+                                    <Download className="w-5 h-5" />
+                                </button>
+                                <div className="w-px h-4 bg-slate-200 mx-1"></div>
+                                <Link
+                                    href={`/classes/${params.id}/groups/create`}
+                                    className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors block"
+                                    title="Create Group"
+                                >
+                                    <UsersRound className="w-5 h-5" />
+                                </Link>
+                                <button
+                                    onClick={handleAutoGenerateGroups}
+                                    disabled={autoGrouping || students.length < 2}
+                                    className={`p-1.5 rounded-md transition-colors ${
+                                        autoGrouping
+                                            ? 'text-primary-500 bg-primary-50 animate-pulse'
+                                            : 'hover:text-primary-600 hover:bg-primary-50'
+                                    }`}
+                                    title="Auto Generate Groups"
+                                >
+                                    <Shuffle className={`w-5 h-5 ${autoGrouping ? 'animate-spin' : ''}`} />
+                                </button>
+                                <button
+                                    onClick={handleAutoAssignPcs}
+                                    disabled={autoAssigningPcs || groups.length === 0}
+                                    className={`p-1.5 rounded-md transition-colors ${
+                                        autoAssigningPcs
+                                            ? 'text-primary-500 bg-primary-50 animate-pulse'
+                                            : 'hover:text-primary-600 hover:bg-primary-50'
+                                    }`}
+                                    title="Auto Assign PCs"
+                                >
+                                    <Monitor className={`w-5 h-5 ${autoAssigningPcs ? 'animate-bounce' : ''}`} />
+                                </button>
+                                <div className="w-px h-4 bg-slate-200 mx-1"></div>
+                                <Link
+                                    href={`/assignments/assign?classId=${params.id}`}
+                                    className="p-1.5 text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-md transition-colors block"
+                                    title="Assign Work"
+                                >
+                                    <Plus className="w-5 h-5" />
+                                </Link>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -765,201 +769,203 @@ export default function ClassDetailPage() {
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {groups.map((group) => (
-                                    <div key={group.id} className={`card p-6 border transition-all duration-200 ${
-                                        group.assignedPc
-                                            ? 'bg-emerald-50/80 border-emerald-300 shadow-sm shadow-emerald-100/50'
-                                            : 'bg-red-50/80 border-red-300 shadow-sm shadow-red-100/50'
-                                    }`}>
-                                        <div className="flex items-start justify-between mb-4">
-                                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white ${
-                                                group.assignedPc
-                                                    ? 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-500/20'
-                                                    : 'bg-gradient-to-br from-rose-500 to-red-600 shadow-md shadow-red-500/20'
-                                            }`}>
-                                                <UsersRound className="w-6 h-6" />
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-sm font-medium text-slate-600">
+                                    <div key={group.id} className="card hover:shadow-md transition-shadow group-hover flex flex-col overflow-hidden">
+                                        <div className={`p-5 flex-1 ${
+                                            group.assignedPc
+                                                ? 'bg-emerald-50/20'
+                                                : 'bg-red-50/20'
+                                        }`}>
+                                            <div className="flex items-start justify-between mb-4">
+                                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white ${
+                                                    group.assignedPc
+                                                        ? 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm'
+                                                        : 'bg-gradient-to-br from-rose-500 to-red-600 shadow-sm'
+                                                }`}>
+                                                    <UsersRound className="w-6 h-6" />
+                                                </div>
+                                                <span className="text-sm font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
                                                     {group.members?.length || 0} members
                                                 </span>
-                                                {(isAdmin || isInstructor) && (
-                                                    <button
-                                                        onClick={() => handleDeleteGroup(group.id)}
-                                                        className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
-                                                        title="Delete group"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                )}
                                             </div>
-                                        </div>
 
-                                        <div className="flex items-center justify-between mb-3">
-                                            <h3 className="text-lg font-bold text-slate-900">{group.name}</h3>
-                                            <button
-                                                onClick={() => setExpandedGroupId(expandedGroupId === group.id ? null : group.id)}
-                                                className="p-1 text-slate-500 hover:text-slate-700"
-                                            >
-                                                {expandedGroupId === group.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                                            </button>
-                                        </div>
+                                            <h3 className="text-lg font-bold text-slate-900 mb-3">{group.name}</h3>
 
-                                        {/* Assigned PC Display/Assignment */}
-                                        <div className={`mb-3 p-2.5 rounded-lg border ${
-                                            group.assignedPc
-                                                ? 'bg-white/80 border-emerald-200 text-emerald-900'
-                                                : 'bg-white/80 border-red-200 text-red-900'
-                                        }`}>
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <Monitor className={`w-4 h-4 ${group.assignedPc ? 'text-emerald-600' : 'text-red-500'}`} />
-                                                    {group.assignedPc ? (
-                                                        <span className="text-sm font-semibold text-emerald-800">
-                                                            {group.assignedPc.itemNumber}
-                                                            <span className="text-xs text-emerald-600 ml-1">({group.assignedPc.lab?.name})</span>
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-sm font-medium text-red-600">No PC Assigned</span>
-                                                    )}
-                                                </div>
-                                                {(isAdmin || isInstructor) && (
-                                                    assigningPcToGroup === group.id ? (
-                                                        <div className="flex items-center gap-1">
-                                                            <select
-                                                                onChange={(e) => handleAssignPc(group.id, e.target.value)}
-                                                                className="text-xs py-1 px-2 border rounded"
-                                                                defaultValue=""
-                                                            >
-                                                                <option value="">Select PC...</option>
-                                                                <option value="">-- Unassign --</option>
-                                                                {allPCs
-                                                                    .filter(pc => {
-                                                                        // Get all PC IDs assigned to other groups in this class
-                                                                        const assignedPcIds = classData.groups
-                                                                            ?.filter(g => g.id !== group.id && g.assignedPc)
-                                                                            .map(g => g.assignedPc.id) || [];
-                                                                        // Allow this PC if it's not assigned to another group, or if it's the current group's PC
-                                                                        return !assignedPcIds.includes(pc.id) || group.assignedPc?.id === pc.id;
-                                                                    })
-                                                                    .map(pc => (
-                                                                        <option key={pc.id} value={pc.id}>
-                                                                            {pc.itemNumber} ({pc.lab?.name})
-                                                                        </option>
-                                                                    ))}
-                                                            </select>
-                                                            <button onClick={() => setAssigningPcToGroup(null)} className="text-slate-400 hover:text-slate-600">
-                                                                <X className="w-3 h-3" />
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <button
-                                                            onClick={() => handleShowAssignPc(group.id)}
-                                                            className="text-xs text-blue-600 hover:text-blue-700"
-                                                        >
-                                                            {group.assignedPc ? 'Change' : 'Assign PC'}
-                                                        </button>
-                                                    )
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Collapsed view - member chips */}
-                                        {expandedGroupId !== group.id && (
-                                            <div className="flex flex-wrap gap-2">
-                                                {group.members?.slice(0, 4).map((member) => (
-                                                    <span key={member.student.id} className="px-2 py-1 bg-slate-100 text-slate-700 text-xs rounded-full">
-                                                        {member.student.firstName} {member.student.lastName?.[0]}.
-                                                    </span>
-                                                ))}
-                                                {group.members?.length > 4 && (
-                                                    <span className="px-2 py-1 bg-slate-100 text-slate-500 text-xs rounded-full">
-                                                        +{group.members.length - 4}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        {/* Expanded view - member list with remove buttons */}
-                                        {expandedGroupId === group.id && (
-                                            <div className="space-y-2">
-                                                {group.members?.map((member) => (
-                                                    <div key={member.student.id} className="flex items-center justify-between py-1 px-2 bg-slate-50 rounded">
-                                                        <span className="text-sm text-slate-700">
-                                                            {member.student.firstName} {member.student.lastName}
-                                                            {member.role === 'leader' && <span className="ml-1 text-xs bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded">★ Leader</span>}
-                                                        </span>
-                                                        <div className="flex items-center gap-1">
-                                                            {(isAdmin || isInstructor) && member.role !== 'leader' && (
-                                                                <button
-                                                                    onClick={async () => {
-                                                                        try {
-                                                                            await classesAPI.setGroupLeader(params.id, group.id, member.student.id);
-                                                                            toast.success(`${member.student.firstName} is now the leader`);
-                                                                            loadClassData();
-                                                                        } catch (error) {
-                                                                            toast.error(error.response?.data?.message || 'Failed to set leader');
-                                                                        }
-                                                                    }}
-                                                                    className="px-2 py-0.5 text-xs text-amber-600 hover:bg-amber-50 rounded"
-                                                                    title="Make Leader"
-                                                                >
-                                                                    Make Leader
-                                                                </button>
-                                                            )}
-                                                            {(isAdmin || isInstructor) && (
-                                                                <button
-                                                                    onClick={() => handleRemoveMember(group.id, member.student.id)}
-                                                                    className="p-1 text-red-400 hover:text-red-600"
-                                                                    title="Remove from group"
-                                                                >
-                                                                    <UserMinus className="w-4 h-4" />
-                                                                </button>
-                                                            )}
-                                                        </div>
+                                            {/* Assigned PC Display/Assignment */}
+                                            <div className={`mb-3 p-2.5 rounded-lg border ${
+                                                group.assignedPc
+                                                    ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900'
+                                                    : 'bg-red-50/50 border-red-200 text-red-900'
+                                            }`}>
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <Monitor className={`w-4 h-4 ${group.assignedPc ? 'text-emerald-600' : 'text-red-500'}`} />
+                                                        {group.assignedPc ? (
+                                                            <span className="text-sm font-semibold text-emerald-800">
+                                                                {group.assignedPc.itemNumber}
+                                                                <span className="text-xs text-emerald-600 ml-1">({group.assignedPc.lab?.name})</span>
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-sm font-medium text-red-600">No PC</span>
+                                                        )}
                                                     </div>
-                                                ))}
-
-                                                {/* Add member section */}
-                                                {(isAdmin || isInstructor) && (
-                                                    <div className="mt-3 pt-3 border-t border-slate-200">
-                                                        {addingToGroup === group.id ? (
-                                                            <div className="flex gap-2">
+                                                    {(isAdmin || isInstructor) && (
+                                                        assigningPcToGroup === group.id ? (
+                                                            <div className="flex items-center gap-1">
                                                                 <select
-                                                                    value={selectedStudentToAdd}
-                                                                    onChange={(e) => setSelectedStudentToAdd(e.target.value)}
-                                                                    className="input text-sm flex-1"
+                                                                    onChange={(e) => handleAssignPc(group.id, e.target.value)}
+                                                                    className="text-xs py-1 px-2 border rounded bg-white"
+                                                                    defaultValue=""
                                                                 >
-                                                                    <option value="">Select student...</option>
-                                                                    {ungroupedStudents.map(s => (
-                                                                        <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
-                                                                    ))}
+                                                                    <option value="">Select PC...</option>
+                                                                    <option value="">-- Unassign --</option>
+                                                                    {allPCs
+                                                                        .filter(pc => {
+                                                                            // Get all PC IDs assigned to other groups in this class
+                                                                            const assignedPcIds = classData.groups
+                                                                                ?.filter(g => g.id !== group.id && g.assignedPc)
+                                                                                .map(g => g.assignedPc.id) || [];
+                                                                            // Allow this PC if it's not assigned to another group, or if it's the current group's PC
+                                                                            return !assignedPcIds.includes(pc.id) || group.assignedPc?.id === pc.id;
+                                                                        })
+                                                                        .map(pc => (
+                                                                            <option key={pc.id} value={pc.id}>
+                                                                                {pc.itemNumber} ({pc.lab?.name})
+                                                                            </option>
+                                                                        ))}
                                                                 </select>
-                                                                <button
-                                                                    onClick={() => handleAddMember(group.id)}
-                                                                    className="btn btn-primary text-xs py-1 px-2"
-                                                                    disabled={!selectedStudentToAdd}
-                                                                >
-                                                                    Add
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => { setAddingToGroup(null); setSelectedStudentToAdd(''); }}
-                                                                    className="p-1 text-slate-400 hover:text-slate-600"
-                                                                >
-                                                                    <X className="w-4 h-4" />
+                                                                <button onClick={() => setAssigningPcToGroup(null)} className="text-slate-400 hover:text-slate-600 bg-white p-1 rounded border">
+                                                                    <X className="w-3 h-3" />
                                                                 </button>
                                                             </div>
                                                         ) : (
                                                             <button
-                                                                onClick={() => handleShowAddMember(group.id)}
-                                                                className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                                                                onClick={() => handleShowAssignPc(group.id)}
+                                                                className="text-xs text-primary-600 hover:text-primary-700 font-medium"
                                                             >
-                                                                <UserPlus className="w-4 h-4" /> Add Student
+                                                                {group.assignedPc ? 'Change' : 'Assign PC'}
                                                             </button>
-                                                        )}
-                                                    </div>
-                                                )}
+                                                        )
+                                                    )}
+                                                </div>
                                             </div>
-                                        )}
+
+                                            {/* Collapsed view - member chips */}
+                                            {expandedGroupId !== group.id && (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {group.members?.slice(0, 4).map((member) => (
+                                                        <span key={member.student.id} className="px-2 py-1 bg-white border border-slate-200 shadow-sm text-slate-700 text-xs rounded-full">
+                                                            {member.student.firstName} {member.student.lastName?.[0]}.
+                                                        </span>
+                                                    ))}
+                                                    {group.members?.length > 4 && (
+                                                        <span className="px-2 py-1 bg-slate-100 text-slate-500 text-xs rounded-full">
+                                                            +{group.members.length - 4}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Expanded view - member list with remove buttons */}
+                                            {expandedGroupId === group.id && (
+                                                <div className="space-y-2">
+                                                    {group.members?.map((member) => (
+                                                        <div key={member.student.id} className="flex items-center justify-between py-1.5 px-3 bg-white border border-slate-100 shadow-sm rounded-lg">
+                                                            <span className="text-sm font-medium text-slate-700">
+                                                                {member.student.firstName} {member.student.lastName}
+                                                                {member.role === 'leader' && <span className="ml-1 text-xs bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded">★ Leader</span>}
+                                                            </span>
+                                                            <div className="flex items-center gap-1">
+                                                                {(isAdmin || isInstructor) && member.role !== 'leader' && (
+                                                                    <button
+                                                                        onClick={async () => {
+                                                                            try {
+                                                                                await classesAPI.setGroupLeader(params.id, group.id, member.student.id);
+                                                                                toast.success(`${member.student.firstName} is now the leader`);
+                                                                                loadClassData();
+                                                                            } catch (error) {
+                                                                                toast.error(error.response?.data?.message || 'Failed to set leader');
+                                                                            }
+                                                                        }}
+                                                                        className="px-2 py-0.5 text-xs text-amber-600 hover:bg-amber-50 rounded font-medium"
+                                                                        title="Make Leader"
+                                                                    >
+                                                                        Make Leader
+                                                                    </button>
+                                                                )}
+                                                                {(isAdmin || isInstructor) && (
+                                                                    <button
+                                                                        onClick={() => handleRemoveMember(group.id, member.student.id)}
+                                                                        className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                                        title="Remove from group"
+                                                                    >
+                                                                        <UserMinus className="w-4 h-4" />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+
+                                                    {/* Add member section */}
+                                                    {(isAdmin || isInstructor) && (
+                                                        <div className="mt-3 pt-3 border-t border-slate-200">
+                                                            {addingToGroup === group.id ? (
+                                                                <div className="flex gap-2">
+                                                                    <select
+                                                                        value={selectedStudentToAdd}
+                                                                        onChange={(e) => setSelectedStudentToAdd(e.target.value)}
+                                                                        className="input text-sm flex-1"
+                                                                    >
+                                                                        <option value="">Select student...</option>
+                                                                        {ungroupedStudents.map(s => (
+                                                                            <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                    <button
+                                                                        onClick={() => handleAddMember(group.id)}
+                                                                        className="btn btn-primary text-xs py-1 px-2"
+                                                                        disabled={!selectedStudentToAdd}
+                                                                    >
+                                                                        Add
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => { setAddingToGroup(null); setSelectedStudentToAdd(''); }}
+                                                                        className="p-1 text-slate-400 hover:text-slate-600"
+                                                                    >
+                                                                        <X className="w-4 h-4" />
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => handleShowAddMember(group.id)}
+                                                                    className="text-sm font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                                                                >
+                                                                    <UserPlus className="w-4 h-4" /> Add Student
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-1 text-slate-500">
+                                            <button
+                                                onClick={() => setExpandedGroupId(expandedGroupId === group.id ? null : group.id)}
+                                                className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                                title={expandedGroupId === group.id ? "Collapse members" : "Expand members"}
+                                            >
+                                                {expandedGroupId === group.id ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                                            </button>
+                                            {(isAdmin || isInstructor) && (
+                                                <button
+                                                    onClick={() => handleDeleteGroup(group.id)}
+                                                    className="p-1.5 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                    title="Delete group"
+                                                >
+                                                    <Trash2 className="w-5 h-5" />
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>

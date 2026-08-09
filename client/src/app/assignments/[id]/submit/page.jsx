@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft, Upload, Code, Image, FileText, Send, Play, Terminal, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Upload, Code, Image, FileText, Send, Play, Terminal, Loader2, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { assignmentsAPI, submissionsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -173,7 +173,7 @@ export default function SubmitAssignmentPage() {
         <div className="min-h-screen bg-slate-50">
             <header className="bg-white border-b border-slate-100 sticky top-0 z-10">
                 <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
-                    <Link href={`/assignments/${params.id}`} className="text-slate-500 hover:text-slate-700">
+                    <Link href={`/assignments/${params.id}`} className="p-2 -ml-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition" title="Back">
                         <ArrowLeft className="w-5 h-5" />
                     </Link>
                     <div className="flex-1">
@@ -208,18 +208,13 @@ export default function SubmitAssignmentPage() {
                                 type="button"
                                 onClick={handleRunPythonCode}
                                 disabled={runningCode}
-                                className="btn bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md px-4 py-2 text-sm flex items-center gap-2 transition"
+                                className="p-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center disabled:opacity-50"
+                                title="Run Code (Python Compiler)"
                             >
                                 {runningCode ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                        Compiling & Running...
-                                    </>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
                                 ) : (
-                                    <>
-                                        <Play className="w-4 h-4 fill-white" />
-                                        Run Code (Python Compiler)
-                                    </>
+                                    <Play className="w-5 h-5 fill-white" />
                                 )}
                             </button>
                         </div>
@@ -310,28 +305,23 @@ export default function SubmitAssignmentPage() {
                     </div>
 
                     {/* Submit Buttons */}
-                    <div className="flex justify-end gap-3">
-                        <Link href={`/assignments/${params.id}`} className="btn btn-secondary">
-                            Cancel
+                    <div className="flex justify-end gap-3 pt-4">
+                        <Link href={`/assignments/${params.id}`} className="p-3 text-slate-500 hover:bg-slate-200 bg-slate-100 rounded-xl transition" title="Cancel">
+                            <X className="w-5 h-5" />
                         </Link>
                         <button
                             type="submit"
-                            className="btn btn-primary"
+                            className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm disabled:opacity-50 disabled:hover:bg-primary-600"
                             disabled={submitting}
+                            title={existingSubmission ? 'Update Submission' : 'Submit Assignment'}
                         >
                             {submitting ? (
-                                <span className="flex items-center gap-2">
-                                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                    </svg>
-                                    Submitting...
-                                </span>
+                                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
                             ) : (
-                                <span className="flex items-center gap-2">
-                                    <Send className="w-4 h-4" />
-                                    {existingSubmission ? 'Update Submission' : 'Submit Assignment'}
-                                </span>
+                                <Send className="w-5 h-5" />
                             )}
                         </button>
                     </div>

@@ -371,9 +371,8 @@ export default function AssignedWorkPage() {
     return (
         <div className="min-h-screen bg-slate-50">
             <PageHeader title="Assigned Work" titleHindi="सौंपा गया कार्य">
-                <Link href="/assignments/assign" className="btn btn-primary">
-                    <ListChecks className="w-4 h-4" />
-                    Assign New Work
+                <Link href="/assignments/assign" className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm" title="Assign New Work">
+                    <ListChecks className="w-5 h-5" />
                 </Link>
             </PageHeader>
 
@@ -448,8 +447,8 @@ export default function AssignedWorkPage() {
                                 ? 'Try adjusting your filters'
                                 : 'Start by assigning assignments to classes, groups, or students'}
                         </p>
-                        <Link href="/assignments/assign" className="btn btn-primary inline-flex">
-                            Assign Work
+                        <Link href="/assignments/assign" className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm inline-flex" title="Assign Work">
+                            <ListChecks className="w-5 h-5" />
                         </Link>
                     </div>
                 ) : (
@@ -526,24 +525,24 @@ export default function AssignedWorkPage() {
                                             <div className="flex items-center gap-1">
                                                 <button
                                                     onClick={() => handleViewClick(target)}
-                                                    className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition"
+                                                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-xl transition"
                                                     title="View Details"
                                                 >
-                                                    <Eye className="w-4 h-4" />
+                                                    <Eye className="w-5 h-5" />
                                                 </button>
                                                 <button
                                                     onClick={() => handleEditClick(target)}
-                                                    className="p-2 text-slate-400 hover:text-primary-500 hover:bg-primary-50 rounded-lg transition"
+                                                    className="p-2 text-slate-500 hover:text-primary-600 hover:bg-slate-100 rounded-xl transition"
                                                     title="Edit Target"
                                                 >
-                                                    <Edit2 className="w-4 h-4" />
+                                                    <Edit2 className="w-5 h-5" />
                                                 </button>
                                                 <button
                                                     onClick={() => handleRemoveClick(target)}
-                                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                                                    className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-xl transition"
                                                     title="Remove target"
                                                 >
-                                                    <Trash2 className="w-4 h-4" />
+                                                    <Trash2 className="w-5 h-5" />
                                                 </button>
                                             </div>
                                         </div>
@@ -574,7 +573,7 @@ export default function AssignedWorkPage() {
                                     <p className="text-sm text-slate-500">{viewModal.target?.assignment?.assignmentType || '-'}</p>
                                 </div>
                             </div>
-                            <button onClick={() => setViewModal({ open: false, target: null })} className="p-2 hover:bg-slate-200 rounded-lg">
+                            <button onClick={() => setViewModal({ open: false, target: null })} className="p-2 hover:bg-slate-200 rounded-xl transition" title="Close">
                                 <X className="w-5 h-5 text-slate-500" />
                             </button>
                         </div>
@@ -665,11 +664,11 @@ export default function AssignedWorkPage() {
                             )}
                         </div>
                         <div className="p-4 border-t border-slate-200 flex justify-end gap-2">
-                            <button title="Edit Target" onClick={() => { const tgt = viewModal.target; setViewModal({ open: false, target: null }); handleEditClick(tgt); }} className="btn btn-secondary">
+                            <button title="Edit Target" onClick={() => { const tgt = viewModal.target; setViewModal({ open: false, target: null }); handleEditClick(tgt); }} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition">
                                 <Edit2 className="w-5 h-5" />
                             </button>
-                            <button onClick={() => setViewModal({ open: false, target: null })} className="btn btn-primary">
-                                Close
+                            <button onClick={() => setViewModal({ open: false, target: null })} className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm" title="Close">
+                                <X className="w-5 h-5" />
                             </button>
                         </div>
                     </div>
@@ -686,7 +685,7 @@ export default function AssignedWorkPage() {
                                 <h3 className="text-lg font-semibold text-slate-900">Edit Assigned Work</h3>
                                 <p className="text-sm text-slate-500">{editModal.target?.assignment?.title || 'Assignment'}</p>
                             </div>
-                            <button onClick={() => setEditModal({ open: false, target: null })} className="p-2 hover:bg-slate-100 rounded-lg">
+                            <button onClick={() => setEditModal({ open: false, target: null })} className="p-2 hover:bg-slate-200 rounded-xl transition" title="Close">
                                 <X className="w-5 h-5 text-slate-500" />
                             </button>
                         </div>
@@ -899,15 +898,16 @@ export default function AssignedWorkPage() {
 
                         {/* Footer */}
                         <div className="p-4 border-t border-slate-200 flex justify-end gap-3">
-                            <button onClick={() => setEditModal({ open: false, target: null })} className="btn btn-secondary">
-                                Cancel
+                            <button onClick={() => setEditModal({ open: false, target: null })} className="p-3 text-slate-500 hover:bg-slate-200 bg-slate-100 rounded-xl transition" title="Cancel">
+                                <X className="w-5 h-5" />
                             </button>
                             <button
                                 onClick={handleEditSave}
                                 disabled={editLoading || (!editForm.classId && editForm.targetType !== 'student') || (editForm.targetType !== 'class' && editForm.selectedTargets.length === 0)}
-                                className="btn btn-primary"
+                                className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm disabled:opacity-50"
+                                title="Save Changes"
                             >
-                                {editLoading ? 'Saving...' : <><Save className="w-4 h-4" /> Save Changes</>}
+                                {editLoading ? <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" /> : <Save className="w-5 h-5" />}
                             </button>
                         </div>
                     </div>

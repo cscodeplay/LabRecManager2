@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Video, Download, Share2, Trash2, Play, Clock, Calendar, Link2, Copy, Check, Search, Grid, List } from 'lucide-react';
+import { ArrowLeft, Video, Download, Share2, Trash2, Play, Clock, Calendar, Link2, Copy, Check, Search, Grid, List, X, RefreshCw } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -221,46 +221,48 @@ export default function RecordingsPage() {
                                 <span className="text-sm font-medium text-slate-500 mr-2">{selectedRecordings.size} selected</span>
                                 <button
                                     onClick={handleBulkDownload}
-                                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition"
+                                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition"
                                     title="Download Selected"
                                 >
-                                    <Download className="w-4 h-4" />
+                                    <Download className="w-5 h-5" />
                                 </button>
                                 {isInstructor && (
                                     <button
                                         onClick={() => setDeleteConfirm('bulk')}
-                                        className="p-2 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg transition"
+                                        className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition"
                                         title="Delete Selected"
                                     >
-                                        <Trash2 className="w-4 h-4" />
+                                        <Trash2 className="w-5 h-5" />
                                     </button>
                                 )}
                             </div>
                         )}
 
                         {/* View Toggle */}
-                        <div className="flex border border-slate-200 rounded-lg overflow-hidden">
+                        <div className="flex bg-slate-100 p-1 rounded-xl">
                             <button
                                 onClick={() => setViewMode('grid')}
-                                className={`p-2 ${viewMode === 'grid' ? 'bg-primary-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                                className={`p-2 rounded-lg transition ${viewMode === 'grid' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                title="Grid View"
                             >
-                                <Grid className="w-4 h-4" />
+                                <Grid className="w-5 h-5" />
                             </button>
                             <button
                                 onClick={() => setViewMode('list')}
-                                className={`p-2 ${viewMode === 'list' ? 'bg-primary-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                                className={`p-2 rounded-lg transition ${viewMode === 'list' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                title="List View"
                             >
-                                <List className="w-4 h-4" />
+                                <List className="w-5 h-5" />
                             </button>
                         </div>
 
                         {/* New Recording Button */}
                         <Link
                             href="/whiteboard"
-                            className="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition"
+                            className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                            title="New Recording"
                         >
-                            <Video className="w-4 h-4" />
-                            New Recording
+                            <Video className="w-5 h-5" />
                         </Link>
                     </div>
                 </div>
@@ -281,9 +283,10 @@ export default function RecordingsPage() {
                         <p className="text-slate-500 mb-6">{error}</p>
                         <button
                             onClick={fetchRecordings}
-                            className="inline-flex items-center gap-2 px-6 py-3 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition"
+                            className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                            title="Retry"
                         >
-                            Retry
+                            <RefreshCw className="w-5 h-5" />
                         </button>
                     </div>
                 ) : filteredRecordings.length === 0 ? (
@@ -301,10 +304,10 @@ export default function RecordingsPage() {
                         {!searchQuery && (
                             <Link
                                 href="/whiteboard"
-                                className="inline-flex items-center gap-2 px-6 py-3 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition"
+                                className="inline-flex p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                                title="Go to Whiteboard"
                             >
                                 <Video className="w-5 h-5" />
-                                Go to Whiteboard
                             </Link>
                         )}
                     </div>
@@ -355,42 +358,42 @@ export default function RecordingsPage() {
                                     <div className="flex items-center gap-2 mt-4">
                                         <Link
                                             href={`/recordings/watch/${recording.shareToken}`}
-                                            className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition"
+                                            className="flex-1 flex items-center justify-center p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition"
+                                            title="Play"
                                         >
-                                            <Play className="w-4 h-4" />
-                                            Play
+                                            <Play className="w-5 h-5" />
                                         </Link>
                                         <button
                                             onClick={() => handleCopyLink(recording)}
-                                            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
+                                            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition"
                                             title="Copy share link"
                                         >
-                                            {copiedId === recording.id ? <Check className="w-4 h-4 text-green-500" /> : <Link2 className="w-4 h-4" />}
+                                            {copiedId === recording.id ? <Check className="w-5 h-5 text-green-500" /> : <Link2 className="w-5 h-5" />}
                                         </button>
                                         <a
                                             href={recording.cloudinaryUrl}
                                             download
-                                            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
+                                            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition"
                                             title="Download"
                                         >
-                                            <Download className="w-4 h-4" />
+                                            <Download className="w-5 h-5" />
                                         </a>
                                         {isInstructor && (
                                             <button
                                                 onClick={() => handleOpenShare(recording.id)}
-                                                className="p-2 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-lg transition"
+                                                className="p-2 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-xl transition"
                                                 title="Share"
                                             >
-                                                <Share2 className="w-4 h-4" />
+                                                <Share2 className="w-5 h-5" />
                                             </button>
                                         )}
                                         {isInstructor && (
                                             <button
                                                 onClick={() => setDeleteConfirm(recording.id)}
-                                                className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition"
+                                                className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition"
                                                 title="Delete"
                                             >
-                                                <Trash2 className="w-4 h-4" />
+                                                <Trash2 className="w-5 h-5" />
                                             </button>
                                         )}
                                     </div>
@@ -454,42 +457,42 @@ export default function RecordingsPage() {
                                             <div className="flex items-center justify-end gap-2">
                                                 <Link
                                                     href={`/recordings/watch/${recording.shareToken}`}
-                                                    className="p-2 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-lg transition"
+                                                    className="p-2 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-xl transition"
                                                     title="Play"
                                                 >
-                                                    <Play className="w-4 h-4" />
+                                                    <Play className="w-5 h-5" />
                                                 </Link>
                                                 <button
                                                     onClick={() => handleCopyLink(recording)}
-                                                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition"
+                                                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition"
                                                     title="Copy share link"
                                                 >
-                                                    {copiedId === recording.id ? <Check className="w-4 h-4 text-green-500" /> : <Link2 className="w-4 h-4" />}
+                                                    {copiedId === recording.id ? <Check className="w-5 h-5 text-green-500" /> : <Link2 className="w-5 h-5" />}
                                                 </button>
                                                 <a
                                                     href={recording.cloudinaryUrl}
                                                     download
-                                                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition"
+                                                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition"
                                                     title="Download"
                                                 >
-                                                    <Download className="w-4 h-4" />
+                                                    <Download className="w-5 h-5" />
                                                 </a>
                                                 {isInstructor && (
                                                     <button
                                                         onClick={() => handleOpenShare(recording.id)}
-                                                        className="p-2 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-lg transition"
+                                                        className="p-2 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-xl transition"
                                                         title="Share"
                                                     >
-                                                        <Share2 className="w-4 h-4" />
+                                                        <Share2 className="w-5 h-5" />
                                                     </button>
                                                 )}
                                                 {isInstructor && (
                                                     <button
                                                         onClick={() => setDeleteConfirm(recording.id)}
-                                                        className="p-2 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg transition"
+                                                        className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition"
                                                         title="Delete"
                                                     >
-                                                        <Trash2 className="w-4 h-4" />
+                                                        <Trash2 className="w-5 h-5" />
                                                     </button>
                                                 )}
                                             </div>
@@ -513,15 +516,17 @@ export default function RecordingsPage() {
                         <div className="flex gap-3">
                             <button
                                 onClick={() => setDeleteConfirm(null)}
-                                className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition"
+                                className="flex-1 flex justify-center p-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition"
+                                title="Cancel"
                             >
-                                Cancel
+                                <X className="w-5 h-5" />
                             </button>
                             <button
                                 onClick={() => deleteConfirm === 'bulk' ? handleBulkDelete() : handleDelete(deleteConfirm)}
-                                className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition"
+                                className="flex-1 flex justify-center p-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition"
+                                title="Delete"
                             >
-                                Delete
+                                <Trash2 className="w-5 h-5" />
                             </button>
                         </div>
                     </div>

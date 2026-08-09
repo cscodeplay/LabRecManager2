@@ -62,8 +62,8 @@ export default function ViewDocumentPage() {
                             <p className="text-sm text-slate-500">{doc.fileType.toUpperCase()} • {doc.fileSizeFormatted}</p>
                         </div>
                     </div>
-                    <a href={doc.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
-                        <Download className="w-4 h-4" /> Download
+                    <a href={doc.url} target="_blank" rel="noopener noreferrer" className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm" title="Download">
+                        <Download className="w-5 h-5" />
                     </a>
                 </div>
             </div>
@@ -81,8 +81,8 @@ export default function ViewDocumentPage() {
                         <div className="flex flex-col items-center justify-center py-20 text-slate-500">
                             <span className="text-8xl mb-6">{FILE_ICONS[doc.fileType]}</span>
                             <p className="text-lg mb-6">Preview not available for {doc.fileType.toUpperCase()} files</p>
-                            <a href={doc.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
-                                <ExternalLink className="w-4 h-4" /> Open File
+                            <a href={doc.url} target="_blank" rel="noopener noreferrer" className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm" title="Open File">
+                                <ExternalLink className="w-5 h-5" />
                             </a>
                         </div>
                     )}

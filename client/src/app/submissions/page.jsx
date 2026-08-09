@@ -11,6 +11,7 @@ import {
 import { useAuthStore } from '@/lib/store';
 import { submissionsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import PageHeader from '@/components/PageHeader';
 
 export default function SubmissionsPage() {
     const router = useRouter();
@@ -95,18 +96,7 @@ export default function SubmissionsPage() {
 
     return (
         <div className="min-h-screen bg-slate-50">
-            <header className="bg-white border-b border-slate-100 sticky top-0 z-10">
-                <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Link href="/dashboard" className="text-slate-500 hover:text-slate-700">
-                            ← {t('common.back')}
-                        </Link>
-                        <h1 className="text-xl font-semibold text-slate-900">
-                            {isInstructor ? t('submissions.forReview') : t('submissions.mySubmissions')}
-                        </h1>
-                    </div>
-                </div>
-            </header>
+            <PageHeader title={isInstructor ? t('submissions.forReview') : t('submissions.mySubmissions')} backLink="/dashboard" />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Filters */}
@@ -240,7 +230,7 @@ export default function SubmissionsPage() {
                                     <div className="flex items-center gap-2">
                                         <Link
                                             href={`/submissions/${submission.id}`}
-                                            className="btn btn-primary p-2.5 flex items-center justify-center rounded-lg shadow-sm"
+                                            className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
                                             title={isInstructor && submission.status === 'submitted' ? t('submissions.review') : t('submissions.view')}
                                         >
                                             {isInstructor && submission.status === 'submitted' ? (

@@ -252,7 +252,7 @@ function AssignWorkContent() {
 
     return (
         <div className="min-h-screen bg-slate-50">
-            <PageHeader title="Assign Practical Work" />
+            <PageHeader title="Assign Practical Work" backLink="/assignments" />
 
             <main className="max-w-4xl mx-auto px-4 py-6">
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -637,28 +637,23 @@ function AssignWorkContent() {
                     )}
 
                     {/* Submit */}
-                    <div className="flex justify-end gap-3">
-                        <Link href="/assignments" className="btn btn-secondary">
-                            Cancel
+                    <div className="flex justify-end gap-3 pt-4">
+                        <Link href="/assignments" className="p-3 text-slate-500 hover:bg-slate-200 bg-slate-100 rounded-xl transition" title="Cancel">
+                            <X className="w-5 h-5" />
                         </Link>
                         <button
                             type="submit"
                             disabled={saving || !selectedAssignment || !selectedClass || (targetType !== 'class' && selectedTargets.length === 0)}
-                            className="btn btn-primary"
+                            className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm disabled:opacity-50 disabled:hover:bg-primary-600"
+                            title="Assign Work"
                         >
                             {saving ? (
-                                <span className="flex items-center gap-2">
-                                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                    </svg>
-                                    Assigning...
-                                </span>
+                                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
                             ) : (
-                                <span className="flex items-center gap-2">
-                                    <Send className="w-4 h-4" />
-                                    Assign Work
-                                </span>
+                                <Send className="w-5 h-5" />
                             )}
                         </button>
                     </div>

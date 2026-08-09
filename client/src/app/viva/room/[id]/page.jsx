@@ -989,9 +989,10 @@ export default function VivaRoomPage() {
                             cleanup();
                             router.push('/viva');
                         }}
-                        className="text-slate-400 hover:text-white transition"
+                        className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition flex items-center justify-center mx-auto"
+                        title="Leave Waiting Room"
                     >
-                        Leave Waiting Room
+                        <ArrowLeft className="w-5 h-5" />
                     </button>
                 </div>
             </div>
@@ -1012,9 +1013,10 @@ export default function VivaRoomPage() {
                     </p>
                     <button
                         onClick={() => router.push('/viva')}
-                        className="btn btn-primary"
+                        className="p-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition flex items-center justify-center mx-auto"
+                        title="Back to Viva Sessions"
                     >
-                        Back to Viva Sessions
+                        <ArrowLeft className="w-5 h-5" />
                     </button>
                 </div>
             </div>
@@ -1109,13 +1111,13 @@ export default function VivaRoomPage() {
                     {isHost && (
                         <button
                             onClick={() => setShowWaitingRoom(!showWaitingRoom)}
-                            className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg transition ${showWaitingRoom ? 'bg-primary-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                            className={`relative p-2 rounded-lg transition ${showWaitingRoom ? 'bg-primary-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                                 }`}
+                            title="Waiting Room"
                         >
-                            <User className="w-4 h-4" />
-                            <span className="text-sm font-medium">Waiting Room</span>
+                            <User className="w-5 h-5" />
                             {waitingParticipants.length > 0 && (
-                                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center animate-pulse">
+                                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center animate-pulse">
                                     {waitingParticipants.length}
                                 </span>
                             )}
@@ -1304,20 +1306,20 @@ export default function VivaRoomPage() {
                         {isInstructor && sessionStatus === 'ready' && (
                             <button
                                 onClick={handleStartSession}
-                                className="px-6 py-3 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-medium flex items-center gap-2 transition"
+                                className="w-14 h-14 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition"
+                                title="Start Session"
                             >
-                                <CheckCircle className="w-5 h-5" />
-                                Start Session
+                                <CheckCircle className="w-6 h-6" />
                             </button>
                         )}
 
                         {isInstructor && sessionStatus === 'active' && (
                             <button
                                 onClick={() => setShowGradingPanel(true)}
-                                className="px-6 py-3 rounded-full bg-red-500 hover:bg-red-600 text-white font-medium flex items-center gap-2 transition"
+                                className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition"
+                                title="End & Grade"
                             >
-                                <Phone className="w-5 h-5" />
-                                End & Grade
+                                <Phone className="w-6 h-6" />
                             </button>
                         )}
 
@@ -1327,10 +1329,10 @@ export default function VivaRoomPage() {
                                     cleanup();
                                     router.push('/viva');
                                 }}
-                                className="px-6 py-3 rounded-full bg-red-500 hover:bg-red-600 text-white font-medium flex items-center gap-2 transition"
+                                className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition"
+                                title="Leave"
                             >
-                                <Phone className="w-5 h-5" />
-                                Leave
+                                <Phone className="w-6 h-6" />
                             </button>
                         )}
                     </div>
@@ -1468,19 +1470,19 @@ export default function VivaRoomPage() {
                     <div className="flex gap-2 mt-4 pt-4 border-t border-slate-700">
                         <button
                             onClick={() => updateSpeakerVolume(speakerVolume === 0 ? 100 : 0)}
-                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition ${speakerVolume === 0 ? 'bg-red-500/20 text-red-400' : 'bg-slate-700 text-white hover:bg-slate-600'
+                            className={`flex-1 p-3 rounded-xl flex items-center justify-center transition ${speakerVolume === 0 ? 'bg-red-500/20 text-red-400' : 'bg-slate-700 text-white hover:bg-slate-600'
                                 }`}
+                            title={speakerVolume === 0 ? 'Unmute' : 'Mute'}
                         >
-                            {speakerVolume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                            {speakerVolume === 0 ? 'Unmute' : 'Mute'}
+                            {speakerVolume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
                         </button>
                         <button
                             onClick={toggleAudio}
-                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition ${!isAudioEnabled ? 'bg-red-500/20 text-red-400' : 'bg-slate-700 text-white hover:bg-slate-600'
+                            className={`flex-1 p-3 rounded-xl flex items-center justify-center transition ${!isAudioEnabled ? 'bg-red-500/20 text-red-400' : 'bg-slate-700 text-white hover:bg-slate-600'
                                 }`}
+                            title={isAudioEnabled ? 'Mute Mic' : 'Unmute Mic'}
                         >
-                            {isAudioEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-                            {isAudioEnabled ? 'Mute Mic' : 'Unmute Mic'}
+                            {isAudioEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
                         </button>
                     </div>
                 </div>

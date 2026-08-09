@@ -87,10 +87,10 @@ export default function WatchRecordingPage() {
                     <p className="text-slate-400 mb-6">{error}</p>
                     <Link
                         href="/"
-                        className="inline-flex items-center gap-2 px-6 py-3 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition"
+                        className="inline-flex p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                        title="Go Home"
                     >
                         <ArrowLeft className="w-5 h-5" />
-                        Go Home
                     </Link>
                 </div>
             </div>
@@ -120,18 +120,18 @@ export default function WatchRecordingPage() {
                     <div className="flex items-center gap-3">
                         <button
                             onClick={handleCopyLink}
-                            className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition"
+                            className="p-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl transition shadow-sm"
+                            title="Copy Link"
                         >
-                            {copied ? <Check className="w-4 h-4 text-green-400" /> : <Share2 className="w-4 h-4" />}
-                            {copied ? 'Copied!' : 'Share'}
+                            {copied ? <Check className="w-5 h-5 text-green-400" /> : <Share2 className="w-5 h-5" />}
                         </button>
                         <a
                             href={recording.cloudinaryUrl}
                             download
-                            className="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition"
+                            className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                            title="Download"
                         >
-                            <Download className="w-4 h-4" />
-                            Download
+                            <Download className="w-5 h-5" />
                         </a>
                     </div>
                 </div>
@@ -189,7 +189,8 @@ export default function WatchRecordingPage() {
                             />
                             <button
                                 onClick={handleCopyLink}
-                                className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition"
+                                className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                                title="Copy Link"
                             >
                                 {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
                             </button>

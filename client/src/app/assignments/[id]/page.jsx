@@ -105,7 +105,7 @@ export default function AssignmentDetailPage() {
         <div className="min-h-screen bg-slate-50">
             <header className="bg-white border-b border-slate-100">
                 <div className="max-w-5xl mx-auto px-4 py-4 flex items-center gap-4">
-                    <Link href="/assignments" className="text-slate-500 hover:text-slate-700">
+                    <Link href="/assignments" className="p-2 -ml-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition" title="Back to Assignments">
                         <ArrowLeft className="w-5 h-5" />
                     </Link>
                     <div className="flex-1">
@@ -121,25 +121,22 @@ export default function AssignmentDetailPage() {
                     </div>
                     {/* Action buttons for instructors */}
                     {isInstructor && (
-                        <Link href={`/assignments/create?edit=${assignment.id}`} className="btn btn-secondary">
-                            <Edit2 className="w-4 h-4" />
-                            Edit
+                        <Link href={`/assignments/create?edit=${assignment.id}`} className="p-2 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition" title="Edit">
+                            <Edit2 className="w-5 h-5" />
                         </Link>
                     )}
                     {user?.role === 'student' && assignment.status === 'published' && (
                         <>
                             {/* Show Submit only if not submitted OR revision requested */}
                             {(!assignment.userSubmission || assignment.userSubmission.status === 'revision_requested') && (
-                                <Link href={`/assignments/${assignment.id}/submit`} className={`btn ${assignment.userSubmission?.status === 'revision_requested' ? 'btn-warning' : 'btn-primary'}`}>
-                                    <Upload className="w-4 h-4" />
-                                    {assignment.userSubmission?.status === 'revision_requested' ? 'Revise' : 'Submit'}
+                                <Link href={`/assignments/${assignment.id}/submit`} className={`p-2 rounded-lg shadow-sm transition flex items-center justify-center ${assignment.userSubmission?.status === 'revision_requested' ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-primary-600 hover:bg-primary-700 text-white'}`} title={assignment.userSubmission?.status === 'revision_requested' ? 'Revise' : 'Submit'}>
+                                    <Upload className="w-5 h-5" />
                                 </Link>
                             )}
                             {/* Show View Submission if submitted and not needing revision */}
                             {assignment.userSubmission && assignment.userSubmission.status !== 'revision_requested' && (
-                                <Link href={`/submissions/${assignment.userSubmission.id}`} className="btn btn-secondary">
-                                    <Eye className="w-4 h-4" />
-                                    View Submission
+                                <Link href={`/submissions/${assignment.userSubmission.id}`} className="p-2 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition" title="View Submission">
+                                    <Eye className="w-5 h-5" />
                                 </Link>
                             )}
                         </>
@@ -230,20 +227,22 @@ export default function AssignmentDetailPage() {
                                             <p className="font-medium text-slate-900">{assignment.pdfAttachmentName || 'Assignment PDF'}</p>
                                             <p className="text-sm text-slate-500">PDF Document</p>
                                         </div>
-                                        <div className="flex gap-2">
+                                        <div className="flex gap-1">
                                             <button
                                                 onClick={() => setPdfPreviewOpen(true)}
-                                                className="btn btn-secondary text-sm"
+                                                className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                                title="Preview PDF"
                                             >
-                                                <Eye className="w-4 h-4" /> Preview
+                                                <Eye className="w-5 h-5" />
                                             </button>
                                             <a
                                                 href={assignment.pdfAttachmentUrl}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="btn btn-primary text-sm"
+                                                className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                                title="Download PDF"
                                             >
-                                                <Download className="w-4 h-4" /> Download
+                                                <Download className="w-5 h-5" />
                                             </a>
                                         </div>
                                     </div>
@@ -346,22 +345,24 @@ export default function AssignmentDetailPage() {
                                 <FileText className="w-5 h-5 text-red-500" />
                                 <h3 className="text-base font-semibold">{assignment.pdfAttachmentName || 'PDF Preview'}</h3>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <a
-                                    href={assignment.pdfAttachmentUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="btn btn-secondary text-sm py-1.5"
-                                >
-                                    <Download className="w-4 h-4" /> Download
-                                </a>
-                                <button
-                                    onClick={() => setPdfPreviewOpen(false)}
-                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
-                                >
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
+                            <div className="flex items-center gap-1">
+                                                <a
+                                                    href={assignment.pdfAttachmentUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="p-2 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                                    title="Download"
+                                                >
+                                                    <Download className="w-5 h-5" />
+                                                </a>
+                                                <button
+                                                    onClick={() => setPdfPreviewOpen(false)}
+                                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                                                    title="Close"
+                                                >
+                                                    <X className="w-5 h-5" />
+                                                </button>
+                                            </div>
                         </div>
                         <div className="flex-1 overflow-hidden bg-slate-100">
                             {/* Use Google Docs viewer for Cloudinary PDFs */}

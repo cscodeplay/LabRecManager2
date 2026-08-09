@@ -246,18 +246,13 @@ export default function SubmissionDetailPage() {
                                         type="button"
                                         onClick={handleRunSubmittedPythonCode}
                                         disabled={runningCode}
-                                        className="btn bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-3 py-1.5 flex items-center gap-1.5 transition"
+                                        className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition shadow-sm disabled:opacity-50"
+                                        title="Re-run Code (Python Compiler)"
                                     >
                                         {runningCode ? (
-                                            <>
-                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                Running...
-                                            </>
+                                            <Loader2 className="w-5 h-5 animate-spin" />
                                         ) : (
-                                            <>
-                                                <Play className="w-3.5 h-3.5 fill-white" />
-                                                Re-run Code (Python Compiler)
-                                            </>
+                                            <Play className="w-5 h-5 fill-white" />
                                         )}
                                     </button>
                                 </div>
@@ -327,10 +322,10 @@ export default function SubmissionDetailPage() {
                                     {!showGradeForm && (
                                         <button
                                             onClick={() => setShowGradeForm(true)}
-                                            className="btn btn-primary"
+                                            className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                                            title="Grade Now"
                                         >
-                                            <Award className="w-4 h-4" />
-                                            Grade Now
+                                            <Award className="w-5 h-5" />
                                         </button>
                                     )}
                                 </div>
@@ -430,27 +425,30 @@ export default function SubmissionDetailPage() {
                                             />
                                         </div>
 
-                                        <div className="flex gap-3">
+                                        <div className="flex justify-end gap-3 pt-4">
                                             <button
                                                 type="button"
                                                 onClick={() => setShowGradeForm(false)}
-                                                className="btn btn-secondary"
+                                                className="p-3 text-slate-500 hover:bg-slate-200 bg-slate-100 rounded-xl transition"
+                                                title="Cancel"
                                             >
-                                                Cancel
-                                            </button>
-                                            <button
-                                                type="submit"
-                                                className="btn btn-primary"
-                                                disabled={grading}
-                                            >
-                                                {grading ? 'Saving...' : 'Save Grade'}
+                                                <XCircle className="w-5 h-5" />
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={handleRequestRevision}
-                                                className="btn btn-danger"
+                                                className="p-3 bg-red-600 hover:bg-red-700 text-white rounded-xl transition shadow-sm"
+                                                title="Request Revision"
                                             >
-                                                Request Revision
+                                                <AlertCircle className="w-5 h-5" />
+                                            </button>
+                                            <button
+                                                type="submit"
+                                                className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm disabled:opacity-50"
+                                                disabled={grading}
+                                                title="Save Grade"
+                                            >
+                                                {grading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
                                             </button>
                                         </div>
                                     </form>
@@ -572,10 +570,10 @@ export default function SubmissionDetailPage() {
                                     {isInstructor && !submission.grade.isPublished && (
                                         <button
                                             onClick={handlePublishGrade}
-                                            className="btn btn-success w-full mt-4"
+                                            className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition shadow-sm w-full mt-4 flex justify-center items-center"
+                                            title="Publish Grade"
                                         >
-                                            <Send className="w-4 h-4" />
-                                            Publish Grade
+                                            <Send className="w-5 h-5" />
                                         </button>
                                     )}
 

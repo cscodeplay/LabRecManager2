@@ -310,7 +310,7 @@ export default function MyAssignedWorkPage() {
                                             {assignment.hasSubmitted && !assignment.needsRevision && (
                                                 <Link
                                                     href={`/assignments/${assignment.id}`}
-                                                    className="btn btn-ghost p-2 text-slate-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
+                                                    className="p-2 text-slate-500 hover:bg-slate-100 hover:text-primary-600 rounded-xl transition"
                                                     title="View Assignment & Submission"
                                                 >
                                                     <Eye className="w-5 h-5" />
@@ -320,7 +320,7 @@ export default function MyAssignedWorkPage() {
                                             {!assignment.hasSubmitted && (
                                                 <Link
                                                     href={`/assignments/${assignment.id}`}
-                                                    className="btn btn-ghost p-2 text-slate-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
+                                                    className="p-2 text-slate-500 hover:bg-slate-100 hover:text-primary-600 rounded-xl transition"
                                                     title="View Assignment Details"
                                                 >
                                                     <Eye className="w-5 h-5" />
@@ -330,7 +330,7 @@ export default function MyAssignedWorkPage() {
                                             {(!assignment.hasSubmitted || assignment.needsRevision) && (
                                                 <Link
                                                     href={`/assignments/${assignment.id}/submit`}
-                                                    className={`btn p-2 flex items-center justify-center rounded-lg shadow-sm ${assignment.needsRevision ? 'btn-warning' : 'btn-primary'}`}
+                                                    className={`p-2 flex items-center justify-center rounded-xl transition shadow-sm ${assignment.needsRevision ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-primary-600 hover:bg-primary-700 text-white'}`}
                                                     title={assignment.needsRevision ? 'Resubmit Assignment Revision' : 'Submit Assignment'}
                                                 >
                                                     <Send className="w-5 h-5" />
@@ -339,7 +339,7 @@ export default function MyAssignedWorkPage() {
                                             {assignment.isGraded && (
                                                 <Link
                                                     href="/grades"
-                                                    className="btn btn-secondary p-2 flex items-center justify-center rounded-lg shadow-2xs"
+                                                    className="p-2 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 transition shadow-sm"
                                                     title="View Evaluated Grade & Feedback"
                                                 >
                                                     <Award className="w-5 h-5 text-amber-600" />

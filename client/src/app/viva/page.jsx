@@ -241,10 +241,10 @@ export default function VivaPage() {
                     {isInstructor && (
                         <button
                             onClick={() => setShowScheduleModal(true)}
-                            className="btn btn-primary flex items-center gap-2"
+                            className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                            title="Schedule Viva Session"
                         >
                             <CalendarPlus className="w-5 h-5" />
-                            Schedule Viva Session
                         </button>
                     )}
                 </div>
@@ -373,9 +373,10 @@ export default function VivaPage() {
                                                 <div className="flex gap-2">
                                                     <Link
                                                         href={`/viva/room/${session.id}`}
-                                                        className="btn btn-secondary text-sm"
+                                                        className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition"
+                                                        title="Start Late"
                                                     >
-                                                        Start Late
+                                                        <Play className="w-5 h-5" />
                                                     </Link>
                                                     {isInstructor && (
                                                         <button
@@ -388,9 +389,10 @@ export default function VivaPage() {
                                                                     toast.error('Failed to mark session');
                                                                 }
                                                             }}
-                                                            className="btn text-sm bg-slate-200 text-slate-700 hover:bg-slate-300"
+                                                            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition"
+                                                            title="Mark as Missed"
                                                         >
-                                                            Mark as Missed
+                                                            <X className="w-5 h-5" />
                                                         </button>
                                                     )}
                                                 </div>
@@ -596,10 +598,10 @@ export default function VivaPage() {
                                                     {session.recordingUrl ? (
                                                         <button
                                                             onClick={() => setSelectedRecording(session)}
-                                                            className="btn btn-primary flex items-center gap-2"
+                                                            className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                                                            title="Watch Recording"
                                                         >
-                                                            <Play className="w-4 h-4" />
-                                                            Watch
+                                                            <Play className="w-5 h-5" />
                                                         </button>
                                                     ) : (
                                                         <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm font-medium">
@@ -701,6 +703,7 @@ export default function VivaPage() {
                                         resetModalState();
                                     }}
                                     className="p-2 hover:bg-slate-100 rounded-lg transition"
+                                    title="Close"
                                 >
                                     <X className="w-5 h-5 text-slate-500" />
                                 </button>
@@ -867,31 +870,27 @@ export default function VivaPage() {
                         </div>
 
                         {/* Modal Footer */}
-                        <div className="p-6 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex gap-3">
+                        <div className="p-6 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex gap-3 justify-end">
                             <button
                                 onClick={() => {
                                     setShowScheduleModal(false);
                                     resetModalState();
                                 }}
-                                className="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-700 font-medium hover:bg-slate-100 transition"
+                                className="p-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition"
+                                title="Cancel"
                             >
-                                Cancel
+                                <X className="w-5 h-5" />
                             </button>
                             <button
                                 onClick={handleScheduleSession}
                                 disabled={scheduling || !selectedStudent || !scheduledDateTime}
-                                className="flex-1 px-4 py-3 bg-primary-500 text-white rounded-xl font-medium hover:bg-primary-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                title="Schedule Session"
                             >
                                 {scheduling ? (
-                                    <>
-                                        <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
-                                        Scheduling...
-                                    </>
+                                    <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
                                 ) : (
-                                    <>
-                                        <CalendarPlus className="w-4 h-4" />
-                                        Schedule Session
-                                    </>
+                                    <CalendarPlus className="w-5 h-5" />
                                 )}
                             </button>
                         </div>
@@ -985,18 +984,16 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                 {/* Action buttons based on session status */}
                 {session.status === 'scheduled' && (
                     <div className="flex flex-col gap-2">
-                        <Link href={`/viva/room/${session.id}`} className="btn btn-primary">
-                            <Play className="w-4 h-4" />
-                            {isInstructor ? 'Start Viva' : 'Join'}
+                        <Link href={`/viva/room/${session.id}`} className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Start Viva' : 'Join'}>
+                            <Play className="w-5 h-5" />
                         </Link>
                     </div>
                 )}
 
                 {session.status === 'in_progress' && (
                     <div className="flex flex-col gap-2">
-                        <Link href={`/viva/room/${session.id}`} className="btn btn-danger">
-                            <Video className="w-4 h-4" />
-                            {isInstructor ? 'Resume & Grade' : 'Rejoin'}
+                        <Link href={`/viva/room/${session.id}`} className="p-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Resume & Grade' : 'Rejoin'}>
+                            <Video className="w-5 h-5" />
                         </Link>
                     </div>
                 )}

@@ -116,9 +116,8 @@ export default function AssignmentsPage() {
         <div className="min-h-screen bg-slate-50">
             <PageHeader title={t('assignments.title')}>
                 {isInstructor && (
-                    <Link href="/assignments/create" className="btn btn-primary">
-                        <Plus className="w-4 h-4" />
-                        {t('assignments.createAssignment')}
+                    <Link href="/assignments/create" className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center" title={t('assignments.createAssignment')}>
+                        <Plus className="w-5 h-5" />
                     </Link>
                 )}
             </PageHeader>
@@ -162,9 +161,8 @@ export default function AssignmentsPage() {
                 ) : (
                     <div className="grid gap-4">
                         {filteredAssignments.map((assignment) => (
-                            <div key={assignment.id} className="card card-hover p-6">
-                                <div className="flex items-start justify-between">
-                                    <div className="flex-1">
+                            <div key={assignment.id} className="card hover:shadow-md hover:border-slate-300 transition group flex flex-col overflow-hidden">
+                                <div className="p-5 flex-1">
                                         <div className="flex items-center gap-3 mb-2">
                                             <span className={`badge ${getStatusBadge(assignment.status)}`}>
                                                 {getStatusLabel(assignment.status)}
@@ -210,46 +208,44 @@ export default function AssignmentsPage() {
                                                 {assignment.assignmentType}
                                             </span>
                                         </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-2 ml-4">
-                                        <Link
-                                            href={`/assignments/${assignment.id}`}
-                                            className="btn btn-ghost p-2 text-slate-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
-                                            title={t('common.view')}
-                                        >
-                                            <Eye className="w-5 h-5" />
-                                        </Link>
-                                        {isInstructor && (
-                                            <>
-                                                {assignment.status === 'draft' && (
-                                                    <button
-                                                        onClick={() => handlePublish(assignment.id)}
-                                                        className="btn btn-primary p-2 flex items-center justify-center rounded-lg shadow-sm"
-                                                        title={t('assignments.publish')}
-                                                    >
-                                                        <Send className="w-5 h-5" />
-                                                    </button>
-                                                )}
+                                </div>
+                                <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-1 text-slate-500">
+                                    <Link
+                                        href={`/assignments/${assignment.id}`}
+                                        className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                        title={t('common.view')}
+                                    >
+                                        <Eye className="w-5 h-5" />
+                                    </Link>
+                                    {isInstructor && (
+                                        <>
+                                            {assignment.status === 'draft' && (
                                                 <button
-                                                    onClick={() => handleDeleteClick(assignment.id, assignment.title)}
-                                                    className="btn btn-ghost p-2 text-red-500 hover:bg-red-50 rounded-lg transition"
-                                                    title={t('common.delete')}
+                                                    onClick={() => handlePublish(assignment.id)}
+                                                    className="p-1.5 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
+                                                    title={t('assignments.publish')}
                                                 >
-                                                    <Trash2 className="w-5 h-5" />
+                                                    <Send className="w-5 h-5" />
                                                 </button>
-                                            </>
-                                        )}
-                                        {user?.role === 'student' && assignment.status === 'published' && (
-                                            <Link
-                                                href={`/assignments/${assignment.id}/submit`}
-                                                className="btn btn-primary p-2 flex items-center justify-center rounded-lg shadow-sm"
-                                                title={t('assignments.submit')}
+                                            )}
+                                            <button
+                                                onClick={() => handleDeleteClick(assignment.id, assignment.title)}
+                                                className="p-1.5 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                title={t('common.delete')}
                                             >
-                                                <Upload className="w-5 h-5" />
-                                            </Link>
-                                        )}
-                                    </div>
+                                                <Trash2 className="w-5 h-5" />
+                                            </button>
+                                        </>
+                                    )}
+                                    {user?.role === 'student' && assignment.status === 'published' && (
+                                        <Link
+                                            href={`/assignments/${assignment.id}/submit`}
+                                            className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                            title={t('assignments.submit')}
+                                        >
+                                            <Upload className="w-5 h-5" />
+                                        </Link>
+                                    )}
                                 </div>
                             </div>
                         ))}

@@ -226,25 +226,30 @@ export default function TicketsPage() {
     const isAdmin = ['admin', 'principal', 'lab_assistant'].includes(user?.role);
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
-            <div className="max-w-7xl mx-auto">
-                {/* Header */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
-                    <div>
-                        <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
-                            <Ticket className="text-purple-600" />
-                            Support Tickets
-                        </h1>
-                        <p className="text-slate-500 mt-1">Report issues, request maintenance, or submit complaints</p>
+        <div className="min-h-screen bg-slate-50 pb-8">
+            {/* Header */}
+            <div className="bg-white border-b border-slate-200 sticky top-0 z-20 mb-6">
+                <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-primary-50 flex items-center justify-center">
+                            <Ticket className="w-5 h-5 text-primary-600" />
+                        </div>
+                        <div>
+                            <h1 className="text-lg font-semibold text-slate-900">Support Tickets</h1>
+                            <p className="text-sm text-slate-500">Report issues, request maintenance, or submit complaints</p>
+                        </div>
                     </div>
                     <button
                         onClick={() => setShowCreateModal(true)}
-                        className="mt-4 md:mt-0 flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+                        className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                        title="Create Ticket"
                     >
-                        <Plus size={18} />
-                        Create Ticket
+                        <Plus className="w-5 h-5" />
                     </button>
                 </div>
+            </div>
+
+            <div className="max-w-7xl mx-auto px-4">
 
                 {/* Filters */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
@@ -256,13 +261,13 @@ export default function TicketsPage() {
                                 placeholder="Search tickets..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                             />
                         </div>
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
-                            className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                            className="px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                         >
                             <option value="all">All Status</option>
                             <option value="open">Open</option>
@@ -273,7 +278,7 @@ export default function TicketsPage() {
                         <select
                             value={priorityFilter}
                             onChange={(e) => setPriorityFilter(e.target.value)}
-                            className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                            className="px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                         >
                             <option value="">All Priority</option>
                             <option value="critical">Critical</option>
@@ -286,7 +291,7 @@ export default function TicketsPage() {
                                 type="checkbox"
                                 checked={myTicketsOnly}
                                 onChange={(e) => setMyTicketsOnly(e.target.checked)}
-                                className="w-4 h-4 rounded text-purple-600"
+                                className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                             />
                             <span className="text-sm text-slate-600">My tickets only</span>
                         </label>
@@ -296,7 +301,7 @@ export default function TicketsPage() {
                 {/* Tickets List */}
                 {loading ? (
                     <div className="text-center py-12">
-                        <div className="animate-spin w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full mx-auto"></div>
+                        <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full mx-auto"></div>
                         <p className="mt-2 text-slate-500">Loading tickets...</p>
                     </div>
                 ) : filteredTickets.length === 0 ? (
@@ -380,7 +385,7 @@ export default function TicketsPage() {
                                     value={form.title}
                                     onChange={(e) => setForm({ ...form, title: e.target.value })}
                                     placeholder="Brief summary of the issue"
-                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                                     required
                                 />
                             </div>
@@ -391,7 +396,7 @@ export default function TicketsPage() {
                                     onChange={(e) => setForm({ ...form, description: e.target.value })}
                                     placeholder="Detailed description of the issue..."
                                     rows={3}
-                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                                     required
                                 />
                             </div>
@@ -403,7 +408,7 @@ export default function TicketsPage() {
                                     <select
                                         value={form.category}
                                         onChange={(e) => setForm({ ...form, category: e.target.value, issueTypeId: '', itemId: '' })}
-                                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                                                className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                                     >
                                         <option value="hardware_issue">🔧 Hardware Issue</option>
                                         <option value="software_issue">💻 Software Issue</option>
@@ -417,7 +422,7 @@ export default function TicketsPage() {
                                     <select
                                         value={form.priority}
                                         onChange={(e) => setForm({ ...form, priority: e.target.value })}
-                                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                                                className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                                     >
                                         <option value="low">Low</option>
                                         <option value="medium">Medium</option>
@@ -441,7 +446,7 @@ export default function TicketsPage() {
                                                 title: selected ? selected.name : form.title
                                             });
                                         }}
-                                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                                                className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                                     >
                                         <option value="">Select issue type...</option>
                                         {issueTypes[form.category]?.map(type => (
@@ -460,7 +465,7 @@ export default function TicketsPage() {
                                     <select
                                         value={form.labId}
                                         onChange={(e) => setForm({ ...form, labId: e.target.value, itemId: '' })}
-                                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                                                className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                                     >
                                         <option value="">Select a lab...</option>
                                         {labs.map(lab => (
@@ -482,7 +487,7 @@ export default function TicketsPage() {
                                         <select
                                             value={form.itemId}
                                             onChange={(e) => setForm({ ...form, itemId: e.target.value })}
-                                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                                                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                                         >
                                             <option value="">Select item...</option>
                                             {labItems.map(item => (
@@ -515,15 +520,17 @@ export default function TicketsPage() {
                                 <button
                                     type="button"
                                     onClick={() => setShowCreateModal(false)}
-                                    className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                                    className="p-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition"
+                                    title="Cancel"
                                 >
-                                    Cancel
+                                    <X className="w-5 h-5" />
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+                                    className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                                    title="Create Ticket"
                                 >
-                                    Create Ticket
+                                    <CheckCircle2 className="w-5 h-5" />
                                 </button>
                             </div>
                         </form>
@@ -547,7 +554,7 @@ export default function TicketsPage() {
 
                         {detailLoading ? (
                             <div className="p-8 text-center">
-                                <div className="animate-spin w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full mx-auto"></div>
+                                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full mx-auto"></div>
                             </div>
                         ) : (
                             <div className="p-4 space-y-4">
@@ -661,12 +668,13 @@ export default function TicketsPage() {
                                                 onChange={(e) => setNewComment(e.target.value)}
                                                 onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
                                                 placeholder="Add a comment..."
-                                                className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                                                className="flex-1 px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                                             />
                                             <button
                                                 onClick={handleAddComment}
                                                 disabled={!newComment.trim()}
-                                                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                                                title="Send"
                                             >
                                                 <Send size={18} />
                                             </button>

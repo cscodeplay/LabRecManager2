@@ -416,26 +416,23 @@ export default function CreateAssignmentPage() {
                     </div>
 
                     {/* Submit Buttons */}
-                    <div className="flex justify-end gap-3">
-                        <Link href="/assignments" className="btn btn-secondary">Cancel</Link>
+                    <div className="flex justify-end gap-3 pt-4">
+                        <Link href="/assignments" className="p-3 text-slate-500 hover:bg-slate-200 bg-slate-100 rounded-xl transition" title="Cancel">
+                            <X className="w-5 h-5" />
+                        </Link>
                         <button
                             type="submit"
-                            className={`btn ${publishNow ? 'bg-gradient-to-r from-primary-500 to-accent-500 text-white hover:shadow-lg' : 'btn-primary'}`}
+                            className={`p-3 rounded-xl transition shadow-sm ${publishNow ? 'bg-gradient-to-r from-primary-500 to-accent-500 text-white hover:shadow-lg' : 'bg-primary-600 hover:bg-primary-700 text-white'} disabled:opacity-50`}
                             disabled={loading}
+                            title={publishNow ? 'Create & Publish Now' : 'Save as Draft'}
                         >
                             {loading ? (
-                                <span className="flex items-center gap-2">
-                                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                    </svg>
-                                    Creating...
-                                </span>
+                                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
                             ) : (
-                                <span className="flex items-center gap-2">
-                                    {publishNow ? <Zap className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-                                    {publishNow ? 'Create & Publish Now' : 'Save as Draft'}
-                                </span>
+                                publishNow ? <Zap className="w-5 h-5" /> : <Save className="w-5 h-5" />
                             )}
                         </button>
                     </div>
