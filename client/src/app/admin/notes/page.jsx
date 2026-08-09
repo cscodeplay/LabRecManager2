@@ -3,10 +3,15 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, FileText, Plus, X, Trash2, Edit3, Clock, User } from 'lucide-react';
+import { ArrowLeft, FileText, Plus, X, Trash2, Edit3, Clock, User, ChevronRight } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
+import dynamic from 'next/dynamic';
+import DOMPurify from 'dompurify';
+
+const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
+import 'react-quill/dist/quill.snow.css';
 
 export default function AdminNotesPage() {
     const router = useRouter();
@@ -14,6 +19,7 @@ export default function AdminNotesPage() {
     const [notes, setNotes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
+    const [viewingNote, setViewingNote] = useState(null);
     const [formData, setFormData] = useState({ title: '', content: '' });
     const [editingId, setEditingId] = useState(null);
     const [submitting, setSubmitting] = useState(false);
@@ -140,39 +146,46 @@ export default function AdminNotesPage() {
                         </button>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="flex flex-col gap-4 max-w-4xl mx-auto">
                         {notes.map((note) => (
-                            <div key={note.id} className="card overflow-hidden hover:shadow-lg transition-shadow flex flex-col h-full">
-                                <div className="p-5 flex-1">
-                                    <div className="flex justify-between items-start mb-3">
-                                        <h3 className="font-bold text-lg text-slate-800 line-clamp-2">{note.title}</h3>
-                                        <div className="flex items-center gap-1 shrink-0">
-                                            <button 
-                                                onClick={() => handleEdit(note)}
-                                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                            >
-                                                <Edit3 className="w-4 h-4" />
-                                            </button>
-                                            <button 
-                                                onClick={() => handleDelete(note.id)}
-                                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                            <div key={note.id} className="card overflow-hidden hover:shadow-md transition-shadow">
+                                <div className="p-5 flex flex-col md:flex-row md:items-start justify-between gap-4">
+                                    <div className="flex-1 min-w-0">
+                                        <h3 className="font-bold text-lg text-slate-800 mb-2">{note.title}</h3>
+                                        <div className="bg-slate-50 p-2 rounded-lg flex items-center gap-4 text-xs text-slate-500 mb-4 inline-flex">
+                                            <div className="flex items-center gap-1.5">
+                                                <User className="w-3.5 h-3.5" />
+                                                <span>{note.author?.firstName} {note.author?.lastName}</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <Clock className="w-3.5 h-3.5" />
+                                                <span>{formatDate(note.updatedAt || note.createdAt)}</span>
+                                            </div>
                                         </div>
+                                        <div 
+                                            className="prose prose-sm max-w-none text-slate-600 line-clamp-3 overflow-hidden"
+                                            dangerouslySetInnerHTML={{ __html: typeof window !== 'undefined' ? DOMPurify.sanitize(note.content) : '' }}
+                                        />
                                     </div>
-                                    <div className="prose prose-sm text-slate-600 max-h-48 overflow-y-auto mb-4 whitespace-pre-wrap">
-                                        {note.content}
-                                    </div>
-                                </div>
-                                <div className="bg-slate-50 p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                                    <div className="flex items-center gap-1.5">
-                                        <User className="w-3.5 h-3.5" />
-                                        <span>{note.author?.firstName} {note.author?.lastName}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <Clock className="w-3.5 h-3.5" />
-                                        <span>{formatDate(note.updatedAt || note.createdAt)}</span>
+                                    <div className="flex items-center gap-2 shrink-0 md:flex-col">
+                                        <button 
+                                            onClick={() => setViewingNote(note)}
+                                            className="btn btn-primary px-3 py-1.5 w-full justify-center text-sm"
+                                        >
+                                            <FileText className="w-4 h-4 mr-1.5" /> View
+                                        </button>
+                                        <button 
+                                            onClick={() => handleEdit(note)}
+                                            className="btn btn-secondary px-3 py-1.5 w-full justify-center text-sm"
+                                        >
+                                            <Edit3 className="w-4 h-4 mr-1.5" /> Edit
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDelete(note.id)}
+                                            className="btn btn-outline border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 px-3 py-1.5 w-full justify-center text-sm"
+                                        >
+                                            <Trash2 className="w-4 h-4 mr-1.5" /> Delete
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -181,7 +194,44 @@ export default function AdminNotesPage() {
                 )}
             </main>
 
-            {/* Modal */}
+            {/* View Note Modal */}
+            {viewingNote && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+                        <div className="flex items-center justify-between p-6 border-b border-slate-100">
+                            <div>
+                                <h2 className="text-2xl font-bold text-slate-800">{viewingNote.title}</h2>
+                                <div className="flex items-center gap-4 text-xs text-slate-500 mt-2">
+                                    <div className="flex items-center gap-1.5">
+                                        <User className="w-3.5 h-3.5" />
+                                        <span>{viewingNote.author?.firstName} {viewingNote.author?.lastName}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <Clock className="w-3.5 h-3.5" />
+                                        <span>{formatDate(viewingNote.updatedAt || viewingNote.createdAt)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => setViewingNote(null)}
+                                className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg self-start"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 overflow-y-auto flex-1 bg-slate-50">
+                            <div className="bg-white p-8 rounded-lg shadow-sm border border-slate-100 prose max-w-none"
+                                dangerouslySetInnerHTML={{ __html: typeof window !== 'undefined' ? DOMPurify.sanitize(viewingNote.content) : '' }}
+                            />
+                        </div>
+                        <div className="p-4 border-t border-slate-100 flex justify-end">
+                            <button onClick={() => setViewingNote(null)} className="btn btn-outline">Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit/Create Modal */}
             {showModal && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
@@ -217,13 +267,14 @@ export default function AdminNotesPage() {
                                     <label className="block text-sm font-medium text-slate-700 mb-1">
                                         Notes Content <span className="text-red-500">*</span>
                                     </label>
-                                    <textarea
-                                        required
-                                        className="form-input w-full h-64 resize-y"
-                                        placeholder="Add all your important information here..."
-                                        value={formData.content}
-                                        onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                                    ></textarea>
+                                    <div className="h-64 mb-12">
+                                        <ReactQuill 
+                                            theme="snow" 
+                                            value={formData.content} 
+                                            onChange={(val) => setFormData({ ...formData, content: val })} 
+                                            className="h-full"
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </form>

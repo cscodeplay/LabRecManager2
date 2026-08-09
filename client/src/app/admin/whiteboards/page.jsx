@@ -17,7 +17,7 @@ export default function AdminWhiteboardsPage() {
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState('active');
+    const [filter, setFilter] = useState('active'); // active, scheduled, ended, all
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -82,20 +82,20 @@ export default function AdminWhiteboardsPage() {
     return (
         <div className="p-6">
             <PageHeader
-                title="Live Whiteboard Sessions"
-                subtitle="Monitor and control active whiteboard sessions"
-                icon={Pencil}
+                title="Live Classes & Whiteboards"
+                subtitle="Schedule, monitor, and review live classroom sessions"
+                icon={Radio}
             />
 
             {/* Filters */}
             <div className="flex items-center gap-4 mb-6">
-                <div className="flex items-center gap-2 bg-white rounded-lg border border-slate-200 p-1">
-                    {['active', 'ended', 'all'].map(f => (
+                <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-200 p-1.5 shadow-sm">
+                    {['active', 'scheduled', 'ended', 'all'].map(f => (
                         <button
                             key={f}
                             onClick={() => setFilter(f)}
-                            className={`px-4 py-2 rounded-md text-sm font-medium transition ${filter === f
-                                ? 'bg-primary-500 text-white'
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === f
+                                ? 'bg-primary-500 text-white shadow-md'
                                 : 'text-slate-600 hover:bg-slate-100'
                                 }`}
                         >
@@ -130,15 +130,19 @@ export default function AdminWhiteboardsPage() {
                     {sessions.map(session => (
                         <div
                             key={session.id}
-                            className={`card p-5 ${session.status === 'active' ? 'ring-2 ring-green-500' : ''}`}
+                            className={`card p-5 ${session.status === 'active' ? 'ring-2 ring-emerald-500 shadow-emerald-500/20' : ''}`}
                         >
                             {/* Header */}
                             <div className="flex items-start justify-between mb-3">
                                 <div className="flex items-center gap-3">
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${session.status === 'active' ? 'bg-green-100' : 'bg-slate-100'
-                                        }`}>
-                                        <Pencil className={`w-5 h-5 ${session.status === 'active' ? 'text-green-600' : 'text-slate-500'
-                                            }`} />
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                                        session.status === 'active' ? 'bg-emerald-100' : 
+                                        session.status === 'scheduled' ? 'bg-amber-100' : 'bg-slate-100'
+                                    }`}>
+                                        <Pencil className={`w-5 h-5 ${
+                                            session.status === 'active' ? 'text-emerald-600' : 
+                                            session.status === 'scheduled' ? 'text-amber-600' : 'text-slate-500'
+                                        }`} />
                                     </div>
                                     <div>
                                         <h4 className="font-semibold text-slate-900">
@@ -150,13 +154,28 @@ export default function AdminWhiteboardsPage() {
                                     </div>
                                 </div>
                                 {session.status === 'active' && (
-                                    <span className="flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
-                                        <Radio className="w-3 h-3" />
+                                    <span className="flex items-center gap-1.5 text-xs bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full font-medium">
+                                        <span className="relative flex h-2 w-2">
+                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                        </span>
                                         Live
                                     </span>
                                 )}
+                                {session.status === 'scheduled' && (
+                                    <span className="flex items-center gap-1.5 text-xs bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full font-medium">
+                                        <Clock className="w-3 h-3" />
+                                        Scheduled
+                                    </span>
+                                )}
+                                {session.status === 'ended' && (
+                                    <span className="flex items-center gap-1.5 text-xs bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full font-medium">
+                                        <StopCircle className="w-3 h-3" />
+                                        Ended
+                                    </span>
+                                )}
                                 {session.isRecording && (
-                                    <span className="flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">
+                                    <span className="flex items-center gap-1.5 text-xs bg-red-100 text-red-700 px-2.5 py-1 rounded-full font-medium mt-1">
                                         <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                                         Recording
                                     </span>
@@ -181,10 +200,16 @@ export default function AdminWhiteboardsPage() {
                                     <Eye className="w-4 h-4" />
                                     {session.participantCount || 0} viewers
                                 </span>
-                                {session.duration && (
-                                    <span className="flex items-center gap-1">
+                                {session.scheduledAt && (
+                                    <span className="flex items-center gap-1 w-full mt-1">
                                         <Clock className="w-4 h-4" />
-                                        {formatDuration(session.duration)}
+                                        Starts: {new Date(session.scheduledAt).toLocaleString()}
+                                    </span>
+                                )}
+                                {session.duration && (
+                                    <span className="flex items-center gap-1 mt-1">
+                                        <Clock className="w-4 h-4" />
+                                        Duration: {formatDuration(session.duration)}
                                     </span>
                                 )}
                             </div>

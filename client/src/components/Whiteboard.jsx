@@ -691,7 +691,7 @@ export default function Whiteboard({
             socket.emit('whiteboard:join-session', {
                 sessionId,
                 userId: user?.id,
-                userName: user?.name || 'Student',
+                userName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'Unknown',
                 role: isInstructor ? 'instructor' : 'student'
             });
             

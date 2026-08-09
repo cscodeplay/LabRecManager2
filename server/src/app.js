@@ -239,7 +239,8 @@ io.on('connection', (socket) => {
       permissions: { canDraw: true, canShareAudio: false, canShareVideo: false },
       joinedAt: Date.now(),
       isMicOn: false,
-      isCameraOn: false
+      isCameraOn: false,
+      status: 'Online'
     });
     
     // Broadcast updated participants list to instructor
@@ -285,6 +286,19 @@ io.on('connection', (socket) => {
       const p = session.participants.get(socket.id);
       p.isMicOn = isMicOn;
       p.isCameraOn = isCameraOn;
+      io.to(`whiteboard-${sessionId}`).emit('whiteboard:participants-update', {
+        participants: Array.from(session.participants.values())
+      });
+    }
+  });
+
+  socket.on('whiteboard:user-status', (data) => {
+    const { sessionId, status } = data;
+    const session = getSession(sessionId);
+    
+    if (session.participants.has(socket.id)) {
+      const p = session.participants.get(socket.id);
+      p.status = status;
       io.to(`whiteboard-${sessionId}`).emit('whiteboard:participants-update', {
         participants: Array.from(session.participants.values())
       });
