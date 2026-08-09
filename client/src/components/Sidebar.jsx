@@ -291,7 +291,7 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
 
             {/* Sidebar */}
             <aside
-                className={`fixed top-0 left-0 h-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-r border-slate-200/50 dark:border-slate-700/50 z-50 flex flex-col transition-all duration-300 ${isMobile
+                className={`fixed top-0 left-0 h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 z-50 flex flex-col transition-all duration-300 ${isMobile
                     ? `w-72 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`
                     : isCollapsed ? 'w-20' : 'w-64'
                     }`}

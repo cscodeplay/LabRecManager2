@@ -391,9 +391,9 @@ export default function WhiteboardPage() {
                         {/* Create New Card */}
                         <div 
                             onClick={handleCreateNew}
-                            className="bg-white border-2 border-dashed border-slate-300 rounded-xl aspect-video flex flex-col items-center justify-center cursor-pointer hover:border-primary-500 hover:bg-primary-50 transition group"
+                            className="bg-white border-2 border-dashed border-slate-300 rounded-xl aspect-video flex flex-col items-center justify-center cursor-pointer hover:border-primary-500 hover:bg-primary-50 transition group shadow-sm"
                         >
-                            <div className="w-12 h-12 rounded-full bg-slate-100 group-hover:bg-primary-100 flex items-center justify-center mb-3 transition">
+                            <div className="w-12 h-12 rounded-full bg-slate-50 group-hover:bg-primary-100 flex items-center justify-center mb-3 transition">
                                 <Plus className="w-6 h-6 text-slate-500 group-hover:text-primary-600" />
                             </div>
                             <span className="font-medium text-slate-600 group-hover:text-primary-700">New Whiteboard</span>
@@ -403,10 +403,12 @@ export default function WhiteboardPage() {
                         {files.map(file => (
                             <div 
                                 key={file.id} 
-                                onClick={() => setActiveFileId(file.id)}
-                                className="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer group flex flex-col relative"
+                                className="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md hover:border-slate-300 transition group flex flex-col relative overflow-hidden"
                             >
-                                <div className="aspect-video bg-slate-100 relative rounded-t-xl overflow-hidden border-b border-slate-100 flex items-center justify-center">
+                                <div 
+                                    onClick={() => setActiveFileId(file.id)}
+                                    className="aspect-video bg-slate-50 relative border-b border-slate-100 flex items-center justify-center cursor-pointer group-hover:bg-slate-100 transition-colors"
+                                >
                                     {isSharing && sharedFileId === file.id && (
                                         <div className="absolute top-2 left-2 z-10 flex items-center gap-1 text-xs bg-red-500 text-white font-bold px-2 py-1 rounded shadow-md animate-pulse">
                                             <span className="w-1.5 h-1.5 bg-white rounded-full" />
@@ -419,50 +421,59 @@ export default function WhiteboardPage() {
                                         <ImageIcon className="w-10 h-10 text-slate-300" />
                                     )}
                                 </div>
-                                <div className="p-4 flex-1 flex flex-col">
-                                    <div className="flex items-start justify-between gap-2 mb-2">
-                                        {editingFileId === file.id ? (
-                                            <input
-                                                type="text"
-                                                value={editTitle}
-                                                onChange={(e) => setEditTitle(e.target.value)}
-                                                onKeyDown={(e) => handleRenameFileSubmit(file.id, e)}
-                                                onBlur={(e) => handleRenameFileSubmit(file.id, e)}
-                                                onClick={(e) => e.stopPropagation()}
-                                                autoFocus
-                                                className="font-semibold text-slate-800 flex-1 border border-primary-500 rounded px-1 outline-none w-full"
-                                            />
-                                        ) : (
-                                            <h3 className="font-semibold text-slate-800 line-clamp-1 flex-1">{file.title}</h3>
-                                        )}
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button 
-                                                onClick={(e) => handleRenameFileStart(file.id, file.title, e)}
-                                                className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded transition"
-                                                title="Rename"
-                                            >
-                                                <Edit3 className="w-4 h-4" />
-                                            </button>
-                                            <button 
-                                                onClick={(e) => handleDuplicateFile(file.id, e)}
-                                                className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded transition"
-                                                title="Duplicate"
-                                            >
-                                                <Copy className="w-4 h-4" />
-                                            </button>
-                                            <button 
-                                                onClick={(e) => handleDeleteFile(file.id, e)}
-                                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition"
-                                                title="Delete"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div className="mt-auto flex items-center justify-between text-xs text-slate-500">
-                                        <span>{new Date(file.lastOpenedAt).toLocaleDateString()}</span>
+                                <div className="p-4 flex-1">
+                                    {editingFileId === file.id ? (
+                                        <input
+                                            type="text"
+                                            value={editTitle}
+                                            onChange={(e) => setEditTitle(e.target.value)}
+                                            onKeyDown={(e) => handleRenameFileSubmit(file.id, e)}
+                                            onBlur={(e) => handleRenameFileSubmit(file.id, e)}
+                                            onClick={(e) => e.stopPropagation()}
+                                            autoFocus
+                                            className="font-semibold text-slate-900 flex-1 border border-primary-500 rounded px-1 outline-none w-full"
+                                        />
+                                    ) : (
+                                        <h3 className="font-semibold text-slate-900 line-clamp-1">{file.title}</h3>
+                                    )}
+                                    <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                                        <span>Modified: {new Date(file.lastOpenedAt).toLocaleDateString()}</span>
+                                        <span>•</span>
                                         <span>{file.pageCount || 1} {file.pageCount === 1 ? 'page' : 'pages'}</span>
                                     </div>
+                                </div>
+                                {/* Horizontal action bar */}
+                                <div className="px-4 py-2.5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between text-slate-500">
+                                    <div className="flex items-center gap-1">
+                                        <button 
+                                            onClick={() => setActiveFileId(file.id)}
+                                            className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                            title="Open Whiteboard"
+                                        >
+                                            <Pencil className="w-4 h-4" />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => handleRenameFileStart(file.id, file.title, e)}
+                                            className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                            title="Rename"
+                                        >
+                                            <Edit3 className="w-4 h-4" />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => handleDuplicateFile(file.id, e)}
+                                            className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                            title="Duplicate"
+                                        >
+                                            <Copy className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                    <button 
+                                        onClick={(e) => handleDeleteFile(file.id, e)}
+                                        className="p-1.5 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                        title="Delete"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
                                 </div>
                             </div>
                         ))}

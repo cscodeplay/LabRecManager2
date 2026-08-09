@@ -52,7 +52,7 @@
   }
 
   .card {
-    @apply bg-white/90 backdrop-blur-lg rounded-2xl border border-slate-200/60 shadow-sm transition-all duration-300 hover:shadow-md;
+    @apply bg-white rounded-xl shadow-sm border border-slate-200;
     @apply dark:bg-slate-900/90 dark:border-slate-800/60;
   }
 
