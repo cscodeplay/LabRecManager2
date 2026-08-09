@@ -236,7 +236,7 @@ export default function DashboardPage() {
                                     };
                                     
                                     return (
-                                        <Link key={i} href={\`/assignments/\${item.id}\`} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50 transition group">
+                                        <Link key={i} href={`/assignments/${item.id}`} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50 transition group">
                                             <div className="flex items-start gap-4">
                                                 <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
                                                     <FileText className="w-5 h-5 text-slate-500 group-hover:text-primary-600 transition" />
@@ -247,12 +247,12 @@ export default function DashboardPage() {
                                                 </div>
                                             </div>
                                             <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto">
-                                                <span className={\`text-xs font-medium px-2.5 py-1 rounded-md border \${statusColors[item.status] || statusColors.pending}\`}>
+                                                <span className={`text-xs font-medium px-2.5 py-1 rounded-md border ${statusColors[item.status] || statusColors.pending}`}>
                                                     {item.status || t('dashboard.pending')}
                                                 </span>
                                                 <div className="text-right">
                                                     <p className="text-sm font-medium text-slate-900">{dueDate.toLocaleDateString()}</p>
-                                                    <p className={\`text-xs mt-0.5 \${hoursLeft < 24 ? 'text-red-600 font-medium' : 'text-slate-500'}\`}>
+                                                    <p className={`text-xs mt-0.5 ${hoursLeft < 24 ? 'text-red-600 font-medium' : 'text-slate-500'}`}>
                                                         {timeLeftText}
                                                     </p>
                                                 </div>
@@ -308,7 +308,7 @@ export default function DashboardPage() {
                                 <StatCard icon={FileText} label={t('dashboard.assignedToMe')} value={stats.assignedToMe || 0} color="bg-primary-600" />
                                 <StatCard icon={Upload} label={t('dashboard.mySubmissions')} value={stats.mySubmissions || 0} color="bg-emerald-600" />
                                 <StatCard icon={Video} label={t('dashboard.pendingVivas')} value={stats.pendingVivas || 0} color="bg-amber-600" />
-                                <StatCard icon={Award} label={t('dashboard.avgScore')} value={stats.avgScore != null ? \`\${stats.avgScore}%\` : '--'} color="bg-blue-600" />
+                                <StatCard icon={Award} label={t('dashboard.avgScore')} value={stats.avgScore != null ? `${stats.avgScore}%` : '--'} color="bg-blue-600" />
                             </>
                         )}
                         {(user?.role === 'instructor' || user?.role === 'lab_assistant') && (
