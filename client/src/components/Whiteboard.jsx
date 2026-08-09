@@ -3517,10 +3517,9 @@ export default function Whiteboard({
                             ...(isStudent ? [{ id: 'camera', icon: isCameraOn ? Video : VideoOff, label: localPermissions?.canShareVideo ? 'Toggle Camera' : 'Camera (Locked)', disabled: !localPermissions?.canShareVideo }] : []),
                             ...(isStudent ? [{ id: 'fullscreen', icon: isFullscreen ? Minimize2 : Maximize2, label: 'Toggle Fullscreen' }] : []),
                             ...(isInstructor ? [{ id: 'permissions', icon: Users, label: 'Manage Permissions' }] : []),
-                            { id: 'chat', icon: MessageCircle, label: 'Toggle Chat' },
                         ].filter(t => {
                                 if (!localPermissions?.canDraw) {
-                                    return ['select', 'laser', 'fullscreen', 'mic', 'camera', 'chat'].includes(t.id);
+                                    return ['select', 'laser', 'fullscreen', 'mic', 'camera'].includes(t.id);
                                 }
                                 return true;
                             }).map(t => (
@@ -3537,10 +3536,6 @@ export default function Whiteboard({
                                         }
                                         if (t.id === 'permissions') {
                                             setShowPermissions(true);
-                                            return;
-                                        }
-                                        if (t.id === 'chat') {
-                                            setIsChatOpen(!isChatOpen);
                                             return;
                                         }
                                         if (tool === t.id) {
@@ -3565,7 +3560,7 @@ export default function Whiteboard({
                                             setShowImagePicker(t.id === 'image');
                                         }
                                     }}
-                                    className={`p-1 rounded-full transition-colors flex items-center justify-center ${tool === t.id || (t.id === 'recorder' && showRecorder) || (t.id === 'chat' && isChatOpen) ? 'bg-primary-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                    className={`p-1 rounded-full transition-colors flex items-center justify-center ${tool === t.id || (t.id === 'recorder' && showRecorder) ? 'bg-primary-500 text-white shadow-inner' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                                     title={t.label}
                                 >
                                     <t.icon className="w-3.5 h-3.5" />

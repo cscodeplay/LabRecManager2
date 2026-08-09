@@ -16,7 +16,7 @@ import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
 import WhiteboardShareModal from '@/components/WhiteboardShareModal';
 
-export default function VivaRoomPage() {
+export default function MeetingRoomPage() {
     const router = useRouter();
     const params = useParams();
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
@@ -116,7 +116,7 @@ export default function VivaRoomPage() {
         }
         loadSession();
         return () => cleanup();
-    }, [isAuthenticated, params.id]);
+    }, [isAuthenticated, params.code]);
 
     useEffect(() => {
         if (session && sessionStatus === 'active') {
@@ -178,24 +178,24 @@ export default function VivaRoomPage() {
 
     const loadSession = async () => {
         try {
-            const res = await vivaAPI.getSession(params.id);
+            const res = await vivaAPI.getSession(params.code);
             const sessionData = res.data.data.session;
             setSession(sessionData);
 
             if (sessionData.status === 'completed') {
                 toast.error('This viva session has already been completed');
-                router.push('/viva');
+                router.push('/admin/whiteboards');
                 return;
             }
 
             if (sessionData.status === 'cancelled') {
                 toast.error('This viva session has been cancelled');
-                router.push('/viva');
+                router.push('/admin/whiteboards');
                 return;
             }
 
             // Join the session (waiting room)
-            const joinRes = await vivaAPI.joinSession(params.id);
+            const joinRes = await vivaAPI.joinSession(params.code);
             const { participant, isHost: hostFlag } = joinRes.data.data;
 
             setIsHost(hostFlag);
@@ -234,7 +234,7 @@ export default function VivaRoomPage() {
         } catch (error) {
             console.error('Load session error:', error);
             toast.error('Failed to load viva session');
-            router.push('/viva');
+            router.push('/admin/whiteboards');
         } finally {
             setLoading(false);
         }
@@ -244,7 +244,7 @@ export default function VivaRoomPage() {
     const startStatusPolling = () => {
         const poll = setInterval(async () => {
             try {
-                const res = await vivaAPI.getMyStatus(params.id);
+                const res = await vivaAPI.getMyStatus(params.code);
                 const status = res.data.data.participant.status;
 
                 if (status === 'admitted') {
@@ -270,7 +270,7 @@ export default function VivaRoomPage() {
     const startParticipantPolling = () => {
         const poll = async () => {
             try {
-                const res = await vivaAPI.getParticipants(params.id);
+                const res = await vivaAPI.getParticipants(params.code);
                 setWaitingParticipants(res.data.data.waiting || []);
                 setAdmittedParticipants(res.data.data.admitted || []);
             } catch (error) {
@@ -287,10 +287,10 @@ export default function VivaRoomPage() {
 
     const handleAdmitParticipant = async (participantId) => {
         try {
-            await vivaAPI.admitParticipant(params.id, participantId);
+            await vivaAPI.admitParticipant(params.code, participantId);
             toast.success('Participant admitted');
             // Refresh participants list
-            const res = await vivaAPI.getParticipants(params.id);
+            const res = await vivaAPI.getParticipants(params.code);
             setWaitingParticipants(res.data.data.waiting || []);
             setAdmittedParticipants(res.data.data.admitted || []);
         } catch (error) {
@@ -300,9 +300,9 @@ export default function VivaRoomPage() {
 
     const handleRejectParticipant = async (participantId) => {
         try {
-            await vivaAPI.rejectParticipant(params.id, participantId);
+            await vivaAPI.rejectParticipant(params.code, participantId);
             toast.success('Participant removed');
-            const res = await vivaAPI.getParticipants(params.id);
+            const res = await vivaAPI.getParticipants(params.code);
             setWaitingParticipants(res.data.data.waiting || []);
         } catch (error) {
             toast.error('Failed to remove participant');
@@ -311,9 +311,9 @@ export default function VivaRoomPage() {
 
     const handleAdmitAll = async () => {
         try {
-            await vivaAPI.admitAll(params.id);
+            await vivaAPI.admitAll(params.code);
             toast.success('All participants admitted');
-            const res = await vivaAPI.getParticipants(params.id);
+            const res = await vivaAPI.getParticipants(params.code);
             setWaitingParticipants([]);
             setAdmittedParticipants(res.data.data.admitted || []);
         } catch (error) {
@@ -543,7 +543,7 @@ export default function VivaRoomPage() {
         socketRef.current.on('connect', () => {
             console.log('Socket connected');
             socketRef.current.emit('join-room', {
-                roomId: params.id,
+                roomId: params.code,
                 userId: user.id,
                 role: user.role
             });
@@ -586,7 +586,7 @@ export default function VivaRoomPage() {
 
         socketRef.current.on('session-ended', () => {
             toast.success('Session has ended');
-            router.push('/viva');
+            router.push('/admin/whiteboards');
         });
     };
 
@@ -612,7 +612,7 @@ export default function VivaRoomPage() {
         peerConnectionRef.current.onicecandidate = (event) => {
             if (event.candidate) {
                 socketRef.current.emit('ice-candidate', {
-                    roomId: params.id,
+                    roomId: params.code,
                     candidate: event.candidate
                 });
             }
@@ -635,7 +635,7 @@ export default function VivaRoomPage() {
             const offer = await peerConnectionRef.current.createOffer();
             await peerConnectionRef.current.setLocalDescription(offer);
             socketRef.current.emit('offer', {
-                roomId: params.id,
+                roomId: params.code,
                 offer
             });
         } catch (error) {
@@ -650,7 +650,7 @@ export default function VivaRoomPage() {
             const answer = await peerConnectionRef.current.createAnswer();
             await peerConnectionRef.current.setLocalDescription(answer);
             socketRef.current.emit('answer', {
-                roomId: params.id,
+                roomId: params.code,
                 answer
             });
         } catch (error) {
@@ -829,7 +829,7 @@ export default function VivaRoomPage() {
                 timestamp: new Date().toISOString()
             };
             socketRef.current.emit('chat-message', {
-                roomId: params.id,
+                roomId: params.code,
                 message
             });
             setMessages(prev => [...prev, message]);
@@ -839,10 +839,10 @@ export default function VivaRoomPage() {
 
     const handleStartSession = async () => {
         try {
-            await vivaAPI.startSession(params.id);
+            await vivaAPI.startSession(params.code);
             setSessionStatus('active');
             toast.success('Viva session started!');
-            socketRef.current.emit('session-started', { roomId: params.id });
+            socketRef.current.emit('session-started', { roomId: params.code });
 
             // Auto-start recording for accountability
             setTimeout(() => {
@@ -882,12 +882,12 @@ export default function VivaRoomPage() {
             // Get max marks from session or default to 20
             const maxMarks = session?.submission?.assignment?.vivaMarks || 20;
 
-            await vivaAPI.completeSession(params.id, {
+            await vivaAPI.completeSession(params.code, {
                 marksObtained: parseFloat(vivaMarks) || 0,
                 maxMarks: parseFloat(maxMarks),
                 examinerRemarks: remarks || ''
             });
-            socketRef.current?.emit('session-ended', { roomId: params.id });
+            socketRef.current?.emit('session-ended', { roomId: params.code });
 
             // Auto-upload recording to database for admin review
             if (recordingToUpload && recordingToUpload.size > 0) {
@@ -908,7 +908,7 @@ export default function VivaRoomPage() {
             cleanup();
 
             toast.success('Session completed successfully!');
-            router.push('/viva');
+            router.push('/admin/whiteboards');
         } catch (error) {
             console.error('Failed to end session:', error);
             const errorMsg = error.response?.data?.message ||
@@ -987,7 +987,7 @@ export default function VivaRoomPage() {
                     <button
                         onClick={() => {
                             cleanup();
-                            router.push('/viva');
+                            router.push('/admin/whiteboards');
                         }}
                         className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition flex items-center justify-center mx-auto"
                         title="Leave Waiting Room"
@@ -1012,7 +1012,7 @@ export default function VivaRoomPage() {
                         The host has not admitted you to this session.
                     </p>
                     <button
-                        onClick={() => router.push('/viva')}
+                        onClick={() => router.push('/admin/whiteboards')}
                         className="p-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition flex items-center justify-center mx-auto"
                         title="Back to Viva Sessions"
                     >
@@ -1031,7 +1031,7 @@ export default function VivaRoomPage() {
                     <button
                         onClick={() => {
                             cleanup();
-                            router.push('/viva');
+                            router.push('/admin/whiteboards');
                         }}
                         className="text-slate-400 hover:text-white"
                     >
@@ -1327,7 +1327,7 @@ export default function VivaRoomPage() {
                             <button
                                 onClick={() => {
                                     cleanup();
-                                    router.push('/viva');
+                                    router.push('/admin/whiteboards');
                                 }}
                                 className="w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition"
                                 title="Leave"
@@ -1862,7 +1862,7 @@ export default function VivaRoomPage() {
                             }}
                             socket={socketRef.current}
                             sessionId={whiteboardSessionId}
-                            whiteboardId={params?.id ? `viva_${params.id}` : null}
+                            whiteboardId={params?.id ? `viva_${params.code}` : null}
                         />
                     </div>
                 </div>
@@ -1875,7 +1875,7 @@ export default function VivaRoomPage() {
                 isSharing={isWhiteboardSharing}
                 currentTargets={whiteboardShareTargets}
                 onStartSharing={(shareData) => {
-                    const newSessionId = `wb_${params.id}_${Date.now()}`;
+                    const newSessionId = `wb_${params.code}_${Date.now()}`;
                     setWhiteboardSessionId(newSessionId);
                     setIsWhiteboardSharing(true);
                     setWhiteboardShareTargets(shareData.targetNames);
@@ -1885,7 +1885,7 @@ export default function VivaRoomPage() {
                     if (socketRef.current) {
                         socketRef.current.emit('whiteboard:start-share', {
                             sessionId: newSessionId,
-                            vivaSessionId: params.id,
+                            vivaSessionId: params.code,
                             instructorId: user?.id,
                             instructorName: `${user?.firstName} ${user?.lastName}`,
                             ...shareData

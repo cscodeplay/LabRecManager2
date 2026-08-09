@@ -1271,6 +1271,7 @@ model WhiteboardSession {
   title         String?                 @db.VarChar(255)
   status        WhiteboardSessionStatus @default(active)
   targetType    WhiteboardTargetType?   @map("target_type")
+  meetingCode   String?                 @unique @map("meeting_code") @db.VarChar(8)
   targetClassId String?                 @map("target_class_id") @db.Uuid
   targetGroupId String?                 @map("target_group_id") @db.Uuid
   startedAt     DateTime?               @default(now()) @map("started_at") @db.Timestamp(6)

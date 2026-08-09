@@ -61,6 +61,19 @@ export default function AdminWhiteboardsPage() {
         }
     };
 
+    const handleStartMeeting = async () => {
+        try {
+            const res = await api.post('/whiteboard/sessions', {
+                title: 'Instant Meeting'
+            });
+            const meetingCode = res.data.data.meetingCode;
+            router.push(`/meeting/${meetingCode}`);
+        } catch (err) {
+            console.error('Failed to start meeting:', err);
+            toast.error('Failed to start meeting');
+        }
+    };
+
     const handleToggleRecording = async (sessionId, isRecording) => {
         try {
             await api.put(`/whiteboard/sessions/${sessionId}/record`, { isRecording: !isRecording });
@@ -88,28 +101,46 @@ export default function AdminWhiteboardsPage() {
             />
 
             {/* Filters */}
-            <div className="flex items-center gap-4 mb-6">
-                <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-200 p-1.5 shadow-sm">
-                    {['active', 'scheduled', 'ended', 'all'].map(f => (
-                        <button
-                            key={f}
-                            onClick={() => setFilter(f)}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === f
-                                ? 'bg-primary-500 text-white shadow-md'
-                                : 'text-slate-600 hover:bg-slate-100'
-                                }`}
-                        >
-                            {f.charAt(0).toUpperCase() + f.slice(1)}
-                        </button>
-                    ))}
+            <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-200 p-1.5 shadow-sm">
+                        {['active', 'scheduled', 'ended', 'all'].map(f => (
+                            <button
+                                key={f}
+                                onClick={() => setFilter(f)}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === f
+                                    ? 'bg-primary-500 text-white shadow-md'
+                                    : 'text-slate-600 hover:bg-slate-100'
+                                    }`}
+                            >
+                                {f.charAt(0).toUpperCase() + f.slice(1)}
+                            </button>
+                        ))}
+                    </div>
+                    <button
+                        onClick={loadSessions}
+                        className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+                        title="Refresh"
+                    >
+                        <RefreshCw className="w-5 h-5" />
+                    </button>
                 </div>
-                <button
-                    onClick={loadSessions}
-                    className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
-                    title="Refresh"
-                >
-                    <RefreshCw className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => toast('Scheduling coming soon!')}
+                        className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition shadow-sm flex items-center gap-2"
+                    >
+                        <Clock className="w-4 h-4" />
+                        Schedule Meeting
+                    </button>
+                    <button
+                        onClick={handleStartMeeting}
+                        className="px-4 py-2 bg-primary-500 text-white rounded-lg font-medium hover:bg-primary-600 transition shadow-sm shadow-primary-500/20 flex items-center gap-2"
+                    >
+                        <Video className="w-4 h-4" />
+                        Start Instant Meeting
+                    </button>
+                </div>
             </div>
 
             {/* Sessions Grid */}

@@ -424,6 +424,39 @@ router.get('/sessions/:id', authenticate, authorize('admin', 'principal'), async
 }));
 
 /**
+ * @route   GET /api/whiteboard/meetings/:code
+ * @desc    Get session details by meeting code
+ * @access  Authenticated
+ */
+router.get('/meetings/:code', authenticate, asyncHandler(async (req, res) => {
+    const { code } = req.params;
+    const schoolId = req.user.schoolId;
+
+    const session = await prisma.whiteboardSession.findFirst({
+        where: { meetingCode: code, schoolId },
+        include: {
+            host: {
+                select: { id: true, firstName: true, lastName: true, email: true, role: true }
+            },
+            participants: {
+                include: {
+                    user: {
+                        select: { id: true, firstName: true, lastName: true, role: true }
+                    }
+                },
+                orderBy: { joinedAt: 'asc' }
+            }
+        }
+    });
+
+    if (!session) {
+        return res.status(404).json({ success: false, message: 'Meeting not found' });
+    }
+
+    res.json({ success: true, data: session });
+}));
+
+/**
  * @route   POST /api/whiteboard/sessions
  * @desc    Create a new whiteboard session (when instructor starts sharing)
  * @access  Instructor/Admin
@@ -433,6 +466,9 @@ router.post('/sessions', authenticate, authorize('instructor', 'admin', 'lab_ass
     const hostId = req.user.id;
     const schoolId = req.user.schoolId;
 
+    // Generate an 8-character meeting code
+    const meetingCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+
     const session = await prisma.whiteboardSession.create({
         data: {
             schoolId,
@@ -441,6 +477,7 @@ router.post('/sessions', authenticate, authorize('instructor', 'admin', 'lab_ass
             targetType,
             targetClassId,
             targetGroupId,
+            meetingCode,
             scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
             durationMinutes: durationMinutes ? parseInt(durationMinutes, 10) : null,
             status: scheduledAt ? 'scheduled' : 'active'
