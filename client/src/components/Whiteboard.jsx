@@ -361,6 +361,7 @@ export default function Whiteboard({
     const [localPermissions, setLocalPermissions] = useState(permissions);
     const [showPermissions, setShowPermissions] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
+    const [isInWaitingRoom, setIsInWaitingRoom] = useState(false);
     
     useEffect(() => {
         setLocalPermissions(permissions);
@@ -3511,7 +3512,7 @@ export default function Whiteboard({
                             { id: 'image', icon: ImageIcon, label: 'Image' },
                             { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
                             { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime' },
-                            { id: 'recorder', icon: Video, label: 'Toggle Recorder' },
+                            ...(isInstructor ? [{ id: 'recorder', icon: Video, label: 'Toggle Recorder' }] : []),
                             ...(isStudent ? [{ id: 'mic', icon: isMicOn ? Mic : MicOff, label: localPermissions?.canShareAudio ? 'Toggle Microphone' : 'Microphone (Locked)', disabled: !localPermissions?.canShareAudio }] : []),
                             ...(isStudent ? [{ id: 'camera', icon: isCameraOn ? Video : VideoOff, label: localPermissions?.canShareVideo ? 'Toggle Camera' : 'Camera (Locked)', disabled: !localPermissions?.canShareVideo }] : []),
                             ...(isStudent ? [{ id: 'fullscreen', icon: isFullscreen ? Minimize2 : Maximize2, label: 'Toggle Fullscreen' }] : []),
@@ -5465,9 +5466,10 @@ export default function Whiteboard({
                 <WhiteboardChatWindow
                     socket={socket}
                     sessionId={sessionId}
-                    currentUser={{ name: 'Instructor', role: 'instructor' }}
-                    isInstructor={true}
+                    currentUser={{ name: userName || (isInstructor ? 'Instructor' : 'Student'), role: isInstructor ? 'instructor' : 'student' }}
+                    isInstructor={isInstructor}
                     availableGroups={sharingTargets.map((name, i) => ({ id: i, name }))}
+                    onClose={() => setIsChatOpen(false)}
                 />
             )}
 

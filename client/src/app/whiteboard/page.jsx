@@ -138,12 +138,7 @@ export default function WhiteboardPage() {
             sessionStorage.setItem('active_whiteboard_session_id', sessionId || '');
             sessionStorage.setItem('active_whiteboard_is_sharing', isSharing ? 'true' : 'false');
             sessionStorage.setItem('active_whiteboard_share_targets', JSON.stringify(shareTargets || []));
-        } else {
-            sessionStorage.removeItem('active_whiteboard_file');
-            sessionStorage.removeItem('active_whiteboard_session_id');
-            sessionStorage.removeItem('active_whiteboard_is_sharing');
-            sessionStorage.removeItem('active_whiteboard_share_targets');
-        }
+        } 
     }, [activeFileId, sessionId, isSharing, shareTargets]);
 
     const migrateLegacyWorkspace = async () => {
@@ -294,6 +289,10 @@ export default function WhiteboardPage() {
                     <button 
                         onClick={() => {
                             setActiveFileId(null);
+                            sessionStorage.removeItem('active_whiteboard_file');
+                            sessionStorage.removeItem('active_whiteboard_session_id');
+                            sessionStorage.removeItem('active_whiteboard_is_sharing');
+                            sessionStorage.removeItem('active_whiteboard_share_targets');
                             fetchFiles();
                         }}
                         className="p-2 bg-white/90 hover:bg-white text-slate-700 rounded-lg shadow-md transition" 

@@ -330,6 +330,61 @@ io.on('connection', (socket) => {
     }
   });
 
+  
+  socket.on('whiteboard:move-to-waiting-room', (data) => {
+    const { sessionId, targetUserId } = data;
+    const session = getSession(sessionId);
+    
+    let targetSocketId = null;
+    let targetParticipant = null;
+    for (const [sId, p] of session.participants.entries()) {
+      if (p.id === targetUserId) {
+        targetSocketId = sId;
+        targetParticipant = p;
+        break;
+      }
+    }
+    
+    if (targetParticipant) {
+      targetParticipant.status = 'waiting';
+      
+      // Notify the removed participant
+      io.to(targetSocketId).emit('whiteboard:move-to-waiting-room', { sessionId, targetUserId });
+      
+      // Notify others
+      io.to(`whiteboard-${sessionId}`).emit('whiteboard:participants-update', {
+        participants: Array.from(session.participants.values())
+      });
+    }
+  });
+
+  socket.on('whiteboard:admit-from-waiting-room', (data) => {
+    const { sessionId, targetUserId } = data;
+    const session = getSession(sessionId);
+    
+    let targetSocketId = null;
+    let targetParticipant = null;
+    for (const [sId, p] of session.participants.entries()) {
+      if (p.id === targetUserId) {
+        targetSocketId = sId;
+        targetParticipant = p;
+        break;
+      }
+    }
+    
+    if (targetParticipant) {
+      targetParticipant.status = 'Live';
+      
+      // Notify the admitted participant
+      io.to(targetSocketId).emit('whiteboard:admit-from-waiting-room', { sessionId, targetUserId });
+      
+      // Notify others
+      io.to(`whiteboard-${sessionId}`).emit('whiteboard:participants-update', {
+        participants: Array.from(session.participants.values())
+      });
+    }
+  });
+
   socket.on('whiteboard:start-share', (data) => {
     const { sessionId, instructorId, instructorName, targetType, targets, classId } = data;
 

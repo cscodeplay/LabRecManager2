@@ -19,6 +19,7 @@ export default function WhiteboardChatWindow({
     const [participants, setParticipants] = useState([]);
     const [myStatus, setMyStatus] = useState('Online');
     const [showStatusMenu, setShowStatusMenu] = useState(false);
+    const [removingParticipantId, setRemovingParticipantId] = useState(null);
 
     const messagesEndRef = useRef(null);
 
@@ -96,13 +97,19 @@ export default function WhiteboardChatWindow({
         setInputMsg('');
     };
 
-    const handleRemoveParticipant = (targetUserId) => {
+    const handleRemoveParticipant = (targetUserId, targetUserName) => {
         if (!socket || !sessionId) return;
-        if (confirm('Remove this participant from the live classroom?')) {
-            socket.emit('whiteboard:remove-participant', { sessionId, targetUserId });
-        }
+        socket.emit('whiteboard:move-to-waiting-room', { sessionId, targetUserId, targetUserName });
+        setRemovingParticipantId(null);
     };
 
+    
+    const handleAdmitParticipant = (targetUserId, targetUserName) => {
+        if (socket && sessionId) {
+            socket.emit('whiteboard:admit-from-waiting-room', { sessionId, targetUserId, targetUserName });
+        }
+    };
+    
     const changeStatus = (newStatus) => {
         setMyStatus(newStatus);
         setShowStatusMenu(false);
@@ -124,7 +131,11 @@ export default function WhiteboardChatWindow({
     const offlineTargets = availableGroups.filter(g => !participants.some(p => p.name === g.name));
     
     // Filter out the host themselves from the student view if needed, but for now we list everyone
-    const liveCount = participants.length;
+    
+    const activeParticipants = participants.filter(p => p.status !== 'waiting');
+    const waitingParticipants = participants.filter(p => p.status === 'waiting');
+    const liveCount = activeParticipants.length;
+    
     const offlineCount = offlineTargets.length;
     const totalCount = liveCount + offlineCount;
 
@@ -212,7 +223,7 @@ export default function WhiteboardChatWindow({
                     <div className="px-4 py-3">
                         <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Active ({liveCount})</p>
                         <div className="space-y-1">
-                            {participants.map(p => (
+                            {activeParticipants.map(p => (
                                 <div key={p.id} className="w-full p-2 rounded-lg flex items-center justify-between hover:bg-slate-50 group cursor-pointer" onClick={() => { setActiveTarget(p.name); setView('chat'); }}>
                                     <div className="flex items-center gap-3">
                                         <div className="relative">
@@ -228,15 +239,45 @@ export default function WhiteboardChatWindow({
                                     </div>
                                     {isInstructor && p.role !== 'instructor' && (
                                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button title={p.isMicOn ? "Mic On" : "Mic Off"} className="p-1 rounded text-slate-400 cursor-default">
-                                                {p.isMicOn ? <Mic className="w-3.5 h-3.5 text-emerald-500" /> : <MicOff className="w-3.5 h-3.5" />}
+                                            <button 
+        title={p.permissions?.canShareAudio ? "Mic Permitted" : "Mic Denied"} 
+        onClick={(e) => { 
+            e.stopPropagation(); 
+            socket.emit('whiteboard:update-permissions', { 
+                sessionId, targetUserId: p.id, permissions: { ...p.permissions, canShareAudio: !p.permissions?.canShareAudio } 
+            }); 
+        }} 
+        className="p-1 rounded text-slate-400 hover:text-primary-500 hover:bg-primary-50 transition cursor-pointer"
+    >
+                                                {p.permissions?.canShareAudio ? <Mic className="w-3.5 h-3.5 text-emerald-500" /> : <MicOff className="w-3.5 h-3.5 text-red-500" />}
                                             </button>
-                                            <button title={p.isCameraOn ? "Cam On" : "Cam Off"} className="p-1 rounded text-slate-400 cursor-default">
-                                                {p.isCameraOn ? <Video className="w-3.5 h-3.5 text-emerald-500" /> : <VideoOff className="w-3.5 h-3.5" />}
+                                            <button 
+        title={p.permissions?.canShareVideo ? "Camera Permitted" : "Camera Denied"} 
+        onClick={(e) => { 
+            e.stopPropagation(); 
+            socket.emit('whiteboard:update-permissions', { 
+                sessionId, targetUserId: p.id, permissions: { ...p.permissions, canShareVideo: !p.permissions?.canShareVideo } 
+            }); 
+        }} 
+        className="p-1 rounded text-slate-400 hover:text-primary-500 hover:bg-primary-50 transition cursor-pointer"
+    >
+                                                {p.permissions?.canShareVideo ? <Video className="w-3.5 h-3.5 text-emerald-500" /> : <VideoOff className="w-3.5 h-3.5 text-red-500" />}
                                             </button>
-                                            <button onClick={() => handleRemoveParticipant(p.id)} title="Remove Participant" className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition">
-                                                <UserMinus className="w-3.5 h-3.5" />
-                                            </button>
+                                            {removingParticipantId === p.id ? (
+        <div className="flex items-center gap-1 bg-red-50 p-0.5 rounded ml-1" onClick={(e) => e.stopPropagation()}>
+            <span className="text-[10px] font-medium text-red-600 px-1">Remove?</span>
+            <button onClick={(e) => { e.stopPropagation(); handleRemoveParticipant(p.id, p.name); }} className="w-5 h-5 flex items-center justify-center rounded text-white bg-red-500 hover:bg-red-600">
+                <Check className="w-3 h-3" />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); setRemovingParticipantId(null); }} className="w-5 h-5 flex items-center justify-center rounded text-slate-500 hover:bg-slate-200">
+                <X className="w-3 h-3" />
+            </button>
+        </div>
+    ) : (
+        <button onClick={(e) => { e.stopPropagation(); setRemovingParticipantId(p.id); }} title="Remove Participant" className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition">
+            <UserMinus className="w-3.5 h-3.5" />
+        </button>
+    )}
                                         </div>
                                     )}
                                 </div>
@@ -244,6 +285,39 @@ export default function WhiteboardChatWindow({
                         </div>
                     </div>
 
+                    
+                    {/* Waiting Room */}
+                    {waitingParticipants.length > 0 && (
+                        <div className="px-4 py-3">
+                            <p className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-3">Waiting Room ({waitingParticipants.length})</p>
+                            <div className="space-y-1">
+                                {waitingParticipants.map(p => (
+                                    <div key={p.id} className="w-full p-2 rounded-lg flex items-center justify-between bg-amber-50/50 border border-amber-100/50 group">
+                                        <div className="flex items-center gap-3">
+                                            <div className="relative">
+                                                <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                                                    <User className="w-4 h-4 text-amber-600" />
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-medium text-amber-900">{p.name}</span>
+                                                <span className="text-[10px] text-amber-700">Waiting to join...</span>
+                                            </div>
+                                        </div>
+                                        {isInstructor && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleAdmitParticipant(p.id, p.name); }}
+                                                className="text-[10px] font-bold bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded shadow-sm transition"
+                                            >
+                                                Admit
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+    
                     {/* Inactive / Not Joined */}
                     {offlineTargets.length > 0 && (
                         <div className="px-4 py-3">

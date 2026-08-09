@@ -14,6 +14,7 @@ export default function LiveBoardPage() {
     const [sharedSession, setSharedSession] = useState(null);
     const [socket, setSocket] = useState(null);
     const [isConnected, setIsConnected] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
 
     useEffect(() => {
         if (!_hasHydrated) return;
