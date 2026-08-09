@@ -184,8 +184,8 @@ export default function QueryLogsPage() {
                         <button onClick={loadData} className="btn btn-secondary text-sm">
                             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
                         </button>
-                        <button onClick={() => setShowDeleteModal(true)} className="btn bg-red-500 hover:bg-red-600 text-white text-sm">
-                            <Trash2 className="w-4 h-4" /> Clear Logs
+                        <button title="Clear Logs" onClick={() => setShowDeleteModal(true)} className="btn bg-red-500 hover:bg-red-600 text-white text-sm">
+                            <Trash2 className="w-5 h-5" />
                         </button>
                     </div>
                 </div>

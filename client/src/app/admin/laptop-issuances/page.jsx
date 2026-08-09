@@ -899,8 +899,8 @@ export default function LaptopIssuancesPage() {
 
                             {/* Share Actions */}
                             <div className="flex flex-wrap gap-2 mt-6 pt-6 border-t">
-                                <button onClick={copyVoucherAsImage} className="btn flex-1 bg-purple-500 hover:bg-purple-600 text-white">
-                                    <Copy className="w-4 h-4" /> Copy Image
+                                <button title="Copy Image" onClick={copyVoucherAsImage} className="btn  bg-purple-500 hover:bg-purple-600 text-white">
+                                    <Copy className="w-5 h-5" />
                                 </button>
                                 <button onClick={printVoucher} className="btn btn-secondary flex-1">
                                     <Printer className="w-4 h-4" /> Print

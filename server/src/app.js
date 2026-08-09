@@ -431,6 +431,15 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('whiteboard:shape-add', (data) => {
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:shape-add', data);
+  });
+
+  socket.on('whiteboard:shape-delete', (data) => {
+    socket.to(`whiteboard-${data.sessionId}`).emit('whiteboard:shape-delete', data);
+  });
+
+
   // Real-time laser pointer position
   socket.on('whiteboard:laser-update', (data) => {
     const { sessionId, laserPos } = data;

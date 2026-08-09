@@ -10,7 +10,7 @@ import {
     Triangle, Star, Hexagon, Scissors, Copy, Files, ClipboardPaste, LineChart, CalendarClock, RectangleHorizontal,
     BringToFront, SendToBack, AlignLeft, AlignCenterHorizontal, AlignRight,
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
-    AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock
+    AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock, Users
 } from 'lucide-react';
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
@@ -224,6 +224,7 @@ export default function Whiteboard({
     const currentPathPointsRef = useRef([]);
     const preStrokeImageDataRef = useRef(null);
     const [isDrawing, setIsDrawing] = useState(false);
+    const wasDraggingRef = useRef(false);
     const [tool, setTool] = useState('pen'); // pen, eraser, select, highlighter, shape, laser, text, image
     const [color, setColor] = useState('#000000');
     const [strokeWidth, setStrokeWidth] = useState(2);
@@ -358,6 +359,7 @@ export default function Whiteboard({
     const [remoteCursors, setRemoteCursors] = useState({});
 
     const [localPermissions, setLocalPermissions] = useState(permissions);
+    const [showPermissions, setShowPermissions] = useState(false);
     
     useEffect(() => {
         setLocalPermissions(permissions);
@@ -1857,6 +1859,10 @@ export default function Whiteboard({
 
     // Click on canvas to deselect images and text
     const handleCanvasClick = useCallback(() => {
+        if (wasDraggingRef.current) {
+            wasDraggingRef.current = false;
+            return;
+        }
         setSelectedImageId(null);
         setSelectedTextIds([]);
         setEditingTextId(null);
@@ -1919,8 +1925,9 @@ export default function Whiteboard({
     }, []);
 
     
-    const snapToGuides = useCallback((pos, shapes) => {
+    const snapToGuides = useCallback((pos, shapes, currentStrokeWidth = 0) => {
         const snapDistance = 20;
+        const offset = currentStrokeWidth / 2;
         for (const shp of shapes) {
             if (shp.type !== 'ruler' && shp.type !== 'protractor') continue;
             
@@ -1938,9 +1945,9 @@ export default function Whiteboard({
             if (shp.type === 'ruler') {
                 if (localX >= -snapDistance && localX <= shp.width + snapDistance) {
                     if (Math.abs(localY) < snapDistance) {
-                        localY = 0; snapped = true;
+                        localY = -offset; snapped = true;
                     } else if (Math.abs(localY - shp.height) < snapDistance) {
-                        localY = shp.height; snapped = true;
+                        localY = shp.height + offset; snapped = true;
                     }
                 }
             } else if (shp.type === 'protractor') {
@@ -1955,13 +1962,13 @@ export default function Whiteboard({
                 if (Math.abs(dist - r) < snapDistance && pdy <= snapDistance) {
                     const clampedPdy = Math.min(0, pdy);
                     const angle = Math.atan2(clampedPdy, pdx);
-                    localX = pcx + r * Math.cos(angle);
-                    localY = pcy + r * Math.sin(angle);
+                    localX = pcx + (r + offset) * Math.cos(angle);
+                    localY = pcy + (r + offset) * Math.sin(angle);
                     snapped = true;
                 } 
                 // Snap to straight bottom edge
                 else if (Math.abs(pdy) < snapDistance && pdx >= -r - snapDistance && pdx <= r + snapDistance) {
-                    localY = pcy;
+                    localY = pcy + offset;
                     snapped = true;
                 }
             }
@@ -1984,7 +1991,8 @@ export default function Whiteboard({
         e.preventDefault();
         let pos = getPosition(e);
         if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
-            pos = snapToGuides(pos, shapeObjects);
+            const currentSw = tool === 'highlighter' ? strokeWidth * 4 : strokeWidth;
+            pos = snapToGuides(pos, shapeObjects, currentSw);
         }
 
         // If text input is open and they click outside, let the blur event commit it.
@@ -2095,6 +2103,7 @@ export default function Whiteboard({
     // Draw
     const draw = useCallback((e) => {
         if (!isDrawing) return;
+        wasDraggingRef.current = true;
         e.preventDefault();
 
         let pos = getPosition(e);
@@ -2157,6 +2166,26 @@ export default function Whiteboard({
             ctx.globalCompositeOperation = 'source-over';
         } else if (tool === 'pen' || tool === 'eraser') {
             const pts = currentPathPointsRef.current;
+
+            if (tool === 'pen' && e.shiftKey) {
+                currentPathPointsRef.current = [pts[0], pos];
+                if (preStrokeImageDataRef.current) {
+                    ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+                }
+                ctx.beginPath();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = strokeWidth;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.setLineDash(getDashArray(strokeStyle));
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.moveTo(pts[0].x, pts[0].y);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+                wasDraggingRef.current = true;
+                return;
+            }
+            
             pts.push(pos);
 
             ctx.beginPath();
@@ -2630,7 +2659,6 @@ export default function Whiteboard({
                         else setSelectedTextIds([]);
                         if (selectedImages.length > 0) setSelectedImageId(selectedImages[selectedImages.length - 1]);
                         else setSelectedImageId(null);
-                        setSelection(null);
                     }
                 }
                 setLassoPath([]);
@@ -2686,7 +2714,6 @@ export default function Whiteboard({
                     else setSelectedTextIds([]);
                     if (selectedImages.length > 0) setSelectedImageId(selectedImages[selectedImages.length - 1]);
                     else setSelectedImageId(null);
-                    setSelection(null);
                 }
             }
         } else if (tool === 'text') {
@@ -2811,18 +2838,18 @@ export default function Whiteboard({
                     ctx.restore();
                 }
             } else if (shpObj.type === 'line') {
-                ctx.moveTo(shpObj.startX, shpObj.startY);
-                ctx.lineTo(shpObj.endX, shpObj.endY);
+                ctx.moveTo(shpObj.x + shpObj.startX, shpObj.y + shpObj.startY);
+                ctx.lineTo(shpObj.x + shpObj.endX, shpObj.y + shpObj.endY);
                 ctx.lineCap = 'round';
                 ctx.stroke();
             } else if (shpObj.type === 'arrow') {
-                ctx.moveTo(shpObj.startX, shpObj.startY);
-                ctx.lineTo(shpObj.endX, shpObj.endY);
+                ctx.moveTo(shpObj.x + shpObj.startX, shpObj.y + shpObj.startY);
+                ctx.lineTo(shpObj.x + shpObj.endX, shpObj.y + shpObj.endY);
                 const angle = Math.atan2(shpObj.endY - shpObj.startY, shpObj.endX - shpObj.startX);
                 const headLength = shpObj.strokeWidth * 4;
-                const p1 = { x: shpObj.endX, y: shpObj.endY };
-                const p2 = { x: shpObj.endX - headLength * Math.cos(angle - Math.PI / 6), y: shpObj.endY - headLength * Math.sin(angle - Math.PI / 6) };
-                const p3 = { x: shpObj.endX - headLength * Math.cos(angle + Math.PI / 6), y: shpObj.endY - headLength * Math.sin(angle + Math.PI / 6) };
+                const p1 = { x: shpObj.x + shpObj.endX, y: shpObj.y + shpObj.endY };
+                const p2 = { x: shpObj.x + shpObj.endX - headLength * Math.cos(angle - Math.PI / 6), y: shpObj.y + shpObj.endY - headLength * Math.sin(angle - Math.PI / 6) };
+                const p3 = { x: shpObj.x + shpObj.endX - headLength * Math.cos(angle + Math.PI / 6), y: shpObj.y + shpObj.endY - headLength * Math.sin(angle + Math.PI / 6) };
                 ctx.stroke();
                 ctx.beginPath();
                 ctx.moveTo(p1.x, p1.y);
@@ -2900,7 +2927,7 @@ export default function Whiteboard({
                 ctx.stroke();
             }
 
-            if (shpObj.text !== undefined && shpObj.text !== '') {
+            if (shpObj.text !== undefined && shpObj.text !== '' && shpObj.type !== 'ruler' && shpObj.type !== 'protractor') {
                 ctx.font = `${shpObj.fontSize || 20}px 'Inter', system-ui, sans-serif`;
                 ctx.fillStyle = shpObj.textColor || shpObj.color;
                 ctx.textAlign = 'center';
@@ -3487,6 +3514,7 @@ export default function Whiteboard({
                             ...(isStudent && localPermissions?.canShareAudio ? [{ id: 'mic', icon: isMicOn ? Mic : MicOff, label: 'Toggle Microphone' }] : []),
                             ...(isStudent && localPermissions?.canShareVideo ? [{ id: 'camera', icon: isCameraOn ? Video : VideoOff, label: 'Toggle Camera' }] : []),
                             ...(isStudent ? [{ id: 'fullscreen', icon: isFullscreen ? Minimize2 : Maximize2, label: 'Toggle Fullscreen' }] : []),
+                            ...(isInstructor ? [{ id: 'permissions', icon: Users, label: 'Manage Permissions' }] : []),
                         ].filter(t => {
                                 if (!localPermissions?.canDraw) {
                                     return ['select', 'laser', 'fullscreen', 'mic', 'camera'].includes(t.id);
@@ -3502,6 +3530,10 @@ export default function Whiteboard({
                                         }
                                         if (t.id === 'recorder') {
                                             setShowRecorder(!showRecorder);
+                                            return;
+                                        }
+                                        if (t.id === 'permissions') {
+                                            setShowPermissions(true);
                                             return;
                                         }
                                         if (tool === t.id) {
@@ -4912,12 +4944,12 @@ export default function Whiteboard({
                                     </g>
                                 );
                             } else if (shpObj.type === 'line') {
-                                return <line x1={shpObj.startX - shpObj.x} y1={shpObj.startY - shpObj.y} x2={shpObj.endX - shpObj.x} y2={shpObj.endY - shpObj.y} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />;
+                                return <line x1={shpObj.startX} y1={shpObj.startY} x2={shpObj.endX} y2={shpObj.endY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />;
                             } else if (shpObj.type === 'arrow') {
-                                const localStartX = shpObj.startX - shpObj.x;
-                                const localStartY = shpObj.startY - shpObj.y;
-                                const localEndX = shpObj.endX - shpObj.x;
-                                const localEndY = shpObj.endY - shpObj.y;
+                                const localStartX = shpObj.startX;
+                                const localStartY = shpObj.startY;
+                                const localEndX = shpObj.endX;
+                                const localEndY = shpObj.endY;
                                 const angle = Math.atan2(localEndY - localStartY, localEndX - localStartX);
                                 const headLength = shpObj.strokeWidth * 4;
                                 const p1 = `${localEndX},${localEndY}`;
@@ -5058,7 +5090,7 @@ export default function Whiteboard({
                                     transform: `rotate(${shpObj.rotation || 0}deg)`,
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : 'crosshair',
-                                    zIndex: shpObj.zIndex || (isSelected ? 20 : 10),
+                                    zIndex: shpObj.zIndex || ((shpObj.type === 'ruler' || shpObj.type === 'protractor') ? 60 : (isSelected ? 20 : 10)),
                                     pointerEvents: tool === 'select' ? 'auto' : 'none',
                                 }}
                                 onPointerDown={(e) => {
@@ -5131,7 +5163,7 @@ export default function Whiteboard({
                         )}
 
                                 
-                                {shpObj.text !== undefined && (
+                                {shpObj.text !== undefined && shpObj.type !== 'ruler' && shpObj.type !== 'protractor' && (
                                     <div className="absolute inset-0 flex items-center justify-center p-2">
                                         <textarea
                                             value={shpObj.text}
@@ -5509,6 +5541,14 @@ export default function Whiteboard({
                     }}
                 />
             )}
+
+            <AdminPermissionsPanel 
+                socket={socket} 
+                sessionId={sessionId} 
+                isOpen={showPermissions} 
+                onClose={() => setShowPermissions(false)} 
+            />
+
         </div>
     );
-}
+};

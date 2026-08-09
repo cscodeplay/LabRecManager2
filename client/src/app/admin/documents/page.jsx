@@ -967,14 +967,14 @@ export default function DocumentsPage() {
                         {selectedDocs.size + selectedFolders.size} selected
                     </span>
                     <div className="h-6 w-px bg-slate-200" />
-                    <button onClick={() => handleBulkCopy('copy')} className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-primary-600 px-2 py-1 rounded hover:bg-slate-50 transition-colors">
-                        <ClipboardCopy className="w-4 h-4" /> Copy
+                    <button onClick={() => handleBulkCopy('copy')} title="Copy" className="flex items-center justify-center text-slate-600 hover:text-primary-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                        <ClipboardCopy className="w-5 h-5" />
                     </button>
-                    <button onClick={() => handleBulkCopy('cut')} className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-orange-600 px-2 py-1 rounded hover:bg-slate-50 transition-colors">
-                        <Scissors className="w-4 h-4" /> Cut
+                    <button onClick={() => handleBulkCopy('cut')} title="Cut" className="flex items-center justify-center text-slate-600 hover:text-orange-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                        <Scissors className="w-5 h-5" />
                     </button>
-                    <button onClick={handleBulkDelete} className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-red-600 px-2 py-1 rounded hover:bg-slate-50 transition-colors">
-                        <Trash2 className="w-4 h-4" /> Delete
+                    <button onClick={handleBulkDelete} title="Delete" className="flex items-center justify-center text-slate-600 hover:text-red-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                        <Trash2 className="w-5 h-5" />
                     </button>
                     <div className="h-6 w-px bg-slate-200" />
                     <button onClick={() => { setSelectedDocs(new Set()); setSelectedFolders(new Set()); }} className="text-slate-400 hover:text-slate-600">
@@ -1285,25 +1285,28 @@ export default function DocumentsPage() {
                                         onClick={(e) => { e.stopPropagation(); handlePreviewFolder(folder); }}
                                         className="flex-1 p-1.5 text-xs text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded flex items-center justify-center gap-1"
                                     >
-                                        <Eye className="w-3 h-3" /> View
+                                        <Eye className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); handleShareFolder(folder); }}
-                                        className="flex-1 p-1.5 text-xs text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded flex items-center justify-center gap-1"
+                                        className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded flex items-center justify-center"
+                                        title="Share"
                                     >
-                                        <Share2 className="w-3 h-3" /> Share
+                                        <Share2 className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); handleOpenFolderMoveDialog(folder); }}
-                                        className="flex-1 p-1.5 text-xs text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded flex items-center justify-center gap-1"
+                                        className="p-1.5 text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded flex items-center justify-center"
+                                        title="Move"
                                     >
-                                        <FolderInput className="w-3 h-3" /> Move
+                                        <FolderInput className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder); }}
-                                        className="flex-1 p-1.5 text-xs text-slate-500 hover:text-red-600 hover:bg-red-50 rounded flex items-center justify-center gap-1"
+                                        className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded flex items-center justify-center"
+                                        title="Delete"
                                     >
-                                        <Trash2 className="w-3 h-3" /> Delete
+                                        <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>
                             </div>
@@ -1379,8 +1382,8 @@ export default function DocumentsPage() {
 
                                     {/* Actions */}
                                     <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
-                                        <button onClick={() => setViewingDoc(doc)} className="btn btn-secondary text-xs flex-1 py-1.5">
-                                            <Eye className="w-3 h-3" /> View
+                                        <button title="View" onClick={() => setViewingDoc(doc)} className="btn btn-secondary text-xs  py-1.5">
+                                            <Eye className="w-4 h-4" />
                                         </button>
                                         {activeTab === 'my' && canUpload && (
                                             <>
@@ -1407,8 +1410,8 @@ export default function DocumentsPage() {
                                             </>
                                         )}
                                         {activeTab === 'shared' && (
-                                            <a href={doc.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary text-xs flex-1 py-1.5">
-                                                <Download className="w-3 h-3" /> Download
+                                            <a title="Download" href={doc.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary text-xs  py-1.5">
+                                                <Download className="w-4 h-4" />
                                             </a>
                                         )}
                                     </div>
@@ -1810,8 +1813,8 @@ export default function DocumentsPage() {
                                     <p className="text-sm text-slate-500">{viewingDoc.fileType.toUpperCase()} • {viewingDoc.fileSizeFormatted}</p>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <a href={viewingDoc.url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary text-sm">
-                                        <Download className="w-4 h-4" /> Download
+                                    <a title="Download" href={viewingDoc.url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary text-sm">
+                                        <Download className="w-5 h-5" />
                                     </a>
                                     <button onClick={() => setViewingDoc(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
                                 </div>
@@ -1977,7 +1980,7 @@ export default function DocumentsPage() {
                                                         readOnly
                                                         className="input flex-1 text-sm"
                                                     />
-                                                    <button onClick={copyShareLink} className="btn btn-primary">
+                                                    <button title="Direct Download Link" onClick={copyShareLink} className="btn btn-primary">
                                                         {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                                     </button>
                                                 </div>
@@ -1987,7 +1990,7 @@ export default function DocumentsPage() {
                                                     rel="noopener noreferrer"
                                                     className="btn btn-secondary w-full"
                                                 >
-                                                    <Download className="w-4 h-4" /> Direct Download Link
+                                                    <Download className="w-5 h-5" />
                                                 </a>
                                             </>
                                         )}
@@ -2257,7 +2260,7 @@ export default function DocumentsPage() {
                                 </div>
                             </div>
                             <div className="p-4 border-t border-slate-200 bg-slate-50">
-                                <button onClick={() => {
+                                <button title="Edit Sharing" onClick={() => {
                                     setShareInfoModal(null);
                                     // Check if this is a folder (has shareInfo array directly from folder query) or document
                                     if (shareInfoModal.documentCount !== undefined || shareInfoModal.subfolderCount !== undefined) {
@@ -2266,7 +2269,7 @@ export default function DocumentsPage() {
                                         handleShare(shareInfoModal);
                                     }
                                 }} className="btn btn-primary w-full text-sm">
-                                    <Share2 className="w-4 h-4" /> Edit Sharing
+                                    <Share2 className="w-5 h-5" />
                                 </button>
                             </div>
                         </div>
@@ -2411,8 +2414,8 @@ export default function DocumentsPage() {
                                     {moveCurrentFolder ? moveCurrentFolder.name : 'My Documents'}
                                 </div>
                                 {moveCurrentFolder && (
-                                    <button onClick={handleMoveUp} className="text-sm bg-white border px-2 py-1 rounded hover:bg-slate-50 flex items-center gap-1">
-                                        <CornerUpLeft className="w-3 h-3" /> Up
+                                    <button title="Up" onClick={handleMoveUp} className="text-sm bg-white border px-2 py-1 rounded hover:bg-slate-50 flex items-center justify-center gap-1">
+                                        <CornerUpLeft className="w-4 h-4" />
                                     </button>
                                 )}
                             </div>
@@ -2499,8 +2502,8 @@ export default function DocumentsPage() {
                                 </select>
                             </div>
                             {aiExtractData && !aiExtracting && (
-                                <button onClick={handleReExtractAI} className="btn btn-secondary text-sm py-1.5 flex items-center gap-2">
-                                    <RotateCcw className="w-4 h-4" /> Re-extract
+                                <button title="Re-extract" onClick={handleReExtractAI} className="btn btn-secondary text-sm py-1.5 flex items-center justify-center gap-2">
+                                    <RotateCcw className="w-5 h-5" />
                                 </button>
                             )}
                         </div>
@@ -2554,8 +2557,8 @@ export default function DocumentsPage() {
                         {!aiExtracting && aiExtractData && (
                             <div className="p-4 border-t border-slate-200 bg-white flex justify-end gap-3 flex-shrink-0">
                                 <button onClick={() => setAiExtractDoc(null)} className="btn btn-secondary">Cancel</button>
-                                <button onClick={handleSaveAIExtraction} className="btn btn-primary bg-purple-600 hover:bg-purple-700 flex items-center gap-2">
-                                    <Check className="w-4 h-4" /> Save Inventory
+                                <button title="Save Inventory" onClick={handleSaveAIExtraction} className="btn btn-primary bg-purple-600 hover:bg-purple-700 flex items-center justify-center gap-2">
+                                    <Check className="w-5 h-5" />
                                 </button>
                             </div>
                         )}

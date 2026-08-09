@@ -582,8 +582,8 @@ export default function LabInventoryPage() {
                                 >
                                     <ArrowRightLeft className="w-4 h-4" /> Shift {selectedItems.size} Selected
                                 </button>
-                                <button onClick={handleBulkDelete} className="btn bg-red-500 hover:bg-red-600 text-white">
-                                    <Trash2 className="w-4 h-4" /> Delete {selectedItems.size} Selected
+                                <button title="Delete Selected" onClick={handleBulkDelete} className="btn bg-red-500 hover:bg-red-600 text-white">
+                                    <Trash2 className="w-5 h-5" />
                                 </button>
                             </div>
                         )}
@@ -1044,8 +1044,8 @@ export default function LabInventoryPage() {
                                 {/* Actions */}
                                 <div className="flex gap-3 pt-2">
                                     <button onClick={() => setViewingItem(null)} className="btn btn-secondary flex-1">Close</button>
-                                    <button onClick={() => { handleEdit(viewingItem); setViewingItem(null); }} className="btn btn-primary flex-1">
-                                        <Edit2 className="w-4 h-4" /> Edit Item
+                                    <button title="Edit Item" onClick={() => { handleEdit(viewingItem); setViewingItem(null); }} className="btn btn-primary ">
+                                        <Edit2 className="w-5 h-5" />
                                     </button>
                                 </div>
 
@@ -1161,21 +1161,22 @@ export default function LabInventoryPage() {
                                 <p className="font-semibold text-slate-900">{qrItem.itemNumber}</p>
                                 <p className="text-sm text-slate-500">{lab?.name}</p>
                                 {qrItem.serialNo && <p className="text-xs text-slate-400 font-mono mt-1">{qrItem.serialNo}</p>}
-                            </div>
-                            <div className="flex gap-3">
-                                <button onClick={() => setQrItem(null)} className="btn btn-secondary flex-1">Close</button>
-                                <a
-                                    href={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&format=png&data=${encodeURIComponent(JSON.stringify({
-                                        id: qrItem.id,
-                                        lab: lab?.name,
-                                        item: qrItem.itemNumber,
-                                        serial: qrItem.serialNo || 'N/A'
-                                    }))}`}
-                                    download={`QR-${qrItem.itemNumber}.png`}
-                                    className="btn btn-primary flex-1"
-                                >
-                                    <Download className="w-4 h-4" /> Download
-                                </a>
+                                <div className="flex gap-3 mt-4">
+                                    <button onClick={() => setQrItem(null)} className="btn btn-secondary flex-1">Close</button>
+                                    <a
+                                        title="Download"
+                                        href={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&format=png&data=${encodeURIComponent(JSON.stringify({
+                                            id: qrItem.id,
+                                            lab: lab?.name,
+                                            item: qrItem.itemNumber,
+                                            serial: qrItem.serialNo || 'N/A'
+                                        }))}`}
+                                        download={`QR-${qrItem.itemNumber}.png`}
+                                        className="btn btn-primary flex-1"
+                                    >
+                                        <Download className="w-5 h-5" />
+                                    </a>
+                                </div>
                             </div>
                         </div>
                     </div>

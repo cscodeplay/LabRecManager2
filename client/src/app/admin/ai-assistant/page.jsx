@@ -98,9 +98,9 @@ function SQLResultPanel({ sql, result, onRerun }) {
                 <div className="px-4 py-3 bg-slate-900 border-b border-indigo-200 dark:border-indigo-800">
                     <pre className="text-xs text-indigo-200 font-mono whitespace-pre-wrap">{sql}</pre>
                     <div className="flex gap-2 mt-2">
-                        <button onClick={() => { navigator.clipboard.writeText(sql); toast.success('SQL copied'); }}
+                        <button title="Copy" onClick={() => { navigator.clipboard.writeText(sql); toast.success('SQL copied'); }}
                             className="text-xs text-indigo-400 hover:text-white flex items-center gap-1">
-                            <Copy className="w-3 h-3" /> Copy
+                            <Copy className="w-4 h-4" />
                         </button>
                         {onRerun && (
                             <button onClick={onRerun} className="text-xs text-emerald-400 hover:text-white flex items-center gap-1">
@@ -343,8 +343,8 @@ export default function AIAssistantPage() {
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/20">
             <PageHeader title="AI Assistant" titleHindi="AI सहायक">
                 <div className="flex items-center gap-2">
-                    <button onClick={clearChat} className="btn btn-ghost text-sm flex items-center gap-1.5">
-                        <Trash2 className="w-4 h-4" /> Clear
+                    <button title="Clear" onClick={clearChat} className="btn btn-ghost text-sm flex items-center justify-center gap-1.5">
+                        <Trash2 className="w-5 h-5" />
                     </button>
                 </div>
             </PageHeader>

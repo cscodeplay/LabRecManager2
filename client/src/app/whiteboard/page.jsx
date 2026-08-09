@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Pencil, Users, Share2, Video, VideoOff, Plus, MoreVertical, Trash2, Copy, Image as ImageIcon, Edit3 } from 'lucide-react';
+import { ArrowLeft, Pencil, Users, Share2, Video, VideoOff, Plus, Trash2, Copy, Image as ImageIcon, Edit3 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import toast from 'react-hot-toast';
 import io from 'socket.io-client';
@@ -366,35 +366,28 @@ export default function WhiteboardPage() {
                                 <div className="p-4 flex-1 flex flex-col">
                                     <div className="flex items-start justify-between gap-2 mb-2">
                                         <h3 className="font-semibold text-slate-800 line-clamp-1 flex-1">{file.title}</h3>
-                                        
-                                        <div className="relative group/menu">
+                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <button 
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition opacity-0 group-hover:opacity-100"
+                                                onClick={(e) => handleRenameFile(file.id, file.title, e)}
+                                                className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded transition"
+                                                title="Rename"
                                             >
-                                                <MoreVertical className="w-4 h-4" />
+                                                <Edit3 className="w-4 h-4" />
                                             </button>
-                                            
-                                            <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-slate-200 rounded-lg shadow-xl py-1 hidden group-hover/menu:block z-10">
-                                                <button 
-                                                    onClick={(e) => handleRenameFile(file.id, file.title, e)}
-                                                    className="w-full px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                                >
-                                                    <Edit3 className="w-3.5 h-3.5" /> Rename
-                                                </button>
-                                                <button 
-                                                    onClick={(e) => handleDuplicateFile(file.id, e)}
-                                                    className="w-full px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                                >
-                                                    <Copy className="w-3.5 h-3.5" /> Duplicate
-                                                </button>
-                                                <button 
-                                                    onClick={(e) => handleDeleteFile(file.id, e)}
-                                                    className="w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                                >
-                                                    <Trash2 className="w-3.5 h-3.5" /> Delete
-                                                </button>
-                                            </div>
+                                            <button 
+                                                onClick={(e) => handleDuplicateFile(file.id, e)}
+                                                className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded transition"
+                                                title="Duplicate"
+                                            >
+                                                <Copy className="w-4 h-4" />
+                                            </button>
+                                            <button 
+                                                onClick={(e) => handleDeleteFile(file.id, e)}
+                                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition"
+                                                title="Delete"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
                                         </div>
                                     </div>
                                     <div className="mt-auto flex items-center justify-between text-xs text-slate-500">

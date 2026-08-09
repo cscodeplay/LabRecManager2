@@ -665,8 +665,8 @@ export default function AssignedWorkPage() {
                             )}
                         </div>
                         <div className="p-4 border-t border-slate-200 flex justify-end gap-2">
-                            <button onClick={() => { const tgt = viewModal.target; setViewModal({ open: false, target: null }); handleEditClick(tgt); }} className="btn btn-secondary">
-                                <Edit2 className="w-4 h-4" /> Edit Target
+                            <button title="Edit Target" onClick={() => { const tgt = viewModal.target; setViewModal({ open: false, target: null }); handleEditClick(tgt); }} className="btn btn-secondary">
+                                <Edit2 className="w-5 h-5" />
                             </button>
                             <button onClick={() => setViewModal({ open: false, target: null })} className="btn btn-primary">
                                 Close
