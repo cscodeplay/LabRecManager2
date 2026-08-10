@@ -12,14 +12,73 @@ if (!fs.existsSync(recordingsDir)) {
     fs.mkdirSync(recordingsDir, { recursive: true });
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function isUUID(str) {
+    return typeof str === 'string' && UUID_REGEX.test(str);
+}
+
+function generate10DigitRoomCode() {
+    return Math.floor(1000000000 + Math.random() * 9000000000).toString();
+}
+
+function generate8CharPasscode() {
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+}
+
+function formatRoomCode(code) {
+    if (!code) return '';
+    const str = code.toString().replace(/[^0-9]/g, '');
+    if (str.length === 10) {
+        return `${str.slice(0, 3)}-${str.slice(3, 6)}-${str.slice(6)}`;
+    }
+    return code;
+}
+
+async function findMeetingByIdOrLink(idParam, includeOptions = {}) {
+    if (!idParam) return null;
+    const cleanDigits = idParam.toString().replace(/[^0-9]/g, '');
+
+    const orList = [];
+    if (isUUID(idParam)) {
+        orList.push({ id: idParam });
+    }
+    orList.push({ meetingLink: { contains: idParam } });
+    if (cleanDigits && cleanDigits.length >= 6) {
+        orList.push({ meetingLink: { contains: cleanDigits } });
+    }
+
+    return await prisma.meeting.findFirst({
+        where: { OR: orList },
+        include: Object.keys(includeOptions).length > 0 ? includeOptions : undefined
+    });
+}
+
 /**
  * @route   DELETE /api/meetings/clear-all
  * @desc    Delete all meetings and associated recording files
  * @access  Private (Instructor, Admin, Principal)
  */
 router.delete('/clear-all', authenticate, authorize('instructor', 'admin', 'principal'), asyncHandler(async (req, res) => {
-    await prisma.meetingParticipant.deleteMany();
-    await prisma.meetingQuestion.deleteMany();
+    try {
+        await prisma.meetingParticipant.deleteMany();
+    } catch (e) {
+        console.warn('MeetingParticipant deleteMany error (non-fatal):', e.message);
+    }
+    
+    try {
+        await prisma.submission.updateMany({
+            where: { status: 'viva_scheduled' },
+            data: { status: 'submitted' }
+        });
+    } catch (e) {
+        console.warn('Submission reset error (non-fatal):', e.message);
+    }
+
     const deleted = await prisma.meeting.deleteMany();
 
     // Clean physical recording files
@@ -28,7 +87,7 @@ router.delete('/clear-all', authenticate, authorize('instructor', 'admin', 'prin
             const files = fs.readdirSync(recordingsDir);
             for (const f of files) {
                 if (f !== '.gitkeep') {
-                    fs.unlinkSync(path.join(recordingsDir, f));
+                    try { fs.unlinkSync(path.join(recordingsDir, f)); } catch (err) {}
                 }
             }
         }
@@ -44,11 +103,10 @@ router.delete('/clear-all', authenticate, authorize('instructor', 'admin', 'prin
 
 /**
  * @route   POST /api/meetings/create-demotest
- * @desc    Create a demo verification meeting session for testing all sync & media features
+ * @desc    Create a demo verification meeting session with 10-digit room code & 8-char passcode
  * @access  Private (Instructor, Admin, Principal)
  */
 router.post('/create-demotest', authenticate, authorize('instructor', 'admin', 'principal'), asyncHandler(async (req, res) => {
-    // Find active student in school
     let student = await prisma.user.findFirst({
         where: { role: 'student', schoolId: req.user.schoolId }
     });
@@ -60,7 +118,9 @@ router.post('/create-demotest', authenticate, authorize('instructor', 'admin', '
     }
 
     const sessionId = require('uuid').v4();
-    const meetingLink = `${process.env.CLIENT_URL || 'http://localhost:3000'}/meeting/${sessionId}`;
+    const roomCode = generate10DigitRoomCode();
+    const passcode = generate8CharPasscode();
+    const meetingLink = `${process.env.CLIENT_URL || 'http://localhost:3000'}/meeting/${roomCode}`;
 
     const session = await prisma.meeting.create({
         data: {
@@ -75,7 +135,13 @@ router.post('/create-demotest', authenticate, authorize('instructor', 'admin', '
             meetingLink,
             status: 'scheduled',
             autoStart: true,
-            questionsAsked: { autoAdmit: false, sessionTitle: 'Demo Test Verification Meeting' }
+            questionsAsked: {
+                roomCode,
+                passcode,
+                formattedRoomCode: formatRoomCode(roomCode),
+                autoAdmit: false,
+                sessionTitle: 'Demo Test Verification Meeting'
+            }
         },
         include: {
             targetStudent: { select: { id: true, firstName: true, lastName: true, email: true, admissionNumber: true } },
@@ -298,8 +364,7 @@ router.get('/sessions/cleanup-expired', authenticate, authorize('admin', 'princi
  * @access  Private
  */
 router.get('/sessions/:id', authenticate, asyncHandler(async (req, res) => {
-    let session = await prisma.meeting.findUnique({
-        where: { id: req.params.id },
+    let session = await findMeetingByIdOrLink(req.params.id, {
         include: {
             submission: {
                 include: {
@@ -492,9 +557,7 @@ router.post('/sessions', authenticate, authorize('instructor', 'lab_assistant', 
  * @access  Private (Examiner)
  */
 router.put('/sessions/:id/start', authenticate, authorize('instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
-    const session = await prisma.meeting.findUnique({
-        where: { id: req.params.id }
-    });
+    const session = await findMeetingByIdOrLink(req.params.id);
 
     if (!session) {
         return res.status(404).json({
@@ -511,7 +574,7 @@ router.put('/sessions/:id/start', authenticate, authorize('instructor', 'lab_ass
     }
 
     const updatedSession = await prisma.meeting.update({
-        where: { id: req.params.id },
+        where: { id: session.id },
         data: {
             status: 'in_progress',
             actualStartTime: new Date()
@@ -550,10 +613,7 @@ router.put('/sessions/:id/complete', authenticate, authorize('instructor', 'lab_
 
     try {
         // First, check if the session exists
-        const existingSession = await prisma.meeting.findUnique({
-            where: { id: req.params.id },
-            include: { submission: true }
-        });
+        const existingSession = await findMeetingByIdOrLink(req.params.id, { submission: true });
 
         console.log('Existing session:', existingSession ? { id: existingSession.id, status: existingSession.status, submissionId: existingSession.submissionId } : 'NOT FOUND');
 
@@ -575,7 +635,7 @@ router.put('/sessions/:id/complete', authenticate, authorize('instructor', 'lab_
         });
 
         const session = await prisma.meeting.update({
-            where: { id: req.params.id },
+            where: { id: existingSession.id },
             data: {
                 status: 'completed',
                 actualEndTime: new Date(),
@@ -757,7 +817,9 @@ router.post("/sessions/schedule", authenticate, authorize("instructor", "lab_ass
     if (targetType === "group") targetGroupId = targetId;
     if (targetType === "class") targetClassId = targetId;
     const sessionId = require("uuid").v4();
-    const meetingLink = `${process.env.CLIENT_URL || "http://localhost:3000"}/meeting/${sessionId}`;
+    const roomCode = generate10DigitRoomCode();
+    const passcode = generate8CharPasscode();
+    const meetingLink = `${process.env.CLIENT_URL || "http://localhost:3000"}/meeting/${roomCode}`;
     const meetingType = type || "scheduled";
     const finalScheduledAt = meetingType === "instant" ? new Date() : new Date(scheduledAt);
     const finalStatus = meetingType === "instant" ? "in_progress" : "scheduled";
@@ -775,7 +837,12 @@ router.post("/sessions/schedule", authenticate, authorize("instructor", "lab_ass
             durationMinutes: durationMinutes || 15,
             meetingLink,
             status: finalStatus,
-            questionsAsked: description ? { description } : null,
+            questionsAsked: {
+                roomCode,
+                passcode,
+                formattedRoomCode: formatRoomCode(roomCode),
+                ...(description ? { description } : {})
+            },
             actualStartTime: meetingType === "instant" ? new Date() : null
         },
         include: {
@@ -1234,8 +1301,7 @@ router.put('/sessions/:id/admit-all', authenticate, authorize('instructor', 'lab
  * @access  Private
  */
 router.get('/sessions/:id/time-status', authenticate, asyncHandler(async (req, res) => {
-    const session = await prisma.meeting.findUnique({
-        where: { id: req.params.id },
+    const session = await findMeetingByIdOrLink(req.params.id, {
         select: {
             id: true,
             status: true,
@@ -1306,9 +1372,7 @@ router.get('/sessions/:id/time-status', authenticate, asyncHandler(async (req, r
  * @access  Private
  */
 router.put('/sessions/:id/auto-start', authenticate, asyncHandler(async (req, res) => {
-    const session = await prisma.meeting.findUnique({
-        where: { id: req.params.id }
-    });
+    const session = await findMeetingByIdOrLink(req.params.id);
 
     if (!session) {
         return res.status(404).json({ success: false, message: 'Session not found' });
@@ -1332,7 +1396,7 @@ router.put('/sessions/:id/auto-start', authenticate, asyncHandler(async (req, re
     }
 
     const updatedSession = await prisma.meeting.update({
-        where: { id: req.params.id },
+        where: { id: session.id },
         data: {
             status: 'in_progress',
             actualStartTime: now
@@ -1360,9 +1424,7 @@ router.put('/sessions/:id/auto-start', authenticate, asyncHandler(async (req, re
  * @access  Private
  */
 router.put('/sessions/:id/auto-end', authenticate, asyncHandler(async (req, res) => {
-    const session = await prisma.meeting.findUnique({
-        where: { id: req.params.id }
-    });
+    const session = await findMeetingByIdOrLink(req.params.id);
 
     if (!session || session.status !== 'in_progress') {
         return res.status(400).json({ success: false, message: 'Session not in progress' });
@@ -1381,7 +1443,7 @@ router.put('/sessions/:id/auto-end', authenticate, asyncHandler(async (req, res)
     }
 
     const updatedSession = await prisma.meeting.update({
-        where: { id: req.params.id },
+        where: { id: session.id },
         data: {
             status: 'completed',
             actualEndTime: now,

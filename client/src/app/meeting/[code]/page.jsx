@@ -176,7 +176,40 @@ export default function MeetingRoomPage() {
     };
 
     // Calculate passcode
-    const meetingPasscode = session?.passcode || (session?.id ? Math.abs(session.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 900000 + 100000).toString() : '589214');
+    
+    const getDisplayRoomCode = () => {
+        if (session?.questionsAsked?.formattedRoomCode) return session.questionsAsked.formattedRoomCode;
+        if (session?.questionsAsked?.roomCode) {
+            const rc = session.questionsAsked.roomCode;
+            return rc.length === 10 ? `${rc.slice(0, 3)}-${rc.slice(3, 6)}-${rc.slice(6)}` : rc;
+        }
+        const raw = (params.code || '').replace(/[^0-9]/g, '');
+        if (raw.length === 10) {
+            return `${raw.slice(0, 3)}-${raw.slice(3, 6)}-${raw.slice(6)}`;
+        }
+        if (session?.id) {
+            const num = Math.abs(session.id.split('').reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) % 9000000000, 1000000000)).toString();
+            return `${num.slice(0, 3)}-${num.slice(3, 6)}-${num.slice(6)}`;
+        }
+        return params.code;
+    };
+
+    const getDisplayPasscode = () => {
+        if (session?.questionsAsked?.passcode) return session.questionsAsked.passcode;
+        const targetStr = session?.id || params.code || 'default';
+        const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
+        let code = '';
+        let hash = targetStr.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+        for (let i = 0; i < 8; i++) {
+            hash = (hash * 9301 + 49297) % 233280;
+            code += chars.charAt(Math.floor((hash / 233280) * chars.length));
+        }
+        return code;
+    };
+
+    const meetingPasscode = getDisplayPasscode();
+    const displayRoomCode = getDisplayRoomCode();
+
 
     // ===========================================
     // 1. INITIALIZATION & LIFECYCLE
@@ -1267,7 +1300,7 @@ export default function MeetingRoomPage() {
         const inviteText = `Join Lab Record Manager Meeting
 Topic: ${title}
 Host: ${hostName}
-Meeting ID: ${params.code}
+Meeting ID: ${displayRoomCode}
 Passcode: ${meetingPasscode}
 Link: ${getInviteUrl()}`;
 
@@ -1323,7 +1356,7 @@ Link: ${getInviteUrl()}`;
                     <div className="w-full bg-slate-800/60 rounded-2xl p-4 border border-slate-700/50 text-left space-y-2.5">
                         <div className="flex items-center justify-between">
                             <span className="text-[11px] text-slate-400 uppercase font-semibold">Session</span>
-                            <span className="text-xs font-mono text-primary-400 font-bold">{params.code}</span>
+                            <span className="text-xs font-mono text-primary-400 font-bold">{displayRoomCode}</span>
                         </div>
                         <h4 className="text-sm font-semibold text-slate-200">
                             {session?.submission?.assignment?.title || session?.title || 'Live Meeting Session'}
@@ -1659,7 +1692,7 @@ Link: ${getInviteUrl()}`;
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         </h2>
                         <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                            <span>ID: <strong className="text-slate-200 font-mono">{params.code}</strong></span>
+                            <span>ID: <strong className="text-slate-200 font-mono">{displayRoomCode}</strong></span>
                         </div>
                     </div>
 
@@ -2150,10 +2183,10 @@ Link: ${getInviteUrl()}`;
                             <div className="flex items-center justify-between pt-2 border-t border-slate-700/50">
                                 <div>
                                     <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Meeting ID</span>
-                                    <p className="text-xs font-mono font-bold text-primary-300">{params.code}</p>
+                                    <p className="text-xs font-mono font-bold text-primary-300">{displayRoomCode}</p>
                                 </div>
                                 <button
-                                    onClick={() => copyToClipboard(params.code, 'Meeting ID')}
+                                    onClick={() => copyToClipboard(displayRoomCode, 'Meeting ID')}
                                     className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-medium transition flex items-center gap-1"
                                 >
                                     {copiedInfoField === 'Meeting ID' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}

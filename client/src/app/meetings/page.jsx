@@ -14,6 +14,43 @@ import AssignmentCalendar from '@/components/AssignmentCalendar';
 
 import io from 'socket.io-client';
 
+
+const getRoomCode = (session) => {
+    if (!session) return '';
+    if (session.questionsAsked?.roomCode) return session.questionsAsked.roomCode;
+    if (session.meetingLink) {
+        const parts = session.meetingLink.split('/');
+        const last = parts[parts.length - 1];
+        if (last && last.length >= 6) return last;
+    }
+    if (session.id) {
+        const num = Math.abs(session.id.split('').reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) % 9000000000, 1000000000)).toString();
+        return num;
+    }
+    return '';
+};
+
+const getFormattedRoomCode = (session) => {
+    const code = getRoomCode(session);
+    if (code.length === 10) {
+        return `${code.slice(0, 3)}-${code.slice(3, 6)}-${code.slice(6)}`;
+    }
+    return code;
+};
+
+const getPasscode = (session) => {
+    if (session?.questionsAsked?.passcode) return session.questionsAsked.passcode;
+    if (!session?.id) return 'k8m2px9a';
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
+    let code = '';
+    let hash = session.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    for (let i = 0; i < 8; i++) {
+        hash = (hash * 9301 + 49297) % 233280;
+        code += chars.charAt(Math.floor((hash / 233280) * chars.length));
+    }
+    return code;
+};
+
 export default function MeetingPage() {
     const router = useRouter();
     const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
@@ -125,7 +162,7 @@ export default function MeetingPage() {
             toast.success('Demo test meeting created!', { icon: '✨' });
             loadSessions();
             if (session?.id) {
-                router.push(`/meeting/${session.id}`);
+                router.push(`/meeting/${getRoomCode(session)}`);
             }
         } catch (error) {
             console.error('Create demo meeting error:', error);
@@ -264,7 +301,7 @@ export default function MeetingPage() {
             resetModalState();
             
             if (meetingType === 'instant' && res.data?.data?.session?.id) {
-                router.push(`/meeting/${res.data.data.session.id}`);
+                router.push(`/meeting/${getRoomCode(res.data.data.session)}`);
             } else {
                 loadSessions();
             }
@@ -1097,6 +1134,14 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                         {session.title || session.questionsAsked?.sessionTitle || session.submission?.assignment?.title || 'Meeting Session'}
                     </h3>
 
+                    <div className="flex flex-wrap items-center gap-3 mt-2 text-xs">
+                        <span className="font-mono font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded-md border border-primary-200">
+                            ID: {getFormattedRoomCode(session)}
+                        </span>
+                        <span className="font-mono font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                            Passcode: {getPasscode(session)}
+                        </span>
+                    </div>
                     <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-500">
                         <span className="flex items-center gap-1">
                             <Calendar className="w-4 h-4" />
@@ -1147,7 +1192,7 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                 {/* Action buttons based on session status */}
                 {session.status === 'scheduled' && (
                     <div className="flex flex-col gap-2">
-                        <Link href={`/meeting/${session.id}`} className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Start Meeting' : 'Join'}>
+                        <Link href={`/meeting/${getRoomCode(session)}`} className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Start Meeting' : 'Join'}>
                             <Play className="w-5 h-5" />
                         </Link>
                     </div>
@@ -1155,7 +1200,7 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
 
                 {session.status === 'in_progress' && (
                     <div className="flex flex-col gap-2">
-                        <Link href={`/meeting/${session.id}`} className="p-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Resume & Grade' : 'Rejoin'}>
+                        <Link href={`/meeting/${getRoomCode(session)}`} className="p-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Resume & Grade' : 'Rejoin'}>
                             <Video className="w-5 h-5" />
                         </Link>
                     </div>
