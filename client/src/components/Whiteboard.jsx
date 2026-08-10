@@ -243,10 +243,10 @@ export default function Whiteboard({
     const [showSelectPicker, setShowSelectPicker] = useState(false);
     const [showHighlighterPicker, setShowHighlighterPicker] = useState(false);
 
-    // Sub-tool options
     const [shapeType, setShapeType] = useState('rectangle'); // rectangle, circle, triangle, star
     const [shapePreview, setShapePreview] = useState(null);
     const [selectMode, setSelectMode] = useState('rectangle'); // rectangle, lasso
+    const [toolbarDock, setToolbarDock] = useState('bottom'); // bottom, top, left, right
     const [showImagePicker, setShowImagePicker] = useState(false);
     const [showScreenshotModal, setShowScreenshotModal] = useState(false);
     const [screenshotPreview, setScreenshotPreview] = useState(null);
@@ -3518,8 +3518,16 @@ export default function Whiteboard({
                 </div>
             )}
 
-            {/* Floating Sleek Toolbar (Zoom-style) */}
-                <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/50 px-2 py-1 flex items-center gap-0.5 rounded-full z-40 max-w-[95%] overflow-visible whitespace-nowrap hide-scrollbar transition-all">
+            {/* Floating Sleek Toolbar (Zoom-style with 4-edge dock positioning) */}
+                <div className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/50 px-2 py-1 flex items-center gap-0.5 rounded-full z-40 max-w-[95%] overflow-visible whitespace-nowrap hide-scrollbar transition-all ${
+                    toolbarDock === 'top'
+                        ? 'top-4 left-1/2 transform -translate-x-1/2 flex-row'
+                        : toolbarDock === 'left'
+                        ? 'left-4 top-1/2 transform -translate-y-1/2 flex-col max-h-[90vh] overflow-y-auto'
+                        : toolbarDock === 'right'
+                        ? 'right-4 top-1/2 transform -translate-y-1/2 flex-col max-h-[90vh] overflow-y-auto'
+                        : 'bottom-4 left-1/2 transform -translate-x-1/2 flex-row'
+                }`}>
                     {/* Tools */}
                     <div className="flex items-center gap-0.5">
                         <div className="flex items-center gap-0.5 relative">
@@ -4219,18 +4227,30 @@ export default function Whiteboard({
                             <Camera className="w-3.5 h-3.5" />
                         </button>
                         {!isStudent && (
-                        <button
-                            onClick={onToggleFullscreen}
-                            className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
-                            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-                        >
-                            {isFullscreen ? (
-                                <Minimize2 className="w-3.5 h-3.5" />
-                            ) : (
-                                <Maximize2 className="w-3.5 h-3.5" />
-                            )}
-                        </button>
+                            <button
+                                onClick={onToggleFullscreen}
+                                className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
+                                title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                            >
+                                {isFullscreen ? (
+                                    <Minimize2 className="w-3.5 h-3.5" />
+                                ) : (
+                                    <Maximize2 className="w-3.5 h-3.5" />
+                                )}
+                            </button>
                         )}
+                        <button
+                            onClick={() => {
+                                const next = { bottom: 'left', left: 'top', top: 'right', right: 'bottom' };
+                                const newDock = next[toolbarDock] || 'bottom';
+                                setToolbarDock(newDock);
+                                toast(`Whiteboard toolbar docked to ${newDock.toUpperCase()}`, { duration: 1500 });
+                            }}
+                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full transition flex items-center justify-center"
+                            title={`Dock: ${toolbarDock.toUpperCase()} (Click to cycle Top/Bottom/Left/Right)`}
+                        >
+                            <Move className="w-3.5 h-3.5 text-primary-400" />
+                        </button>
                     </div>
                 </div>
                 

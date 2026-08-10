@@ -281,6 +281,26 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Host Remote Control (Mute mic, stop camera, stop screen, toggle drawing)
+  socket.on('meeting:host-control', (data) => {
+    const { roomId, targetSocketId, action, value } = data || {};
+    if (roomId && action) {
+      if (targetSocketId === 'all') {
+        socket.to(`meeting-${roomId}`).emit('meeting:host-action', data);
+      } else if (targetSocketId) {
+        io.to(targetSocketId).emit('meeting:host-action', data);
+      }
+    }
+  });
+
+  // Whiteboard drawing permission updates for meeting participants
+  socket.on('meeting:whiteboard-permission', (data) => {
+    const { roomId } = data || {};
+    if (roomId) {
+      io.to(`meeting-${roomId}`).emit('meeting:whiteboard-permission-update', data);
+    }
+  });
+
   // End meeting for everyone
   socket.on('meeting:end-session', (data) => {
     const { roomId } = data || {};
