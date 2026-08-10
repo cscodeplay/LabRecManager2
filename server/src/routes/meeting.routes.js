@@ -12,9 +12,9 @@ if (!fs.existsSync(recordingsDir)) {
     fs.mkdirSync(recordingsDir, { recursive: true });
 }
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUUID(str) {
-    return typeof str === 'string' && UUID_REGEX.test(str);
+    return typeof str === 'string' && UUID_REGEX.test(str.trim());
 }
 
 function generate10DigitRoomCode() {
@@ -39,23 +39,55 @@ function formatRoomCode(code) {
     return code;
 }
 
-async function findMeetingByIdOrLink(idParam, includeOptions = {}) {
+async function findMeetingByIdOrLink(idParam, options = {}) {
     if (!idParam) return null;
-    const cleanDigits = idParam.toString().replace(/[^0-9]/g, '');
+    const strParam = idParam.toString().trim();
+    const cleanDigits = strParam.replace(/[^0-9]/g, '');
 
     const orList = [];
-    if (isUUID(idParam)) {
-        orList.push({ id: idParam });
+    if (isUUID(strParam)) {
+        orList.push({ id: strParam });
     }
-    orList.push({ meetingLink: { contains: idParam } });
+    orList.push({ meetingLink: { contains: strParam } });
     if (cleanDigits && cleanDigits.length >= 6) {
         orList.push({ meetingLink: { contains: cleanDigits } });
     }
 
-    return await prisma.meeting.findFirst({
+    let queryOptions = {};
+    if (options.include) {
+        queryOptions.include = options.include;
+    } else if (options.select) {
+        queryOptions.select = options.select;
+    } else if (Object.keys(options).length > 0) {
+        queryOptions.include = options;
+    }
+
+    let meeting = await prisma.meeting.findFirst({
         where: { OR: orList },
-        include: Object.keys(includeOptions).length > 0 ? includeOptions : undefined
+        ...queryOptions
     });
+
+    // Fallback: search recent meetings for roomCode in questionsAsked JSON
+    if (!meeting && cleanDigits && cleanDigits.length >= 6) {
+        try {
+            const potentialMatches = await prisma.meeting.findMany({
+                where: {
+                    questionsAsked: { not: null }
+                },
+                take: 50,
+                orderBy: { createdAt: 'desc' },
+                ...queryOptions
+            });
+            meeting = potentialMatches.find(m => {
+                const q = typeof m.questionsAsked === 'object' ? m.questionsAsked : {};
+                return q?.roomCode?.toString() === cleanDigits || q?.roomCode?.toString() === strParam;
+            }) || null;
+        } catch (e) {
+            // Ignore JSON query error
+        }
+    }
+
+    return meeting;
 }
 
 /**
@@ -423,21 +455,6 @@ router.get('/sessions/:id', authenticate, asyncHandler(async (req, res) => {
             }
         }
     });
-
-    if (!session) {
-        // Try searching by meetingLink containing the code
-        session = await prisma.meeting.findFirst({
-            where: {
-                meetingLink: { contains: req.params.id }
-            },
-            include: {
-                submission: { include: { assignment: true } },
-                targetStudent: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
-                targetClass: true,
-                host: { select: { id: true, firstName: true, lastName: true, role: true } }
-            }
-        });
-    }
 
     if (!session) {
         return res.status(404).json({
@@ -952,12 +969,7 @@ router.get('/available-students', authenticate, authorize('instructor', 'lab_ass
  * @access  Private
  */
 router.post('/sessions/:id/join', authenticate, asyncHandler(async (req, res) => {
-    const sessionId = req.params.id;
-    const userId = req.user.id;
-
-    // Check if session exists
-    const session = await prisma.meeting.findUnique({
-        where: { id: sessionId },
+    const session = await findMeetingByIdOrLink(req.params.id, {
         include: {
             targetStudent: { select: { id: true, firstName: true, lastName: true } },
             host: { select: { id: true, firstName: true, lastName: true } }
@@ -970,6 +982,9 @@ router.post('/sessions/:id/join', authenticate, asyncHandler(async (req, res) =>
             message: 'Viva session not found'
         });
     }
+
+    const sessionId = session.id;
+    const userId = req.user.id;
 
     // Check if user is allowed (student of this session or examiner)
     const isStudent = session.targetStudentId === userId;
@@ -1068,12 +1083,7 @@ router.post('/sessions/:id/join', authenticate, asyncHandler(async (req, res) =>
  * @access  Private (Examiner)
  */
 router.get('/sessions/:id/participants', authenticate, asyncHandler(async (req, res) => {
-    const sessionId = req.params.id;
-
-    // Check if session exists and user is examiner
-    const session = await prisma.meeting.findUnique({
-        where: { id: sessionId }
-    });
+    const session = await findMeetingByIdOrLink(req.params.id);
 
     if (!session) {
         return res.status(404).json({
@@ -1081,6 +1091,8 @@ router.get('/sessions/:id/participants', authenticate, asyncHandler(async (req, 
             message: 'Session not found'
         });
     }
+
+    const sessionId = session.id;
 
     // Get all participants
     const participants = await prisma.meetingParticipant.findMany({
@@ -1125,12 +1137,8 @@ router.get('/sessions/:id/participants', authenticate, asyncHandler(async (req, 
  * @access  Private (Examiner)
  */
 router.put('/sessions/:id/admit/:participantId', authenticate, authorize('instructor', 'lab_assistant', 'admin'), asyncHandler(async (req, res) => {
-    const { id: sessionId, participantId } = req.params;
-
-    // Verify session and examiner
-    const session = await prisma.meeting.findUnique({
-        where: { id: sessionId }
-    });
+    const { participantId } = req.params;
+    const session = await findMeetingByIdOrLink(req.params.id);
 
     if (!session) {
         return res.status(404).json({
@@ -1166,12 +1174,8 @@ router.put('/sessions/:id/admit/:participantId', authenticate, authorize('instru
  * @access  Private (Examiner)
  */
 router.put('/sessions/:id/reject/:participantId', authenticate, authorize('instructor', 'lab_assistant', 'admin'), asyncHandler(async (req, res) => {
-    const { id: sessionId, participantId } = req.params;
-
-    // Verify session
-    const session = await prisma.meeting.findUnique({
-        where: { id: sessionId }
-    });
+    const { participantId } = req.params;
+    const session = await findMeetingByIdOrLink(req.params.id);
 
     if (!session) {
         return res.status(404).json({
@@ -1207,8 +1211,13 @@ router.put('/sessions/:id/reject/:participantId', authenticate, authorize('instr
  * @access  Private
  */
 router.put('/sessions/:id/leave', authenticate, asyncHandler(async (req, res) => {
-    const sessionId = req.params.id;
+    const session = await findMeetingByIdOrLink(req.params.id);
+    const sessionId = session ? session.id : (isUUID(req.params.id) ? req.params.id : null);
     const userId = req.user.id;
+
+    if (!sessionId) {
+        return res.json({ success: true, message: 'Left the session', data: { updated: 0 } });
+    }
 
     // Update participant status
     const participant = await prisma.meetingParticipant.updateMany({
@@ -1235,7 +1244,15 @@ router.put('/sessions/:id/leave', authenticate, asyncHandler(async (req, res) =>
  * @access  Private
  */
 router.get('/sessions/:id/my-status', authenticate, asyncHandler(async (req, res) => {
-    const sessionId = req.params.id;
+    const session = await findMeetingByIdOrLink(req.params.id);
+    if (!session) {
+        return res.status(404).json({
+            success: false,
+            message: 'Session not found'
+        });
+    }
+
+    const sessionId = session.id;
     const userId = req.user.id;
 
     const participant = await prisma.meetingParticipant.findUnique({
@@ -1275,11 +1292,14 @@ router.get('/sessions/:id/my-status', authenticate, asyncHandler(async (req, res
  * @access  Private (Examiner)
  */
 router.put('/sessions/:id/admit-all', authenticate, authorize('instructor', 'lab_assistant', 'admin'), asyncHandler(async (req, res) => {
-    const sessionId = req.params.id;
+    const session = await findMeetingByIdOrLink(req.params.id);
+    if (!session) {
+        return res.status(404).json({ success: false, message: 'Session not found' });
+    }
 
     const result = await prisma.meetingParticipant.updateMany({
         where: {
-            sessionId,
+            sessionId: session.id,
             status: 'waiting'
         },
         data: {
@@ -1598,9 +1618,7 @@ router.get('/recordings/:filename', authenticate, asyncHandler(async (req, res) 
  * @access  Private (Instructor)
  */
 router.put('/sessions/:id/mark-missed', authenticate, authorize('instructor', 'lab_assistant', 'admin'), asyncHandler(async (req, res) => {
-    const session = await prisma.meeting.findUnique({
-        where: { id: req.params.id }
-    });
+    const session = await findMeetingByIdOrLink(req.params.id);
 
     if (!session) {
         return res.status(404).json({ success: false, message: 'Session not found' });
@@ -1611,7 +1629,7 @@ router.put('/sessions/:id/mark-missed', authenticate, authorize('instructor', 'l
     }
 
     const updatedSession = await prisma.meeting.update({
-        where: { id: req.params.id },
+        where: { id: session.id },
         data: {
             status: 'cancelled',
             examinerRemarks: req.body.reason || 'Session marked as missed - time slot expired'
