@@ -29,7 +29,12 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
                 }
             }),
             prisma.submission.count({ where: { studentId: userId, ...(sessionId && { assignment: { academicYearId: sessionId } }) } }),
-            prisma.vivaSession.count({ where: { studentId: userId, status: { in: ['scheduled', 'in_progress'] } } }),
+            prisma.meeting.count({ 
+                where: { 
+                    OR: [{ targetStudentId: userId }, { targetClassId: { in: classIds } }], 
+                    actualEndTime: null
+                } 
+            }),
             // Get grades for avg score calculation
             prisma.grade.findMany({
                 where: {
@@ -53,7 +58,12 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
             assignedToMe: assignedCount,
             mySubmissions: submissionCount,
             pendingVivas,
-            completedVivas: await prisma.vivaSession.count({ where: { studentId: userId, status: 'completed' } }),
+            completedVivas: await prisma.meeting.count({ 
+                where: { 
+                    OR: [{ targetStudentId: userId }, { targetClassId: { in: classIds } }],
+                    actualEndTime: { not: null }
+                } 
+            }),
             avgScore,
             totalGrades: grades.length
         };
@@ -66,7 +76,7 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
                     status: { in: ['submitted', 'under_review'] }
                 }
             }),
-            prisma.vivaSession.count({ where: { examinerId: userId, status: { in: ['scheduled', 'in_progress'] } } }),
+            prisma.meeting.count({ where: { hostId: userId, actualEndTime: null } }),
             prisma.classEnrollment.count({
                 where: {
                     class: {
@@ -95,7 +105,7 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
             prisma.class.count({ where: { schoolId, ...(sessionId && { academicYearId: sessionId }) } }),
             prisma.assignment.count({ where: { schoolId, ...(sessionId && { academicYearId: sessionId }) } }),
             prisma.submission.count({ where: { ...(sessionId && { assignment: { academicYearId: sessionId } }) } }),
-            prisma.vivaSession.count({ where: { ...(sessionId && { submission: { assignment: { academicYearId: sessionId } } }) } }),
+            prisma.meeting.count({ where: { schoolId } }),
             prisma.lab.count({ where: { schoolId, status: 'active' } }),
             prisma.lab.count({ where: { schoolId, status: 'maintenance' } })
         ]);

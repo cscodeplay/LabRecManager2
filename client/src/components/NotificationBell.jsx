@@ -78,7 +78,7 @@ export default function NotificationBell() {
         switch (type) {
             case 'assignment': return <BookOpen className="w-4 h-4 text-blue-500" />;
             case 'grade': return <Award className="w-4 h-4 text-green-500" />;
-            case 'viva': return <Video className="w-4 h-4 text-purple-500" />;
+            case 'meeting': return <Video className="w-4 h-4 text-purple-500" />;
             case 'reminder': return <Clock className="w-4 h-4 text-amber-500" />;
             default: return <MessageCircle className="w-4 h-4 text-slate-500" />;
         }
