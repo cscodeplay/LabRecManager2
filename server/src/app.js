@@ -189,31 +189,132 @@ function getSession(sessionId) {
 // Store active host cameras: { sessionId: [socketId1, socketId2] }
 const activeHostCameras = {};
 
+// Store active meeting rooms: roomId -> Map(socketId -> { socketId, userId, name, role, isCameraOn, isMicOn, isScreenSharing, joinedAt })
+const activeMeetingRooms = new Map();
+
+function getMeetingRoom(roomId) {
+  if (!activeMeetingRooms.has(roomId)) {
+    activeMeetingRooms.set(roomId, new Map());
+  }
+  return activeMeetingRooms.get(roomId);
+}
+
 // Socket.io connection handling for meeting sessions
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // Join viva room
-  socket.on('join-meeting', (meetingId) => {
-    socket.join(`meeting-${meetingId}`);
-    console.log(`User ${socket.id} joined meeting session ${meetingId}`);
+  // ===========================================
+  // MULTI-DEVICE MEETING MESH SIGNALING
+  // ===========================================
+  socket.on('meeting:join', (data) => {
+    const { roomId, user, isCameraOn, isMicOn, isScreenSharing } = data || {};
+    if (!roomId) return;
+
+    socket.join(`meeting-${roomId}`);
+    const room = getMeetingRoom(roomId);
+    
+    const participantInfo = {
+      socketId: socket.id,
+      userId: user?.id || socket.id,
+      name: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || 'Participant' : 'Participant',
+      role: user?.role || 'student',
+      isCameraOn: !!isCameraOn,
+      isMicOn: !!isMicOn,
+      isScreenSharing: !!isScreenSharing,
+      joinedAt: Date.now()
+    };
+
+    // Send existing participants in the room to the newly joined peer
+    const existingParticipants = Array.from(room.values());
+    socket.emit('meeting:room-users', {
+      participants: existingParticipants,
+      yourSocketId: socket.id
+    });
+
+    // Save newly joined peer to room
+    room.set(socket.id, participantInfo);
+
+    // Notify other peers in the room about the new participant
+    socket.to(`meeting-${roomId}`).emit('meeting:user-joined', {
+      participant: participantInfo
+    });
+
+    console.log(`User ${participantInfo.name} (${socket.id}) joined meeting ${roomId}. Total participants: ${room.size}`);
   });
 
-  // WebRTC signaling for viva
+  // Direct Peer-to-Peer WebRTC signaling routing
+  socket.on('meeting:signal', (data) => {
+    const { targetSocketId, signal } = data || {};
+    if (targetSocketId && signal) {
+      io.to(targetSocketId).emit('meeting:signal', {
+        fromSocketId: socket.id,
+        signal
+      });
+    }
+  });
+
+  // Media toggle event broadcast (camera/mic/screenshare changes)
+  socket.on('meeting:media-toggle', (data) => {
+    const { roomId, isCameraOn, isMicOn, isScreenSharing } = data || {};
+    if (roomId) {
+      const room = getMeetingRoom(roomId);
+      if (room.has(socket.id)) {
+        const participant = room.get(socket.id);
+        if (isCameraOn !== undefined) participant.isCameraOn = isCameraOn;
+        if (isMicOn !== undefined) participant.isMicOn = isMicOn;
+        if (isScreenSharing !== undefined) participant.isScreenSharing = isScreenSharing;
+      }
+      socket.to(`meeting-${roomId}`).emit('meeting:media-toggle', {
+        socketId: socket.id,
+        isCameraOn,
+        isMicOn,
+        isScreenSharing
+      });
+    }
+  });
+
+  // In-Meeting Chat Message
+  socket.on('meeting:chat-message', (data) => {
+    const { roomId, message } = data || {};
+    if (roomId && message) {
+      io.to(`meeting-${roomId}`).emit('meeting:chat-message', message);
+    }
+  });
+
+  // End meeting for everyone
+  socket.on('meeting:end-session', (data) => {
+    const { roomId } = data || {};
+    if (roomId) {
+      io.to(`meeting-${roomId}`).emit('meeting:session-ended');
+      activeMeetingRooms.delete(roomId);
+    }
+  });
+
+  // Legacy room support
+  socket.on('join-meeting', (meetingId) => {
+    socket.join(`meeting-${meetingId}`);
+  });
+  socket.on('join-room', (data) => {
+    const roomId = typeof data === 'object' ? data.roomId : data;
+    if (roomId) socket.join(`meeting-${roomId}`);
+  });
   socket.on('meeting-signal', (data) => {
     socket.to(`meeting-${data.meetingId}`).emit('meeting-signal', {
       signal: data.signal,
       from: socket.id
     });
   });
-
-  // Viva questions and responses
-  socket.on('meeting-question', (data) => {
-    socket.to(`meeting-${data.meetingId}`).emit('meeting-question', data);
+  socket.on('offer', (data) => {
+    socket.to(`meeting-${data.roomId}`).emit('offer', data.offer);
   });
-
-  socket.on('meeting-response', (data) => {
-    socket.to(`meeting-${data.meetingId}`).emit('meeting-response', data);
+  socket.on('answer', (data) => {
+    socket.to(`meeting-${data.roomId}`).emit('answer', data.answer);
+  });
+  socket.on('ice-candidate', (data) => {
+    socket.to(`meeting-${data.roomId}`).emit('ice-candidate', data.candidate);
+  });
+  socket.on('session-ended', (data) => {
+    io.to(`meeting-${data.roomId}`).emit('session-ended');
   });
 
   // Notifications
@@ -663,6 +764,19 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    // Remove from active meeting rooms
+    for (const [roomId, room] of activeMeetingRooms.entries()) {
+      if (room.has(socket.id)) {
+        room.delete(socket.id);
+        io.to(`meeting-${roomId}`).emit('meeting:user-left', {
+          socketId: socket.id
+        });
+        if (room.size === 0) {
+          activeMeetingRooms.delete(roomId);
+        }
+      }
+    }
+
     // Remove from whiteboard sessions
     for (const [sessionId, session] of whiteboardSessions.entries()) {
       if (session.participants.has(socket.id)) {
