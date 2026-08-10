@@ -7,7 +7,8 @@ import {
     MessageSquare, Clock, User, Send, CheckCircle, XCircle,
     Maximize2, Minimize2, Download, Save, Volume2, VolumeX,
     Settings, Sliders, MonitorUp, Pencil, Users, ChevronUp,
-    ChevronDown, Eye, EyeOff, Radio, Sparkles, Pause, Play
+    ChevronDown, Eye, EyeOff, Radio, Sparkles, Pause, Play,
+    GripVertical, Move
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { meetingAPI } from '@/lib/api';
@@ -48,6 +49,63 @@ export default function MeetingRoomPage() {
     const [isVideoPaletteMinimized, setIsVideoPaletteMinimized] = useState(false);
     const [isControlsHidden, setIsControlsHidden] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+
+    // Draggable positions
+    const [videoPalettePos, setVideoPalettePos] = useState({ x: null, y: 20 });
+    const isDraggingVideoPalette = useRef(false);
+    const videoPaletteDragOffset = useRef({ x: 0, y: 0 });
+
+    const [chatPos, setChatPos] = useState({ x: null, y: null });
+    const isDraggingChat = useRef(false);
+    const chatDragOffset = useRef({ x: 0, y: 0 });
+
+    // Video Palette drag handlers
+    const handleVideoPalettePointerDown = (e) => {
+        e.stopPropagation();
+        isDraggingVideoPalette.current = true;
+        const currentX = videoPalettePos.x !== null ? videoPalettePos.x : (window.innerWidth - 220);
+        const currentY = videoPalettePos.y;
+        videoPaletteDragOffset.current = {
+            x: e.clientX - currentX,
+            y: e.clientY - currentY
+        };
+        e.currentTarget.setPointerCapture(e.pointerId);
+    };
+
+    const handleVideoPalettePointerMove = (e) => {
+        if (!isDraggingVideoPalette.current) return;
+        const newX = Math.max(10, Math.min(window.innerWidth - 210, e.clientX - videoPaletteDragOffset.current.x));
+        const newY = Math.max(10, Math.min(window.innerHeight - 180, e.clientY - videoPaletteDragOffset.current.y));
+        setVideoPalettePos({ x: newX, y: newY });
+    };
+
+    const handleVideoPalettePointerUp = () => {
+        isDraggingVideoPalette.current = false;
+    };
+
+    // Chat drag handlers
+    const handleChatPointerDown = (e) => {
+        e.stopPropagation();
+        isDraggingChat.current = true;
+        const currentX = chatPos.x !== null ? chatPos.x : (window.innerWidth - 400);
+        const currentY = chatPos.y !== null ? chatPos.y : (window.innerHeight - 560);
+        chatDragOffset.current = {
+            x: e.clientX - currentX,
+            y: e.clientY - currentY
+        };
+        e.currentTarget.setPointerCapture(e.pointerId);
+    };
+
+    const handleChatPointerMove = (e) => {
+        if (!isDraggingChat.current) return;
+        const newX = Math.max(10, Math.min(window.innerWidth - 360, e.clientX - chatDragOffset.current.x));
+        const newY = Math.max(10, Math.min(window.innerHeight - 490, e.clientY - chatDragOffset.current.y));
+        setChatPos({ x: newX, y: newY });
+    };
+
+    const handleChatPointerUp = () => {
+        isDraggingChat.current = false;
+    };
 
     // Chat state
     const [messages, setMessages] = useState([]);
@@ -810,11 +868,12 @@ export default function MeetingRoomPage() {
     };
 
     const saveRecordingToDatabase = async () => {
-        if (!recordedBlob || !session?.id) return;
+        if (!recordedBlob) return;
+        const targetId = session?.id || params.code;
         try {
             toast.loading('Saving recording to database...');
-            const file = new File([recordedBlob], `meeting_${session.id}_${Date.now()}.webm`, { type: 'video/webm' });
-            await meetingAPI.uploadRecording(session.id, file, recordingTime);
+            const file = new File([recordedBlob], `meeting_${targetId}_${Date.now()}.webm`, { type: 'video/webm' });
+            await meetingAPI.uploadRecording(targetId, file, recordingTime);
             toast.dismiss();
             toast.success('Recording saved to session records!');
             setShowRecordingModal(false);
@@ -908,6 +967,9 @@ export default function MeetingRoomPage() {
                             isFullscreen={true}
                             onClose={() => setShowWhiteboard(false)}
                             onSave={() => toast.success('Whiteboard snapshot saved!')}
+                            isMeetingMode={true}
+                            showCameraControls={false}
+                            isInstructor={isInstructor}
                         />
                     </div>
                 ) : (
@@ -980,18 +1042,36 @@ export default function MeetingRoomPage() {
             </div>
 
             {/* ========================================================================= */}
-            {/* LAYER 1 (FLOATING OVERLAY): FLOATING VIDEO PALETTE (WHEN WHITEBOARD IS ON)*/}
+            {/* LAYER 1 (FLOATING OVERLAY): DRAGGABLE FLOATING VIDEO PALETTE              */}
             {/* ========================================================================= */}
             {showWhiteboard && (
-                <div className="absolute top-4 right-4 z-20 flex flex-col items-end gap-2 pointer-events-auto">
-                    {/* Minimize / Expand Hook */}
-                    <div className="flex items-center gap-2 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-700/80 shadow-lg text-xs">
-                        <span className="flex items-center gap-1 text-slate-300 font-medium">
+                <div
+                    style={{
+                        position: 'fixed',
+                        left: videoPalettePos.x !== null ? `${videoPalettePos.x}px` : undefined,
+                        right: videoPalettePos.x === null ? '1rem' : undefined,
+                        top: `${videoPalettePos.y}px`,
+                        zIndex: 25
+                    }}
+                    className="flex flex-col items-end gap-2 pointer-events-auto select-none"
+                >
+                    {/* Draggable Header with Minimize / Expand Hook */}
+                    <div
+                        onPointerDown={handleVideoPalettePointerDown}
+                        onPointerMove={handleVideoPalettePointerMove}
+                        onPointerUp={handleVideoPalettePointerUp}
+                        className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-700/80 shadow-2xl text-xs cursor-grab active:cursor-grabbing touch-none"
+                    >
+                        <GripVertical className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="flex items-center gap-1 text-slate-200 font-medium">
                             <Users className="w-3.5 h-3.5 text-primary-400" />
                             {totalParticipants} in call
                         </span>
                         <button
-                            onClick={() => setIsVideoPaletteMinimized(!isVideoPaletteMinimized)}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsVideoPaletteMinimized(!isVideoPaletteMinimized);
+                            }}
                             className="p-1 text-slate-400 hover:text-white rounded-md transition"
                             title={isVideoPaletteMinimized ? 'Show participant tiles' : 'Hide participant tiles'}
                         >
@@ -1080,12 +1160,29 @@ export default function MeetingRoomPage() {
             </div>
 
             {/* ========================================================================= */}
-            {/* LAYER 2 (FLOATING OVERLAY): FLOATING CHAT WINDOW                         */}
+            {/* LAYER 2 (FLOATING OVERLAY): DRAGGABLE FLOATING CHAT WINDOW                */}
             {/* ========================================================================= */}
             {showChat && (
-                <div className="absolute bottom-24 right-4 w-84 md:w-96 h-[480px] bg-slate-900/95 backdrop-blur-xl rounded-2xl border border-slate-700/80 shadow-2xl flex flex-col z-30 overflow-hidden pointer-events-auto animate-in fade-in slide-in-from-bottom-5 duration-200">
-                    <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-800/40">
+                <div
+                    style={{
+                        position: 'fixed',
+                        left: chatPos.x !== null ? `${chatPos.x}px` : undefined,
+                        right: chatPos.x === null ? '1rem' : undefined,
+                        top: chatPos.y !== null ? `${chatPos.y}px` : undefined,
+                        bottom: chatPos.y === null ? '6rem' : undefined,
+                        zIndex: 35
+                    }}
+                    className="w-84 md:w-96 h-[480px] bg-slate-900/95 backdrop-blur-xl rounded-2xl border border-slate-700/80 shadow-2xl flex flex-col overflow-hidden pointer-events-auto animate-in fade-in select-none"
+                >
+                    {/* Draggable Chat Header */}
+                    <div
+                        onPointerDown={handleChatPointerDown}
+                        onPointerMove={handleChatPointerMove}
+                        onPointerUp={handleChatPointerUp}
+                        className="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-800/60 cursor-grab active:cursor-grabbing touch-none"
+                    >
                         <div className="flex items-center gap-2">
+                            <GripVertical className="w-4 h-4 text-slate-400" />
                             <MessageSquare className="w-4 h-4 text-primary-400" />
                             <h3 className="text-sm font-semibold text-white">In-Meeting Chat</h3>
                         </div>

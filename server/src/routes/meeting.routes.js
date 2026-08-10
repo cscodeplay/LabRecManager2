@@ -637,6 +637,20 @@ router.post("/sessions/schedule", authenticate, authorize("instructor", "lab_ass
             }
         });
     } catch (logError) {}
+
+    // Broadcast real-time meeting notification to other devices
+    try {
+        const io = req.app.get('io') || global.io;
+        if (io) {
+            io.to(`user-${req.user.id}`).emit('meeting:created', { session });
+            if (targetStudentId) io.to(`user-${targetStudentId}`).emit('meeting:created', { session });
+            if (targetClassId) io.to(`class-${targetClassId}`).emit('meeting:created', { session });
+            io.emit('meetings:updated', { session });
+        }
+    } catch (ioErr) {
+        console.log('Socket broadcast error (non-fatal):', ioErr);
+    }
+
     res.json({
         success: true,
         message: "Meeting session scheduled successfully",
@@ -1261,8 +1275,13 @@ const uploadRecording = multer({
 router.post('/sessions/:id/recording', authenticate, uploadRecording.single('recording'), asyncHandler(async (req, res) => {
     const sessionId = req.params.id;
 
-    const session = await prisma.meeting.findUnique({
-        where: { id: sessionId }
+    const session = await prisma.meeting.findFirst({
+        where: {
+            OR: [
+                { id: sessionId },
+                { meetingLink: { contains: sessionId } }
+            ]
+        }
     });
 
     if (!session) {
@@ -1273,10 +1292,11 @@ router.post('/sessions/:id/recording', authenticate, uploadRecording.single('rec
         return res.status(400).json({ success: false, message: 'No recording file uploaded' });
     }
 
-    const recordingUrl = `/api/viva/recordings/${path.basename(req.file.path)}`;
+    const filename = path.basename(req.file.path);
+    const recordingUrl = `/api/meetings/recordings/${filename}`;
 
     const updatedSession = await prisma.meeting.update({
-        where: { id: sessionId },
+        where: { id: session.id },
         data: {
             recordingUrl,
             recordingFilePath: req.file.path,
@@ -1293,7 +1313,7 @@ router.post('/sessions/:id/recording', authenticate, uploadRecording.single('rec
             recording: {
                 url: recordingUrl,
                 size: req.file.size,
-                filename: path.basename(req.file.path)
+                filename
             }
         }
     });

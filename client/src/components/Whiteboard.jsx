@@ -217,7 +217,8 @@ export default function Whiteboard({
     whiteboardId = null,
     permissions = { canDraw: true, canShareAudio: true, canShareVideo: true },
     isStudent = false,
-    userName = 'Instructor'
+    userName = 'Instructor',
+    isMeetingMode = false
 }) {
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
@@ -4197,7 +4198,7 @@ export default function Whiteboard({
 
                     {/* Sharing, Download & Save (Tight grouped) */}
                     <div className="flex items-center gap-0.5">
-                        {isInstructor && (
+                        {isInstructor && !isMeetingMode && (
                             <button
                                 onClick={isSharing ? onStopSharing : onShare}
                                 className={`p-1 rounded-full transition flex items-center justify-center ${isSharing
@@ -5479,8 +5480,8 @@ export default function Whiteboard({
                 </p>
             </div>
 
-            {/* Floatable Live Chat (Visible only during sharing for Instructor) */}
-            {isSharing && (
+            {/* Floatable Live Chat (Visible only during standalone sharing for Instructor) */}
+            {isSharing && !isMeetingMode && (
                 <WhiteboardChatWindow
                     socket={socket}
                     sessionId={sessionId}
@@ -5491,19 +5492,21 @@ export default function Whiteboard({
                 />
             )}
 
-            {/* AV Recorder */}
-            <WhiteboardRecorder 
-                isVisible={showRecorder}
-                socket={socket}
-                canvasRef={canvasRef} 
-                sessionId={sessionId || whiteboardId}
-                shapeObjects={shapeObjects}
-                textObjects={textObjects}
-                imageObjects={imageObjects}
-                onRecordingComplete={(data) => {
-                    console.log('Recording complete:', data);
-                }}
-            />
+            {/* AV Recorder (Standalone only, Meeting has its own recorder) */}
+            {!isMeetingMode && (
+                <WhiteboardRecorder 
+                    isVisible={showRecorder}
+                    socket={socket}
+                    canvasRef={canvasRef} 
+                    sessionId={sessionId || whiteboardId}
+                    shapeObjects={shapeObjects}
+                    textObjects={textObjects}
+                    imageObjects={imageObjects}
+                    onRecordingComplete={(data) => {
+                        console.log('Recording complete:', data);
+                    }}
+                />
+            )}
 
             {/* Screenshot Modal */}
             {screenshotPreview && (

@@ -12,6 +12,8 @@ import { meetingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import AssignmentCalendar from '@/components/AssignmentCalendar';
 
+import io from 'socket.io-client';
+
 export default function MeetingPage() {
     const router = useRouter();
     const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
@@ -21,7 +23,7 @@ export default function MeetingPage() {
     // Tab state for Sessions vs Recordings
     const [activeTab, setActiveTab] = useState('sessions');
 
-    // Recordings state (for admin view)
+    // Recordings state
     const [recordings, setRecordings] = useState([]);
     const [loadingRecordings, setLoadingRecordings] = useState(false);
     const [recordingSearch, setRecordingSearch] = useState('');
@@ -45,6 +47,9 @@ export default function MeetingPage() {
     const [sessionTitle, setSessionTitle] = useState('');
     const [scheduling, setScheduling] = useState(false);
 
+    const isAdmin = user?.role === 'admin' || user?.role === 'principal';
+    const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'lab_assistant';
+    const canViewRecordings = isAdmin || isInstructor;
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -53,24 +58,56 @@ export default function MeetingPage() {
             return;
         }
         loadSessions();
-    }, [isAuthenticated, _hasHydrated, selectedSessionId]);
 
-    // Load recordings when switching to recordings tab (admin only)
+        // Real-time socket listener for meeting sync across devices
+        const socketUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        const socket = io(socketUrl, {
+            path: '/socket.io',
+            transports: ['websocket', 'polling']
+        });
+
+        socket.on('connect', () => {
+            if (user?.id) {
+                socket.emit('join-user', user.id);
+            }
+        });
+
+        socket.on('meeting:created', () => {
+            loadSessions();
+        });
+
+        socket.on('meetings:updated', () => {
+            loadSessions();
+        });
+
+        socket.on('meeting:session-ended', () => {
+            loadSessions();
+        });
+
+        // Polling fallback every 5 seconds for instant multi-device sync
+        const pollInterval = setInterval(() => {
+            loadSessions(true);
+        }, 5000);
+
+        return () => {
+            socket.disconnect();
+            clearInterval(pollInterval);
+        };
+    }, [isAuthenticated, _hasHydrated, selectedSessionId, user?.id]);
+
+    // Load recordings when switching to recordings tab
     useEffect(() => {
-        if (activeTab === 'recordings' && isAdmin && recordings.length === 0) {
+        if (activeTab === 'recordings' && canViewRecordings) {
             loadRecordings();
         }
     }, [activeTab]);
 
-    const isAdmin = user?.role === 'admin' || user?.role === 'principal';
-    const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'lab_assistant';
-
-    const loadSessions = async () => {
+    const loadSessions = async (isBackground = false) => {
         try {
-            const res = await meetingAPI.getSessions();
+            const res = await meetingAPI.getSessions({ limit: 50 });
             setSessions(res.data.data.sessions || []);
         } catch (error) {
-            console.error('Error loading meeting sessions:', error);
+            if (!isBackground) console.error('Error loading meeting sessions:', error);
         } finally {
             setLoading(false);
         }
@@ -79,8 +116,11 @@ export default function MeetingPage() {
     const loadRecordings = async () => {
         setLoadingRecordings(true);
         try {
-            const res = await meetingAPI.getSessions({ limit: 100, status: 'completed' });
-            setRecordings(res.data.data.sessions || []);
+            const res = await meetingAPI.getSessions({ limit: 100 });
+            const allSessions = res.data.data.sessions || [];
+            // Show completed sessions or any session that has an uploaded recording
+            const validRecordings = allSessions.filter(s => s.recordingUrl || s.status === 'completed');
+            setRecordings(validRecordings);
         } catch (error) {
             console.error('Error loading recordings:', error);
             toast.error('Failed to load recordings');
@@ -360,8 +400,40 @@ export default function MeetingPage() {
                     <AssignmentCalendar />
                 </div>
 
+                {/* In-Progress Meeting Live Alert Banner */}
+                {liveSessions.length > 0 && (
+                    <div className="mb-6 p-5 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 rounded-2xl text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center animate-pulse">
+                                <Video className="w-7 h-7 text-white" />
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                                    <span className="text-xs font-bold uppercase tracking-wider bg-black/30 px-2 py-0.5 rounded-md">
+                                        Active Live Session
+                                    </span>
+                                </div>
+                                <h3 className="text-lg font-bold mt-1">
+                                    {liveSessions[0].title || liveSessions[0].submission?.assignment?.title || 'Live Meeting Session'}
+                                </h3>
+                                <p className="text-xs text-white/80">
+                                    Room: <strong className="font-mono text-white">{liveSessions[0].id}</strong> • Click below to join and sync seamlessly from this device.
+                                </p>
+                            </div>
+                        </div>
+                        <Link
+                            href={`/meeting/${liveSessions[0].id}`}
+                            className="w-full md:w-auto px-6 py-3 bg-white text-red-600 font-bold rounded-xl shadow-lg hover:bg-slate-100 transition flex items-center justify-center gap-2 whitespace-nowrap"
+                        >
+                            <Play className="w-5 h-5 fill-red-600" />
+                            Join Session on this Device
+                        </Link>
+                    </div>
+                )}
+
                 {/* Tab Navigation (Sessions / Recordings) */}
-                {isAdmin && (
+                {canViewRecordings && (
                     <div className="flex gap-2 mb-6">
                         <button
                             onClick={() => setActiveTab('sessions')}
