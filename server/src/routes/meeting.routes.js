@@ -28,11 +28,22 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
         where = {
             OR: [
                 { targetStudentId: req.user.id },
-                { targetClassId: { in: classIds } }
+                { targetClassId: { in: classIds } },
+                { targetClassId: null, targetStudentId: null },
+                { hostId: req.user.id }
             ]
         };
     } else if (req.user.role === 'instructor' || req.user.role === 'lab_assistant') {
-        where.hostId = req.user.id;
+        where = {
+            OR: [
+                { hostId: req.user.id },
+                { schoolId: req.user.schoolId }
+            ]
+        };
+    } else if (req.user.role === 'admin' || req.user.role === 'principal') {
+        if (req.user.schoolId) {
+            where.schoolId = req.user.schoolId;
+        }
     }
 
     if (status) {
@@ -43,12 +54,16 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
         where.submissionId = submissionId;
     }
 
-    // Filter by academic session through submission -> assignment
+    // Filter by academic session through submission -> assignment or standalone
     if (sessionId) {
-        where.submission = {
-            ...where.submission,
-            assignment: { academicYearId: sessionId }
-        };
+        where.AND = [
+            {
+                OR: [
+                    { submission: { assignment: { academicYearId: sessionId } } },
+                    { submissionId: null }
+                ]
+            }
+        ];
     }
 
     const [sessions, total] = await Promise.all([
@@ -56,7 +71,7 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
             where,
             skip,
             take: parseInt(limit),
-            orderBy: { scheduledAt: 'asc' },
+            orderBy: { scheduledAt: 'desc' },
             include: {
                 submission: {
                     include: {
@@ -66,7 +81,13 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
                     }
                 },
                 targetStudent: {
-                    select: { id: true, firstName: true, lastName: true, admissionNumber: true }
+                    select: { id: true, firstName: true, lastName: true, admissionNumber: true, email: true }
+                },
+                targetClass: {
+                    select: { id: true, name: true, section: true }
+                },
+                targetGroup: {
+                    select: { id: true, name: true }
                 },
                 host: {
                     select: { id: true, firstName: true, lastName: true }
@@ -192,7 +213,7 @@ router.get('/sessions/cleanup-expired', authenticate, authorize('admin', 'princi
  * @access  Private
  */
 router.get('/sessions/:id', authenticate, asyncHandler(async (req, res) => {
-    const session = await prisma.meeting.findUnique({
+    let session = await prisma.meeting.findUnique({
         where: { id: req.params.id },
         include: {
             submission: {
@@ -209,39 +230,94 @@ router.get('/sessions/:id', authenticate, asyncHandler(async (req, res) => {
                     firstNameHindi: true,
                     lastNameHindi: true,
                     admissionNumber: true,
-                    profileImageUrl: true
+                    profileImageUrl: true,
+                    email: true
+                }
+            },
+            targetClass: {
+                include: {
+                    enrollments: {
+                        where: { status: 'active' },
+                        include: {
+                            student: {
+                                select: {
+                                    id: true,
+                                    firstName: true,
+                                    lastName: true,
+                                    admissionNumber: true,
+                                    email: true
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            targetGroup: {
+                include: {
+                    members: {
+                        include: {
+                            student: {
+                                select: {
+                                    id: true,
+                                    firstName: true,
+                                    lastName: true,
+                                    admissionNumber: true
+                                }
+                            }
+                        }
+                    }
                 }
             },
             host: {
-                select: { id: true, firstName: true, lastName: true }
+                select: { id: true, firstName: true, lastName: true, role: true }
             }
         }
     });
 
     if (!session) {
+        // Try searching by meetingLink containing the code
+        session = await prisma.meeting.findFirst({
+            where: {
+                meetingLink: { contains: req.params.id }
+            },
+            include: {
+                submission: { include: { assignment: true } },
+                targetStudent: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
+                targetClass: true,
+                host: { select: { id: true, firstName: true, lastName: true, role: true } }
+            }
+        });
+    }
+
+    if (!session) {
         return res.status(404).json({
             success: false,
-            message: 'Viva session not found'
+            message: 'Meeting session not found'
         });
     }
 
-    // Check permissions - students can only view their own sessions
-    const isStudent = session.targetStudentId === req.user.id;
-    const isExaminer = session.hostId === req.user.id;
-    const isAdmin = req.user.role === 'admin' || req.user.role === 'principal';
+    // Check permissions
+    const isHost = session.hostId === req.user.id;
+    const isTargetStudent = session.targetStudentId === req.user.id;
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'principal' || req.user.role === 'instructor';
+    
+    let isAuthorized = isHost || isTargetStudent || isAdmin;
 
-    if (req.user.role === 'student' && !isStudent) {
-        return res.status(403).json({
-            success: false,
-            message: 'This viva session is not assigned to you',
-            messageHindi: 'यह वाइवा सत्र आपको असाइन नहीं किया गया है'
+    if (!isAuthorized && session.targetClassId) {
+        const isEnrolled = await prisma.classEnrollment.findFirst({
+            where: { classId: session.targetClassId, studentId: req.user.id, status: 'active' }
         });
+        if (isEnrolled) isAuthorized = true;
     }
 
-    if ((req.user.role === 'instructor' || req.user.role === 'lab_assistant') && !isExaminer && !isAdmin) {
+    if (!isAuthorized && !session.targetClassId && !session.targetStudentId) {
+        isAuthorized = true; // Open meeting in school
+    }
+
+    if (!isAuthorized) {
         return res.status(403).json({
             success: false,
-            message: 'You are not the examiner for this session'
+            message: 'You are not authorized for this meeting session'
         });
     }
 

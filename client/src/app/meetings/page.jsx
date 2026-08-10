@@ -45,6 +45,7 @@ export default function MeetingPage() {
     const [scheduledDateTime, setScheduledDateTime] = useState('');
     const [duration, setDuration] = useState(15);
     const [sessionTitle, setSessionTitle] = useState('');
+    const [autoAdmit, setAutoAdmit] = useState(true);
     const [scheduling, setScheduling] = useState(false);
 
     const isAdmin = user?.role === 'admin' || user?.role === 'principal';
@@ -208,7 +209,8 @@ export default function MeetingPage() {
             targetType,
             targetId: selectedTarget.id,
             durationMinutes: duration,
-            title: sessionTitle || 'Meeting Session'
+            title: sessionTitle || 'Meeting Session',
+            autoAdmit
         };
 
         if (meetingType === 'scheduled') {
@@ -253,6 +255,7 @@ export default function MeetingPage() {
         setSessionTitle('');
         setMeetingType('scheduled');
         setTargetType('student');
+        setAutoAdmit(true);
     };
 
     const getStatusBadge = (status) => {
@@ -311,22 +314,7 @@ export default function MeetingPage() {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const liveSessions = sessions.filter(s => isSessionLive(s));
-    const expiredSessions = sessions.filter(s => s.status === 'scheduled' && isSessionExpired(s) && !isSessionLive(s));
-    
-    // Sessions scheduled for today that are not live and not expired
-    const todaySessions = sessions.filter(s => {
-        if (s.status !== 'scheduled' || isSessionLive(s) || isSessionExpired(s)) return false;
-        const scheduledTime = new Date(s.scheduledAt);
-        return scheduledTime >= today && scheduledTime < tomorrow;
-    });
-
-    // Upcoming sessions (tomorrow and beyond)
-    const upcomingSessions = sessions.filter(s => {
-        if (s.status !== 'scheduled') return false;
-        const scheduledTime = new Date(s.scheduledAt);
-        return scheduledTime >= tomorrow;
-    });
-
+    const allScheduledSessions = sessions.filter(s => s.status === 'scheduled' && !isSessionLive(s));
     const pastSessions = sessions.filter(s => s.status === 'completed' || s.status === 'cancelled');
 
     if (loading) {
@@ -470,7 +458,7 @@ export default function MeetingPage() {
                             <div className="mb-8">
                                 <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
                                     <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
-                                    Live Now
+                                    Live Now ({liveSessions.length})
                                 </h2>
                                 <div className="grid gap-4">
                                     {liveSessions.map((session) => (
@@ -487,96 +475,15 @@ export default function MeetingPage() {
                             </div>
                         )}
 
-                        {/* Expired Sessions (past duration time) */}
-                        {expiredSessions.length > 0 && (
+                        {/* Scheduled & Upcoming Sessions */}
+                        {allScheduledSessions.length > 0 && (
                             <div className="mb-8">
-                                <h2 className="text-lg font-semibold text-amber-700 mb-4 flex items-center gap-2">
-                                    <span className="w-3 h-3 bg-amber-500 rounded-full"></span>
-                                    Expired Sessions (Time Exceeded)
+                                <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                                    <Calendar className="w-5 h-5 text-primary-600" />
+                                    Scheduled & Upcoming Sessions ({allScheduledSessions.length})
                                 </h2>
                                 <div className="grid gap-4">
-                                    {expiredSessions.map((session) => (
-                                        <div key={session.id} className="card p-5 border-l-4 border-amber-500 bg-amber-50/50">
-                                            <div className="flex flex-col md:flex-row md:items-center gap-4">
-                                                <div className="flex-1">
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium">
-                                                            EXPIRED
-                                                        </span>
-                                                        <span className="text-xs text-slate-500">
-                                                            Duration: {session.durationMinutes} min
-                                                        </span>
-                                                    </div>
-                                                    <h3 className="font-semibold text-slate-900">
-                                                        {session.submission?.assignment?.title || 'Meeting Session'}
-                                                    </h3>
-                                                    <p className="text-sm text-slate-600 mt-1">
-                                                        Student: {session.student?.firstName} {session.student?.lastName}
-                                                    </p>
-                                                    <p className="text-xs text-slate-500 mt-1">
-                                                        Scheduled: {new Date(session.scheduledAt).toLocaleString()} •
-                                                        Should have ended: {new Date(new Date(session.scheduledAt).getTime() + session.durationMinutes * 60000).toLocaleTimeString()}
-                                                    </p>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <Link
-                                                        href={`/meeting/${session.id}`}
-                                                        className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition"
-                                                        title="Start Late"
-                                                    >
-                                                        <Play className="w-5 h-5" />
-                                                    </Link>
-                                                    {isInstructor && (
-                                                        <button
-                                                            onClick={async () => {
-                                                                try {
-                                                                    await meetingAPI.markMissed(session.id, 'Session time slot expired');
-                                                                    toast.success('Session marked as missed');
-                                                                    loadSessions();
-                                                                } catch (error) {
-                                                                    toast.error('Failed to mark session');
-                                                                }
-                                                            }}
-                                                            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition"
-                                                            title="Mark as Missed"
-                                                        >
-                                                            <X className="w-5 h-5" />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                        {/* Today's Sessions */}
-                        {todaySessions.length > 0 && (
-                            <div className="mb-8">
-                                <h2 className="text-lg font-semibold text-primary-700 mb-4 flex items-center gap-2">
-                                    <Calendar className="w-5 h-5" />
-                                    Today's Sessions
-                                </h2>
-                                <div className="grid gap-4">
-                                    {todaySessions.map((session) => (
-                                        <SessionCard
-                                            key={session.id}
-                                            session={session}
-                                            isInstructor={isInstructor}
-                                            getStatusIcon={getStatusIcon}
-                                            getStatusBadge={getStatusBadge}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Upcoming Sessions */}
-                        {upcomingSessions.length > 0 && (
-                            <div className="mb-8">
-                                <h2 className="text-lg font-semibold text-slate-900 mb-4">Upcoming Sessions</h2>
-                                <div className="grid gap-4">
-                                    {upcomingSessions.map((session) => (
+                                    {allScheduledSessions.map((session) => (
                                         <SessionCard
                                             key={session.id}
                                             session={session}
@@ -1054,6 +961,22 @@ export default function MeetingPage() {
                                     ))}
                                 </div>
                             </div>
+
+                            {/* Auto-Join & Bypass Waiting Room Checkbox */}
+                            <div className="pt-1">
+                                <label className="flex items-start gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
+                                    <input
+                                        type="checkbox"
+                                        checked={autoAdmit}
+                                        onChange={(e) => setAutoAdmit(e.target.checked)}
+                                        className="mt-0.5 w-4 h-4 text-primary-600 rounded border-slate-300 focus:ring-primary-500"
+                                    />
+                                    <div>
+                                        <span className="text-sm font-medium text-slate-900 block">Auto-join & Bypass Waiting Room</span>
+                                        <span className="text-xs text-slate-500">Allow participants to join meeting directly without waiting for host approval</span>
+                                    </div>
+                                </label>
+                            </div>
                         </div>
 
                         {/* Modal Footer */}
@@ -1120,7 +1043,7 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                         )}
                     </div>
                     <h3 className="text-lg font-semibold text-slate-900">
-                        {session.questionsAsked?.sessionTitle || session.submission?.assignment?.title || 'Meeting Session'}
+                        {session.title || session.questionsAsked?.sessionTitle || session.submission?.assignment?.title || 'Meeting Session'}
                     </h3>
 
                     <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-500">

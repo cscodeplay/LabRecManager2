@@ -191,6 +191,8 @@ const activeHostCameras = {};
 
 // Store active meeting rooms: roomId -> Map(socketId -> { socketId, userId, name, role, isCameraOn, isMicOn, isScreenSharing, joinedAt })
 const activeMeetingRooms = new Map();
+// Store waiting rooms: roomId -> Map(socketId -> { socketId, userId, name, role, joinedAt })
+const waitingRooms = new Map();
 
 function getMeetingRoom(roomId) {
   if (!activeMeetingRooms.has(roomId)) {
@@ -199,19 +201,31 @@ function getMeetingRoom(roomId) {
   return activeMeetingRooms.get(roomId);
 }
 
+function getWaitingRoom(roomId) {
+  if (!waitingRooms.has(roomId)) {
+    waitingRooms.set(roomId, new Map());
+  }
+  return waitingRooms.get(roomId);
+}
+
 // Socket.io connection handling for meeting sessions
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   // ===========================================
-  // MULTI-DEVICE MEETING MESH SIGNALING
+  // MULTI-DEVICE MEETING MESH SIGNALING & WAITING ROOM
   // ===========================================
   socket.on('meeting:join', (data) => {
     const { roomId, user, isCameraOn, isMicOn, isScreenSharing } = data || {};
     if (!roomId) return;
 
-    socket.join(`meeting-${roomId}`);
     const room = getMeetingRoom(roomId);
+    const waitingRoom = getWaitingRoom(roomId);
+
+    // If previously in waiting room, remove
+    waitingRoom.delete(socket.id);
+
+    socket.join(`meeting-${roomId}`);
     
     const participantInfo = {
       socketId: socket.id,
@@ -239,7 +253,85 @@ io.on('connection', (socket) => {
       participant: participantInfo
     });
 
+    // If instructor/host, send current waiting list
+    if (user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'lab_assistant') {
+      socket.emit('meeting:waiting-users', {
+        waiting: Array.from(waitingRoom.values())
+      });
+    }
+
     console.log(`User ${participantInfo.name} (${socket.id}) joined meeting ${roomId}. Total participants: ${room.size}`);
+  });
+
+  // Participant Joins Waiting Room (when host has not yet admitted or autoJoin is false)
+  socket.on('meeting:join-waiting-room', (data) => {
+    const { roomId, user } = data || {};
+    if (!roomId) return;
+
+    socket.join(`waiting-${roomId}`);
+    const waitingRoom = getWaitingRoom(roomId);
+
+    const waitingParticipant = {
+      socketId: socket.id,
+      userId: user?.id || socket.id,
+      name: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || 'Student' : 'Student',
+      role: user?.role || 'student',
+      joinedAt: Date.now()
+    };
+
+    waitingRoom.set(socket.id, waitingParticipant);
+
+    // Inform the student
+    socket.emit('meeting:waiting-status', {
+      isWaiting: true,
+      message: 'Please wait, the meeting host will let you in soon.'
+    });
+
+    // Notify host in meeting room about the new waiting user
+    io.to(`meeting-${roomId}`).emit('meeting:waiting-users', {
+      waiting: Array.from(waitingRoom.values())
+    });
+
+    console.log(`User ${waitingParticipant.name} (${socket.id}) entered waiting room for meeting ${roomId}`);
+  });
+
+  // Host Admits Waiting User
+  socket.on('meeting:admit-user', (data) => {
+    const { roomId, targetSocketId } = data || {};
+    if (!roomId) return;
+
+    const waitingRoom = getWaitingRoom(roomId);
+
+    if (targetSocketId === 'all') {
+      waitingRoom.forEach((p, sId) => {
+        io.to(sId).emit('meeting:admitted');
+      });
+      waitingRoom.clear();
+    } else if (targetSocketId && waitingRoom.has(targetSocketId)) {
+      io.to(targetSocketId).emit('meeting:admitted');
+      waitingRoom.delete(targetSocketId);
+    }
+
+    // Broadcast updated waiting list to meeting host
+    io.to(`meeting-${roomId}`).emit('meeting:waiting-users', {
+      waiting: Array.from(waitingRoom.values())
+    });
+  });
+
+  // Host Denies Waiting User
+  socket.on('meeting:deny-user', (data) => {
+    const { roomId, targetSocketId } = data || {};
+    if (!roomId) return;
+
+    const waitingRoom = getWaitingRoom(roomId);
+    if (targetSocketId && waitingRoom.has(targetSocketId)) {
+      io.to(targetSocketId).emit('meeting:denied');
+      waitingRoom.delete(targetSocketId);
+    }
+
+    io.to(`meeting-${roomId}`).emit('meeting:waiting-users', {
+      waiting: Array.from(waitingRoom.values())
+    });
   });
 
   // Direct Peer-to-Peer WebRTC signaling routing
@@ -307,6 +399,7 @@ io.on('connection', (socket) => {
     if (roomId) {
       io.to(`meeting-${roomId}`).emit('meeting:session-ended');
       activeMeetingRooms.delete(roomId);
+      waitingRooms.delete(roomId);
     }
   });
 
