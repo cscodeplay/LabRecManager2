@@ -322,9 +322,15 @@ export default function DashboardPage() {
                         {user?.role === 'admin' && (
                             <>
                                 <StatCard icon={Users} label={t('dashboard.totalUsers')} value={stats.totalUsers || 0} color="bg-primary-600" />
+                                <StatCard icon={GraduationCap} label="Students" value={stats.totalStudents || 0} color="bg-indigo-600" />
+                                <StatCard icon={Users} label="Instructors" value={stats.totalInstructors || 0} color="bg-violet-600" />
                                 <StatCard icon={BookOpen} label={t('dashboard.totalClasses')} value={stats.totalClasses || 0} color="bg-emerald-600" />
                                 <StatCard icon={FileText} label={t('dashboard.assignments')} value={stats.totalAssignments || 0} color="bg-amber-600" />
+                                <StatCard icon={Upload} label="Submissions" value={stats.totalSubmissions || 0} color="bg-cyan-600" />
+                                <StatCard icon={Video} label="Meetings" value={stats.totalVivas || 0} color="bg-purple-600" />
                                 <StatCard icon={Monitor} label={t('dashboard.activeLabs')} value={stats.activeLabs ?? '--'} color="bg-blue-600" />
+                                <StatCard icon={Clock} label="Pending Grading" value={stats.pendingGrading || 0} color="bg-rose-600" />
+                                <StatCard icon={Monitor} label="Maintenance Labs" value={stats.maintenanceLabs ?? '--'} color="bg-orange-600" />
                             </>
                         )}
                     </div>
