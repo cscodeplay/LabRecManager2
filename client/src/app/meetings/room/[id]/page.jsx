@@ -1090,24 +1090,21 @@ export default function VivaRoomPage() {
 
                             {/* Remaining Time Countdown */}
                             {session?.durationMinutes && (
-                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${elapsedTime > session.durationMinutes * 60
-                                    ? 'bg-red-500/20 text-red-400'
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${elapsedTime >= session.durationMinutes * 60
+                                    ? 'bg-slate-700/60 text-slate-300'
                                     : elapsedTime > session.durationMinutes * 60 * 0.8
                                         ? 'bg-amber-500/20 text-amber-400'
                                         : 'bg-emerald-500/20 text-emerald-400'
                                     }`}>
                                     <span className="text-xs uppercase font-medium">
-                                        {elapsedTime > session.durationMinutes * 60 ? 'Overtime' : 'Remaining'}
+                                        {elapsedTime >= session.durationMinutes * 60 ? 'Slot Duration' : 'Remaining'}
                                     </span>
                                     <span className="font-mono font-medium">
                                         {(() => {
                                             const totalSeconds = session.durationMinutes * 60;
                                             const remaining = totalSeconds - elapsedTime;
                                             if (remaining <= 0) {
-                                                const overtime = Math.abs(remaining);
-                                                const mins = Math.floor(overtime / 60);
-                                                const secs = overtime % 60;
-                                                return `+${mins}:${secs.toString().padStart(2, '0')}`;
+                                                return '00:00 (Complete)';
                                             }
                                             const mins = Math.floor(remaining / 60);
                                             const secs = remaining % 60;

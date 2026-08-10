@@ -1117,7 +1117,7 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
 // Countdown Timer Component
 function CountdownTimer({ startTime, durationMinutes }) {
     const [timeRemaining, setTimeRemaining] = useState('');
-    const [isOvertime, setIsOvertime] = useState(false);
+    const [isCompleted, setIsCompleted] = useState(false);
 
     useEffect(() => {
         const calculateRemaining = () => {
@@ -1127,13 +1127,10 @@ function CountdownTimer({ startTime, durationMinutes }) {
             const diff = endTime - now;
 
             if (diff <= 0) {
-                setIsOvertime(true);
-                const overDiff = Math.abs(diff);
-                const mins = Math.floor(overDiff / 60000);
-                const secs = Math.floor((overDiff % 60000) / 1000);
-                setTimeRemaining(`+${mins}:${secs.toString().padStart(2, '0')}`);
+                setIsCompleted(true);
+                setTimeRemaining('00:00 (Duration Complete)');
             } else {
-                setIsOvertime(false);
+                setIsCompleted(false);
                 const mins = Math.floor(diff / 60000);
                 const secs = Math.floor((diff % 60000) / 1000);
                 setTimeRemaining(`${mins}:${secs.toString().padStart(2, '0')}`);
@@ -1146,10 +1143,10 @@ function CountdownTimer({ startTime, durationMinutes }) {
     }, [startTime, durationMinutes]);
 
     return (
-        <div className={`mt-3 p-3 rounded-lg flex items-center gap-2 ${isOvertime ? 'bg-red-50' : 'bg-amber-50'}`}>
-            <Clock className={`w-4 h-4 ${isOvertime ? 'text-red-500' : 'text-amber-500'}`} />
-            <span className={`text-sm font-mono font-medium ${isOvertime ? 'text-red-600' : 'text-amber-600'}`}>
-                {isOvertime ? 'Overtime: ' : 'Time Remaining: '}
+        <div className={`mt-3 p-3 rounded-lg flex items-center gap-2 ${isCompleted ? 'bg-slate-100' : 'bg-amber-50'}`}>
+            <Clock className={`w-4 h-4 ${isCompleted ? 'text-slate-500' : 'text-amber-500'}`} />
+            <span className={`text-sm font-mono font-medium ${isCompleted ? 'text-slate-600' : 'text-amber-600'}`}>
+                {isCompleted ? 'Slot: ' : 'Time Remaining: '}
                 {timeRemaining}
             </span>
         </div>
