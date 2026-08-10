@@ -311,6 +311,32 @@ router.get('/calendar', authenticate, asyncHandler(async (req, res) => {
         };
     });
 
+    // Fetch meetings
+    const meetings = await prisma.meeting.findMany({
+        where: {
+            scheduledAt: { gte: startOfMonth, lte: endOfMonth },
+            ...(role === 'student' && {
+                OR: [
+                    { targetStudentId: userId },
+                    { targetClassId: { in: classIds } }
+                ]
+            })
+        },
+        select: { id: true, title: true, scheduledAt: true, status: true }
+    });
+
+    const meetingItems = meetings.map(m => ({
+        id: m.id,
+        title: m.title + ' (Meeting)',
+        dueDate: m.scheduledAt,
+        type: 'meeting',
+        status: m.status,
+        isPast: new Date(m.scheduledAt) < now2,
+        isCompleted: m.status === 'completed'
+    }));
+
+    calendarItems.push(...meetingItems);
+
     res.json({
         success: true,
         data: {

@@ -14,7 +14,7 @@ const classRoutes = require('./routes/class.routes');
 const subjectRoutes = require('./routes/subject.routes');
 const assignmentRoutes = require('./routes/assignment.routes');
 const submissionRoutes = require('./routes/submission.routes');
-const vivaRoutes = require('./routes/viva.routes');
+const meetingRoutes = require('./routes/meeting.routes');
 const gradeRoutes = require('./routes/grade.routes');
 const feeRoutes = require('./routes/fee.routes');
 const reportRoutes = require('./routes/report.routes');
@@ -92,7 +92,7 @@ app.use('/api/classes', classRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/submissions', submissionRoutes);
-app.use('/api/viva', vivaRoutes);
+app.use('/api/meetings', meetingRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/fees', feeRoutes);
 app.use('/api/reports', reportRoutes);
@@ -189,31 +189,31 @@ function getSession(sessionId) {
 // Store active host cameras: { sessionId: [socketId1, socketId2] }
 const activeHostCameras = {};
 
-// Socket.io connection handling for viva sessions
+// Socket.io connection handling for meeting sessions
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   // Join viva room
-  socket.on('join-viva', (vivaSessionId) => {
-    socket.join(`viva-${vivaSessionId}`);
-    console.log(`User ${socket.id} joined viva session ${vivaSessionId}`);
+  socket.on('join-meeting', (meetingId) => {
+    socket.join(`meeting-${meetingId}`);
+    console.log(`User ${socket.id} joined meeting session ${meetingId}`);
   });
 
   // WebRTC signaling for viva
-  socket.on('viva-signal', (data) => {
-    socket.to(`viva-${data.vivaSessionId}`).emit('viva-signal', {
+  socket.on('meeting-signal', (data) => {
+    socket.to(`meeting-${data.meetingId}`).emit('meeting-signal', {
       signal: data.signal,
       from: socket.id
     });
   });
 
   // Viva questions and responses
-  socket.on('viva-question', (data) => {
-    socket.to(`viva-${data.vivaSessionId}`).emit('viva-question', data);
+  socket.on('meeting-question', (data) => {
+    socket.to(`meeting-${data.meetingId}`).emit('meeting-question', data);
   });
 
-  socket.on('viva-response', (data) => {
-    socket.to(`viva-${data.vivaSessionId}`).emit('viva-response', data);
+  socket.on('meeting-response', (data) => {
+    socket.to(`meeting-${data.meetingId}`).emit('meeting-response', data);
   });
 
   // Notifications

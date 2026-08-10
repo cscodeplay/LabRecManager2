@@ -8,10 +8,10 @@ import {
     Plus, Search, X, Users, CalendarPlus, Award, Shield
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import { vivaAPI } from '@/lib/api';
+import { meetingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 
-export default function VivaPage() {
+export default function MeetingPage() {
     const router = useRouter();
     const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [sessions, setSessions] = useState([]);
@@ -29,6 +29,12 @@ export default function VivaPage() {
 
     // Schedule modal state
     const [showScheduleModal, setShowScheduleModal] = useState(false);
+    const [meetingType, setMeetingType] = useState('scheduled'); // 'instant' or 'scheduled'
+    const [targetType, setTargetType] = useState('student'); // 'student', 'class', 'group'
+    const [selectedTarget, setSelectedTarget] = useState(null);
+    const [availableTargets, setAvailableTargets] = useState([]);
+    const [loadingTargets, setLoadingTargets] = useState(false);
+    const [targetSearchQuery, setTargetSearchQuery] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [students, setStudents] = useState([]);
     const [loadingStudents, setLoadingStudents] = useState(false);
@@ -60,10 +66,10 @@ export default function VivaPage() {
 
     const loadSessions = async () => {
         try {
-            const res = await vivaAPI.getSessions();
+            const res = await meetingAPI.getSessions();
             setSessions(res.data.data.sessions || []);
         } catch (error) {
-            console.error('Error loading viva sessions:', error);
+            console.error('Error loading meeting sessions:', error);
         } finally {
             setLoading(false);
         }
@@ -72,7 +78,7 @@ export default function VivaPage() {
     const loadRecordings = async () => {
         setLoadingRecordings(true);
         try {
-            const res = await vivaAPI.getSessions({ limit: 100, status: 'completed' });
+            const res = await meetingAPI.getSessions({ limit: 100, status: 'completed' });
             setRecordings(res.data.data.sessions || []);
         } catch (error) {
             console.error('Error loading recordings:', error);
@@ -96,7 +102,7 @@ export default function VivaPage() {
 
         setLoadingStudents(true);
         try {
-            const res = await vivaAPI.getAvailableStudents({ search: query });
+            const res = await meetingAPI.getAvailableStudents({ search: query });
             setStudents(res.data.data.students || []);
         } catch (error) {
             console.error('Error searching students:', error);
@@ -116,51 +122,91 @@ export default function VivaPage() {
         return () => clearTimeout(debounceTimer);
     }, [searchQuery]);
 
-    const handleScheduleSession = async () => {
-        if (!selectedStudent) {
-            toast.error('Please select a student');
+    const searchTargets = async (query, type) => {
+        if (!query || query.length < 2) {
+            setAvailableTargets([]);
             return;
         }
-        if (!scheduledDateTime) {
-            toast.error('Please select a date and time');
-            return;
+        setLoadingTargets(true);
+        try {
+            if (type === 'student') {
+                const res = await meetingAPI.getAvailableStudents({ search: query });
+                setAvailableTargets(res.data.data.students || []);
+            } else if (type === 'class') {
+                // If API exists, use it. Otherwise placeholder search.
+                const res = await classesAPI.getAll({ search: query });
+                setAvailableTargets(res.data.data.classes || []);
+            } else if (type === 'group') {
+                setAvailableTargets([{ id: 'dummy-group', name: query + ' Group' }]);
+            }
+        } catch (error) {
+            console.error('Error searching targets:', error);
+            toast.error('Failed to search targets');
+        } finally {
+            setLoadingTargets(false);
         }
+    };
 
-        const scheduledDate = new Date(scheduledDateTime);
-        if (scheduledDate <= new Date()) {
-            toast.error('Scheduled time must be in the future');
+    useEffect(() => {
+        const debounceTimer = setTimeout(() => {
+            if (targetSearchQuery) {
+                searchTargets(targetSearchQuery, targetType);
+            }
+        }, 300);
+        return () => clearTimeout(debounceTimer);
+    }, [targetSearchQuery, targetType]);
+
+    const handleScheduleSession = async () => {
+        if (!selectedTarget) {
+            toast.error(`Please select a ${targetType}`);
             return;
+        }
+        
+        const payload = {
+            type: meetingType,
+            targetType,
+            targetId: selectedTarget.id,
+            durationMinutes: duration,
+            title: sessionTitle || 'Meeting Session'
+        };
+
+        if (meetingType === 'scheduled') {
+            if (!scheduledDateTime) {
+                toast.error('Please select a date and time');
+                return;
+            }
+            const scheduledDate = new Date(scheduledDateTime);
+            if (scheduledDate <= new Date()) {
+                toast.error('Scheduled time must be in the future');
+                return;
+            }
+            payload.scheduledAt = scheduledDate.toISOString();
         }
 
         setScheduling(true);
         try {
-            const res = await vivaAPI.scheduleStandaloneSession({
-                studentId: selectedStudent.id,
-                scheduledAt: scheduledDate.toISOString(),
-                durationMinutes: duration,
-                title: sessionTitle || 'Viva Session',
-                mode: 'online'
-            });
-
-            toast.success('Viva session scheduled successfully!');
+            await meetingAPI.scheduleStandaloneSession(payload);
+            toast.success('Meeting session scheduled successfully!');
             setShowScheduleModal(false);
             resetModalState();
             loadSessions();
         } catch (error) {
-            console.error('Error scheduling viva:', error);
-            toast.error(error.response?.data?.message || 'Failed to schedule viva session');
+            console.error('Error scheduling meeting:', error);
+            toast.error(error.response?.data?.message || 'Failed to schedule meeting session');
         } finally {
             setScheduling(false);
         }
     };
 
     const resetModalState = () => {
-        setSelectedStudent(null);
-        setSearchQuery('');
-        setStudents([]);
+        setSelectedTarget(null);
+        setTargetSearchQuery('');
+        setAvailableTargets([]);
         setScheduledDateTime('');
         setDuration(15);
         setSessionTitle('');
+        setMeetingType('scheduled');
+        setTargetType('student');
     };
 
     const getStatusBadge = (status) => {
@@ -234,15 +280,15 @@ export default function VivaPage() {
                         <Link href="/dashboard" className="text-slate-500 hover:text-slate-700">
                             ← Back
                         </Link>
-                        <h1 className="text-xl font-semibold text-slate-900">Viva Sessions</h1>
+                        <h1 className="text-xl font-semibold text-slate-900">Meeting Sessions</h1>
                     </div>
 
-                    {/* Schedule Viva Button for Instructors */}
+                    {/* Schedule Meeting Button for Instructors */}
                     {isInstructor && (
                         <button
                             onClick={() => setShowScheduleModal(true)}
                             className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
-                            title="Schedule Viva Session"
+                            title="Schedule Meeting Session"
                         >
                             <CalendarPlus className="w-5 h-5" />
                         </button>
@@ -258,11 +304,11 @@ export default function VivaPage() {
                             <Video className="w-6 h-6" />
                         </div>
                         <div className="flex-1">
-                            <h2 className="text-lg font-semibold">Online Viva Sessions</h2>
+                            <h2 className="text-lg font-semibold">Online Meeting Sessions</h2>
                             <p className="text-white/80 mt-1">
                                 {isInstructor
-                                    ? 'Schedule and conduct viva sessions with your students. Click "Schedule Viva Session" to create a new session with video/audio call support.'
-                                    : 'View your scheduled viva sessions and join when it\'s time. Video and audio are off by default for privacy.'}
+                                    ? 'Schedule and conduct meeting sessions with your students. Click "Schedule Meeting Session" to create a new session with video/audio call support.'
+                                    : 'View your scheduled meeting sessions and join when it\'s time. Video and audio are off by default for privacy.'}
                             </p>
                         </div>
                     </div>
@@ -275,7 +321,7 @@ export default function VivaPage() {
                             <Video className="w-5 h-5 text-amber-600" />
                         </div>
                         <div>
-                            <p className="font-medium text-amber-800">📱 Before joining a viva session</p>
+                            <p className="font-medium text-amber-800">📱 Before joining a meeting session</p>
                             <p className="text-sm text-amber-600">Test your camera and microphone in Settings → Devices</p>
                         </div>
                     </div>
@@ -360,7 +406,7 @@ export default function VivaPage() {
                                                         </span>
                                                     </div>
                                                     <h3 className="font-semibold text-slate-900">
-                                                        {session.submission?.assignment?.title || 'Viva Session'}
+                                                        {session.submission?.assignment?.title || 'Meeting Session'}
                                                     </h3>
                                                     <p className="text-sm text-slate-600 mt-1">
                                                         Student: {session.student?.firstName} {session.student?.lastName}
@@ -372,7 +418,7 @@ export default function VivaPage() {
                                                 </div>
                                                 <div className="flex gap-2">
                                                     <Link
-                                                        href={`/viva/room/${session.id}`}
+                                                        href={`/meeting/room/${session.id}`}
                                                         className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition"
                                                         title="Start Late"
                                                     >
@@ -382,7 +428,7 @@ export default function VivaPage() {
                                                         <button
                                                             onClick={async () => {
                                                                 try {
-                                                                    await vivaAPI.markMissed(session.id, 'Session time slot expired');
+                                                                    await meetingAPI.markMissed(session.id, 'Session time slot expired');
                                                                     toast.success('Session marked as missed');
                                                                     loadSessions();
                                                                 } catch (error) {
@@ -443,11 +489,11 @@ export default function VivaPage() {
                         {sessions.length === 0 && (
                             <div className="card p-12 text-center">
                                 <Video className="w-16 h-16 mx-auto text-slate-300 mb-4" />
-                                <h3 className="text-lg font-medium text-slate-700 mb-2">No viva sessions</h3>
+                                <h3 className="text-lg font-medium text-slate-700 mb-2">No meeting sessions</h3>
                                 <p className="text-slate-500 mb-6">
                                     {isInstructor
-                                        ? 'Get started by scheduling your first viva session with a student.'
-                                        : 'You don\'t have any scheduled viva sessions at the moment.'}
+                                        ? 'Get started by scheduling your first meeting session with a student.'
+                                        : 'You don\'t have any scheduled meeting sessions at the moment.'}
                                 </p>
                                 {isInstructor && (
                                     <button
@@ -455,7 +501,7 @@ export default function VivaPage() {
                                         className="btn btn-primary inline-flex items-center gap-2"
                                     >
                                         <CalendarPlus className="w-5 h-5" />
-                                        Schedule Your First Viva
+                                        Schedule Your First Meeting
                                     </button>
                                 )}
                             </div>
@@ -563,7 +609,7 @@ export default function VivaPage() {
                                                             <Video className="w-6 h-6" />
                                                         </div>
                                                         <div>
-                                                            <h3 className="font-semibold text-slate-900">Viva Session</h3>
+                                                            <h3 className="font-semibold text-slate-900">Meeting Session</h3>
                                                             <div className="flex flex-wrap gap-3 text-sm text-slate-500 mt-1">
                                                                 <span className="flex items-center gap-1">
                                                                     <User className="w-4 h-4" />
@@ -616,7 +662,7 @@ export default function VivaPage() {
                                     <div className="card p-12 text-center">
                                         <Video className="w-16 h-16 mx-auto text-slate-300 mb-4" />
                                         <h3 className="text-lg font-medium text-slate-700">No recordings found</h3>
-                                        <p className="text-slate-500">Completed viva sessions with recordings will appear here</p>
+                                        <p className="text-slate-500">Completed meeting sessions with recordings will appear here</p>
                                     </div>
                                 )}
                             </div>
@@ -632,7 +678,7 @@ export default function VivaPage() {
                         <div className="p-4 border-b flex items-center justify-between">
                             <div>
                                 <h2 className="text-lg font-semibold text-slate-900">
-                                    Viva Recording - {selectedRecording.student?.firstName} {selectedRecording.student?.lastName}
+                                    Meeting Recording - {selectedRecording.student?.firstName} {selectedRecording.student?.lastName}
                                 </h2>
                                 <p className="text-sm text-slate-500">
                                     Examiner: {selectedRecording.examiner?.firstName} {selectedRecording.examiner?.lastName} •
@@ -651,7 +697,7 @@ export default function VivaPage() {
                                 controls
                                 autoPlay
                                 className="w-full rounded-lg bg-black aspect-video"
-                                src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'}/viva/recordings/${selectedRecording.recordingUrl?.split('/').pop()}`}
+                                src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'}/meeting/recordings/${selectedRecording.recordingUrl?.split('/').pop()}`}
                             >
                                 Your browser does not support video playback.
                             </video>
@@ -686,15 +732,15 @@ export default function VivaPage() {
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
                         {/* Modal Header */}
-                        <div className="p-6 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl">
+                        <div className="p-6 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl z-10">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center">
                                         <CalendarPlus className="w-5 h-5 text-primary-600" />
                                     </div>
                                     <div>
-                                        <h2 className="text-xl font-semibold text-slate-900">Schedule Viva Session</h2>
-                                        <p className="text-sm text-slate-500">Create a new viva session for a student</p>
+                                        <h2 className="text-xl font-semibold text-slate-900">Schedule Meeting Session</h2>
+                                        <p className="text-sm text-slate-500">Create a new meeting session</p>
                                     </div>
                                 </div>
                                 <button
@@ -712,6 +758,27 @@ export default function VivaPage() {
 
                         {/* Modal Body */}
                         <div className="p-6 space-y-6">
+                            {/* Meeting Type */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    Meeting Type <span className="text-red-500">*</span>
+                                </label>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setMeetingType('scheduled')}
+                                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${meetingType === 'scheduled' ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                                    >
+                                        Scheduled
+                                    </button>
+                                    <button
+                                        onClick={() => setMeetingType('instant')}
+                                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${meetingType === 'instant' ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                                    >
+                                        Instant Meeting
+                                    </button>
+                                </div>
+                            </div>
+
                             {/* Session Title (Optional) */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -721,34 +788,56 @@ export default function VivaPage() {
                                     type="text"
                                     value={sessionTitle}
                                     onChange={(e) => setSessionTitle(e.target.value)}
-                                    placeholder="e.g., Mid-term Viva, Lab Experiment Review"
+                                    placeholder="e.g., Mid-term Meeting, Lab Experiment Review"
                                     className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
                                 />
                             </div>
 
-                            {/* Student Selection */}
+                            {/* Target Type */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Select Student <span className="text-red-500">*</span>
+                                    Target Type <span className="text-red-500">*</span>
+                                </label>
+                                <select
+                                    value={targetType}
+                                    onChange={(e) => {
+                                        setTargetType(e.target.value);
+                                        setSelectedTarget(null);
+                                        setAvailableTargets([]);
+                                        setTargetSearchQuery('');
+                                    }}
+                                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
+                                >
+                                    <option value="student">Student</option>
+                                    <option value="class">Class</option>
+                                    <option value="group">Group</option>
+                                </select>
+                            </div>
+
+                            {/* Target Selection */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    Select {targetType.charAt(0).toUpperCase() + targetType.slice(1)} <span className="text-red-500">*</span>
                                 </label>
 
-                                {selectedStudent ? (
+                                {selectedTarget ? (
                                     <div className="flex items-center justify-between p-4 bg-primary-50 border border-primary-200 rounded-xl">
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 rounded-full bg-primary-500 text-white flex items-center justify-center font-medium">
-                                                {selectedStudent.firstName?.[0]}{selectedStudent.lastName?.[0]}
+                                                {selectedTarget.firstName?.[0] || selectedTarget.name?.[0] || targetType[0].toUpperCase()}
+                                                {selectedTarget.lastName?.[0]}
                                             </div>
                                             <div>
                                                 <p className="font-medium text-slate-900">
-                                                    {selectedStudent.firstName} {selectedStudent.lastName}
+                                                    {selectedTarget.firstName ? \`\${selectedTarget.firstName} \${selectedTarget.lastName}\` : selectedTarget.name}
                                                 </p>
                                                 <p className="text-sm text-slate-500">
-                                                    {selectedStudent.studentId || selectedStudent.admissionNumber || selectedStudent.email}
+                                                    {selectedTarget.studentId || selectedTarget.email || \`\${targetType} ID\`}
                                                 </p>
                                             </div>
                                         </div>
                                         <button
-                                            onClick={() => setSelectedStudent(null)}
+                                            onClick={() => setSelectedTarget(null)}
                                             className="text-primary-600 hover:text-primary-800 text-sm font-medium"
                                         >
                                             Change
@@ -760,46 +849,40 @@ export default function VivaPage() {
                                             <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
                                             <input
                                                 type="text"
-                                                value={searchQuery}
-                                                onChange={(e) => setSearchQuery(e.target.value)}
-                                                placeholder="Search by name, email, or student ID..."
+                                                value={targetSearchQuery}
+                                                onChange={(e) => setTargetSearchQuery(e.target.value)}
+                                                placeholder={\`Search \${targetType}...\`}
                                                 className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
                                             />
                                         </div>
 
-                                        {/* Student Search Results */}
-                                        {loadingStudents && (
+                                        {loadingTargets && (
                                             <div className="flex items-center justify-center py-4">
                                                 <div className="animate-spin w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full"></div>
                                             </div>
                                         )}
 
-                                        {!loadingStudents && students.length > 0 && (
+                                        {!loadingTargets && availableTargets.length > 0 && (
                                             <div className="border border-slate-200 rounded-xl max-h-48 overflow-y-auto">
-                                                {students.map((student) => (
+                                                {availableTargets.map((target) => (
                                                     <button
-                                                        key={student.id}
+                                                        key={target.id}
                                                         onClick={() => {
-                                                            setSelectedStudent(student);
-                                                            setSearchQuery('');
-                                                            setStudents([]);
+                                                            setSelectedTarget(target);
+                                                            setTargetSearchQuery('');
+                                                            setAvailableTargets([]);
                                                         }}
                                                         className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 transition border-b border-slate-100 last:border-0"
                                                     >
                                                         <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-sm font-medium">
-                                                            {student.firstName?.[0]}{student.lastName?.[0]}
+                                                            {target.firstName?.[0] || target.name?.[0] || targetType[0].toUpperCase()}{target.lastName?.[0]}
                                                         </div>
                                                         <div className="text-left flex-1">
                                                             <p className="font-medium text-slate-900 text-sm">
-                                                                {student.firstName} {student.lastName}
+                                                                {target.firstName ? \`\${target.firstName} \${target.lastName}\` : target.name}
                                                             </p>
                                                             <p className="text-xs text-slate-500">
-                                                                {student.studentId || student.admissionNumber || student.email}
-                                                                {student.classEnrollments?.[0]?.class && (
-                                                                    <span className="ml-2">
-                                                                        • {student.classEnrollments[0].class.name}
-                                                                    </span>
-                                                                )}
+                                                                {target.studentId || target.admissionNumber || target.email || ''}
                                                             </p>
                                                         </div>
                                                     </button>
@@ -807,37 +890,30 @@ export default function VivaPage() {
                                             </div>
                                         )}
 
-                                        {!loadingStudents && searchQuery.length >= 2 && students.length === 0 && (
+                                        {!loadingTargets && targetSearchQuery.length >= 2 && availableTargets.length === 0 && (
                                             <p className="text-sm text-slate-500 text-center py-4">
-                                                No students found matching "{searchQuery}"
-                                            </p>
-                                        )}
-
-                                        {searchQuery.length > 0 && searchQuery.length < 2 && (
-                                            <p className="text-sm text-slate-500 text-center py-2">
-                                                Type at least 2 characters to search
+                                                No matches found for "{targetSearchQuery}"
                                             </p>
                                         )}
                                     </div>
                                 )}
                             </div>
 
-                            {/* Date and Time */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Date & Time <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="datetime-local"
-                                    value={scheduledDateTime}
-                                    onChange={(e) => setScheduledDateTime(e.target.value)}
-                                    min={getMinDateTime()}
-                                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
-                                />
-                                <p className="text-xs text-slate-500 mt-1">
-                                    The session will be live at this scheduled time
-                                </p>
-                            </div>
+                            {/* Date and Time (Only for scheduled) */}
+                            {meetingType === 'scheduled' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                                        Date & Time <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="datetime-local"
+                                        value={scheduledDateTime}
+                                        onChange={(e) => setScheduledDateTime(e.target.value)}
+                                        min={getMinDateTime()}
+                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
+                                    />
+                                </div>
+                            )}
 
                             {/* Duration */}
                             <div>
@@ -849,23 +925,12 @@ export default function VivaPage() {
                                         <button
                                             key={mins}
                                             onClick={() => setDuration(mins)}
-                                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${duration === mins
-                                                ? 'bg-primary-500 text-white'
-                                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                                                }`}
+                                            className={\`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition \${duration === mins ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}\`}
                                         >
                                             {mins} min
                                         </button>
                                     ))}
                                 </div>
-                            </div>
-
-                            {/* Info Note */}
-                            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                                <p className="text-sm text-blue-700">
-                                    <strong>Note:</strong> Video and audio will be off by default when participants join.
-                                    They can enable their camera and microphone when they're ready.
-                                </p>
                             </div>
                         </div>
 
@@ -883,14 +948,16 @@ export default function VivaPage() {
                             </button>
                             <button
                                 onClick={handleScheduleSession}
-                                disabled={scheduling || !selectedStudent || !scheduledDateTime}
-                                className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                title="Schedule Session"
+                                disabled={scheduling || !selectedTarget || (meetingType === 'scheduled' && !scheduledDateTime)}
+                                className="px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium"
                             >
                                 {scheduling ? (
                                     <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
                                 ) : (
-                                    <CalendarPlus className="w-5 h-5" />
+                                    <>
+                                        {meetingType === 'instant' ? <Video className="w-5 h-5" /> : <CalendarPlus className="w-5 h-5" />}
+                                        {meetingType === 'instant' ? 'Start Meeting Now' : 'Schedule Session'}
+                                    </>
                                 )}
                             </button>
                         </div>
@@ -931,7 +998,7 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                         )}
                     </div>
                     <h3 className="text-lg font-semibold text-slate-900">
-                        {session.questionsAsked?.sessionTitle || session.submission?.assignment?.title || 'Viva Session'}
+                        {session.questionsAsked?.sessionTitle || session.submission?.assignment?.title || 'Meeting Session'}
                     </h3>
 
                     <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-500">
@@ -984,7 +1051,7 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                 {/* Action buttons based on session status */}
                 {session.status === 'scheduled' && (
                     <div className="flex flex-col gap-2">
-                        <Link href={`/viva/room/${session.id}`} className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Start Viva' : 'Join'}>
+                        <Link href={`/meeting/room/${session.id}`} className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Start Meeting' : 'Join'}>
                             <Play className="w-5 h-5" />
                         </Link>
                     </div>
@@ -992,7 +1059,7 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
 
                 {session.status === 'in_progress' && (
                     <div className="flex flex-col gap-2">
-                        <Link href={`/viva/room/${session.id}`} className="p-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Resume & Grade' : 'Rejoin'}>
+                        <Link href={`/meeting/room/${session.id}`} className="p-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Resume & Grade' : 'Rejoin'}>
                             <Video className="w-5 h-5" />
                         </Link>
                     </div>

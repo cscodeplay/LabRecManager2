@@ -10,7 +10,7 @@ import {
     Volume2, VolumeX, Settings, Sliders, PictureInPicture2, Pencil, MonitorUp
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import { vivaAPI } from '@/lib/api';
+import { meetingAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
@@ -72,7 +72,7 @@ export default function MeetingRoomPage() {
 
     // Grading state (for instructors)
     const [showGradingPanel, setShowGradingPanel] = useState(false);
-    const [vivaMarks, setVivaMarks] = useState(0);
+    const [meetingMarks, setMeetingMarks] = useState(0);
     const [remarks, setRemarks] = useState('');
 
     // Waiting room state
@@ -178,7 +178,7 @@ export default function MeetingRoomPage() {
 
     const loadSession = async () => {
         try {
-            const res = await vivaAPI.getSession(params.code);
+            const res = await meetingAPI.getSession(params.code);
             const sessionData = res.data.data.session;
             setSession(sessionData);
 
@@ -195,7 +195,7 @@ export default function MeetingRoomPage() {
             }
 
             // Join the session (waiting room)
-            const joinRes = await vivaAPI.joinSession(params.code);
+            const joinRes = await meetingAPI.joinSession(params.code);
             const { participant, isHost: hostFlag } = joinRes.data.data;
 
             setIsHost(hostFlag);
@@ -204,32 +204,21 @@ export default function MeetingRoomPage() {
             // Initialize media first
             await initializeMedia();
 
-            // If host (examiner) or admitted, proceed to session
-            if (hostFlag || participant.status === 'admitted') {
-                setParticipantStatus('admitted');
-                initializeSocket();
+            // Everyone is admitted directly (no waiting room)
+            setParticipantStatus('admitted');
+            initializeSocket();
 
-                // Check if session is already in_progress (resuming a session)
-                if (sessionData.status === 'in_progress') {
-                    setSessionStatus('active');
-                    if (sessionData.actualStartTime) {
-                        const startTime = new Date(sessionData.actualStartTime);
-                        const elapsed = Math.floor((new Date() - startTime) / 1000);
-                        setElapsedTime(elapsed);
-                    }
-                    toast.success('Rejoined active session');
-                } else {
-                    setSessionStatus('ready');
+            // Check if session is already in_progress (resuming a session)
+            if (sessionData.status === 'in_progress') {
+                setSessionStatus('active');
+                if (sessionData.actualStartTime) {
+                    const startTime = new Date(sessionData.actualStartTime);
+                    const elapsed = Math.floor((new Date() - startTime) / 1000);
+                    setElapsedTime(elapsed);
                 }
-
-                // If host, start polling for waiting participants
-                if (hostFlag) {
-                    startParticipantPolling();
-                }
+                toast.success('Rejoined active session');
             } else {
-                // Student in waiting room - poll for status changes
-                setParticipantStatus('waiting');
-                startStatusPolling();
+                setSessionStatus('ready');
             }
         } catch (error) {
             console.error('Load session error:', error);
@@ -244,7 +233,7 @@ export default function MeetingRoomPage() {
     const startStatusPolling = () => {
         const poll = setInterval(async () => {
             try {
-                const res = await vivaAPI.getMyStatus(params.code);
+                const res = await meetingAPI.getMyStatus(params.code);
                 const status = res.data.data.participant.status;
 
                 if (status === 'admitted') {
@@ -270,7 +259,7 @@ export default function MeetingRoomPage() {
     const startParticipantPolling = () => {
         const poll = async () => {
             try {
-                const res = await vivaAPI.getParticipants(params.code);
+                const res = await meetingAPI.getParticipants(params.code);
                 setWaitingParticipants(res.data.data.waiting || []);
                 setAdmittedParticipants(res.data.data.admitted || []);
             } catch (error) {
@@ -287,10 +276,10 @@ export default function MeetingRoomPage() {
 
     const handleAdmitParticipant = async (participantId) => {
         try {
-            await vivaAPI.admitParticipant(params.code, participantId);
+            await meetingAPI.admitParticipant(params.code, participantId);
             toast.success('Participant admitted');
             // Refresh participants list
-            const res = await vivaAPI.getParticipants(params.code);
+            const res = await meetingAPI.getParticipants(params.code);
             setWaitingParticipants(res.data.data.waiting || []);
             setAdmittedParticipants(res.data.data.admitted || []);
         } catch (error) {
@@ -300,9 +289,9 @@ export default function MeetingRoomPage() {
 
     const handleRejectParticipant = async (participantId) => {
         try {
-            await vivaAPI.rejectParticipant(params.code, participantId);
+            await meetingAPI.rejectParticipant(params.code, participantId);
             toast.success('Participant removed');
-            const res = await vivaAPI.getParticipants(params.code);
+            const res = await meetingAPI.getParticipants(params.code);
             setWaitingParticipants(res.data.data.waiting || []);
         } catch (error) {
             toast.error('Failed to remove participant');
@@ -311,9 +300,9 @@ export default function MeetingRoomPage() {
 
     const handleAdmitAll = async () => {
         try {
-            await vivaAPI.admitAll(params.code);
+            await meetingAPI.admitAll(params.code);
             toast.success('All participants admitted');
-            const res = await vivaAPI.getParticipants(params.code);
+            const res = await meetingAPI.getParticipants(params.code);
             setWaitingParticipants([]);
             setAdmittedParticipants(res.data.data.admitted || []);
         } catch (error) {
@@ -754,11 +743,24 @@ export default function MeetingRoomPage() {
     };
 
     const toggleFullscreen = () => {
+        const elem = document.documentElement;
         if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen();
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen().catch(err => console.log(err));
+            } else if (elem.webkitRequestFullscreen) {
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) {
+                elem.msRequestFullscreen();
+            }
             setIsFullscreen(true);
         } else {
-            document.exitFullscreen();
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) {
+                document.msExitFullscreen();
+            }
             setIsFullscreen(false);
         }
     };
@@ -861,7 +863,7 @@ export default function MeetingRoomPage() {
 
         try {
             const file = new File([recordedBlob], `viva_${session.id}_${Date.now()}.webm`, { type: 'video/webm' });
-            const res = await vivaAPI.uploadRecording(session.id, file, recordingTime);
+            const res = await meetingAPI.uploadRecording(session.id, file, recordingTime);
             toast.success('Recording saved to database!');
             setShowRecordingOptions(false);
             setRecordedBlob(null);
@@ -898,7 +900,7 @@ export default function MeetingRoomPage() {
 
     const handleStartSession = async () => {
         try {
-            await vivaAPI.startSession(params.code);
+            await meetingAPI.startSession(params.code);
             setSessionStatus('active');
             toast.success('Viva session started!');
             socketRef.current.emit('session-started', { roomId: params.code });
@@ -939,10 +941,10 @@ export default function MeetingRoomPage() {
             }
 
             // Get max marks from session or default to 20
-            const maxMarks = session?.submission?.assignment?.vivaMarks || 20;
+            const maxMarks = session?.submission?.assignment?.meetingMarks || 20;
 
-            await vivaAPI.completeSession(params.code, {
-                marksObtained: parseFloat(vivaMarks) || 0,
+            await meetingAPI.completeSession(params.code, {
+                marksObtained: parseFloat(meetingMarks) || 0,
                 maxMarks: parseFloat(maxMarks),
                 examinerRemarks: remarks || ''
             });
@@ -953,7 +955,7 @@ export default function MeetingRoomPage() {
                 toast.loading('Saving recording to database...');
                 try {
                     const file = new File([recordingToUpload], `viva_${session.id}_${Date.now()}.webm`, { type: 'video/webm' });
-                    await vivaAPI.uploadRecording(session.id, file, recordingTime);
+                    await meetingAPI.uploadRecording(session.id, file, recordingTime);
                     toast.dismiss();
                     toast.success('Recording saved for admin review');
                 } catch (uploadError) {
@@ -1166,32 +1168,17 @@ export default function MeetingRoomPage() {
                         </span>
                     </div>
 
-                    {/* Waiting Room Toggle (for instructors) */}
-                    {isHost && (
-                        <button
-                            onClick={() => setShowWaitingRoom(!showWaitingRoom)}
-                            className={`relative p-2 rounded-lg transition ${showWaitingRoom ? 'bg-primary-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                                }`}
-                            title="Waiting Room"
-                        >
-                            <User className="w-5 h-5" />
-                            {waitingParticipants.length > 0 && (
-                                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center animate-pulse">
-                                    {waitingParticipants.length}
-                                </span>
-                            )}
-                        </button>
-                    )}
+
                 </div>
             </header>
 
             {/* Main content */}
-            <div className="flex-1 flex">
+            <div className="flex-1 flex w-full overflow-hidden">
                 {/* Video area */}
-                <div className="flex-1 p-4 flex flex-col">
-                    <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className={`p-4 flex flex-col transition-all duration-300 ${showWhiteboard ? 'w-1/3' : 'flex-1'}`}>
+                    <div className={`flex-1 grid grid-cols-1 ${showWhiteboard ? '' : 'lg:grid-cols-2'} gap-4`}>
                         {/* Remote video (large) */}
-                        <div className="relative bg-slate-800 rounded-2xl overflow-hidden flex items-center justify-center lg:col-span-2 min-h-[400px]">
+                        <div className={`relative bg-slate-800 rounded-2xl overflow-hidden flex items-center justify-center min-h-[400px] ${showWhiteboard ? '' : 'lg:col-span-2'}`}>
                             {isRemoteConnected ? (
                                 <video
                                     ref={remoteVideoRef}
@@ -1351,19 +1338,17 @@ export default function MeetingRoomPage() {
                             <PictureInPicture2 className="w-6 h-6" />
                         </button>
 
-                        {/* Recording Button - Only for instructors */}
-                        {isInstructor && (
-                            <button
-                                onClick={isRecording ? stopRecording : startRecording}
-                                className={`w-10 h-10 rounded-full flex items-center justify-center transition ${isRecording
-                                    ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
-                                    : 'bg-slate-700 hover:bg-slate-600 text-white'
-                                    }`}
-                                title={isRecording ? 'Stop Recording' : 'Start Recording'}
-                            >
-                                {isRecording ? <Square className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
-                            </button>
-                        )}
+                        {/* Recording Button */}
+                        <button
+                            onClick={isRecording ? stopRecording : startRecording}
+                            className={`w-10 h-10 rounded-full flex items-center justify-center transition ${isRecording
+                                ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
+                                : 'bg-slate-700 hover:bg-slate-600 text-white'
+                                }`}
+                            title={isRecording ? 'Stop Recording' : 'Start Recording'}
+                        >
+                            {isRecording ? <Square className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
+                        </button>
 
                         {/* Recording Timer */}
                         {isRecording && (
@@ -1702,14 +1687,14 @@ export default function MeetingRoomPage() {
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Viva Marks (out of {session?.submission?.assignment?.vivaMarks || 20})
+                                    Viva Marks (out of {session?.submission?.assignment?.meetingMarks || 20})
                                 </label>
                                 <input
                                     type="number"
-                                    value={vivaMarks}
-                                    onChange={(e) => setVivaMarks(Number(e.target.value))}
+                                    value={meetingMarks}
+                                    onChange={(e) => setMeetingMarks(Number(e.target.value))}
                                     min="0"
-                                    max={session?.submission?.assignment?.vivaMarks || 20}
+                                    max={session?.submission?.assignment?.meetingMarks || 20}
                                     className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                 />
                             </div>
@@ -1894,14 +1879,10 @@ export default function MeetingRoomPage() {
                 </div>
             )}
 
-            {/* Whiteboard Modal */}
+            {/* Whiteboard Side Panel */}
             {showWhiteboard && (
-                <div className={`fixed z-[9999] ${whiteboardFullscreen ? 'inset-0' : 'inset-4 md:inset-8 lg:inset-12'} flex items-center justify-center`}>
-                    <div
-                        className="absolute inset-0 bg-black/50"
-                        onClick={() => !whiteboardFullscreen && setShowWhiteboard(false)}
-                    />
-                    <div className={`relative z-10 ${whiteboardFullscreen ? 'w-full h-full' : 'w-full max-w-4xl max-h-[80vh]'}`}>
+                <div className={`transition-all duration-300 border-l border-slate-700 bg-slate-900 flex flex-col ${whiteboardFullscreen ? 'fixed inset-0 z-[9999]' : 'w-2/3 h-full'}`}>
+                    <div className="flex-1 overflow-hidden">
                         <Whiteboard
                             width={800}
                             height={500}
@@ -1956,7 +1937,7 @@ export default function MeetingRoomPage() {
                     if (socketRef.current) {
                         socketRef.current.emit('whiteboard:start-share', {
                             sessionId: newSessionId,
-                            vivaSessionId: params.code,
+                            meetingSessionId: params.code,
                             instructorId: user?.id,
                             instructorName: `${user?.firstName} ${user?.lastName}`,
                             ...shareData

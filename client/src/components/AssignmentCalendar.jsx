@@ -14,7 +14,10 @@ const STATUS_COLORS = {
     pending: 'bg-amber-500',
     overdue: 'bg-red-500',
     needs_revision: 'bg-orange-500',
-    in_progress: 'bg-purple-500'
+    in_progress: 'bg-purple-500',
+    scheduled: 'bg-sky-500',
+    completed: 'bg-emerald-500',
+    cancelled: 'bg-slate-500'
 };
 
 export default function AssignmentCalendar() {

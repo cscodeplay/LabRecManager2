@@ -208,7 +208,7 @@ export const submissionsAPI = {
 };
 
 // Viva API
-export const vivaAPI = {
+export const meetingAPI = {
     getSessions: (params) => api.get('/viva/sessions', { params }),
     getSession: (id) => api.get(`/viva/sessions/${id}`),
     scheduleSession: (data) => api.post('/viva/sessions', data),

@@ -17,10 +17,22 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
 
     let where = {};
 
+    let classIds = [];
     if (req.user.role === 'student') {
-        where.studentId = req.user.id;
+        const enrollments = await prisma.classEnrollment.findMany({
+            where: { studentId: req.user.id, status: 'active' },
+            select: { classId: true }
+        });
+        classIds = enrollments.map(e => e.classId);
+        
+        where = {
+            OR: [
+                { targetStudentId: req.user.id },
+                { targetClassId: { in: classIds } }
+            ]
+        };
     } else if (req.user.role === 'instructor' || req.user.role === 'lab_assistant') {
-        where.examinerId = req.user.id;
+        where.hostId = req.user.id;
     }
 
     if (status) {
@@ -40,7 +52,7 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
     }
 
     const [sessions, total] = await Promise.all([
-        prisma.vivaSession.findMany({
+        prisma.meeting.findMany({
             where,
             skip,
             take: parseInt(limit),
@@ -61,7 +73,7 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
                 }
             }
         }),
-        prisma.vivaSession.count({ where })
+        prisma.meeting.count({ where })
     ]);
 
     res.json({
@@ -84,7 +96,7 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
  * @access  Private
  */
 router.get('/sessions/:id', authenticate, asyncHandler(async (req, res) => {
-    const session = await prisma.vivaSession.findUnique({
+    const session = await prisma.meeting.findUnique({
         where: { id: req.params.id },
         include: {
             submission: {
@@ -118,8 +130,8 @@ router.get('/sessions/:id', authenticate, asyncHandler(async (req, res) => {
     }
 
     // Check permissions - students can only view their own sessions
-    const isStudent = session.studentId === req.user.id;
-    const isExaminer = session.examinerId === req.user.id;
+    const isStudent = session.targetStudentId === req.user.id;
+    const isExaminer = session.hostId === req.user.id;
     const isAdmin = req.user.role === 'admin' || req.user.role === 'principal';
 
     if (req.user.role === 'student' && !isStudent) {
@@ -181,11 +193,11 @@ router.post('/sessions', authenticate, authorize('instructor', 'lab_assistant', 
         ? `${process.env.CLIENT_URL}/viva/room/${submissionId}`
         : null;
 
-    const session = await prisma.vivaSession.create({
+    const session = await prisma.meeting.create({
         data: {
             submissionId,
-            studentId: submission.studentId,
-            examinerId: req.user.id,
+            targetStudentId: submission.targetStudentId,
+            hostId: req.user.id,
             scheduledAt: new Date(scheduledAt),
             durationMinutes: durationMinutes || 10,
             mode: mode || 'online',
@@ -221,7 +233,7 @@ router.post('/sessions', authenticate, authorize('instructor', 'lab_assistant', 
  * @access  Private (Examiner)
  */
 router.put('/sessions/:id/start', authenticate, authorize('instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
-    const session = await prisma.vivaSession.findUnique({
+    const session = await prisma.meeting.findUnique({
         where: { id: req.params.id }
     });
 
@@ -232,14 +244,14 @@ router.put('/sessions/:id/start', authenticate, authorize('instructor', 'lab_ass
         });
     }
 
-    if (session.examinerId !== req.user.id) {
+    if (session.hostId !== req.user.id) {
         return res.status(403).json({
             success: false,
             message: 'Not authorized'
         });
     }
 
-    const updatedSession = await prisma.vivaSession.update({
+    const updatedSession = await prisma.meeting.update({
         where: { id: req.params.id },
         data: {
             status: 'in_progress',
@@ -249,7 +261,7 @@ router.put('/sessions/:id/start', authenticate, authorize('instructor', 'lab_ass
 
     // Emit socket event for student to join
     const io = req.app.get('io');
-    io.to(`user-${session.studentId}`).emit('viva-started', {
+    io.to(`user-${session.targetStudentId}`).emit('viva-started', {
         sessionId: session.id,
         meetingLink: session.meetingLink
     });
@@ -291,7 +303,7 @@ router.put('/sessions/:id/complete', authenticate, authorize('instructor', 'lab_
 
     try {
         // First, check if the session exists
-        const existingSession = await prisma.vivaSession.findUnique({
+        const existingSession = await prisma.meeting.findUnique({
             where: { id: req.params.id },
             include: { submission: true }
         });
@@ -315,7 +327,7 @@ router.put('/sessions/:id/complete', authenticate, authorize('instructor', 'lab_
             examinerRemarks
         });
 
-        const session = await prisma.vivaSession.update({
+        const session = await prisma.meeting.update({
             where: { id: req.params.id },
             data: {
                 status: 'completed',
@@ -396,7 +408,7 @@ router.get('/questions', authenticate, authorize('instructor', 'lab_assistant', 
     }
 
     const [questions, total] = await Promise.all([
-        prisma.vivaQuestion.findMany({
+        prisma.meetingQuestion.findMany({
             where,
             skip,
             take: parseInt(limit),
@@ -409,7 +421,7 @@ router.get('/questions', authenticate, authorize('instructor', 'lab_assistant', 
                 }
             }
         }),
-        prisma.vivaQuestion.count({ where })
+        prisma.meetingQuestion.count({ where })
     ]);
 
     res.json({
@@ -450,7 +462,7 @@ router.post('/questions', authenticate, authorize('instructor', 'lab_assistant',
         difficulty, marks, topicTags
     } = req.body;
 
-    const vivaQuestion = await prisma.vivaQuestion.create({
+    const meetingQuestion = await prisma.meetingQuestion.create({
         data: {
             subjectId,
             assignmentId,
@@ -469,7 +481,7 @@ router.post('/questions', authenticate, authorize('instructor', 'lab_assistant',
         success: true,
         message: 'Question added to bank',
         messageHindi: 'प्रश्न बैंक में जोड़ा गया',
-        data: { question: vivaQuestion }
+        data: { question: meetingQuestion }
     });
 }));
 
@@ -478,310 +490,74 @@ router.post('/questions', authenticate, authorize('instructor', 'lab_assistant',
  * @desc    Schedule a standalone viva session for a student (without requiring submission)
  * @access  Private (Instructor, Admin)
  */
-router.post('/sessions/schedule', authenticate, authorize('instructor', 'lab_assistant', 'admin'), [
-    body('studentId').isUUID().withMessage('Valid student ID required'),
-    body('scheduledAt').isISO8601().withMessage('Valid scheduled date required'),
-    body('durationMinutes').optional().isInt({ min: 5, max: 120 })
+router.post("/sessions/schedule", authenticate, authorize("instructor", "lab_assistant", "admin"), [
+    body("type").optional().isIn(["instant", "scheduled"]),
+    body("targetType").isIn(["student", "group", "class"]),
+    body("targetId").isUUID().withMessage("Valid target ID required"),
+    body("scheduledAt").optional().isISO8601(),
+    body("durationMinutes").optional().isInt({ min: 5, max: 120 }),
+    body("title").notEmpty().withMessage("Title is required")
 ], asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            errors: errors.array()
-        });
+        return res.status(400).json({ success: false, errors: errors.array() });
     }
-
-    const { studentId, scheduledAt, durationMinutes, mode, title, description, submissionId } = req.body;
-
-    // Verify student exists
-    const student = await prisma.user.findUnique({
-        where: { id: studentId },
-        select: { id: true, firstName: true, lastName: true, email: true, role: true }
+    const { type, targetType, targetId, scheduledAt, durationMinutes, title, description } = req.body;
+    let targetClassId = null;
+    let targetGroupId = null;
+    let targetStudentId = null;
+    if (targetType === "student") targetStudentId = targetId;
+    if (targetType === "group") targetGroupId = targetId;
+    if (targetType === "class") targetClassId = targetId;
+    const sessionId = require("uuid").v4();
+    const meetingLink = `${process.env.CLIENT_URL || "http://localhost:3000"}/meeting/${sessionId}`;
+    const meetingType = type || "scheduled";
+    const finalScheduledAt = meetingType === "instant" ? new Date() : new Date(scheduledAt);
+    const finalStatus = meetingType === "instant" ? "in_progress" : "scheduled";
+    const session = await prisma.meeting.create({
+        data: {
+            id: sessionId,
+            schoolId: req.user.schoolId,
+            title,
+            type: meetingType,
+            hostId: req.user.id,
+            targetClassId,
+            targetGroupId,
+            targetStudentId,
+            scheduledAt: finalScheduledAt,
+            durationMinutes: durationMinutes || 15,
+            meetingLink,
+            status: finalStatus,
+            questionsAsked: description ? { description } : null,
+            actualStartTime: meetingType === "instant" ? new Date() : null
+        },
+        include: {
+            targetStudent: { select: { id: true, firstName: true, lastName: true } },
+            targetClass: { select: { id: true, name: true, section: true } },
+            targetGroup: { select: { id: true, name: true } }
+        }
     });
-
-    if (!student) {
-        return res.status(404).json({
-            success: false,
-            message: 'Student not found',
-            messageHindi: 'छात्र नहीं मिला'
-        });
-    }
-
-    if (student.role !== 'student') {
-        return res.status(400).json({
-            success: false,
-            message: 'Selected user is not a student',
-            messageHindi: 'चयनित उपयोगकर्ता छात्र नहीं है'
-        });
-    }
-
-    // Generate a unique meeting link
-    const sessionId = require('uuid').v4();
-    const meetingLink = `${process.env.CLIENT_URL || 'http://localhost:3000'}/viva/room/${sessionId}`;
-
-    // If submissionId is provided, use it; otherwise create a session without submission
-    let session;
-
-    if (submissionId) {
-        // Verify submission exists
-        const submission = await prisma.submission.findUnique({
-            where: { id: submissionId }
-        });
-
-        if (!submission) {
-            return res.status(404).json({
-                success: false,
-                message: 'Submission not found'
-            });
-        }
-
-        session = await prisma.vivaSession.create({
-            data: {
-                id: sessionId,
-                submissionId,
-                studentId,
-                examinerId: req.user.id,
-                scheduledAt: new Date(scheduledAt),
-                durationMinutes: durationMinutes || 15,
-                mode: mode || 'online',
-                meetingLink,
-                status: 'scheduled'
-            },
-            include: {
-                student: {
-                    select: { id: true, firstName: true, lastName: true, email: true }
-                },
-                submission: {
-                    include: {
-                        assignment: {
-                            select: { id: true, title: true }
-                        }
-                    }
-                }
-            }
-        });
-
-        // Update submission status
-        await prisma.submission.update({
-            where: { id: submissionId },
-            data: { status: 'viva_scheduled' }
-        });
-    } else {
-        // Create session without submission - we need a dummy submission or handle this differently
-        // For now, create the session with metadata stored in questionsAsked JSON
-
-        // First, find or create a default submission for this student
-        // Get any assignment for the student's class
-        const studentEnrollment = await prisma.classEnrollment.findFirst({
-            where: { studentId, status: 'active' },
-            include: { class: true }
-        });
-
-        if (!studentEnrollment) {
-            return res.status(400).json({
-                success: false,
-                message: 'Student is not enrolled in any class',
-                messageHindi: 'छात्र किसी कक्षा में नामांकित नहीं है'
-            });
-        }
-
-        // Find any assignment or create a standalone viva session with null submission
-        const assignment = await prisma.assignment.findFirst({
-            where: {
-                targets: {
-                    some: {
-                        OR: [
-                            { targetClassId: studentEnrollment.classId },
-                            { targetStudentId: studentId }
-                        ]
-                    }
-                }
-            }
-        });
-
-        let finalSubmissionId;
-
-        if (assignment) {
-            // Create or find submission for this assignment
-            let submission = await prisma.submission.findFirst({
-                where: {
-                    assignmentId: assignment.id,
-                    studentId
-                }
-            });
-
-            if (!submission) {
-                submission = await prisma.submission.create({
-                    data: {
-                        assignmentId: assignment.id,
-                        studentId,
-                        status: 'viva_scheduled',
-                        codeContent: '',
-                        outputContent: ''
-                    }
-                });
-            }
-
-            finalSubmissionId = submission.id;
-        } else {
-            // No assignment found - create a placeholder "General Viva" assignment for this class
-            const { v4: uuidv4 } = require('uuid');
-
-            // First check for any existing "General Viva" assignment for this school
-            let generalVivaAssignment = await prisma.assignment.findFirst({
-                where: {
-                    schoolId: req.user.schoolId,
-                    title: 'General Viva Session',
-                    assignmentType: 'viva_only'
-                }
-            });
-
-            if (!generalVivaAssignment) {
-                // Get the first subject for the student's class
-                const classSubject = await prisma.classSubject.findFirst({
-                    where: { classId: studentEnrollment.classId },
-                    include: { subject: true }
-                });
-
-                if (!classSubject) {
-                    // Get any subject from the school
-                    const anySubject = await prisma.subject.findFirst({
-                        where: { schoolId: req.user.schoolId }
-                    });
-
-                    if (!anySubject) {
-                        return res.status(400).json({
-                            success: false,
-                            message: 'No subjects found. Please create a subject first.',
-                            messageHindi: 'कोई विषय नहीं मिला। कृपया पहले एक विषय बनाएं।'
-                        });
-                    }
-
-                    // Create a general viva assignment
-                    generalVivaAssignment = await prisma.assignment.create({
-                        data: {
-                            schoolId: req.user.schoolId,
-                            subjectId: anySubject.id,
-                            createdById: req.user.id,
-                            title: 'General Viva Session',
-                            titleHindi: 'सामान्य वाइवा सत्र',
-                            description: 'Standalone viva session for oral examination',
-                            assignmentType: 'viva_only',
-                            maxMarks: 100,
-                            vivaMarks: 100,
-                            practicalMarks: 0,
-                            outputMarks: 0,
-                            status: 'published'
-                        }
-                    });
-                } else {
-                    // Create a general viva assignment with the class subject
-                    generalVivaAssignment = await prisma.assignment.create({
-                        data: {
-                            schoolId: req.user.schoolId,
-                            subjectId: classSubject.subjectId,
-                            createdById: req.user.id,
-                            title: 'General Viva Session',
-                            titleHindi: 'सामान्य वाइवा सत्र',
-                            description: 'Standalone viva session for oral examination',
-                            assignmentType: 'viva_only',
-                            maxMarks: 100,
-                            vivaMarks: 100,
-                            practicalMarks: 0,
-                            outputMarks: 0,
-                            status: 'published'
-                        }
-                    });
-                }
-
-                // Create a target for the class
-                await prisma.assignmentTarget.create({
-                    data: {
-                        assignmentId: generalVivaAssignment.id,
-                        targetType: 'class',
-                        targetClassId: studentEnrollment.classId,
-                        assignedById: req.user.id
-                    }
-                });
-            }
-
-            // Create a submission for this viva
-            const submission = await prisma.submission.create({
-                data: {
-                    assignmentId: generalVivaAssignment.id,
-                    studentId,
-                    status: 'viva_scheduled',
-                    codeContent: '',
-                    outputContent: '',
-                    observations: title || 'Scheduled Viva Session'
-                }
-            });
-
-            finalSubmissionId = submission.id;
-        }
-
-        session = await prisma.vivaSession.create({
-            data: {
-                id: sessionId,
-                submissionId: finalSubmissionId,
-                studentId,
-                examinerId: req.user.id,
-                scheduledAt: new Date(scheduledAt),
-                durationMinutes: durationMinutes || 15,
-                mode: mode || 'online',
-                meetingLink,
-                status: 'scheduled',
-                questionsAsked: title || description ? {
-                    sessionTitle: title || 'Viva Session',
-                    sessionDescription: description || ''
-                } : null
-            },
-            include: {
-                student: {
-                    select: { id: true, firstName: true, lastName: true, email: true }
-                },
-                submission: {
-                    include: {
-                        assignment: {
-                            select: { id: true, title: true }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    // Log activity (wrapped in try-catch to not break the flow)
     try {
         await prisma.activityLog.create({
             data: {
                 userId: req.user.id,
                 schoolId: req.user.schoolId,
-                actionType: 'viva',
-                description: `Scheduled viva session for ${student.firstName} ${student.lastName} on ${new Date(scheduledAt).toLocaleString()}`,
-                entityType: 'viva_session',
+                actionType: "meeting",
+                description: `Scheduled meeting: ${title}`,
+                entityType: "meeting_session",
                 entityId: session.id,
                 ipAddress: req.ip,
-                userAgent: req.get('User-Agent')
+                userAgent: req.get("User-Agent")
             }
         });
-    } catch (logError) {
-        console.warn('Failed to log activity:', logError.message);
-    }
-
-    // Emit notification to student
-    const io = req.app.get('io');
-    io.to(`user-${studentId}`).emit('notification', {
-        type: 'viva_scheduled',
-        message: `A viva session has been scheduled for ${new Date(scheduledAt).toLocaleString()}`,
-        sessionId: session.id,
-        meetingLink
-    });
-
-    res.status(201).json({
+    } catch (logError) {}
+    res.json({
         success: true,
-        message: 'Viva session scheduled successfully',
-        messageHindi: 'वाइवा सत्र सफलतापूर्वक निर्धारित',
+        message: "Meeting session scheduled successfully",
+        data: { session }
+    });
+}));
+
         data: { session }
     });
 }));
@@ -855,7 +631,7 @@ router.post('/sessions/:id/join', authenticate, asyncHandler(async (req, res) =>
     const userId = req.user.id;
 
     // Check if session exists
-    const session = await prisma.vivaSession.findUnique({
+    const session = await prisma.meeting.findUnique({
         where: { id: sessionId },
         include: {
             student: { select: { id: true, firstName: true, lastName: true } },
@@ -871,8 +647,8 @@ router.post('/sessions/:id/join', authenticate, asyncHandler(async (req, res) =>
     }
 
     // Check if user is allowed (student of this session or examiner)
-    const isStudent = session.studentId === userId;
-    const isExaminer = session.examinerId === userId;
+    const isStudent = session.targetStudentId === userId;
+    const isExaminer = session.hostId === userId;
     const isAdmin = req.user.role === 'admin' || req.user.role === 'principal';
 
     // Students can only join their own sessions
@@ -912,15 +688,14 @@ router.post('/sessions/:id/join', authenticate, asyncHandler(async (req, res) =>
 
     // Determine role and initial status
     let role = 'student';
-    let status = 'waiting';
+    let status = 'admitted'; // Auto admit everyone
 
     if (isExaminer) {
         role = 'examiner';
-        status = 'admitted'; // Examiners are auto-admitted
     }
 
     // Upsert participant record
-    const participant = await prisma.vivaParticipant.upsert({
+    const participant = await prisma.meetingParticipant.upsert({
         where: {
             sessionId_userId: { sessionId, userId }
         },
@@ -952,8 +727,8 @@ router.post('/sessions/:id/join', authenticate, asyncHandler(async (req, res) =>
             session: {
                 id: session.id,
                 status: session.status,
-                examinerId: session.examinerId,
-                studentId: session.studentId,
+                hostId: session.hostId,
+                targetStudentId: session.targetStudentId,
                 examiner: session.examiner,
                 student: session.student
             },
@@ -971,7 +746,7 @@ router.get('/sessions/:id/participants', authenticate, asyncHandler(async (req, 
     const sessionId = req.params.id;
 
     // Check if session exists and user is examiner
-    const session = await prisma.vivaSession.findUnique({
+    const session = await prisma.meeting.findUnique({
         where: { id: sessionId }
     });
 
@@ -983,7 +758,7 @@ router.get('/sessions/:id/participants', authenticate, asyncHandler(async (req, 
     }
 
     // Get all participants
-    const participants = await prisma.vivaParticipant.findMany({
+    const participants = await prisma.meetingParticipant.findMany({
         where: { sessionId },
         include: {
             user: {
@@ -1028,7 +803,7 @@ router.put('/sessions/:id/admit/:participantId', authenticate, authorize('instru
     const { id: sessionId, participantId } = req.params;
 
     // Verify session and examiner
-    const session = await prisma.vivaSession.findUnique({
+    const session = await prisma.meeting.findUnique({
         where: { id: sessionId }
     });
 
@@ -1040,7 +815,7 @@ router.put('/sessions/:id/admit/:participantId', authenticate, authorize('instru
     }
 
     // Admit the participant
-    const participant = await prisma.vivaParticipant.update({
+    const participant = await prisma.meetingParticipant.update({
         where: { id: participantId },
         data: {
             status: 'admitted',
@@ -1069,7 +844,7 @@ router.put('/sessions/:id/reject/:participantId', authenticate, authorize('instr
     const { id: sessionId, participantId } = req.params;
 
     // Verify session
-    const session = await prisma.vivaSession.findUnique({
+    const session = await prisma.meeting.findUnique({
         where: { id: sessionId }
     });
 
@@ -1081,7 +856,7 @@ router.put('/sessions/:id/reject/:participantId', authenticate, authorize('instr
     }
 
     // Reject the participant
-    const participant = await prisma.vivaParticipant.update({
+    const participant = await prisma.meetingParticipant.update({
         where: { id: participantId },
         data: {
             status: 'rejected',
@@ -1111,7 +886,7 @@ router.put('/sessions/:id/leave', authenticate, asyncHandler(async (req, res) =>
     const userId = req.user.id;
 
     // Update participant status
-    const participant = await prisma.vivaParticipant.updateMany({
+    const participant = await prisma.meetingParticipant.updateMany({
         where: {
             sessionId,
             userId
@@ -1138,7 +913,7 @@ router.get('/sessions/:id/my-status', authenticate, asyncHandler(async (req, res
     const sessionId = req.params.id;
     const userId = req.user.id;
 
-    const participant = await prisma.vivaParticipant.findUnique({
+    const participant = await prisma.meetingParticipant.findUnique({
         where: {
             sessionId_userId: { sessionId, userId }
         },
@@ -1147,7 +922,7 @@ router.get('/sessions/:id/my-status', authenticate, asyncHandler(async (req, res
                 select: {
                     id: true,
                     status: true,
-                    examinerId: true,
+                    hostId: true,
                     examiner: {
                         select: { id: true, firstName: true, lastName: true }
                     }
@@ -1177,7 +952,7 @@ router.get('/sessions/:id/my-status', authenticate, asyncHandler(async (req, res
 router.put('/sessions/:id/admit-all', authenticate, authorize('instructor', 'lab_assistant', 'admin'), asyncHandler(async (req, res) => {
     const sessionId = req.params.id;
 
-    const result = await prisma.vivaParticipant.updateMany({
+    const result = await prisma.meetingParticipant.updateMany({
         where: {
             sessionId,
             status: 'waiting'
@@ -1201,7 +976,7 @@ router.put('/sessions/:id/admit-all', authenticate, authorize('instructor', 'lab
  * @access  Private
  */
 router.get('/sessions/:id/time-status', authenticate, asyncHandler(async (req, res) => {
-    const session = await prisma.vivaSession.findUnique({
+    const session = await prisma.meeting.findUnique({
         where: { id: req.params.id },
         select: {
             id: true,
@@ -1273,7 +1048,7 @@ router.get('/sessions/:id/time-status', authenticate, asyncHandler(async (req, r
  * @access  Private
  */
 router.put('/sessions/:id/auto-start', authenticate, asyncHandler(async (req, res) => {
-    const session = await prisma.vivaSession.findUnique({
+    const session = await prisma.meeting.findUnique({
         where: { id: req.params.id }
     });
 
@@ -1298,7 +1073,7 @@ router.put('/sessions/:id/auto-start', authenticate, asyncHandler(async (req, re
         });
     }
 
-    const updatedSession = await prisma.vivaSession.update({
+    const updatedSession = await prisma.meeting.update({
         where: { id: req.params.id },
         data: {
             status: 'in_progress',
@@ -1308,7 +1083,7 @@ router.put('/sessions/:id/auto-start', authenticate, asyncHandler(async (req, re
 
     // Auto-admit student if enabled
     if (session.autoAdmit) {
-        await prisma.vivaParticipant.updateMany({
+        await prisma.meetingParticipant.updateMany({
             where: { sessionId: session.id, role: 'student' },
             data: { status: 'admitted', admittedAt: now }
         });
@@ -1327,7 +1102,7 @@ router.put('/sessions/:id/auto-start', authenticate, asyncHandler(async (req, re
  * @access  Private
  */
 router.put('/sessions/:id/auto-end', authenticate, asyncHandler(async (req, res) => {
-    const session = await prisma.vivaSession.findUnique({
+    const session = await prisma.meeting.findUnique({
         where: { id: req.params.id }
     });
 
@@ -1347,7 +1122,7 @@ router.put('/sessions/:id/auto-end', authenticate, asyncHandler(async (req, res)
         });
     }
 
-    const updatedSession = await prisma.vivaSession.update({
+    const updatedSession = await prisma.meeting.update({
         where: { id: req.params.id },
         data: {
             status: 'completed',
@@ -1403,7 +1178,7 @@ const uploadRecording = multer({
 router.post('/sessions/:id/recording', authenticate, uploadRecording.single('recording'), asyncHandler(async (req, res) => {
     const sessionId = req.params.id;
 
-    const session = await prisma.vivaSession.findUnique({
+    const session = await prisma.meeting.findUnique({
         where: { id: sessionId }
     });
 
@@ -1417,7 +1192,7 @@ router.post('/sessions/:id/recording', authenticate, uploadRecording.single('rec
 
     const recordingUrl = `/api/viva/recordings/${path.basename(req.file.path)}`;
 
-    const updatedSession = await prisma.vivaSession.update({
+    const updatedSession = await prisma.meeting.update({
         where: { id: sessionId },
         data: {
             recordingUrl,
@@ -1456,13 +1231,13 @@ router.get('/recordings/:filename', authenticate, asyncHandler(async (req, res) 
 
     // Get session to verify access
     const sessionId = filename.split('-')[1];
-    const session = await prisma.vivaSession.findFirst({
+    const session = await prisma.meeting.findFirst({
         where: { recordingFilePath: { contains: filename } }
     });
 
     if (session) {
-        const isAuthorized = req.user.id === session.studentId ||
-            req.user.id === session.examinerId ||
+        const isAuthorized = req.user.id === session.targetStudentId ||
+            req.user.id === session.hostId ||
             req.user.role === 'admin' ||
             req.user.role === 'principal';
 
@@ -1510,7 +1285,7 @@ router.get('/sessions/check-auto-start', authenticate, asyncHandler(async (req, 
     const fiveMinutesLater = new Date(now.getTime() + 5 * 60 * 1000);
 
     // Find sessions that should be auto-started
-    const sessionsToStart = await prisma.vivaSession.findMany({
+    const sessionsToStart = await prisma.meeting.findMany({
         where: {
             status: 'scheduled',
             autoStart: true,
@@ -1527,7 +1302,7 @@ router.get('/sessions/check-auto-start', authenticate, asyncHandler(async (req, 
 
     const startedSessions = [];
     for (const session of sessionsToStart) {
-        await prisma.vivaSession.update({
+        await prisma.meeting.update({
             where: { id: session.id },
             data: {
                 status: 'in_progress',
@@ -1537,7 +1312,7 @@ router.get('/sessions/check-auto-start', authenticate, asyncHandler(async (req, 
 
         // Auto-admit participants if enabled
         if (session.autoAdmit) {
-            await prisma.vivaParticipant.updateMany({
+            await prisma.meetingParticipant.updateMany({
                 where: { sessionId: session.id },
                 data: { status: 'admitted', admittedAt: now }
             });
@@ -1559,7 +1334,7 @@ router.get('/sessions/check-auto-start', authenticate, asyncHandler(async (req, 
  * @access  Private (Instructor)
  */
 router.put('/sessions/:id/mark-missed', authenticate, authorize('instructor', 'lab_assistant', 'admin'), asyncHandler(async (req, res) => {
-    const session = await prisma.vivaSession.findUnique({
+    const session = await prisma.meeting.findUnique({
         where: { id: req.params.id }
     });
 
@@ -1571,7 +1346,7 @@ router.put('/sessions/:id/mark-missed', authenticate, authorize('instructor', 'l
         return res.status(400).json({ success: false, message: 'Can only mark scheduled sessions as missed' });
     }
 
-    const updatedSession = await prisma.vivaSession.update({
+    const updatedSession = await prisma.meeting.update({
         where: { id: req.params.id },
         data: {
             status: 'cancelled',
@@ -1595,7 +1370,7 @@ router.get('/sessions/cleanup-expired', authenticate, authorize('admin', 'princi
     const now = new Date();
 
     // Find scheduled sessions that are more than 1 hour past their end time
-    const allScheduledSessions = await prisma.vivaSession.findMany({
+    const allScheduledSessions = await prisma.meeting.findMany({
         where: {
             status: 'scheduled'
         }
@@ -1611,7 +1386,7 @@ router.get('/sessions/cleanup-expired', authenticate, authorize('admin', 'princi
 
     const cancelledIds = [];
     for (const session of expiredSessions) {
-        await prisma.vivaSession.update({
+        await prisma.meeting.update({
             where: { id: session.id },
             data: {
                 status: 'cancelled',
