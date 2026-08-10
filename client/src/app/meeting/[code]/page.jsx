@@ -138,7 +138,7 @@ export default function MeetingRoomPage() {
 
                     // Auto-end when time expires
                     if (timeRemaining <= 0 && isInstructor) {
-                        toast.error('Session time expired. Please complete the evaluation.');
+                        // toast.error('Session time expired');
                         // Don't auto-end, just warn - let instructor complete grading
                     }
 
@@ -497,6 +497,7 @@ export default function MeetingRoomPage() {
                     }
                 }
 
+                setIsVideoEnabled(true);
                 setIsScreenSharing(true);
                 setIsVideoEnabled(true);
                 toast.success('Screen sharing started');
@@ -1602,12 +1603,12 @@ export default function MeetingRoomPage() {
                         <div className="mt-2 h-24 bg-slate-900 rounded-lg overflow-hidden flex items-center justify-center">
                             {isVideoEnabled ? (
                                 <video
-                                    ref={localVideoRef}
-                                    autoPlay
-                                    muted
-                                    playsInline
-                                    className="w-full h-full object-cover"
-                                />
+        ref={localVideoRef}
+        autoPlay
+        muted
+        playsInline
+        className={`w-full h-full object-cover ${!isVideoEnabled && 'hidden'}`}
+    />
                             ) : (
                                 <div className="text-slate-500 text-sm flex items-center gap-2">
                                     <VideoOff className="w-4 h-4" />
@@ -1691,15 +1692,7 @@ export default function MeetingRoomPage() {
             )}
 
             {/* Grading Modal */}
-            {showGradingPanel && (
-                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
-                        <h2 className="text-xl font-semibold text-slate-900 mb-4">Complete Viva Session</h2>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Viva Marks (out of {session?.submission?.assignment?.meetingMarks || 20})
+            {/* Grading panel removed */}
                                 </label>
                                 <input
                                     type="number"

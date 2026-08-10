@@ -376,7 +376,7 @@ router.put('/sessions/:id/start', authenticate, authorize('instructor', 'lab_ass
  * @desc    Complete a viva session with evaluation
  * @access  Private (Examiner)
  */
-router.put('/sessions/:id/complete', authenticate, authorize('instructor', 'lab_assistant'), [], asyncHandler(async (req, res) => {
+router.put('/sessions/:id/complete', authenticate, authorize('instructor', 'lab_assistant', 'admin'), [], asyncHandler(async (req, res) => {
     const {
         marksObtained, maxMarks, performanceRating,
         questionsAsked, studentResponses,
