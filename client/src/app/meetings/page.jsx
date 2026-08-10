@@ -418,7 +418,7 @@ export default function MeetingPage() {
                                                 </div>
                                                 <div className="flex gap-2">
                                                     <Link
-                                                        href={`/meeting/room/${session.id}`}
+                                                        href={`/meeting/${session.id}`}
                                                         className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition"
                                                         title="Start Late"
                                                     >
@@ -1051,7 +1051,7 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                 {/* Action buttons based on session status */}
                 {session.status === 'scheduled' && (
                     <div className="flex flex-col gap-2">
-                        <Link href={`/meeting/room/${session.id}`} className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Start Meeting' : 'Join'}>
+                        <Link href={`/meeting/${session.id}`} className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Start Meeting' : 'Join'}>
                             <Play className="w-5 h-5" />
                         </Link>
                     </div>
@@ -1059,7 +1059,7 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
 
                 {session.status === 'in_progress' && (
                     <div className="flex flex-col gap-2">
-                        <Link href={`/meeting/room/${session.id}`} className="p-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Resume & Grade' : 'Rejoin'}>
+                        <Link href={`/meeting/${session.id}`} className="p-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Resume & Grade' : 'Rejoin'}>
                             <Video className="w-5 h-5" />
                         </Link>
                     </div>

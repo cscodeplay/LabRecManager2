@@ -65,10 +65,10 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
                         }
                     }
                 },
-                student: {
+                targetStudent: {
                     select: { id: true, firstName: true, lastName: true, admissionNumber: true }
                 },
-                examiner: {
+                host: {
                     select: { id: true, firstName: true, lastName: true }
                 }
             }
@@ -91,6 +91,102 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
 }));
 
 /**
+ * @route   GET /api/viva/sessions/check-auto-start
+ * @desc    Check and auto-start sessions that are scheduled to start now
+ * @access  Private (Admin/System)
+ */
+router.get('/sessions/check-auto-start', authenticate, asyncHandler(async (req, res) => {
+    const now = new Date();
+    const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+    const fiveMinutesLater = new Date(now.getTime() + 5 * 60 * 1000);
+
+    // Find sessions that should be auto-started
+    const sessionsToStart = await prisma.meeting.findMany({
+        where: {
+            status: 'scheduled',
+            autoStart: true,
+            scheduledAt: {
+                gte: fiveMinutesAgo,
+                lte: fiveMinutesLater
+            }
+        },
+        include: {
+            targetStudent: { select: { id: true, firstName: true, lastName: true } },
+            host: { select: { id: true, firstName: true, lastName: true } }
+        }
+    });
+
+    const startedSessions = [];
+    for (const session of sessionsToStart) {
+        await prisma.meeting.update({
+            where: { id: session.id },
+            data: {
+                status: 'in_progress',
+                actualStartTime: now
+            }
+        });
+
+        // Auto-admit participants if enabled
+        if (session.autoAdmit) {
+            await prisma.meetingParticipant.updateMany({
+                where: { sessionId: session.id },
+                data: { status: 'admitted', admittedAt: now }
+            });
+        }
+
+        startedSessions.push(session);
+    }
+
+    res.json({
+        success: true,
+        message: `Auto-started ${startedSessions.length} session(s)`,
+        data: { startedSessions }
+    });
+}));
+
+/**
+ * @route   GET /api/viva/sessions/cleanup-expired
+ * @desc    Auto-cancel sessions that are way past their duration (e.g., 1 hour after scheduled end)
+ * @access  Private (Admin)
+ */
+router.get('/sessions/cleanup-expired', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const now = new Date();
+
+    // Find scheduled sessions that are more than 1 hour past their end time
+    const allScheduledSessions = await prisma.meeting.findMany({
+        where: {
+            status: 'scheduled'
+        }
+    });
+
+    const expiredSessions = allScheduledSessions.filter(session => {
+        if (!session.scheduledAt) return false;
+        const startTime = new Date(session.scheduledAt);
+        const endTime = new Date(startTime.getTime() + (session.durationMinutes || 15) * 60 * 1000);
+        const graceEndTime = new Date(endTime.getTime() + 60 * 60 * 1000); // 1 hour grace
+        return now > graceEndTime;
+    });
+
+    const cancelledIds = [];
+    for (const session of expiredSessions) {
+        await prisma.meeting.update({
+            where: { id: session.id },
+            data: {
+                status: 'cancelled',
+                examinerRemarks: 'Auto-cancelled - session time slot expired without being conducted'
+            }
+        });
+        cancelledIds.push(session.id);
+    }
+
+    res.json({
+        success: true,
+        message: `Cleaned up ${cancelledIds.length} expired session(s)`,
+        data: { cancelledCount: cancelledIds.length, cancelledIds }
+    });
+}));
+
+/**
  * @route   GET /api/viva/sessions/:id
  * @desc    Get single viva session
  * @access  Private
@@ -105,7 +201,7 @@ router.get('/sessions/:id', authenticate, asyncHandler(async (req, res) => {
                     files: true
                 }
             },
-            student: {
+            targetStudent: {
                 select: {
                     id: true,
                     firstName: true,
@@ -116,7 +212,7 @@ router.get('/sessions/:id', authenticate, asyncHandler(async (req, res) => {
                     profileImageUrl: true
                 }
             },
-            examiner: {
+            host: {
                 select: { id: true, firstName: true, lastName: true }
             }
         }
@@ -195,8 +291,10 @@ router.post('/sessions', authenticate, authorize('instructor', 'lab_assistant', 
 
     const session = await prisma.meeting.create({
         data: {
+            schoolId: req.user.schoolId,
+            title: 'Viva Session',
             submissionId,
-            targetStudentId: submission.targetStudentId,
+            targetStudentId: submission.studentId,
             hostId: req.user.id,
             scheduledAt: new Date(scheduledAt),
             durationMinutes: durationMinutes || 10,
@@ -205,7 +303,7 @@ router.post('/sessions', authenticate, authorize('instructor', 'lab_assistant', 
             status: 'scheduled'
         },
         include: {
-            student: {
+            targetStudent: {
                 select: { id: true, firstName: true, lastName: true, email: true }
             }
         }
@@ -631,8 +729,8 @@ router.post('/sessions/:id/join', authenticate, asyncHandler(async (req, res) =>
     const session = await prisma.meeting.findUnique({
         where: { id: sessionId },
         include: {
-            student: { select: { id: true, firstName: true, lastName: true } },
-            examiner: { select: { id: true, firstName: true, lastName: true } }
+            targetStudent: { select: { id: true, firstName: true, lastName: true } },
+            host: { select: { id: true, firstName: true, lastName: true } }
         }
     });
 
@@ -726,8 +824,8 @@ router.post('/sessions/:id/join', authenticate, asyncHandler(async (req, res) =>
                 status: session.status,
                 hostId: session.hostId,
                 targetStudentId: session.targetStudentId,
-                examiner: session.examiner,
-                student: session.student
+                host: session.host,
+                targetStudent: session.targetStudent
             },
             isHost: isExaminer
         }
@@ -920,7 +1018,7 @@ router.get('/sessions/:id/my-status', authenticate, asyncHandler(async (req, res
                     id: true,
                     status: true,
                     hostId: true,
-                    examiner: {
+                    host: {
                         select: { id: true, firstName: true, lastName: true }
                     }
                 }
@@ -1272,60 +1370,6 @@ router.get('/recordings/:filename', authenticate, asyncHandler(async (req, res) 
 }));
 
 /**
- * @route   GET /api/viva/sessions/check-auto-start
- * @desc    Check and auto-start sessions that are scheduled to start now
- * @access  Private (Admin/System)
- */
-router.get('/sessions/check-auto-start', authenticate, asyncHandler(async (req, res) => {
-    const now = new Date();
-    const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
-    const fiveMinutesLater = new Date(now.getTime() + 5 * 60 * 1000);
-
-    // Find sessions that should be auto-started
-    const sessionsToStart = await prisma.meeting.findMany({
-        where: {
-            status: 'scheduled',
-            autoStart: true,
-            scheduledAt: {
-                gte: fiveMinutesAgo,
-                lte: fiveMinutesLater
-            }
-        },
-        include: {
-            student: { select: { id: true, firstName: true, lastName: true } },
-            examiner: { select: { id: true, firstName: true, lastName: true } }
-        }
-    });
-
-    const startedSessions = [];
-    for (const session of sessionsToStart) {
-        await prisma.meeting.update({
-            where: { id: session.id },
-            data: {
-                status: 'in_progress',
-                actualStartTime: now
-            }
-        });
-
-        // Auto-admit participants if enabled
-        if (session.autoAdmit) {
-            await prisma.meetingParticipant.updateMany({
-                where: { sessionId: session.id },
-                data: { status: 'admitted', admittedAt: now }
-            });
-        }
-
-        startedSessions.push(session);
-    }
-
-    res.json({
-        success: true,
-        message: `Auto-started ${startedSessions.length} session(s)`,
-        data: { startedSessions }
-    });
-}));
-
-/**
  * @route   PUT /api/viva/sessions/:id/mark-missed
  * @desc    Mark an expired session as missed/cancelled
  * @access  Private (Instructor)
@@ -1358,46 +1402,6 @@ router.put('/sessions/:id/mark-missed', authenticate, authorize('instructor', 'l
     });
 }));
 
-/**
- * @route   GET /api/viva/sessions/cleanup-expired
- * @desc    Auto-cancel sessions that are way past their duration (e.g., 1 hour after scheduled end)
- * @access  Private (Admin)
- */
-router.get('/sessions/cleanup-expired', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
-    const now = new Date();
 
-    // Find scheduled sessions that are more than 1 hour past their end time
-    const allScheduledSessions = await prisma.meeting.findMany({
-        where: {
-            status: 'scheduled'
-        }
-    });
-
-    const expiredSessions = allScheduledSessions.filter(session => {
-        if (!session.scheduledAt) return false;
-        const startTime = new Date(session.scheduledAt);
-        const endTime = new Date(startTime.getTime() + (session.durationMinutes || 15) * 60 * 1000);
-        const graceEndTime = new Date(endTime.getTime() + 60 * 60 * 1000); // 1 hour grace
-        return now > graceEndTime;
-    });
-
-    const cancelledIds = [];
-    for (const session of expiredSessions) {
-        await prisma.meeting.update({
-            where: { id: session.id },
-            data: {
-                status: 'cancelled',
-                examinerRemarks: 'Auto-cancelled - session time slot expired without being conducted'
-            }
-        });
-        cancelledIds.push(session.id);
-    }
-
-    res.json({
-        success: true,
-        message: `Cleaned up ${cancelledIds.length} expired session(s)`,
-        data: { cancelledCount: cancelledIds.length, cancelledIds }
-    });
-}));
 
 module.exports = router;

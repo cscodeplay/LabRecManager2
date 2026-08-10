@@ -183,14 +183,14 @@ export default function MeetingRoomPage() {
             setSession(sessionData);
 
             if (sessionData.status === 'completed') {
-                toast.error('This viva session has already been completed');
-                router.push('/admin/whiteboards');
+                toast.error('This meeting session has already been completed');
+                router.push('/meetings');
                 return;
             }
 
             if (sessionData.status === 'cancelled') {
-                toast.error('This viva session has been cancelled');
-                router.push('/admin/whiteboards');
+                toast.error('This meeting session has been cancelled');
+                router.push('/meetings');
                 return;
             }
 
@@ -222,8 +222,8 @@ export default function MeetingRoomPage() {
             }
         } catch (error) {
             console.error('Load session error:', error);
-            toast.error('Failed to load viva session');
-            router.push('/admin/whiteboards');
+            toast.error('Failed to load meeting session');
+            router.push('/meetings');
         } finally {
             setLoading(false);
         }
@@ -634,7 +634,7 @@ export default function MeetingRoomPage() {
 
         socketRef.current.on('session-ended', () => {
             toast.success('Session has ended');
-            router.push('/admin/whiteboards');
+            router.push('/meetings');
         });
     };
 
@@ -846,7 +846,7 @@ export default function MeetingRoomPage() {
             const url = URL.createObjectURL(recordedBlob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = `viva_${session?.student?.lastName || 'session'}_${new Date().toISOString().split('T')[0]}.webm`;
+            link.download = `meeting_${session?.student?.lastName || 'session'}_${new Date().toISOString().split('T')[0]}.webm`;
             document.body.appendChild(link);
             link.click();
             link.remove();
@@ -862,7 +862,7 @@ export default function MeetingRoomPage() {
         }
 
         try {
-            const file = new File([recordedBlob], `viva_${session.id}_${Date.now()}.webm`, { type: 'video/webm' });
+            const file = new File([recordedBlob], `meeting_${session.id}_${Date.now()}.webm`, { type: 'video/webm' });
             const res = await meetingAPI.uploadRecording(session.id, file, recordingTime);
             toast.success('Recording saved to database!');
             setShowRecordingOptions(false);
@@ -954,7 +954,7 @@ export default function MeetingRoomPage() {
             if (recordingToUpload && recordingToUpload.size > 0) {
                 toast.loading('Saving recording to database...');
                 try {
-                    const file = new File([recordingToUpload], `viva_${session.id}_${Date.now()}.webm`, { type: 'video/webm' });
+                    const file = new File([recordingToUpload], `meeting_${session.id}_${Date.now()}.webm`, { type: 'video/webm' });
                     await meetingAPI.uploadRecording(session.id, file, recordingTime);
                     toast.dismiss();
                     toast.success('Recording saved for admin review');
@@ -969,7 +969,7 @@ export default function MeetingRoomPage() {
             cleanup();
 
             toast.success('Session completed successfully!');
-            router.push('/admin/whiteboards');
+            router.push('/meetings');
         } catch (error) {
             console.error('Failed to end session:', error);
             const errorMsg = error.response?.data?.message ||
@@ -991,7 +991,7 @@ export default function MeetingRoomPage() {
             <div className="min-h-screen flex items-center justify-center bg-slate-900">
                 <div className="text-center">
                     <div className="animate-spin w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                    <p className="text-white">Connecting to viva room...</p>
+                    <p className="text-white">Connecting to meeting room...</p>
                 </div>
             </div>
         );
@@ -1048,7 +1048,7 @@ export default function MeetingRoomPage() {
                     <button
                         onClick={() => {
                             cleanup();
-                            router.push('/admin/whiteboards');
+                            router.push('/meetings');
                         }}
                         className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition flex items-center justify-center mx-auto"
                         title="Leave Waiting Room"
@@ -1073,7 +1073,7 @@ export default function MeetingRoomPage() {
                         The host has not admitted you to this session.
                     </p>
                     <button
-                        onClick={() => router.push('/admin/whiteboards')}
+                        onClick={() => router.push('/meetings')}
                         className="p-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition flex items-center justify-center mx-auto"
                         title="Back to Viva Sessions"
                     >
@@ -1092,7 +1092,7 @@ export default function MeetingRoomPage() {
                     <button
                         onClick={() => {
                             cleanup();
-                            router.push('/admin/whiteboards');
+                            router.push('/meetings');
                         }}
                         className="text-slate-400 hover:text-white"
                     >
@@ -1383,7 +1383,7 @@ export default function MeetingRoomPage() {
                             <button
                                 onClick={() => {
                                     cleanup();
-                                    router.push('/admin/whiteboards');
+                                    router.push('/meetings');
                                 }}
                                 className="w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition"
                                 title="Leave"
@@ -1741,7 +1741,7 @@ export default function MeetingRoomPage() {
                         </h2>
 
                         <p className="text-slate-600 mb-6">
-                            Your viva session recording is ready. You can save it to the database for later playback, download it, or discard it.
+                            Your meeting session recording is ready. You can save it to the database for later playback, download it, or discard it.
                         </p>
 
                         <div className="bg-slate-50 rounded-lg p-4 mb-6">
@@ -1914,7 +1914,7 @@ export default function MeetingRoomPage() {
                             }}
                             socket={socketRef.current}
                             sessionId={whiteboardSessionId}
-                            whiteboardId={params?.id ? `viva_${params.code}` : null}
+                            whiteboardId={params?.id ? `meeting_${params.code}` : null}
                         />
                     </div>
                 </div>

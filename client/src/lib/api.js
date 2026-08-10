@@ -209,40 +209,40 @@ export const submissionsAPI = {
 
 // Viva API
 export const meetingAPI = {
-    getSessions: (params) => api.get('/viva/sessions', { params }),
-    getSession: (id) => api.get(`/viva/sessions/${id}`),
-    scheduleSession: (data) => api.post('/viva/sessions', data),
-    scheduleStandaloneSession: (data) => api.post('/viva/sessions/schedule', data),
-    startSession: (id) => api.put(`/viva/sessions/${id}/start`),
-    completeSession: (id, data) => api.put(`/viva/sessions/${id}/complete`, data),
-    getQuestions: (params) => api.get('/viva/questions', { params }),
-    addQuestion: (data) => api.post('/viva/questions', data),
-    getAvailableStudents: (params) => api.get('/viva/available-students', { params }),
+    getSessions: (params) => api.get('/meetings/sessions', { params }),
+    getSession: (id) => api.get(`/meetings/sessions/${id}`),
+    scheduleSession: (data) => api.post('/meetings/sessions', data),
+    scheduleStandaloneSession: (data) => api.post('/meetings/sessions/schedule', data),
+    startSession: (id) => api.put(`/meetings/sessions/${id}/start`),
+    completeSession: (id, data) => api.put(`/meetings/sessions/${id}/complete`, data),
+    getQuestions: (params) => api.get('/meetings/questions', { params }),
+    addQuestion: (data) => api.post('/meetings/questions', data),
+    getAvailableStudents: (params) => api.get('/meetings/available-students', { params }),
     // Waiting room
-    joinSession: (id) => api.post(`/viva/sessions/${id}/join`),
-    getParticipants: (id) => api.get(`/viva/sessions/${id}/participants`),
-    getMyStatus: (id) => api.get(`/viva/sessions/${id}/my-status`),
-    admitParticipant: (sessionId, participantId) => api.put(`/viva/sessions/${sessionId}/admit/${participantId}`),
-    rejectParticipant: (sessionId, participantId) => api.put(`/viva/sessions/${sessionId}/reject/${participantId}`),
-    admitAll: (id) => api.put(`/viva/sessions/${id}/admit-all`),
-    leaveSession: (id) => api.put(`/viva/sessions/${id}/leave`),
+    joinSession: (id) => api.post(`/meetings/sessions/${id}/join`),
+    getParticipants: (id) => api.get(`/meetings/sessions/${id}/participants`),
+    getMyStatus: (id) => api.get(`/meetings/sessions/${id}/my-status`),
+    admitParticipant: (sessionId, participantId) => api.put(`/meetings/sessions/${sessionId}/admit/${participantId}`),
+    rejectParticipant: (sessionId, participantId) => api.put(`/meetings/sessions/${sessionId}/reject/${participantId}`),
+    admitAll: (id) => api.put(`/meetings/sessions/${id}/admit-all`),
+    leaveSession: (id) => api.put(`/meetings/sessions/${id}/leave`),
     // Time management
-    getTimeStatus: (id) => api.get(`/viva/sessions/${id}/time-status`),
-    autoStart: (id) => api.put(`/viva/sessions/${id}/auto-start`),
-    autoEnd: (id) => api.put(`/viva/sessions/${id}/auto-end`),
-    checkAutoStart: () => api.get('/viva/sessions/check-auto-start'),
-    markMissed: (id, reason) => api.put(`/viva/sessions/${id}/mark-missed`, { reason }),
-    cleanupExpired: () => api.get('/viva/sessions/cleanup-expired'),
+    getTimeStatus: (id) => api.get(`/meetings/sessions/${id}/time-status`),
+    autoStart: (id) => api.put(`/meetings/sessions/${id}/auto-start`),
+    autoEnd: (id) => api.put(`/meetings/sessions/${id}/auto-end`),
+    checkAutoStart: () => api.get('/meetings/sessions/check-auto-start'),
+    markMissed: (id, reason) => api.put(`/meetings/sessions/${id}/mark-missed`, { reason }),
+    cleanupExpired: () => api.get('/meetings/sessions/cleanup-expired'),
     // Recording
     uploadRecording: (id, file, duration) => {
         const formData = new FormData();
         formData.append('recording', file);
         formData.append('duration', duration || 0);
-        return api.post(`/viva/sessions/${id}/recording`, formData, {
+        return api.post(`/meetings/sessions/${id}/recording`, formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
         });
     },
-    getRecordingUrl: (filename) => `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'}/viva/recordings/${filename}`,
+    getRecordingUrl: (filename) => `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'}/meetings/recordings/${filename}`,
 };
 
 // Grades API
