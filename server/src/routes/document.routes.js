@@ -71,6 +71,11 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     const { category, search, folderId } = req.query;
 
     const where = { schoolId: req.user.schoolId, deletedAt: null };
+    const isAdmin = ['admin', 'principal'].includes(req.user.role);
+    if (!isAdmin) {
+        where.uploadedById = req.user.id;
+    }
+
     if (category) where.category = category;
 
     if (search) {
@@ -351,11 +356,18 @@ router.delete('/:id', authenticate, authorize('admin', 'principal', 'instructor'
  * @access  Private (Admin/Principal)
  */
 router.get('/trash', authenticate, authorize('admin', 'principal', 'instructor', 'student'), asyncHandler(async (req, res) => {
+    const where = {
+        schoolId: req.user.schoolId,
+        deletedAt: { not: null }
+    };
+
+    const isAdmin = ['admin', 'principal'].includes(req.user.role);
+    if (!isAdmin) {
+        where.uploadedById = req.user.id;
+    }
+
     const documents = await prisma.document.findMany({
-        where: {
-            schoolId: req.user.schoolId,
-            deletedAt: { not: null }
-        },
+        where,
         include: {
             uploadedBy: { select: { id: true, firstName: true, lastName: true } },
             deletedBy: { select: { id: true, firstName: true, lastName: true } }

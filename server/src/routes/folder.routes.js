@@ -17,6 +17,11 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         deletedAt: null
     };
 
+    const isAdmin = ['admin', 'principal'].includes(req.user.role);
+    if (!isAdmin) {
+        where.createdById = req.user.id;
+    }
+
     if (search) {
         where.name = { contains: search, mode: 'insensitive' };
         // When searching, we ignore parentId to search globally

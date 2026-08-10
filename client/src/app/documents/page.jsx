@@ -956,7 +956,7 @@ export default function DocumentsPage() {
     };
 
     // Check if user can upload (admin, principal, lab_assistant, instructor)
-    const canUpload = ['admin', 'principal', 'lab_assistant', 'instructor'].includes(user?.role);
+    const canUpload = ['admin', 'principal', 'lab_assistant', 'instructor', 'student'].includes(user?.role);
 
     return (
         <div className="p-6 max-w-7xl mx-auto pb-24 relative">
