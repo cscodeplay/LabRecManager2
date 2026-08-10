@@ -8,11 +8,11 @@ import {
     Search, Filter, Download, Eye, Shield
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import { vivaAPI } from '@/lib/api';
+import { meetingAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 
-export default function VivaRecordingsPage() {
+export default function MeetingRecordingsPage() {
     const router = useRouter();
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
     const [recordings, setRecordings] = useState([]);
@@ -41,7 +41,7 @@ export default function VivaRecordingsPage() {
     const loadRecordings = async () => {
         setLoading(true);
         try {
-            const res = await vivaAPI.getSessions({ limit: 100, status: 'completed' });
+            const res = await meetingAPI.getSessions({ limit: 100, status: 'completed' });
             const sessions = res.data.data.sessions || [];
             setRecordings(sessions);
         } catch (error) {
@@ -60,6 +60,9 @@ export default function VivaRecordingsPage() {
             session.student?.lastName?.toLowerCase().includes(search.toLowerCase()) ||
             session.examiner?.firstName?.toLowerCase().includes(search.toLowerCase()) ||
             session.examiner?.lastName?.toLowerCase().includes(search.toLowerCase()) ||
+            session.host?.firstName?.toLowerCase().includes(search.toLowerCase()) ||
+            session.host?.lastName?.toLowerCase().includes(search.toLowerCase()) ||
+            session.title?.toLowerCase().includes(search.toLowerCase()) ||
             session.submission?.assignment?.title?.toLowerCase().includes(search.toLowerCase());
 
         // Recording filter
@@ -100,8 +103,8 @@ export default function VivaRecordingsPage() {
     return (
         <div className="min-h-screen bg-slate-50">
             <PageHeader
-                title="Viva Recordings"
-                subtitle="Review session recordings for accountability"
+                title="Meeting Recordings"
+                subtitle="Review meeting and session recordings for accountability"
             />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
@@ -160,7 +163,7 @@ export default function VivaRecordingsPage() {
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                             <input
                                 type="text"
-                                placeholder="Search by student, instructor, or assignment..."
+                                placeholder="Search by student, host, or title..."
                                 className="input pl-10 w-full"
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
@@ -200,7 +203,7 @@ export default function VivaRecordingsPage() {
                         <div className="card p-12 text-center">
                             <Video className="w-16 h-16 mx-auto text-slate-300 mb-4" />
                             <h3 className="text-lg font-medium text-slate-700">No recordings found</h3>
-                            <p className="text-slate-500">Completed viva sessions with recordings will appear here</p>
+                            <p className="text-slate-500">Completed meeting sessions with recordings will appear here</p>
                         </div>
                     ) : (
                         filteredRecordings.map((session) => (
@@ -214,17 +217,21 @@ export default function VivaRecordingsPage() {
                                             </div>
                                             <div>
                                                 <h3 className="font-semibold text-slate-900">
-                                                    {session.submission?.assignment?.title || 'Viva Session'}
+                                                    {session.title || session.questionsAsked?.sessionTitle || session.submission?.assignment?.title || 'Meeting Session'}
                                                 </h3>
                                                 <div className="flex flex-wrap gap-3 text-sm text-slate-500 mt-1">
-                                                    <span className="flex items-center gap-1">
-                                                        <User className="w-4 h-4" />
-                                                        Student: {session.student?.firstName} {session.student?.lastName}
-                                                    </span>
-                                                    <span className="flex items-center gap-1">
-                                                        <Shield className="w-4 h-4" />
-                                                        Examiner: {session.examiner?.firstName} {session.examiner?.lastName}
-                                                    </span>
+                                                    {session.student && (
+                                                        <span className="flex items-center gap-1">
+                                                            <User className="w-4 h-4" />
+                                                            Student: {session.student.firstName} {session.student.lastName}
+                                                        </span>
+                                                    )}
+                                                    {(session.host || session.examiner) && (
+                                                        <span className="flex items-center gap-1">
+                                                            <Shield className="w-4 h-4" />
+                                                            Host: {session.host ? `${session.host.firstName} ${session.host.lastName}` : `${session.examiner?.firstName} ${session.examiner?.lastName}`}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -238,10 +245,12 @@ export default function VivaRecordingsPage() {
                                                 <Clock className="w-4 h-4" />
                                                 {session.durationMinutes} min
                                             </span>
-                                            <span className="flex items-center gap-1">
-                                                <Award className="w-4 h-4" />
-                                                {session.marksObtained}/{session.maxMarks} marks
-                                            </span>
+                                            {session.marksObtained && (
+                                                <span className="flex items-center gap-1">
+                                                    <Award className="w-4 h-4" />
+                                                    {session.marksObtained}/{session.maxMarks} marks
+                                                </span>
+                                            )}
                                             {session.recordingSize && (
                                                 <span className="text-emerald-600">
                                                     📁 {formatFileSize(session.recordingSize)}
@@ -280,10 +289,10 @@ export default function VivaRecordingsPage() {
                         <div className="p-4 border-b flex items-center justify-between">
                             <div>
                                 <h2 className="text-lg font-semibold text-slate-900">
-                                    Viva Recording - {selectedRecording.student?.firstName} {selectedRecording.student?.lastName}
+                                    Meeting Recording - {selectedRecording.student ? `${selectedRecording.student.firstName} ${selectedRecording.student.lastName}` : (selectedRecording.title || 'Session')}
                                 </h2>
                                 <p className="text-sm text-slate-500">
-                                    Examiner: {selectedRecording.examiner?.firstName} {selectedRecording.examiner?.lastName} •
+                                    Host: {selectedRecording.host ? `${selectedRecording.host.firstName} ${selectedRecording.host.lastName}` : (selectedRecording.examiner ? `${selectedRecording.examiner.firstName} ${selectedRecording.examiner.lastName}` : 'Host')} •
                                     {new Date(selectedRecording.actualEndTime || selectedRecording.updatedAt).toLocaleDateString()}
                                 </p>
                             </div>
@@ -299,7 +308,7 @@ export default function VivaRecordingsPage() {
                                 controls
                                 autoPlay
                                 className="w-full rounded-lg bg-black aspect-video"
-                                src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'}/viva/recordings/${selectedRecording.recordingUrl?.split('/').pop()}`}
+                                src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'}/meetings/recordings/${selectedRecording.recordingUrl?.split('/').pop()}`}
                             >
                                 Your browser does not support video playback.
                             </video>
@@ -307,12 +316,12 @@ export default function VivaRecordingsPage() {
                                 <h3 className="font-medium text-slate-900 mb-2">Session Details</h3>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                     <div>
-                                        <p className="text-slate-500">Assignment</p>
-                                        <p className="font-medium">{selectedRecording.submission?.assignment?.title || 'N/A'}</p>
+                                        <p className="text-slate-500">Topic</p>
+                                        <p className="font-medium">{selectedRecording.title || selectedRecording.submission?.assignment?.title || 'Meeting Session'}</p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Marks</p>
-                                        <p className="font-medium">{selectedRecording.marksObtained}/{selectedRecording.maxMarks}</p>
+                                        <p className="font-medium">{selectedRecording.marksObtained ? `${selectedRecording.marksObtained}/${selectedRecording.maxMarks}` : 'N/A'}</p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Duration</p>

@@ -878,16 +878,30 @@ export default function Whiteboard({
 
         const handleBackgroundChange = (data) => {
             if (data.sessionId !== sessionId) return;
-            if (data.bgColor) setBgColor(data.bgColor);
-            if (data.bgPattern) setBgPattern(data.bgPattern);
+            setPageBackgrounds(prev => ({
+                ...prev,
+                [currentPage]: {
+                    ...prev[currentPage],
+                    color: data.bgColor || prev[currentPage]?.color || '#ffffff',
+                    pattern: data.bgPattern || prev[currentPage]?.pattern || 'blank'
+                }
+            }));
         };
 
         const handleCanvasState = (data) => {
             if (isDrawingRef.current) return;
             isRemoteUpdateRef.current = true;
             if (data.sessionId !== sessionId) return;
-            if (data.bgColor) setBgColor(data.bgColor);
-            if (data.bgPattern) setBgPattern(data.bgPattern);
+            if (data.bgColor || data.bgPattern) {
+                setPageBackgrounds(prev => ({
+                    ...prev,
+                    [currentPage]: {
+                        ...prev[currentPage],
+                        color: data.bgColor || prev[currentPage]?.color || '#ffffff',
+                        pattern: data.bgPattern || prev[currentPage]?.pattern || 'blank'
+                    }
+                }));
+            }
             if (data.imageObjects) setImageObjects(data.imageObjects);
             if (data.textObjects) setTextObjects(data.textObjects);
             if (data.shapeObjects) setShapeObjects(data.shapeObjects);

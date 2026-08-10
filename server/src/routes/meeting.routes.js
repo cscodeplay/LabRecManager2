@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { body, validationResult } = require('express-validator');
 const prisma = require('../config/database');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, optionalAuth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 
 const recordingsDir = path.join(__dirname, '../../uploads/recordings');
@@ -1479,18 +1479,19 @@ router.put('/sessions/:id/auto-end', authenticate, asyncHandler(async (req, res)
 }));
 
 /**
- * @route   POST /api/viva/sessions/:id/recording
+ * @route   POST /api/meetings/sessions/:id/recording
  * @desc    Upload session recording
- * @access  Private (Examiner)
+ * @access  Private
  */
 const multer = require('multer');
 
 const recordingStorage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, recordingsDir),
     filename: (req, file, cb) => {
-        const sessionId = req.params.id;
+        const sessionId = req.params.id || 'meeting';
+        const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
         const ext = path.extname(file.originalname) || '.webm';
-        cb(null, `viva-${sessionId}-${Date.now()}${ext}`);
+        cb(null, `meeting-${safeId}-${Date.now()}${ext}`);
     }
 });
 
@@ -1510,17 +1511,10 @@ const uploadRecording = multer({
 router.post('/sessions/:id/recording', authenticate, uploadRecording.single('recording'), asyncHandler(async (req, res) => {
     const sessionId = req.params.id;
 
-    const session = await prisma.meeting.findFirst({
-        where: {
-            OR: [
-                { id: sessionId },
-                { meetingLink: { contains: sessionId } }
-            ]
-        }
-    });
+    const session = await findMeetingByIdOrLink(sessionId);
 
     if (!session) {
-        return res.status(404).json({ success: false, message: 'Session not found' });
+        return res.status(404).json({ success: false, message: 'Meeting session not found' });
     }
 
     if (!req.file) {
@@ -1555,11 +1549,11 @@ router.post('/sessions/:id/recording', authenticate, uploadRecording.single('rec
 }));
 
 /**
- * @route   GET /api/viva/recordings/:filename
+ * @route   GET /api/meetings/recordings/:filename
  * @desc    Stream recording file
- * @access  Private
+ * @access  Public / Optional Auth for HTML5 Video tags
  */
-router.get('/recordings/:filename', authenticate, asyncHandler(async (req, res) => {
+router.get('/recordings/:filename', optionalAuth, asyncHandler(async (req, res) => {
     const filename = req.params.filename;
     const filePath = path.join(recordingsDir, filename);
 
@@ -1567,26 +1561,29 @@ router.get('/recordings/:filename', authenticate, asyncHandler(async (req, res) 
         return res.status(404).json({ success: false, message: 'Recording not found' });
     }
 
-    // Get session to verify access
-    const sessionId = filename.split('-')[1];
-    const session = await prisma.meeting.findFirst({
-        where: { recordingFilePath: { contains: filename } }
-    });
+    // Verify access if user is authenticated
+    if (req.user) {
+        const session = await prisma.meeting.findFirst({
+            where: { recordingFilePath: { contains: filename } }
+        });
 
-    if (session) {
-        const isAuthorized = req.user.id === session.targetStudentId ||
-            req.user.id === session.hostId ||
-            req.user.role === 'admin' ||
-            req.user.role === 'principal';
+        if (session) {
+            const isAuthorized = req.user.id === session.targetStudentId ||
+                req.user.id === session.hostId ||
+                req.user.role === 'admin' ||
+                req.user.role === 'principal';
 
-        if (!isAuthorized) {
-            return res.status(403).json({ success: false, message: 'Not authorized to view this recording' });
+            if (!isAuthorized) {
+                return res.status(403).json({ success: false, message: 'Not authorized to view this recording' });
+            }
         }
     }
 
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;
     const range = req.headers.range;
+    const isMp4 = filename.toLowerCase().endsWith('.mp4');
+    const contentType = isMp4 ? 'video/mp4' : 'video/webm';
 
     if (range) {
         const parts = range.replace(/bytes=/, "").split("-");
@@ -1598,7 +1595,7 @@ router.get('/recordings/:filename', authenticate, asyncHandler(async (req, res) 
             'Content-Range': `bytes ${start}-${end}/${fileSize}`,
             'Accept-Ranges': 'bytes',
             'Content-Length': chunksize,
-            'Content-Type': 'video/webm',
+            'Content-Type': contentType,
         };
         res.writeHead(206, head);
         file.pipe(res);

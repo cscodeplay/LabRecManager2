@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
     Video, Calendar, Clock, User, Play, CheckCircle, XCircle,
-    Plus, Search, X, Users, CalendarPlus, Award, Shield, Trash2, Sparkles
+    Plus, Search, X, Users, CalendarPlus, Award, Shield, Trash2, Sparkles,
+    Link2, Copy, Check, Share2
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { meetingAPI, classesAPI } from '@/lib/api';
@@ -50,6 +51,66 @@ const getPasscode = (session) => {
     }
     return code;
 };
+
+export function useMeetingLink(session) {
+    const [copied, setCopied] = useState(false);
+
+    const roomCode = getRoomCode(session);
+    const formattedCode = getFormattedRoomCode(session);
+    const passcode = getPasscode(session);
+    const title = session?.title || session?.questionsAsked?.sessionTitle || session?.submission?.assignment?.title || 'Meeting Session';
+    const hostName = session?.host ? `${session.host.firstName} ${session.host.lastName}` : (session?.examiner ? `${session.examiner.firstName} ${session.examiner.lastName}` : 'Host');
+
+    const getJoinUrl = () => {
+        if (typeof window !== 'undefined') {
+            return `${window.location.origin}/meeting/${roomCode}`;
+        }
+        return `https://lab-rec-client.onrender.com/meeting/${roomCode}`;
+    };
+
+    const copyLink = async (e) => {
+        if (e) e.stopPropagation();
+        const url = getJoinUrl();
+        try {
+            await navigator.clipboard.writeText(url);
+            setCopied(true);
+            toast.success(`Meeting link copied!`, { icon: '🔗' });
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            toast.error('Failed to copy link');
+        }
+    };
+
+    const copyInvitation = async (e) => {
+        if (e) e.stopPropagation();
+        const url = getJoinUrl();
+        const scheduledTime = session?.scheduledAt ? new Date(session.scheduledAt).toLocaleString() : 'Now';
+        const inviteText = `Join Meeting Session: ${title}
+Host: ${hostName}
+Time: ${scheduledTime}
+Meeting ID: ${formattedCode}
+Passcode: ${passcode}
+Direct Link: ${url}`;
+        try {
+            await navigator.clipboard.writeText(inviteText);
+            setCopied(true);
+            toast.success(`Full invitation copied!`, { icon: '📋' });
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            toast.error('Failed to copy invitation');
+        }
+    };
+
+    return {
+        roomCode,
+        formattedCode,
+        passcode,
+        joinUrl: getJoinUrl(),
+        copied,
+        copyLink,
+        copyInvitation
+    };
+}
 
 export default function MeetingPage() {
     const router = useRouter();
@@ -798,7 +859,7 @@ export default function MeetingPage() {
                                     Meeting Recording - {selectedRecording.student?.firstName} {selectedRecording.student?.lastName}
                                 </h2>
                                 <p className="text-sm text-slate-500">
-                                    Examiner: {selectedRecording.examiner?.firstName} {selectedRecording.examiner?.lastName} •
+                                    Host: {selectedRecording.host ? `${selectedRecording.host.firstName} ${selectedRecording.host.lastName}` : (selectedRecording.examiner ? `${selectedRecording.examiner.firstName} ${selectedRecording.examiner.lastName}` : 'Host')} •
                                     {new Date(selectedRecording.actualEndTime || selectedRecording.updatedAt).toLocaleDateString()}
                                 </p>
                             </div>
@@ -814,7 +875,7 @@ export default function MeetingPage() {
                                 controls
                                 autoPlay
                                 className="w-full rounded-lg bg-black aspect-video"
-                                src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'}/meeting/recordings/${selectedRecording.recordingUrl?.split('/').pop()}`}
+                                src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'}/meetings/recordings/${selectedRecording.recordingUrl?.split('/').pop()}`}
                             >
                                 Your browser does not support video playback.
                             </video>
@@ -1103,108 +1164,145 @@ export default function MeetingPage() {
 
 // Session Card Component
 function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isLive }) {
+    const { roomCode, formattedCode, passcode, copied, copyLink, copyInvitation } = useMeetingLink(session);
+
     return (
         <div className={`card card-hover p-6 ${isLive ? 'ring-2 ring-red-500 ring-opacity-50' : ''}`}>
-            <div className="flex items-start gap-4">
-                <div className={`w-12 h-12 rounded-xl ${isLive ? 'bg-red-100' : 'bg-slate-100'} flex items-center justify-center`}>
-                    {isLive ? (
-                        <div className="relative">
-                            <Video className="w-5 h-5 text-red-500" />
-                            <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
-                        </div>
-                    ) : (
-                        getStatusIcon(session.status)
-                    )}
-                </div>
-                <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                        <span className={`badge ${getStatusBadge(session.status)}`}>
-                            {session.status.replace('_', ' ')}
-                        </span>
-                        <span className="text-sm text-slate-500">
-                            {session.mode}
-                        </span>
-                        {isLive && (
-                            <span className="text-xs font-medium text-red-500 bg-red-50 px-2 py-1 rounded-full">
-                                LIVE NOW
-                            </span>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-4 flex-1">
+                    <div className={`w-12 h-12 rounded-xl ${isLive ? 'bg-red-100' : 'bg-slate-100'} flex items-center justify-center shrink-0`}>
+                        {isLive ? (
+                            <div className="relative">
+                                <Video className="w-5 h-5 text-red-500" />
+                                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
+                            </div>
+                        ) : (
+                            getStatusIcon(session.status)
                         )}
                     </div>
-                    <h3 className="text-lg font-semibold text-slate-900">
-                        {session.title || session.questionsAsked?.sessionTitle || session.submission?.assignment?.title || 'Meeting Session'}
-                    </h3>
-
-                    <div className="flex flex-wrap items-center gap-3 mt-2 text-xs">
-                        <span className="font-mono font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded-md border border-primary-200">
-                            ID: {getFormattedRoomCode(session)}
-                        </span>
-                        <span className="font-mono font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
-                            Passcode: {getPasscode(session)}
-                        </span>
-                    </div>
-                    <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-500">
-                        <span className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
-                            {session.scheduledAt
-                                ? new Date(session.scheduledAt).toLocaleString()
-                                : 'Not scheduled'}
-                        </span>
-                        <span className="flex items-center gap-1">
-                            <Clock className="w-4 h-4" />
-                            {session.durationMinutes} minutes
-                        </span>
-                        {isInstructor && session.student && (
-                            <span className="flex items-center gap-1">
-                                <User className="w-4 h-4" />
-                                {session.student.firstName} {session.student.lastName}
+                    <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                            <span className={`badge ${getStatusBadge(session.status)}`}>
+                                {session.status.replace('_', ' ')}
                             </span>
-                        )}
-                        {!isInstructor && session.examiner && (
-                            <span className="flex items-center gap-1">
-                                <User className="w-4 h-4" />
-                                Examiner: {session.examiner.firstName} {session.examiner.lastName}
+                            <span className="text-sm text-slate-500">
+                                {session.mode}
                             </span>
-                        )}
-                    </div>
-
-                    {session.status === 'completed' && session.marksObtained && (
-                        <div className="mt-3 p-3 bg-emerald-50 rounded-lg">
-                            <p className="text-emerald-700">
-                                <span className="font-medium">Marks:</span> {session.marksObtained} / {session.maxMarks}
-                            </p>
-                            {session.examinerRemarks && (
-                                <p className="text-sm text-emerald-600 mt-1">
-                                    {session.examinerRemarks}
-                                </p>
+                            {isLive && (
+                                <span className="text-xs font-medium text-red-500 bg-red-50 px-2 py-1 rounded-full animate-pulse">
+                                    LIVE NOW
+                                </span>
                             )}
                         </div>
-                    )}
+                        <h3 className="text-lg font-semibold text-slate-900">
+                            {session.title || session.questionsAsked?.sessionTitle || session.submission?.assignment?.title || 'Meeting Session'}
+                        </h3>
 
-                    {/* Countdown Timer for in_progress sessions */}
-                    {session.status === 'in_progress' && session.actualStartTime && (
-                        <CountdownTimer
-                            startTime={session.actualStartTime}
-                            durationMinutes={session.durationMinutes}
-                        />
-                    )}
+                        <div className="flex flex-wrap items-center gap-3 mt-2 text-xs">
+                            <span className="font-mono font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded-md border border-primary-200">
+                                ID: {formattedCode}
+                            </span>
+                            <span className="font-mono font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                                Passcode: {passcode}
+                            </span>
+                        </div>
+                        <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-500">
+                            <span className="flex items-center gap-1">
+                                <Calendar className="w-4 h-4" />
+                                {session.scheduledAt
+                                    ? new Date(session.scheduledAt).toLocaleString()
+                                    : 'Not scheduled'}
+                            </span>
+                            <span className="flex items-center gap-1">
+                                <Clock className="w-4 h-4" />
+                                {session.durationMinutes} minutes
+                            </span>
+                            {isInstructor && session.student && (
+                                <span className="flex items-center gap-1">
+                                    <User className="w-4 h-4" />
+                                    Participant: {session.student.firstName} {session.student.lastName}
+                                </span>
+                            )}
+                            {!isInstructor && (session.host || session.examiner) && (
+                                <span className="flex items-center gap-1">
+                                    <User className="w-4 h-4" />
+                                    Host: {session.host ? `${session.host.firstName} ${session.host.lastName}` : `${session.examiner?.firstName} ${session.examiner?.lastName}`}
+                                </span>
+                            )}
+                        </div>
+
+                        {session.status === 'completed' && session.marksObtained && (
+                            <div className="mt-3 p-3 bg-emerald-50 rounded-lg">
+                                <p className="text-emerald-700">
+                                    <span className="font-medium">Marks:</span> {session.marksObtained} / {session.maxMarks}
+                                </p>
+                                {session.examinerRemarks && (
+                                    <p className="text-sm text-emerald-600 mt-1">
+                                        {session.examinerRemarks}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Countdown Timer for in_progress sessions */}
+                        {session.status === 'in_progress' && session.actualStartTime && (
+                            <CountdownTimer
+                                startTime={session.actualStartTime}
+                                durationMinutes={session.durationMinutes}
+                            />
+                        )}
+                    </div>
                 </div>
 
-                {/* Action buttons based on session status */}
-                {session.status === 'scheduled' && (
-                    <div className="flex flex-col gap-2">
-                        <Link href={`/meeting/${getRoomCode(session)}`} className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Start Meeting' : 'Join'}>
-                            <Play className="w-5 h-5" />
-                        </Link>
-                    </div>
-                )}
+                {/* Action and Copiable Link Buttons */}
+                <div className="flex items-center gap-2 self-end sm:self-center">
+                    {/* Copy Link Button */}
+                    <button
+                        onClick={copyLink}
+                        className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition shadow-sm ${
+                            copied
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-600'
+                                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                        }`}
+                        title="Copy direct meeting join link"
+                    >
+                        {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Link2 className="w-4 h-4 text-primary-600" />}
+                        <span className="hidden md:inline">{copied ? 'Copied' : 'Copy Link'}</span>
+                    </button>
 
-                {session.status === 'in_progress' && (
-                    <div className="flex flex-col gap-2">
-                        <Link href={`/meeting/${getRoomCode(session)}`} className="p-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition shadow-sm" title={isInstructor ? 'Resume & Grade' : 'Rejoin'}>
-                            <Video className="w-5 h-5" />
+                    {/* Copy Full Invitation */}
+                    <button
+                        onClick={copyInvitation}
+                        className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                        title="Copy full meeting invitation with ID and passcode"
+                    >
+                        <Copy className="w-4 h-4 text-slate-600" />
+                        <span className="hidden lg:inline">Invite</span>
+                    </button>
+
+                    {/* Launch / Join Action Buttons */}
+                    {session.status === 'scheduled' && (
+                        <Link
+                            href={`/meeting/${roomCode}`}
+                            className="px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold transition shadow-sm flex items-center gap-1.5 whitespace-nowrap"
+                            title={isInstructor ? 'Start Meeting' : 'Join Meeting'}
+                        >
+                            <Play className="w-4 h-4" />
+                            <span>{isInstructor ? 'Start Meeting' : 'Join'}</span>
                         </Link>
-                    </div>
-                )}
+                    )}
+
+                    {session.status === 'in_progress' && (
+                        <Link
+                            href={`/meeting/${roomCode}`}
+                            className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-semibold transition shadow-sm flex items-center gap-1.5 whitespace-nowrap"
+                            title={isInstructor ? 'Resume Meeting' : 'Rejoin'}
+                        >
+                            <Video className="w-4 h-4" />
+                            <span>{isInstructor ? 'Resume' : 'Rejoin'}</span>
+                        </Link>
+                    )}
+                </div>
             </div>
         </div>
     );

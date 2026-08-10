@@ -8,16 +8,23 @@ const { jwt: jwtConfig } = require('../config/constants');
 const authenticate = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
+        let token = null;
 
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+        } else if (req.query && req.query.token) {
+            token = req.query.token;
+        } else if (req.cookies && req.cookies.token) {
+            token = req.cookies.token;
+        }
+
+        if (!token) {
             return res.status(401).json({
                 success: false,
                 message: 'Access denied. No token provided.',
                 messageHindi: 'पहुँच अस्वीकृत। कोई टोकन प्रदान नहीं किया गया।'
             });
         }
-
-        const token = authHeader.split(' ')[1];
 
         // Verify token
         const decoded = jwt.verify(token, jwtConfig.secret);

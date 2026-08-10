@@ -20,6 +20,75 @@ import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
 import VideoTile from '@/components/VideoTile';
 
+const ScreenSharePresenter = React.memo(function ScreenSharePresenter({
+    stream,
+    isLocal,
+    presenterName,
+    onStartShare,
+    onBackToGallery
+}) {
+    const videoRef = useRef(null);
+
+    useEffect(() => {
+        const videoEl = videoRef.current;
+        if (!videoEl) return;
+
+        if (stream) {
+            if (videoEl.srcObject !== stream) {
+                videoEl.srcObject = stream;
+            }
+            const playPromise = videoEl.play();
+            if (playPromise !== undefined) {
+                playPromise.catch((err) => {
+                    console.log('Screen share playback deferred:', err.message);
+                });
+            }
+        } else {
+            videoEl.srcObject = null;
+        }
+    }, [stream]);
+
+    if (!stream) {
+        return (
+            <div className="flex flex-col items-center justify-center text-center p-8 bg-slate-900/80 rounded-3xl border border-slate-800 max-w-md space-y-4 shadow-2xl">
+                <MonitorUp className="w-12 h-12 text-slate-500" />
+                <h3 className="text-base font-semibold text-white">No Active Screen Share</h3>
+                <p className="text-xs text-slate-400">Click below to start sharing your screen or switch back to the gallery view.</p>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={onStartShare}
+                        className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-semibold shadow-lg transition"
+                    >
+                        Share My Screen
+                    </button>
+                    <button
+                        onClick={onBackToGallery}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold border border-slate-700 transition"
+                    >
+                        Back to Gallery
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="relative w-full h-full max-w-7xl max-h-[85vh] bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center">
+            <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted={isLocal}
+                className="w-full h-full object-contain"
+            />
+            <div className="absolute top-4 left-4 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-700/80 text-xs text-white flex items-center gap-2 shadow-lg z-10">
+                <MonitorUp className="w-4 h-4 text-emerald-400" />
+                <span>{isLocal ? 'You are sharing your screen' : `${presenterName || 'Presenter'}'s Screen`}</span>
+            </div>
+        </div>
+    );
+});
+
 export default function MeetingRoomPage() {
     const router = useRouter();
     const params = useParams();
@@ -1067,53 +1136,171 @@ export default function MeetingRoomPage() {
     });
 
     // =========================================================================
-    // ROBUST MEETING RECORDING ENGINE (Active Video & Audio Track Guaranteed)
+    // ROBUST MEETING RECORDING ENGINE (WebAudio Multi-Track & Presentation Capture)
     // =========================================================================
     const createCompositeRecordStream = () => {
         const stream = new MediaStream();
 
-        const hasLiveVideo = localStreamRef.current && localStreamRef.current.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
+        // 1. Multi-Track Audio Mixing Pipeline via Web Audio API
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioContextClass) {
+                const audioCtx = new AudioContextClass();
+                const audioDest = audioCtx.createMediaStreamDestination();
 
-        if (hasLiveVideo) {
-            const videoTrack = localStreamRef.current.getVideoTracks().find(t => t.enabled);
-            if (videoTrack) stream.addTrack(videoTrack.clone());
-        } else {
+                // Mix local microphone audio
+                if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
+                    try {
+                        const localAudioTrack = localStreamRef.current.getAudioTracks()[0];
+                        const localSource = audioCtx.createMediaStreamSource(new MediaStream([localAudioTrack]));
+                        localSource.connect(audioDest);
+                    } catch (e) {
+                        console.log('Error mixing local audio track:', e);
+                    }
+                }
+
+                // Mix all remote participants' audio
+                remoteParticipants.forEach((p) => {
+                    if (p.stream && p.stream.getAudioTracks().length > 0) {
+                        try {
+                            const remoteAudioTrack = p.stream.getAudioTracks()[0];
+                            const remoteSource = audioCtx.createMediaStreamSource(new MediaStream([remoteAudioTrack]));
+                            remoteSource.connect(audioDest);
+                        } catch (e) {
+                            console.log('Error mixing remote audio track:', e);
+                        }
+                    }
+                });
+
+                // Inaudible carrier tone (guarantees constant timestamps even during total silence)
+                try {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    gain.gain.value = 0.00001; // Inaudible
+                    osc.connect(gain);
+                    gain.connect(audioDest);
+                    osc.start();
+                } catch (e) {
+                    console.log('Error creating audio carrier:', e);
+                }
+
+                const mixedAudioTrack = audioDest.stream.getAudioTracks()[0];
+                if (mixedAudioTrack) {
+                    stream.addTrack(mixedAudioTrack);
+                }
+            }
+        } catch (audioErr) {
+            console.error('AudioContext mixer fallback:', audioErr);
+            if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
+                stream.addTrack(localStreamRef.current.getAudioTracks()[0].clone());
+            }
+        }
+
+        // 2. Video Capture based on active Presentation Space
+        let videoTrackAdded = false;
+
+        // Space A: Screen Share active
+        if (activeSpace === 'screen_share' && activeScreenStream && activeScreenStream.getVideoTracks().length > 0) {
+            const screenTrack = activeScreenStream.getVideoTracks()[0];
+            if (screenTrack && screenTrack.readyState === 'live') {
+                stream.addTrack(screenTrack.clone());
+                videoTrackAdded = true;
+            }
+        }
+
+        // Space B: Whiteboard active - capture canvas directly
+        if (!videoTrackAdded && activeSpace === 'whiteboard') {
+            const wbCanvas = document.querySelector('canvas');
+            if (wbCanvas && typeof wbCanvas.captureStream === 'function') {
+                try {
+                    const wbStream = wbCanvas.captureStream(30);
+                    const wbTrack = wbStream.getVideoTracks()[0];
+                    if (wbTrack) {
+                        stream.addTrack(wbTrack);
+                        videoTrackAdded = true;
+                    }
+                } catch (e) {
+                    console.log('Error capturing whiteboard canvas:', e);
+                }
+            }
+        }
+
+        // Space C: Local camera video if available
+        if (!videoTrackAdded) {
+            const hasLiveLocalVideo = localStreamRef.current && localStreamRef.current.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
+            if (hasLiveLocalVideo) {
+                const videoTrack = localStreamRef.current.getVideoTracks().find(t => t.enabled);
+                if (videoTrack) {
+                    stream.addTrack(videoTrack.clone());
+                    videoTrackAdded = true;
+                }
+            }
+        }
+
+        // Space D: Dynamic High-Definition Composite Canvas Fallback (1280x720 30FPS)
+        if (!videoTrackAdded) {
             const canvas = document.createElement('canvas');
-            canvas.width = 640;
-            canvas.height = 360;
+            canvas.width = 1280;
+            canvas.height = 720;
             const ctx = canvas.getContext('2d');
 
             let frame = 0;
+            const title = session?.title || session?.submission?.assignment?.title || 'Meeting Session Recording';
+            const roomCode = displayRoomCode || params.code;
+
             const draw = () => {
                 frame++;
-                ctx.fillStyle = '#090d16';
-                ctx.fillRect(0, 0, 640, 360);
+                // Gradient background
+                const grad = ctx.createLinearGradient(0, 0, 1280, 720);
+                grad.addColorStop(0, '#0f172a');
+                grad.addColorStop(1, '#020617');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, 1280, 720);
 
-                const pulse = Math.sin(frame * 0.05) * 10;
-                ctx.strokeStyle = '#4f46e5';
-                ctx.lineWidth = 3;
+                // Animated glow circle
+                const pulse = Math.sin(frame * 0.04) * 15;
+                ctx.strokeStyle = '#6366f1';
+                ctx.lineWidth = 4;
                 ctx.beginPath();
-                ctx.arc(320, 160, 45 + pulse, 0, Math.PI * 2);
+                ctx.arc(640, 320, 90 + pulse, 0, Math.PI * 2);
                 ctx.stroke();
 
-                ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 18px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText(session?.title || 'Meeting Session Recording', 320, 70);
-
-                ctx.fillStyle = '#94a3b8';
-                ctx.font = '13px monospace';
-                ctx.fillText(`Room: ${params.code} • Recording Live`, 320, 95);
-
-                ctx.strokeStyle = '#10b981';
-                ctx.lineWidth = 2;
+                // Live recording badge
+                ctx.fillStyle = '#ef4444';
                 ctx.beginPath();
-                for (let x = 160; x <= 480; x += 8) {
-                    const y = 260 + Math.sin(frame * 0.1 + x * 0.05) * (micLevel > 0 ? micLevel * 0.4 : 5);
-                    if (x === 160) ctx.moveTo(x, y);
+                ctx.arc(580, 120, 8, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 20px system-ui, sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText('REC • LIVE MEETING', 600, 127);
+
+                // Meeting Title
+                ctx.font = 'bold 36px system-ui, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(title, 640, 200);
+
+                // Room ID & Info
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '20px monospace';
+                ctx.fillText(`Meeting ID: ${roomCode}`, 640, 240);
+
+                // Waveform Visualizer
+                ctx.strokeStyle = '#10b981';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                for (let x = 340; x <= 940; x += 10) {
+                    const y = 520 + Math.sin(frame * 0.08 + x * 0.03) * (micLevel > 0 ? micLevel * 0.8 : 12);
+                    if (x === 340) ctx.moveTo(x, y);
                     else ctx.lineTo(x, y);
                 }
                 ctx.stroke();
+
+                // Host label
+                ctx.fillStyle = '#cbd5e1';
+                ctx.font = '16px system-ui, sans-serif';
+                ctx.fillText(`Host: ${session?.host ? `${session.host.firstName} ${session.host.lastName}` : (user?.firstName || 'Host')}`, 640, 600);
 
                 canvasAnimRef.current = requestAnimationFrame(draw);
             };
@@ -1122,11 +1309,6 @@ export default function MeetingRoomPage() {
             const canvasStream = canvas.captureStream(30);
             const canvasVideoTrack = canvasStream.getVideoTracks()[0];
             if (canvasVideoTrack) stream.addTrack(canvasVideoTrack);
-        }
-
-        if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
-            const audioTrack = localStreamRef.current.getAudioTracks()[0];
-            stream.addTrack(audioTrack.clone());
         }
 
         return stream;
@@ -1151,16 +1333,27 @@ export default function MeetingRoomPage() {
                 }
             };
 
-            mediaRecorder.onstop = () => {
+            mediaRecorder.onstop = async () => {
                 if (canvasAnimRef.current) cancelAnimationFrame(canvasAnimRef.current);
                 const blob = new Blob(recordedChunksRef.current, { type: mimeType });
                 setRecordedBlob(blob);
                 setShowRecordingModal(true);
                 setIsRecording(false);
-                clearInterval(recordingTimerRef.current);
+                if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+
+                // Auto-upload immediately in background so recordings are never lost
+                const targetId = session?.id || activeRoomIdRef.current || params.code;
+                try {
+                    const finalDuration = Math.max(recordingTime, 1);
+                    const file = new File([blob], `meeting_${targetId}_${Date.now()}.webm`, { type: 'video/webm' });
+                    await meetingAPI.uploadRecording(targetId, file, finalDuration);
+                    toast.success('Recording saved to session records!', { icon: '💾' });
+                } catch (saveErr) {
+                    console.log('Background upload on stop error:', saveErr);
+                }
             };
 
-            mediaRecorder.start(250);
+            mediaRecorder.start(1000);
             setIsRecording(true);
             setRecordingTime(0);
 
@@ -1178,7 +1371,7 @@ export default function MeetingRoomPage() {
     const stopRecording = () => {
         if (mediaRecorderRef.current && isRecording) {
             mediaRecorderRef.current.stop();
-            toast('Processing recording...', { icon: '⏳' });
+            toast('Processing and saving recording...', { icon: '⏳' });
         }
     };
 
@@ -1197,7 +1390,7 @@ export default function MeetingRoomPage() {
 
     const saveRecordingToDatabase = async () => {
         if (!recordedBlob) return;
-        const targetId = session?.id || params.code;
+        const targetId = session?.id || activeRoomIdRef.current || params.code;
         try {
             setIsUploadingRecording(true);
             setUploadProgress(20);
@@ -1258,6 +1451,14 @@ export default function MeetingRoomPage() {
     const executeLeaveMeeting = async () => {
         if (leaveIntervalRef.current) clearInterval(leaveIntervalRef.current);
         setShowLeaveConfirmModal(false);
+
+        if (isRecording && mediaRecorderRef.current) {
+            try {
+                mediaRecorderRef.current.stop();
+            } catch (e) {
+                console.log('Error stopping recorder on leave:', e);
+            }
+        }
 
         if (isInstructor) {
             try {
@@ -1454,52 +1655,26 @@ Link: ${getInviteUrl()}`;
                             isMeetingMode={true}
                             showCameraControls={false}
                             isInstructor={isInstructor}
+                            socket={socketRef.current}
+                            sessionId={activeRoomIdRef.current || params.code}
+                            isSharing={true}
+                            whiteboardId={session?.id || params.code}
+                            userName={user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'User'}
+                            isStudent={!isInstructor}
                         />
                     </div>
                 )}
 
-                {/* 2. SHARED SCREEN SPACE */}
+                {/* 2. SHARED SCREEN SPACE (Flicker-Free Presenter) */}
                 {activeSpace === 'screen_share' && (
                     <div className="w-full h-full p-4 flex flex-col items-center justify-center bg-slate-950 animate-in fade-in">
-                        {hasActiveScreenShare ? (
-                            <div className="relative w-full h-full max-w-7xl max-h-[85vh] bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center">
-                                <video
-                                    autoPlay
-                                    playsInline
-                                    muted={isScreenSharing}
-                                    ref={(videoEl) => {
-                                        if (videoEl && activeScreenStream) {
-                                            videoEl.srcObject = activeScreenStream;
-                                        }
-                                    }}
-                                    className="w-full h-full object-contain"
-                                />
-                                <div className="absolute top-4 left-4 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-700/80 text-xs text-white flex items-center gap-2 shadow-lg">
-                                    <MonitorUp className="w-4 h-4 text-emerald-400" />
-                                    <span>{isScreenSharing ? 'You are sharing your screen' : `${remoteSharingUser?.name || 'Presenter'}'s Screen`}</span>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex flex-col items-center justify-center text-center p-8 bg-slate-900/80 rounded-3xl border border-slate-800 max-w-md space-y-4">
-                                <MonitorUp className="w-12 h-12 text-slate-500" />
-                                <h3 className="text-base font-semibold text-white">No Active Screen Share</h3>
-                                <p className="text-xs text-slate-400">Click below to start sharing your screen or switch back to the gallery view.</p>
-                                <div className="flex items-center gap-3">
-                                    <button
-                                        onClick={toggleScreenShare}
-                                        className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-semibold shadow-lg transition"
-                                    >
-                                        Share My Screen
-                                    </button>
-                                    <button
-                                        onClick={() => switchActiveSpace('vc_tiles')}
-                                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold border border-slate-700 transition"
-                                    >
-                                        Back to Gallery
-                                    </button>
-                                </div>
-                            </div>
-                        )}
+                        <ScreenSharePresenter
+                            stream={activeScreenStream}
+                            isLocal={isScreenSharing}
+                            presenterName={remoteSharingUser?.name}
+                            onStartShare={toggleScreenShare}
+                            onBackToGallery={() => switchActiveSpace('vc_tiles')}
+                        />
                     </div>
                 )}
 
