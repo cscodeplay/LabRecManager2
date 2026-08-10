@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Video } from 'lucide-react';
 import { dashboardAPI } from '@/lib/api';
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -169,9 +169,15 @@ export default function AssignmentCalendar() {
 
                                     {hasDue && (
                                         <div className="flex items-center">
-                                            <Clock className="w-2.5 h-2.5 text-amber-500" />
+                                            {dueItems.some(i => i.type === 'meeting') ? (
+                                                <Video className="w-2.5 h-2.5 text-sky-500" />
+                                            ) : (
+                                                <Clock className="w-2.5 h-2.5 text-amber-500" />
+                                            )}
                                             {dueItems.length > 1 && (
-                                                <span className="text-[8px] text-amber-600 font-medium">{dueItems.length}</span>
+                                                <span className={`text-[8px] font-medium ${dueItems.some(i => i.type === 'meeting') ? 'text-sky-600' : 'text-amber-600'}`}>
+                                                    {dueItems.length}
+                                                </span>
                                             )}
                                         </div>
                                     )}
@@ -251,6 +257,10 @@ export default function AssignmentCalendar() {
                                 <Clock className="w-2.5 h-2.5 text-amber-500" />
                                 <span className="text-slate-500">Due</span>
                             </div>
+                            <div className="flex items-center gap-1 ml-2">
+                                <Video className="w-2.5 h-2.5 text-sky-500" />
+                                <span className="text-slate-500">Meeting</span>
+                            </div>
                         </div>
                     </>
                 )}
@@ -278,8 +288,8 @@ export default function AssignmentCalendar() {
                             </div>
                         ))}
                         {hoveredItems.due.filter(d => !hoveredItems.graded.find(g => g.id === d.id)).map((item, i) => (
-                            <div key={`d-${i}`} className="flex items-center gap-2 text-xs text-amber-700">
-                                <Clock className="w-3 h-3 flex-shrink-0" />
+                            <div key={`d-${i}`} className={`flex items-center gap-2 text-xs ${item.type === 'meeting' ? 'text-sky-700' : 'text-amber-700'}`}>
+                                {item.type === 'meeting' ? <Video className="w-3 h-3 flex-shrink-0" /> : <Clock className="w-3 h-3 flex-shrink-0" />}
                                 <span className="flex-1 truncate">{item.title}</span>
                                 <span className="text-[10px] flex-shrink-0">
                                     {new Date(item.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

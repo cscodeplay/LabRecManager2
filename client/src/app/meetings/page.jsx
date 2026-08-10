@@ -10,6 +10,7 @@ import {
 import { useAuthStore } from '@/lib/store';
 import { meetingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import AssignmentCalendar from '@/components/AssignmentCalendar';
 
 export default function MeetingPage() {
     const router = useRouter();
@@ -185,11 +186,16 @@ export default function MeetingPage() {
 
         setScheduling(true);
         try {
-            await meetingAPI.scheduleStandaloneSession(payload);
+            const res = await meetingAPI.scheduleStandaloneSession(payload);
             toast.success('Meeting session scheduled successfully!');
             setShowScheduleModal(false);
             resetModalState();
-            loadSessions();
+            
+            if (meetingType === 'instant' && res.data?.data?.session?.id) {
+                router.push(`/meeting/${res.data.data.session.id}`);
+            } else {
+                loadSessions();
+            }
         } catch (error) {
             console.error('Error scheduling meeting:', error);
             toast.error(error.response?.data?.message || 'Failed to schedule meeting session');
@@ -328,6 +334,11 @@ export default function MeetingPage() {
                     <Link href="/settings?tab=devices" className="btn btn-secondary text-sm whitespace-nowrap">
                         Test Devices
                     </Link>
+                </div>
+
+                {/* Calendar View */}
+                <div className="mb-6">
+                    <AssignmentCalendar />
                 </div>
 
                 {/* Tab Navigation (Sessions / Recordings) */}
