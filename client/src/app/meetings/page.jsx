@@ -829,10 +829,10 @@ export default function MeetingPage() {
                                             </div>
                                             <div>
                                                 <p className="font-medium text-slate-900">
-                                                    {selectedTarget.firstName ? \`\${selectedTarget.firstName} \${selectedTarget.lastName}\` : selectedTarget.name}
+                                                    {selectedTarget.firstName ? `${selectedTarget.firstName} ${selectedTarget.lastName}` : selectedTarget.name}
                                                 </p>
                                                 <p className="text-sm text-slate-500">
-                                                    {selectedTarget.studentId || selectedTarget.email || \`\${targetType} ID\`}
+                                                    {selectedTarget.studentId || selectedTarget.email || `${targetType} ID`}
                                                 </p>
                                             </div>
                                         </div>
@@ -851,7 +851,7 @@ export default function MeetingPage() {
                                                 type="text"
                                                 value={targetSearchQuery}
                                                 onChange={(e) => setTargetSearchQuery(e.target.value)}
-                                                placeholder={\`Search \${targetType}...\`}
+                                                placeholder={`Search ${targetType}...`}
                                                 className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
                                             />
                                         </div>
@@ -878,9 +878,9 @@ export default function MeetingPage() {
                                                             {target.firstName?.[0] || target.name?.[0] || targetType[0].toUpperCase()}{target.lastName?.[0]}
                                                         </div>
                                                         <div className="text-left flex-1">
-                                                            <p className="font-medium text-slate-900 text-sm">
-                                                                {target.firstName ? \`\${target.firstName} \${target.lastName}\` : target.name}
-                                                            </p>
+                                                            <div className="font-medium text-slate-900 text-sm">
+                                                                {target.firstName ? `${target.firstName} ${target.lastName}` : target.name}
+                                                            </div>
                                                             <p className="text-xs text-slate-500">
                                                                 {target.studentId || target.admissionNumber || target.email || ''}
                                                             </p>
@@ -925,7 +925,7 @@ export default function MeetingPage() {
                                         <button
                                             key={mins}
                                             onClick={() => setDuration(mins)}
-                                            className={\`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition \${duration === mins ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}\`}
+                                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${duration === mins ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
                                         >
                                             {mins} min
                                         </button>
