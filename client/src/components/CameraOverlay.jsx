@@ -3,8 +3,39 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import {
     Video, VideoOff, Mic, MicOff, Settings, X, Move, Maximize2, Minimize2,
-    Volume2, VolumeX
+    Volume2, VolumeX, User
 } from 'lucide-react';
+
+const RemoteVideoRenderer = ({ stream }) => {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (ref.current && stream) {
+            ref.current.srcObject = stream;
+        }
+    }, [stream]);
+    
+    if (!stream) return null;
+    const hasVideo = stream.getVideoTracks().length > 0;
+    
+    return (
+        <div className="relative aspect-video bg-slate-900 overflow-hidden border-b border-slate-700">
+            <video
+                ref={ref}
+                autoPlay
+                playsInline
+                className={`w-full h-full object-cover ${hasVideo ? '' : 'hidden'}`}
+            />
+            {!hasVideo && (
+                <div className="flex items-center justify-center h-full">
+                    <User className="w-8 h-8 text-slate-600" />
+                </div>
+            )}
+            <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 bg-slate-800/80 rounded">
+                <span className="text-xs font-medium text-white">Participant</span>
+            </div>
+        </div>
+    );
+};
 
 export default function CameraOverlay({
     isOpen,
@@ -23,6 +54,7 @@ export default function CameraOverlay({
     const [isMicOn, setIsMicOn] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [remoteStreams, setRemoteStreams] = useState({});
 
     // Position for dragging
     const [position, setPosition] = useState({ x: 20, y: 20 });
@@ -165,11 +197,18 @@ export default function CameraOverlay({
         };
     }, [stopMedia]);
 
-    // WebRTC Host Logic
+    // WebRTC Logic
     useEffect(() => {
-        if (!socket || !sessionId || !isInstructor) return;
+        if (!socket || !sessionId) return;
 
-        const createPeerConnection = (targetSocketId) => {
+        // Ask existing cameras to send us offers
+        socket.emit('whiteboard:webrtc-join', { sessionId });
+
+        const createPeerConnection = (targetSocketId, isInitiator) => {
+            if (peerConnectionsRef.current[targetSocketId]) {
+                return peerConnectionsRef.current[targetSocketId];
+            }
+
             const pc = new RTCPeerConnection({
                 iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
             });
@@ -184,7 +223,28 @@ export default function CameraOverlay({
                 }
             };
 
-            if (streamRef.current) {
+            pc.ontrack = (event) => {
+                setRemoteStreams(prev => ({
+                    ...prev,
+                    [targetSocketId]: event.streams[0]
+                }));
+            };
+
+            pc.oniceconnectionstatechange = () => {
+                if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+                    setRemoteStreams(prev => {
+                        const next = { ...prev };
+                        delete next[targetSocketId];
+                        return next;
+                    });
+                    if (peerConnectionsRef.current[targetSocketId]) {
+                        peerConnectionsRef.current[targetSocketId].close();
+                        delete peerConnectionsRef.current[targetSocketId];
+                    }
+                }
+            };
+
+            if (streamRef.current && isInitiator) {
                 streamRef.current.getTracks().forEach(track => {
                     pc.addTrack(track, streamRef.current);
                 });
@@ -201,7 +261,7 @@ export default function CameraOverlay({
             // Only send video if camera is actually on
             if (!streamRef.current) return;
 
-            const pc = createPeerConnection(targetSocketId);
+            const pc = createPeerConnection(targetSocketId, true);
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
 
@@ -209,6 +269,22 @@ export default function CameraOverlay({
                 sessionId,
                 targetSocketId,
                 offer
+            });
+        };
+
+        const handleWebrtcOffer = async (data) => {
+            if (data.sessionId !== sessionId) return;
+            const targetSocketId = data.fromSocketId;
+            const pc = createPeerConnection(targetSocketId, false);
+            
+            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            socket.emit('whiteboard:webrtc-answer', {
+                sessionId,
+                targetSocketId,
+                answer
             });
         };
 
@@ -228,23 +304,52 @@ export default function CameraOverlay({
             }
         };
 
+        const handleCameraStart = (data) => {
+            if (data.sessionId !== sessionId || data.fromSocketId === socket.id) return;
+            // Ask the new camera to send an offer
+            socket.emit('whiteboard:webrtc-join', {
+                sessionId,
+                targetSocketId: data.fromSocketId
+            });
+        };
+
+        const handleCameraStop = (data) => {
+            if (data.sessionId !== sessionId) return;
+            const targetId = data.fromSocketId;
+            if (peerConnectionsRef.current[targetId]) {
+                peerConnectionsRef.current[targetId].close();
+                delete peerConnectionsRef.current[targetId];
+            }
+            setRemoteStreams(prev => {
+                const next = { ...prev };
+                delete next[targetId];
+                return next;
+            });
+        };
+
         const handleCameraRejected = (data) => {
             toast.error(data.reason || 'Maximum host cameras reached for this session');
             stopMedia();
         };
 
         socket.on('whiteboard:webrtc-join', handleWebrtcJoin);
+        socket.on('whiteboard:webrtc-offer', handleWebrtcOffer);
         socket.on('whiteboard:webrtc-answer', handleWebrtcAnswer);
         socket.on('whiteboard:webrtc-ice-candidate', handleWebrtcIceCandidate);
+        socket.on('whiteboard:camera-start', handleCameraStart);
+        socket.on('whiteboard:camera-stop', handleCameraStop);
         socket.on('whiteboard:camera-rejected', handleCameraRejected);
 
         return () => {
             socket.off('whiteboard:webrtc-join', handleWebrtcJoin);
+            socket.off('whiteboard:webrtc-offer', handleWebrtcOffer);
             socket.off('whiteboard:webrtc-answer', handleWebrtcAnswer);
             socket.off('whiteboard:webrtc-ice-candidate', handleWebrtcIceCandidate);
+            socket.off('whiteboard:camera-start', handleCameraStart);
+            socket.off('whiteboard:camera-stop', handleCameraStop);
             socket.off('whiteboard:camera-rejected', handleCameraRejected);
         };
-    }, [socket, sessionId, isInstructor]);
+    }, [socket, sessionId]);
 
     // Dragging handlers
     const handleMouseDown = (e) => {
@@ -326,8 +431,12 @@ export default function CameraOverlay({
             </div>
 
             {!isMinimized && (
-                <>
-                    {/* Video Preview */}
+                <div className="flex flex-col bg-slate-950">
+                    {Object.entries(remoteStreams).map(([socketId, stream]) => (
+                        <RemoteVideoRenderer key={socketId} stream={stream} />
+                    ))}
+                    
+                    {/* Local Video Preview */}
                     <div className="relative aspect-video bg-slate-950">
                         {isCameraOn ? (
                             <video
@@ -359,9 +468,8 @@ export default function CameraOverlay({
 
                         {/* Live indicator */}
                         {isCameraOn && (
-                            <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 bg-red-500 rounded-full">
-                                <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                                <span className="text-xs font-medium text-white">LIVE</span>
+                            <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 bg-blue-500 rounded-full">
+                                <span className="text-xs font-medium text-white">You</span>
                             </div>
                         )}
                     </div>
@@ -450,7 +558,7 @@ export default function CameraOverlay({
                             </div>
                         </div>
                     )}
-                </>
+                </div>
             )}
         </div>
     );

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuthStore } from '@/lib/store';
 import { Pencil, ArrowLeft, AlertCircle, Radio } from 'lucide-react';
 import Whiteboard from '@/components/Whiteboard';
+import CameraOverlay from '@/components/CameraOverlay';
 import io from 'socket.io-client';
 
 export default function LiveBoardPage() {
@@ -15,6 +16,7 @@ export default function LiveBoardPage() {
     const [socket, setSocket] = useState(null);
     const [isConnected, setIsConnected] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [showCamera, setShowCamera] = useState(false);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -123,6 +125,16 @@ export default function LiveBoardPage() {
                                 isStudent={true}
                                 userName={user?.name || 'Student'}
                                 permissions={sharedSession.permissions || { canDraw: true, canShareAudio: false, canShareVideo: false }}
+                                showCameraControls={true}
+                                isCameraOn={showCamera}
+                                onCameraToggle={() => setShowCamera(!showCamera)}
+                            />
+                            <CameraOverlay
+                                isOpen={showCamera}
+                                onClose={() => setShowCamera(false)}
+                                socket={socket}
+                                sessionId={sharedSession.sessionId}
+                                isInstructor={false}
                             />
                         </div>
                     </div>

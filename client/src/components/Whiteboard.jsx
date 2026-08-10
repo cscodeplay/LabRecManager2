@@ -370,6 +370,8 @@ export default function Whiteboard({
     const [isAutoShape, setIsAutoShape] = useState(false);
     const laserTimeoutRef = useRef(null);
     const isRemoteUpdateRef = useRef(false);
+    const isDrawingRef = useRef(false);
+    const remotePathsRef = useRef({});
 
     // Highlighter color
     const [highlighterColor, setHighlighterColor] = useState(HIGHLIGHTER_COLORS[0]);
@@ -479,6 +481,10 @@ export default function Whiteboard({
     // Persistence: track if state has been loaded from localStorage
     const [isStateLoaded, setIsStateLoaded] = useState(false);
     const saveTimeoutRef = useRef(null);
+    
+    useEffect(() => {
+        isDrawingRef.current = isDrawing;
+    }, [isDrawing]);
     const STORAGE_KEY = whiteboardId ? `whiteboard_${whiteboardId}` : null;
 
     // Load state from localStorage or API on mount
@@ -776,7 +782,6 @@ export default function Whiteboard({
             }
         };
 
-        // Sync drawing events from other admin devices
         const handleDraw = (data) => {
             if (data.sessionId !== sessionId) return;
 
@@ -795,11 +800,18 @@ export default function Whiteboard({
                 ctx.lineJoin = 'round';
 
                 if (data.isStart) {
-                    ctx.beginPath();
-                    ctx.moveTo(data.x, data.y);
+                    remotePathsRef.current[data.socketId] = { x: data.x, y: data.y };
                 } else {
+                    const lastPos = remotePathsRef.current[data.socketId];
+                    ctx.beginPath();
+                    if (lastPos) {
+                        ctx.moveTo(lastPos.x, lastPos.y);
+                    } else {
+                        ctx.moveTo(data.x, data.y);
+                    }
                     ctx.lineTo(data.x, data.y);
                     ctx.stroke();
+                    remotePathsRef.current[data.socketId] = { x: data.x, y: data.y };
                 }
                 ctx.globalCompositeOperation = 'source-over';
             } else if (data.type === 'path') {
@@ -810,11 +822,18 @@ export default function Whiteboard({
                 ctx.setLineDash(getDashArray(data.strokeStyle));
 
                 if (data.isStart) {
-                    ctx.beginPath();
-                    ctx.moveTo(data.x, data.y);
+                    remotePathsRef.current[data.socketId] = { x: data.x, y: data.y };
                 } else {
+                    const lastPos = remotePathsRef.current[data.socketId];
+                    ctx.beginPath();
+                    if (lastPos) {
+                        ctx.moveTo(lastPos.x, lastPos.y);
+                    } else {
+                        ctx.moveTo(data.x, data.y);
+                    }
                     ctx.lineTo(data.x, data.y);
                     ctx.stroke();
+                    remotePathsRef.current[data.socketId] = { x: data.x, y: data.y };
                 }
             } else if (data.type === 'line') {
                 ctx.strokeStyle = data.color || '#000000';
@@ -863,6 +882,7 @@ export default function Whiteboard({
         };
 
         const handleCanvasState = (data) => {
+            if (isDrawingRef.current) return;
             isRemoteUpdateRef.current = true;
             if (data.sessionId !== sessionId) return;
             if (data.bgColor) setBgColor(data.bgColor);
@@ -1901,10 +1921,11 @@ export default function Whiteboard({
         if (socket && sessionId) {
             socket.emit('whiteboard:draw', {
                 sessionId,
+                socketId: socket.id,
                 ...eventData
             });
         }
-    }, [isSharing, socket, sessionId]);
+    }, [socket, sessionId]);
 
     // Start drawing
     

@@ -458,15 +458,15 @@ io.on('connection', (socket) => {
       activeHostCameras[sessionId] = [];
     }
     
-    // Check if we are already at max 2 devices
+    // Check if we are already at max 50 devices
     if (!activeHostCameras[sessionId].includes(socket.id)) {
-      if (activeHostCameras[sessionId].length >= 2) {
-        socket.emit('whiteboard:camera-rejected', { reason: 'Maximum of 2 host cameras allowed' });
+      if (activeHostCameras[sessionId].length >= 50) {
+        socket.emit('whiteboard:camera-rejected', { reason: 'Maximum of 50 host cameras allowed' });
         return;
       }
       activeHostCameras[sessionId].push(socket.id);
     }
-    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:camera-start', data);
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:camera-start', { ...data, fromSocketId: socket.id });
   });
 
   socket.on('whiteboard:camera-stop', (data) => {
@@ -474,7 +474,7 @@ io.on('connection', (socket) => {
     if (activeHostCameras[sessionId]) {
       activeHostCameras[sessionId] = activeHostCameras[sessionId].filter(id => id !== socket.id);
     }
-    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:camera-stop', data);
+    socket.to(`whiteboard-${sessionId}`).emit('whiteboard:camera-stop', { ...data, fromSocketId: socket.id });
   });
 
   socket.on('whiteboard:webrtc-offer', (data) => {

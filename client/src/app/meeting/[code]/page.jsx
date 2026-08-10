@@ -7,7 +7,7 @@ import {
     ArrowLeft, Video, VideoOff, Mic, MicOff, Phone,
     MessageSquare, Clock, User, Send, AlertCircle,
     CheckCircle, XCircle, Maximize2, Minimize2, Circle, Square, Download, Save,
-    Volume2, VolumeX, Settings, Sliders, PictureInPicture2, Pencil
+    Volume2, VolumeX, Settings, Sliders, PictureInPicture2, Pencil, MonitorUp
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { vivaAPI } from '@/lib/api';
@@ -446,6 +446,65 @@ export default function MeetingRoomPage() {
         } catch (error) {
             console.error('Error switching camera:', error);
             toast.error('Failed to switch camera');
+        }
+    };
+
+    // Screen sharing
+    const [isScreenSharing, setIsScreenSharing] = useState(false);
+    
+    const toggleScreenShare = async () => {
+        try {
+            if (isScreenSharing) {
+                // Stop screen sharing and revert to camera
+                await switchCamera(selectedCamera || '');
+                setIsScreenSharing(false);
+                toast.success('Screen sharing stopped');
+            } else {
+                // Start screen sharing
+                const newStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { cursor: 'always' },
+                    audio: false
+                });
+
+                const newVideoTrack = newStream.getVideoTracks()[0];
+                const oldVideoTrack = localStreamRef.current?.getVideoTracks()[0];
+
+                // Handle user stopping screen share via browser UI
+                newVideoTrack.onended = async () => {
+                    await switchCamera(selectedCamera || '');
+                    setIsScreenSharing(false);
+                    toast.success('Screen sharing stopped');
+                };
+
+                if (oldVideoTrack) {
+                    localStreamRef.current.removeTrack(oldVideoTrack);
+                    oldVideoTrack.stop(); 
+                }
+
+                if (localStreamRef.current) {
+                    localStreamRef.current.addTrack(newVideoTrack);
+                }
+
+                if (localVideoRef.current) {
+                    localVideoRef.current.srcObject = localStreamRef.current;
+                }
+
+                if (peerConnectionRef.current) {
+                    const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
+                    if (sender) {
+                        await sender.replaceTrack(newVideoTrack);
+                    }
+                }
+
+                setIsScreenSharing(true);
+                setIsVideoEnabled(true);
+                toast.success('Screen sharing started');
+            }
+        } catch (error) {
+            console.error('Error toggling screen share:', error);
+            if (error.name !== 'NotAllowedError') {
+                toast.error('Failed to start screen sharing');
+            }
         }
     };
 
@@ -1209,6 +1268,18 @@ export default function MeetingRoomPage() {
                                     />
                                 </div>
                             )}
+                        </button>
+
+                        {/* Screen Share Button */}
+                        <button
+                            onClick={toggleScreenShare}
+                            className={`w-10 h-10 rounded-full flex items-center justify-center transition ${isScreenSharing
+                                ? 'bg-green-500 hover:bg-green-600 text-white'
+                                : 'bg-slate-700 hover:bg-slate-600 text-white'
+                                }`}
+                            title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
+                        >
+                            <MonitorUp className="w-5 h-5" />
                         </button>
 
                         {/* Audio Settings Button */}
