@@ -3533,14 +3533,12 @@ export default function Whiteboard({
                             { id: 'image', icon: ImageIcon, label: 'Image' },
                             { id: 'laser', icon: Sparkles, label: 'Laser Pointer' },
                             { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime' },
-                            ...(isInstructor ? [{ id: 'recorder', icon: Video, label: 'Toggle Recorder' }] : []),
-                            ...(isStudent ? [{ id: 'mic', icon: isMicOn ? Mic : MicOff, label: localPermissions?.canShareAudio ? 'Toggle Microphone' : 'Microphone (Locked)', disabled: !localPermissions?.canShareAudio }] : []),
-                            ...(isStudent ? [{ id: 'camera', icon: isCameraOn ? Video : VideoOff, label: localPermissions?.canShareVideo ? 'Toggle Camera' : 'Camera (Locked)', disabled: !localPermissions?.canShareVideo }] : []),
-                            ...(isStudent ? [{ id: 'fullscreen', icon: isFullscreen ? Minimize2 : Maximize2, label: 'Toggle Fullscreen' }] : []),
+                            { id: 'recorder', icon: Video, label: 'Toggle Recorder' },
+                            { id: 'fullscreen', icon: isFullscreen ? Minimize2 : Maximize2, label: 'Toggle Fullscreen' },
                             ...(isInstructor ? [{ id: 'permissions', icon: Users, label: 'Manage Permissions' }] : []),
                         ].filter(t => {
                                 if (!localPermissions?.canDraw) {
-                                    return ['select', 'laser', 'fullscreen', 'mic', 'camera'].includes(t.id);
+                                    return ['select', 'laser', 'fullscreen', 'recorder'].includes(t.id);
                                 }
                                 return true;
                             }).map(t => (
@@ -3557,6 +3555,10 @@ export default function Whiteboard({
                                         }
                                         if (t.id === 'permissions') {
                                             setShowPermissions(true);
+                                            return;
+                                        }
+                                        if (t.id === 'fullscreen') {
+                                            if (onToggleFullscreen) onToggleFullscreen();
                                             return;
                                         }
                                         if (tool === t.id) {
@@ -5489,21 +5491,19 @@ export default function Whiteboard({
                 />
             )}
 
-            {/* AV Recorder (Instructor Only) */}
-            {isInstructor && (
-                <WhiteboardRecorder 
-                    isVisible={showRecorder}
-                    socket={socket}
-                    canvasRef={canvasRef} 
-                    sessionId={sessionId || whiteboardId}
-                    shapeObjects={shapeObjects}
-                    textObjects={textObjects}
-                    imageObjects={imageObjects}
-                    onRecordingComplete={(data) => {
-                        console.log('Recording complete:', data);
-                    }}
-                />
-            )}
+            {/* AV Recorder */}
+            <WhiteboardRecorder 
+                isVisible={showRecorder}
+                socket={socket}
+                canvasRef={canvasRef} 
+                sessionId={sessionId || whiteboardId}
+                shapeObjects={shapeObjects}
+                textObjects={textObjects}
+                imageObjects={imageObjects}
+                onRecordingComplete={(data) => {
+                    console.log('Recording complete:', data);
+                }}
+            />
 
             {/* Screenshot Modal */}
             {screenshotPreview && (

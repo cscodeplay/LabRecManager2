@@ -158,6 +158,18 @@ export default function MeetingRoomPage() {
         }
     }, [messages]);
 
+    // Handle fullscreen changes
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+        
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => {
+            document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        };
+    }, []);
+
     const cleanup = () => {
         if (timerRef.current) clearInterval(timerRef.current);
         if (micLevelIntervalRef.current) clearInterval(micLevelIntervalRef.current);

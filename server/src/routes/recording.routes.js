@@ -19,9 +19,9 @@ const upload = multer({
 /**
  * @route   POST /api/recordings/upload
  * @desc    Upload whiteboard recording to Cloudinary
- * @access  Instructor/Admin
+ * @access  Instructor/Admin/Student
  */
-router.post('/upload', authenticate, authorize('instructor', 'admin', 'lab_assistant', 'principal'), upload.single('video'), asyncHandler(async (req, res) => {
+router.post('/upload', authenticate, authorize('instructor', 'admin', 'lab_assistant', 'principal', 'student'), upload.single('video'), asyncHandler(async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ success: false, error: 'No video file provided' });
     }
@@ -35,6 +35,26 @@ router.post('/upload', authenticate, authorize('instructor', 'admin', 'lab_assis
         return res.status(503).json({
             success: false,
             error: 'Cloud storage not configured. Contact your administrator.'
+        });
+    }
+
+    // Check storage quota before upload
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { storageQuotaMb: true, storageUsedBytes: true }
+    });
+
+    const quotaBytes = (user.storageQuotaMb || 500) * 1024 * 1024;
+    const currentUsed = Number(user.storageUsedBytes || 0);
+    const newFileSize = req.file.size;
+
+    if (currentUsed + newFileSize > quotaBytes) {
+        const quotaMb = Math.round(quotaBytes / (1024 * 1024));
+        const usedMb = Math.round(currentUsed / (1024 * 1024));
+        const reqMb = (newFileSize / (1024 * 1024)).toFixed(2);
+        return res.status(400).json({
+            success: false,
+            message: `Storage quota exceeded. You have ${usedMb} MB used of ${quotaMb} MB. File size: ${reqMb} MB.`
         });
     }
 
@@ -92,6 +112,12 @@ router.post('/upload', authenticate, authorize('instructor', 'admin', 'lab_assis
                 select: { firstName: true, lastName: true }
             }
         }
+    });
+
+    // Update user's storage used
+    await prisma.user.update({
+        where: { id: userId },
+        data: { storageUsedBytes: currentUsed + newFileSize }
     });
 
     res.status(201).json({
@@ -297,8 +323,23 @@ router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
         console.error('Failed to delete from Cloudinary:', e.message);
     }
 
+    // Decrement storage used for the recording owner
+    const owner = await prisma.user.findUnique({
+        where: { id: recording.userId },
+        select: { storageUsedBytes: true }
+    });
+    if (owner) {
+        const newUsed = Math.max(0, Number(owner.storageUsedBytes || 0) - recording.fileSize);
+        await prisma.user.update({
+            where: { id: recording.userId },
+            data: { storageUsedBytes: newUsed }
+        });
+    }
+
     // Delete from database
-    await prisma.whiteboardRecording.delete({ where: { id } });
+    await prisma.whiteboardRecording.delete({
+        where: { id }
+    });
 
     res.json({ success: true, message: 'Recording deleted successfully' });
 }));

@@ -183,7 +183,7 @@ router.get('/:id', authenticate, asyncHandler(async (req, res, next) => {
  * @desc    Upload a new document
  * @access  Private (Admin/Principal/Lab Assistant)
  */
-router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant'), upload.single('file'), asyncHandler(async (req, res) => {
+router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), upload.single('file'), asyncHandler(async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ success: false, message: 'No file provided' });
     }
@@ -275,15 +275,19 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant'),
  * @desc    Update document metadata
  * @access  Private (Admin/Principal)
  */
-router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const { name, description, category, isPublic } = req.body;
 
     const doc = await prisma.document.findFirst({
-        where: { id: req.params.id, schoolId: req.user.schoolId }
+        where: { id: req.params.id, schoolId: req.user.schoolId, deletedAt: null }
     });
 
     if (!doc) {
         return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    if (!['admin', 'principal'].includes(req.user.role) && doc.uploadedById !== req.user.id) {
+        return res.status(403).json({ success: false, message: 'Not authorized to modify this document' });
     }
 
     const updated = await prisma.document.update({
@@ -316,13 +320,17 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
  * @desc    Soft delete a document (move to trash)
  * @access  Private (Admin/Principal)
  */
-router.delete('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+router.delete('/:id', authenticate, authorize('admin', 'principal', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const doc = await prisma.document.findFirst({
         where: { id: req.params.id, schoolId: req.user.schoolId, deletedAt: null }
     });
 
     if (!doc) {
         return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    if (!['admin', 'principal'].includes(req.user.role) && doc.uploadedById !== req.user.id) {
+        return res.status(403).json({ success: false, message: 'Not authorized to delete this document' });
     }
 
     // Soft delete - set deletedAt timestamp
@@ -342,7 +350,7 @@ router.delete('/:id', authenticate, authorize('admin', 'principal'), asyncHandle
  * @desc    Get all trashed documents
  * @access  Private (Admin/Principal)
  */
-router.get('/trash', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+router.get('/trash', authenticate, authorize('admin', 'principal', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const documents = await prisma.document.findMany({
         where: {
             schoolId: req.user.schoolId,
@@ -371,7 +379,7 @@ router.get('/trash', authenticate, authorize('admin', 'principal'), asyncHandler
  * @desc    Restore a document from trash
  * @access  Private (Admin/Principal)
  */
-router.post('/:id/restore', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+router.post('/:id/restore', authenticate, authorize('admin', 'principal', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const doc = await prisma.document.findFirst({
         where: {
             id: req.params.id,
@@ -382,6 +390,10 @@ router.post('/:id/restore', authenticate, authorize('admin', 'principal'), async
 
     if (!doc) {
         return res.status(404).json({ success: false, message: 'Document not found in trash' });
+    }
+
+    if (!['admin', 'principal'].includes(req.user.role) && doc.uploadedById !== req.user.id) {
+        return res.status(403).json({ success: false, message: 'Not authorized to restore this document' });
     }
 
     await prisma.document.update({
@@ -400,13 +412,17 @@ router.post('/:id/restore', authenticate, authorize('admin', 'principal'), async
  * @desc    Permanently delete a document
  * @access  Private (Admin/Principal)
  */
-router.delete('/:id/permanent', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+router.delete('/:id/permanent', authenticate, authorize('admin', 'principal', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const doc = await prisma.document.findFirst({
         where: { id: req.params.id, schoolId: req.user.schoolId }
     });
 
     if (!doc) {
         return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    if (!['admin', 'principal'].includes(req.user.role) && doc.uploadedById !== req.user.id) {
+        return res.status(403).json({ success: false, message: 'Not authorized to permanently delete this document' });
     }
 
     // Delete from Cloudinary
@@ -468,7 +484,7 @@ router.get('/:id/public', asyncHandler(async (req, res) => {
  * @desc    Share a document with classes, groups, or users
  * @access  Private (Admin/Principal/Lab Assistant)
  */
-router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const { targets, message } = req.body;
     // targets: [{ type: 'class'|'group'|'instructor'|'admin', id: 'uuid' }]
 
@@ -728,7 +744,7 @@ router.get('/:id/shares', authenticate, asyncHandler(async (req, res) => {
  * @desc    Remove a share
  * @access  Private (Admin/Principal/Owner)
  */
-router.delete('/shares/:shareId', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+router.delete('/shares/:shareId', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const share = await prisma.documentShare.findFirst({
         where: { id: req.params.shareId },
         include: {
@@ -755,7 +771,7 @@ router.delete('/shares/:shareId', authenticate, authorize('admin', 'principal', 
  * @desc    Copy multiple documents to a folder (duplication)
  * @access  Private
  */
-router.post('/bulk-copy', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+router.post('/bulk-copy', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const { documentIds, targetFolderId } = req.body;
 
     if (!documentIds || !Array.isArray(documentIds) || documentIds.length === 0) {
@@ -831,7 +847,7 @@ router.post('/bulk-copy', authenticate, authorize('admin', 'principal', 'lab_ass
  * @desc    Soft delete multiple documents
  * @access  Private
  */
-router.post('/bulk-delete', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+router.post('/bulk-delete', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const { documentIds } = req.body;
     if (!documentIds || !Array.isArray(documentIds)) return res.status(400).json({ message: 'IDs required' });
 

@@ -330,6 +330,26 @@ router.post('/screenshot', authenticate, upload.single('file'), asyncHandler(asy
         return res.status(400).json({ success: false, message: 'No screenshot file uploaded.' });
     }
 
+    // Check storage quota before upload
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { storageQuotaMb: true, storageUsedBytes: true }
+    });
+
+    const quotaBytes = (user.storageQuotaMb || 500) * 1024 * 1024;
+    const currentUsed = Number(user.storageUsedBytes || 0);
+    const newFileSize = req.file.size;
+
+    if (currentUsed + newFileSize > quotaBytes) {
+        const quotaMb = Math.round(quotaBytes / (1024 * 1024));
+        const usedMb = Math.round(currentUsed / (1024 * 1024));
+        const reqMb = (newFileSize / (1024 * 1024)).toFixed(2);
+        return res.status(400).json({
+            success: false,
+            message: `Storage quota exceeded. You have ${usedMb} MB used of ${quotaMb} MB. File size: ${reqMb} MB.`
+        });
+    }
+
     try {
         // Upload to Cloudinary
         const result = await new Promise((resolve, reject) => {
@@ -375,6 +395,12 @@ router.post('/screenshot', authenticate, upload.single('file'), asyncHandler(asy
                 category: 'Screenshot',
                 isPublic: false
             }
+        });
+
+        // Update user's storage used
+        await prisma.user.update({
+            where: { id: userId },
+            data: { storageUsedBytes: currentUsed + newFileSize }
         });
 
         res.status(201).json({ success: true, data: doc });

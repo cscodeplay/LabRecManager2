@@ -174,7 +174,7 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
  * @desc    Create a new folder
  * @access  Private (Admin/Principal/Lab Assistant/Instructor)
  */
-router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const { name, parentId } = req.body;
 
     if (!name || !name.trim()) {
@@ -213,9 +213,9 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
 /**
  * @route   PUT /api/folders/:id
  * @desc    Rename or move a folder
- * @access  Private (Admin/Principal/Lab Assistant/Instructor)
+ * @access  Private (Admin/Principal/Lab Assistant/Instructor/Student)
  */
-router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const { name, parentId } = req.body;
 
     const folder = await prisma.documentFolder.findFirst({
@@ -224,6 +224,10 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
 
     if (!folder) {
         return res.status(404).json({ success: false, message: 'Folder not found' });
+    }
+
+    if (!['admin', 'principal'].includes(req.user.role) && folder.createdById !== req.user.id) {
+        return res.status(403).json({ success: false, message: 'Not authorized to modify this folder' });
     }
 
     // Prevent moving folder into itself or its descendants
@@ -265,7 +269,7 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
  * @desc    Delete a folder (soft delete)
  * @access  Private (Admin/Principal)
  */
-router.delete('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+router.delete('/:id', authenticate, authorize('admin', 'principal', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const folder = await prisma.documentFolder.findFirst({
         where: { id: req.params.id, schoolId: req.user.schoolId, deletedAt: null },
         include: { _count: { select: { documents: true, children: true } } }
@@ -273,6 +277,10 @@ router.delete('/:id', authenticate, authorize('admin', 'principal'), asyncHandle
 
     if (!folder) {
         return res.status(404).json({ success: false, message: 'Folder not found' });
+    }
+
+    if (!['admin', 'principal'].includes(req.user.role) && folder.createdById !== req.user.id) {
+        return res.status(403).json({ success: false, message: 'Not authorized to delete this folder' });
     }
 
     // Move contents to parent folder or root
@@ -302,7 +310,7 @@ router.delete('/:id', authenticate, authorize('admin', 'principal'), asyncHandle
  * @desc    Move documents into a folder
  * @access  Private (Admin/Principal/Lab Assistant/Instructor)
  */
-router.post('/:id/move-documents', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+router.post('/:id/move-documents', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const { documentIds } = req.body;
 
     if (!documentIds || !Array.isArray(documentIds) || documentIds.length === 0) {
@@ -317,6 +325,9 @@ router.post('/:id/move-documents', authenticate, authorize('admin', 'principal',
         });
         if (!folder) {
             return res.status(404).json({ success: false, message: 'Target folder not found' });
+        }
+        if (!['admin', 'principal'].includes(req.user.role) && folder.createdById !== req.user.id) {
+            return res.status(403).json({ success: false, message: 'Not authorized to modify this folder' });
         }
     }
 
@@ -341,7 +352,7 @@ router.post('/:id/move-documents', authenticate, authorize('admin', 'principal',
  * @desc    Copy a folder and its contents to a target folder
  * @access  Private (Admin/Principal/Lab Assistant/Instructor)
  */
-router.post('/:id/copy', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+router.post('/:id/copy', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const { targetFolderId } = req.body;
     const sourceFolderId = req.params.id;
 
@@ -352,6 +363,10 @@ router.post('/:id/copy', authenticate, authorize('admin', 'principal', 'lab_assi
 
     if (!sourceFolder) {
         return res.status(404).json({ success: false, message: 'Source folder not found' });
+    }
+
+    if (!['admin', 'principal'].includes(req.user.role) && sourceFolder.createdById !== req.user.id) {
+        return res.status(403).json({ success: false, message: 'Not authorized to copy this folder' });
     }
 
     // Validate target (null = root)
@@ -433,7 +448,7 @@ router.post('/:id/copy', authenticate, authorize('admin', 'principal', 'lab_assi
  * @desc    Move multiple folders to a target folder
  * @access  Private (Admin/Principal/Lab Assistant/Instructor)
  */
-router.post('/bulk-move', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+router.post('/bulk-move', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
     const { folderIds, targetFolderId } = req.body;
 
     if (!folderIds || !Array.isArray(folderIds) || folderIds.length === 0) {
