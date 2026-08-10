@@ -1,9 +1,94 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
 const { body, validationResult } = require('express-validator');
 const prisma = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+
+const recordingsDir = path.join(__dirname, '../../uploads/recordings');
+if (!fs.existsSync(recordingsDir)) {
+    fs.mkdirSync(recordingsDir, { recursive: true });
+}
+
+/**
+ * @route   DELETE /api/meetings/clear-all
+ * @desc    Delete all meetings and associated recording files
+ * @access  Private (Instructor, Admin, Principal)
+ */
+router.delete('/clear-all', authenticate, authorize('instructor', 'admin', 'principal'), asyncHandler(async (req, res) => {
+    await prisma.meetingParticipant.deleteMany();
+    await prisma.meetingQuestion.deleteMany();
+    const deleted = await prisma.meeting.deleteMany();
+
+    // Clean physical recording files
+    try {
+        if (fs.existsSync(recordingsDir)) {
+            const files = fs.readdirSync(recordingsDir);
+            for (const f of files) {
+                if (f !== '.gitkeep') {
+                    fs.unlinkSync(path.join(recordingsDir, f));
+                }
+            }
+        }
+    } catch (fsErr) {
+        console.error('Error removing recording files:', fsErr);
+    }
+
+    res.json({
+        success: true,
+        message: `Successfully deleted ${deleted.count} meeting sessions and all recording files.`
+    });
+}));
+
+/**
+ * @route   POST /api/meetings/create-demotest
+ * @desc    Create a demo verification meeting session for testing all sync & media features
+ * @access  Private (Instructor, Admin, Principal)
+ */
+router.post('/create-demotest', authenticate, authorize('instructor', 'admin', 'principal'), asyncHandler(async (req, res) => {
+    // Find active student in school
+    let student = await prisma.user.findFirst({
+        where: { role: 'student', schoolId: req.user.schoolId }
+    });
+
+    if (!student) {
+        student = await prisma.user.findFirst({
+            where: { role: 'student' }
+        });
+    }
+
+    const sessionId = require('uuid').v4();
+    const meetingLink = `${process.env.CLIENT_URL || 'http://localhost:3000'}/meeting/${sessionId}`;
+
+    const session = await prisma.meeting.create({
+        data: {
+            id: sessionId,
+            schoolId: req.user.schoolId || student?.schoolId,
+            title: 'Demo Test Verification Meeting',
+            type: 'scheduled',
+            hostId: req.user.id,
+            targetStudentId: student ? student.id : null,
+            scheduledAt: new Date(),
+            durationMinutes: 15,
+            meetingLink,
+            status: 'scheduled',
+            autoStart: true,
+            questionsAsked: { autoAdmit: false, sessionTitle: 'Demo Test Verification Meeting' }
+        },
+        include: {
+            targetStudent: { select: { id: true, firstName: true, lastName: true, email: true, admissionNumber: true } },
+            host: { select: { id: true, firstName: true, lastName: true } }
+        }
+    });
+
+    res.status(201).json({
+        success: true,
+        message: 'Demo test meeting created successfully',
+        data: { session }
+    });
+}));
 
 /**
  * @route   GET /api/viva/sessions
@@ -1317,14 +1402,6 @@ router.put('/sessions/:id/auto-end', authenticate, asyncHandler(async (req, res)
  * @access  Private (Examiner)
  */
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-
-// Configure storage for recordings
-const recordingsDir = path.join(__dirname, '../../uploads/recordings');
-if (!fs.existsSync(recordingsDir)) {
-    fs.mkdirSync(recordingsDir, { recursive: true });
-}
 
 const recordingStorage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, recordingsDir),

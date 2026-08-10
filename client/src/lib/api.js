@@ -242,6 +242,8 @@ export const meetingAPI = {
             headers: { 'Content-Type': 'multipart/form-data' },
         });
     },
+    clearAllMeetings: () => api.delete('/meetings/clear-all'),
+    createDemoTestMeeting: () => api.post('/meetings/create-demotest'),
     getRecordingUrl: (filename) => `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'}/meetings/recordings/${filename}`,
 };
 

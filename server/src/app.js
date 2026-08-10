@@ -93,6 +93,7 @@ app.use('/api/subjects', subjectRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/submissions', submissionRoutes);
 app.use('/api/meetings', meetingRoutes);
+app.use('/api/viva', meetingRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/fees', feeRoutes);
 app.use('/api/reports', reportRoutes);

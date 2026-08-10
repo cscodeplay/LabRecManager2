@@ -147,6 +147,8 @@ export default function MeetingRoomPage() {
     const audioContextRef = useRef(null);
     const analyserRef = useRef(null);
     const micAnimFrameRef = useRef(null);
+    const canvasAnimRef = useRef(null);
+    const activeRoomIdRef = useRef(params.code);
 
     const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'lab_assistant';
 
@@ -185,6 +187,7 @@ export default function MeetingRoomPage() {
         if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
         if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
         if (micAnimFrameRef.current) cancelAnimationFrame(micAnimFrameRef.current);
+        if (canvasAnimRef.current) cancelAnimationFrame(canvasAnimRef.current);
 
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -206,6 +209,7 @@ export default function MeetingRoomPage() {
             const res = await meetingAPI.getSession(params.code);
             const sessionData = res.data.data.session;
             setSession(sessionData);
+            activeRoomIdRef.current = sessionData.id || params.code;
 
             if (sessionData.status === 'completed') {
                 toast.error('This meeting session has already ended');
@@ -221,9 +225,9 @@ export default function MeetingRoomPage() {
                 setIsWaitingInRoom(true);
             }
 
-            await meetingAPI.joinSession(params.code);
+            await meetingAPI.joinSession(sessionData.id || params.code).catch(() => {});
             await initializeLocalMedia();
-            initializeSocket(isHost, autoAdmit || sessionData.status === 'in_progress');
+            initializeSocket(sessionData.id || params.code, isHost, autoAdmit || sessionData.status === 'in_progress');
 
             if (sessionData.status === 'in_progress') {
                 setSessionStatus('active');
@@ -355,7 +359,7 @@ export default function MeetingRoomPage() {
                 setIsVideoEnabled(nextState);
 
                 socketRef.current?.emit('meeting:media-toggle', {
-                    roomId: params.code,
+                    roomId: activeRoomIdRef.current,
                     isCameraOn: nextState,
                     isMicOn: isAudioEnabled,
                     isScreenSharing
@@ -397,7 +401,7 @@ export default function MeetingRoomPage() {
                 setIsAudioEnabled(nextState);
 
                 socketRef.current?.emit('meeting:media-toggle', {
-                    roomId: params.code,
+                    roomId: activeRoomIdRef.current,
                     isCameraOn: isVideoEnabled,
                     isMicOn: nextState,
                     isScreenSharing
@@ -480,7 +484,7 @@ export default function MeetingRoomPage() {
                 await switchCamera(selectedCamera || '');
                 setIsScreenSharing(false);
                 socketRef.current?.emit('meeting:media-toggle', {
-                    roomId: params.code,
+                    roomId: activeRoomIdRef.current,
                     isCameraOn: isVideoEnabled,
                     isMicOn: isAudioEnabled,
                     isScreenSharing: false
@@ -497,7 +501,7 @@ export default function MeetingRoomPage() {
                     setIsScreenSharing(false);
                     switchCamera(selectedCamera || '');
                     socketRef.current?.emit('meeting:media-toggle', {
-                        roomId: params.code,
+                        roomId: activeRoomIdRef.current,
                         isCameraOn: isVideoEnabled,
                         isMicOn: isAudioEnabled,
                         isScreenSharing: false
@@ -518,7 +522,7 @@ export default function MeetingRoomPage() {
 
                 setIsScreenSharing(true);
                 socketRef.current?.emit('meeting:media-toggle', {
-                    roomId: params.code,
+                    roomId: activeRoomIdRef.current,
                     isCameraOn: true,
                     isMicOn: isAudioEnabled,
                     isScreenSharing: true
@@ -604,8 +608,8 @@ export default function MeetingRoomPage() {
         return pc;
     };
 
-    const initializeSocket = (isHost, directAdmit) => {
-        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
+    const initializeSocket = (canonicalRoomId, isHost, directAdmit) => {
+        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:5001' : (typeof window !== 'undefined' ? window.location.origin : ''));
         const socket = io(socketUrl, {
             path: '/socket.io',
             transports: ['websocket', 'polling']
@@ -618,7 +622,7 @@ export default function MeetingRoomPage() {
             if (!isHost && !directAdmit) {
                 // Non-host joins waiting room
                 socket.emit('meeting:join-waiting-room', {
-                    roomId: params.code,
+                    roomId: canonicalRoomId,
                     user: {
                         id: user?.id,
                         firstName: user?.firstName,
@@ -630,7 +634,7 @@ export default function MeetingRoomPage() {
             } else {
                 // Host or auto-admitted joins live room
                 socket.emit('meeting:join', {
-                    roomId: params.code,
+                    roomId: canonicalRoomId,
                     user: {
                         id: user?.id,
                         firstName: user?.firstName,
@@ -655,7 +659,7 @@ export default function MeetingRoomPage() {
             setIsWaitingInRoom(false);
             toast.success('You have been admitted to the meeting room!', { icon: '🎉' });
             socket.emit('meeting:join', {
-                roomId: params.code,
+                roomId: canonicalRoomId,
                 user: {
                     id: user?.id,
                     firstName: user?.firstName,
@@ -778,7 +782,7 @@ export default function MeetingRoomPage() {
                 if (audioTrack) audioTrack.enabled = false;
                 setIsAudioEnabled(false);
                 socketRef.current?.emit('meeting:media-toggle', {
-                    roomId: params.code,
+                    roomId: canonicalRoomId,
                     isCameraOn: isVideoEnabled,
                     isMicOn: false,
                     isScreenSharing
@@ -791,7 +795,7 @@ export default function MeetingRoomPage() {
                 if (videoTrack) videoTrack.enabled = false;
                 setIsVideoEnabled(false);
                 socketRef.current?.emit('meeting:media-toggle', {
-                    roomId: params.code,
+                    roomId: canonicalRoomId,
                     isCameraOn: false,
                     isMicOn: isAudioEnabled,
                     isScreenSharing
@@ -854,7 +858,7 @@ export default function MeetingRoomPage() {
     // ===========================================
     const handleAdmitUser = (targetSocketId) => {
         socketRef.current?.emit('meeting:admit-user', {
-            roomId: params.code,
+            roomId: activeRoomIdRef.current,
             targetSocketId
         });
         toast.success('Participant admitted to meeting');
@@ -862,7 +866,7 @@ export default function MeetingRoomPage() {
 
     const handleAdmitAll = () => {
         socketRef.current?.emit('meeting:admit-user', {
-            roomId: params.code,
+            roomId: activeRoomIdRef.current,
             targetSocketId: 'all'
         });
         toast.success('All waiting participants admitted');
@@ -870,7 +874,7 @@ export default function MeetingRoomPage() {
 
     const handleDenyUser = (targetSocketId) => {
         socketRef.current?.emit('meeting:deny-user', {
-            roomId: params.code,
+            roomId: activeRoomIdRef.current,
             targetSocketId
         });
         toast('Participant denied entry', { icon: '🚫' });
@@ -878,7 +882,7 @@ export default function MeetingRoomPage() {
 
     const handleHostMuteParticipant = (targetSocketId, currentMicState) => {
         socketRef.current?.emit('meeting:host-control', {
-            roomId: params.code,
+            roomId: activeRoomIdRef.current,
             targetSocketId,
             action: currentMicState ? 'mute-mic' : 'unmute-mic'
         });
@@ -887,7 +891,7 @@ export default function MeetingRoomPage() {
 
     const handleHostVideoParticipant = (targetSocketId, currentVideoState) => {
         socketRef.current?.emit('meeting:host-control', {
-            roomId: params.code,
+            roomId: activeRoomIdRef.current,
             targetSocketId,
             action: currentVideoState ? 'stop-video' : 'start-video'
         });
@@ -896,7 +900,7 @@ export default function MeetingRoomPage() {
 
     const handleHostStopScreen = (targetSocketId) => {
         socketRef.current?.emit('meeting:host-control', {
-            roomId: params.code,
+            roomId: activeRoomIdRef.current,
             targetSocketId,
             action: 'stop-screen'
         });
@@ -905,7 +909,7 @@ export default function MeetingRoomPage() {
 
     const handleHostToggleDraw = (targetSocketId, currentDrawState) => {
         socketRef.current?.emit('meeting:host-control', {
-            roomId: params.code,
+            roomId: activeRoomIdRef.current,
             targetSocketId,
             action: 'toggle-draw',
             value: !currentDrawState
@@ -923,7 +927,7 @@ export default function MeetingRoomPage() {
 
     const handleHostMuteAll = () => {
         socketRef.current?.emit('meeting:host-control', {
-            roomId: params.code,
+            roomId: activeRoomIdRef.current,
             targetSocketId: 'all',
             action: 'mute-mic'
         });
@@ -957,7 +961,7 @@ export default function MeetingRoomPage() {
         };
 
         socketRef.current?.emit('meeting:chat-message', {
-            roomId: params.code,
+            roomId: activeRoomIdRef.current,
             message: messageData
         });
 
@@ -971,21 +975,90 @@ export default function MeetingRoomPage() {
         return m.senderId === myId || m.senderSocketId === mySocket || m.recipientId === myId || m.recipientId === mySocket;
     });
 
-    // In-meeting Recording Controls
+    // =========================================================================
+    // ROBUST MEETING RECORDING ENGINE (Active Video & Audio Track Guaranteed)
+    // =========================================================================
+    const createCompositeRecordStream = () => {
+        const stream = new MediaStream();
+
+        // 1. Video track source: local camera OR screen OR active visualizer canvas
+        const hasLiveVideo = localStreamRef.current && localStreamRef.current.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
+
+        if (hasLiveVideo) {
+            const videoTrack = localStreamRef.current.getVideoTracks().find(t => t.enabled);
+            if (videoTrack) stream.addTrack(videoTrack.clone());
+        } else {
+            // Create active canvas visualizer
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 360;
+            const ctx = canvas.getContext('2d');
+
+            let frame = 0;
+            const draw = () => {
+                frame++;
+                ctx.fillStyle = '#090d16';
+                ctx.fillRect(0, 0, 640, 360);
+
+                // Glow ring
+                const pulse = Math.sin(frame * 0.05) * 10;
+                ctx.strokeStyle = '#4f46e5';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(320, 160, 45 + pulse, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Header
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 18px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(session?.title || 'Meeting Session Recording', 320, 70);
+
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '13px monospace';
+                ctx.fillText(`Room: ${params.code} • Recording Live`, 320, 95);
+
+                // Audio wave visualization
+                ctx.strokeStyle = '#10b981';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                for (let x = 160; x <= 480; x += 8) {
+                    const y = 260 + Math.sin(frame * 0.1 + x * 0.05) * (micLevel > 0 ? micLevel * 0.4 : 5);
+                    if (x === 160) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+
+                canvasAnimRef.current = requestAnimationFrame(draw);
+            };
+            draw();
+
+            const canvasStream = canvas.captureStream(30);
+            const canvasVideoTrack = canvasStream.getVideoTracks()[0];
+            if (canvasVideoTrack) stream.addTrack(canvasVideoTrack);
+        }
+
+        // 2. Audio track source: local mic
+        if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
+            const audioTrack = localStreamRef.current.getAudioTracks()[0];
+            stream.addTrack(audioTrack.clone());
+        }
+
+        return stream;
+    };
+
     const startRecording = () => {
         try {
-            if (!localStreamRef.current) {
-                toast.error('No stream available to record');
-                return;
-            }
+            const recordStream = createCompositeRecordStream();
 
             recordedChunksRef.current = [];
-            const mediaRecorder = new MediaRecorder(localStreamRef.current, {
-                mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-                    ? 'video/webm;codecs=vp9'
-                    : 'video/webm'
-            });
+            const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+                ? 'video/webm;codecs=vp9,opus'
+                : MediaRecorder.isTypeSupported('video/webm')
+                ? 'video/webm'
+                : 'video/mp4';
 
+            const mediaRecorder = new MediaRecorder(recordStream, { mimeType });
             mediaRecorderRef.current = mediaRecorder;
 
             mediaRecorder.ondataavailable = (event) => {
@@ -995,14 +1068,15 @@ export default function MeetingRoomPage() {
             };
 
             mediaRecorder.onstop = () => {
-                const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+                if (canvasAnimRef.current) cancelAnimationFrame(canvasAnimRef.current);
+                const blob = new Blob(recordedChunksRef.current, { type: mimeType });
                 setRecordedBlob(blob);
                 setShowRecordingModal(true);
                 setIsRecording(false);
                 clearInterval(recordingTimerRef.current);
             };
 
-            mediaRecorder.start(1000);
+            mediaRecorder.start(250);
             setIsRecording(true);
             setRecordingTime(0);
 
@@ -1010,7 +1084,7 @@ export default function MeetingRoomPage() {
                 setRecordingTime(prev => prev + 1);
             }, 1000);
 
-            toast.success('Meeting recording started');
+            toast.success('Meeting recording started', { icon: '🎙️' });
         } catch (err) {
             console.error('Start recording error:', err);
             toast.error('Failed to start recording');
@@ -1042,13 +1116,14 @@ export default function MeetingRoomPage() {
         const targetId = session?.id || params.code;
         try {
             setIsUploadingRecording(true);
-            setUploadProgress(15);
+            setUploadProgress(20);
 
-            const timer1 = setTimeout(() => setUploadProgress(45), 300);
-            const timer2 = setTimeout(() => setUploadProgress(75), 700);
+            const timer1 = setTimeout(() => setUploadProgress(50), 300);
+            const timer2 = setTimeout(() => setUploadProgress(80), 700);
 
+            const finalDuration = Math.max(recordingTime, 1);
             const file = new File([recordedBlob], `meeting_${targetId}_${Date.now()}.webm`, { type: 'video/webm' });
-            await meetingAPI.uploadRecording(targetId, file, recordingTime);
+            await meetingAPI.uploadRecording(targetId, file, finalDuration);
 
             clearTimeout(timer1);
             clearTimeout(timer2);
@@ -1078,13 +1153,13 @@ export default function MeetingRoomPage() {
             if (!confirmEnd) return;
 
             try {
-                await meetingAPI.completeSession(params.code, {
+                await meetingAPI.completeSession(activeRoomIdRef.current, {
                     marksObtained: 0,
                     maxMarks: 20,
                     examinerRemarks: 'Meeting completed'
                 }).catch(() => {});
 
-                socketRef.current?.emit('meeting:end-session', { roomId: params.code });
+                socketRef.current?.emit('meeting:end-session', { roomId: activeRoomIdRef.current });
                 toast.success('Meeting ended successfully');
                 cleanup();
                 router.push('/meetings');
@@ -1125,12 +1200,10 @@ export default function MeetingRoomPage() {
     if (isWaitingInRoom) {
         return (
             <div className="min-h-screen w-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden text-white font-sans select-none">
-                {/* Background ambient glow */}
                 <div className="absolute w-96 h-96 bg-primary-600/20 rounded-full blur-3xl -top-20 -left-20 animate-pulse pointer-events-none" />
                 <div className="absolute w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl -bottom-20 -right-20 animate-pulse pointer-events-none" />
 
                 <div className="max-w-md w-full bg-slate-900/90 backdrop-blur-2xl border border-slate-800 rounded-3xl p-8 shadow-2xl flex flex-col items-center text-center space-y-6 z-10 animate-in fade-in zoom-in-95">
-                    {/* Animated Pulsing Waiting Ring */}
                     <div className="relative flex items-center justify-center">
                         <span className="w-20 h-20 rounded-full bg-primary-500/20 animate-ping absolute" />
                         <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-primary-600 to-indigo-600 flex items-center justify-center shadow-xl border border-primary-400/40">
@@ -1147,7 +1220,6 @@ export default function MeetingRoomPage() {
                         </p>
                     </div>
 
-                    {/* Meeting Card Details */}
                     <div className="w-full bg-slate-800/60 rounded-2xl p-4 border border-slate-700/50 text-left space-y-2.5">
                         <div className="flex items-center justify-between">
                             <span className="text-[11px] text-slate-400 uppercase font-semibold">Session</span>
@@ -1162,13 +1234,11 @@ export default function MeetingRoomPage() {
                         </div>
                     </div>
 
-                    {/* Connection indicator */}
                     <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                         <span>Connected to waiting room</span>
                     </div>
 
-                    {/* Leave button */}
                     <button
                         onClick={() => router.push('/meetings')}
                         className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium border border-slate-700 transition"
@@ -1337,7 +1407,6 @@ export default function MeetingRoomPage() {
                     }}
                     className="flex flex-col items-end gap-2 pointer-events-auto select-none"
                 >
-                    {/* Draggable Header with Minimize / Expand Hook */}
                     <div
                         onPointerDown={handleVideoPalettePointerDown}
                         onPointerMove={handleVideoPalettePointerMove}
@@ -1361,10 +1430,8 @@ export default function MeetingRoomPage() {
                         </button>
                     </div>
 
-                    {/* Floating Video Strip */}
                     {!isVideoPaletteMinimized && (
                         <div className="flex flex-col gap-2 max-h-[70vh] overflow-y-auto pr-1">
-                            {/* Local Floating Tile */}
                             <div className="w-48 h-32 rounded-xl overflow-hidden shadow-2xl border border-slate-700">
                                 <VideoTile
                                     stream={localStream}
@@ -1380,7 +1447,6 @@ export default function MeetingRoomPage() {
                                 />
                             </div>
 
-                            {/* Remote Floating Tiles */}
                             {remoteList.map((p) => (
                                 <div
                                     key={p.socketId}
@@ -1516,7 +1582,6 @@ export default function MeetingRoomPage() {
                             </div>
                         </div>
 
-                        {/* Close Window Button */}
                         <button
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
@@ -1533,7 +1598,6 @@ export default function MeetingRoomPage() {
                     {/* TAB 1: CHAT */}
                     {activeSidePanelTab === 'chat' && (
                         <div className="flex-1 flex flex-col overflow-hidden">
-                            {/* Chat Recipient Selector (Zoom-style) */}
                             <div className="px-3 py-2 bg-slate-800/40 border-b border-slate-800 flex items-center justify-between text-xs">
                                 <span className="text-slate-400 font-medium">To:</span>
                                 <select
@@ -1558,7 +1622,6 @@ export default function MeetingRoomPage() {
                                 </select>
                             </div>
 
-                            {/* Messages Stream */}
                             <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-3 space-y-3">
                                 {visibleMessages.length === 0 ? (
                                     <div className="h-full flex flex-col items-center justify-center text-center text-slate-500 p-4">
@@ -1604,7 +1667,6 @@ export default function MeetingRoomPage() {
                                 )}
                             </div>
 
-                            {/* Chat Input */}
                             <form onSubmit={sendChatMessage} className="p-2.5 border-t border-slate-800 bg-slate-800/30 flex gap-2">
                                 <input
                                     type="text"
@@ -1628,7 +1690,6 @@ export default function MeetingRoomPage() {
                     {/* TAB 2: PARTICIPANTS (IN MEETING, WAITING ROOM, OFFLINE) */}
                     {activeSidePanelTab === 'participants' && (
                         <div className="flex-1 flex flex-col overflow-hidden">
-                            {/* Search */}
                             <div className="p-2.5 border-b border-slate-800 bg-slate-800/40">
                                 <div className="relative">
                                     <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
@@ -1642,9 +1703,8 @@ export default function MeetingRoomPage() {
                                 </div>
                             </div>
 
-                            {/* Sectioned List */}
                             <div className="flex-1 overflow-y-auto p-2.5 space-y-4">
-                                {/* SECTION 1: WAITING ROOM (Visible if any waiting) */}
+                                {/* SECTION 1: WAITING ROOM */}
                                 {waitingParticipants.length > 0 && (
                                     <div className="space-y-2 bg-amber-500/10 border border-amber-500/30 rounded-2xl p-2.5">
                                         <div className="flex items-center justify-between">

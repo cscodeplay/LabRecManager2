@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
     Video, Calendar, Clock, User, Play, CheckCircle, XCircle,
-    Plus, Search, X, Users, CalendarPlus, Award, Shield
+    Plus, Search, X, Users, CalendarPlus, Award, Shield, Trash2, Sparkles
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { meetingAPI, classesAPI } from '@/lib/api';
@@ -336,15 +336,36 @@ export default function MeetingPage() {
                         <h1 className="text-xl font-semibold text-slate-900">Meeting Sessions</h1>
                     </div>
 
-                    {/* Schedule Meeting Button for Instructors */}
+                    {/* Actions for Instructors / Admin */}
                     {isInstructor && (
-                        <button
-                            onClick={() => setShowScheduleModal(true)}
-                            className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
-                            title="Schedule Meeting Session"
-                        >
-                            <CalendarPlus className="w-5 h-5" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleClearAllMeetings}
+                                className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-sm"
+                                title="Delete All Meetings & Recordings"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                                <span>Clear All</span>
+                            </button>
+
+                            <button
+                                onClick={handleCreateDemoTestMeeting}
+                                className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-sm"
+                                title="Create & Launch Demo Test Meeting"
+                            >
+                                <Sparkles className="w-4 h-4" />
+                                <span>Create Demo Meeting</span>
+                            </button>
+
+                            <button
+                                onClick={() => setShowScheduleModal(true)}
+                                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-sm"
+                                title="Schedule Meeting Session"
+                            >
+                                <CalendarPlus className="w-4 h-4" />
+                                <span>Schedule Meeting</span>
+                            </button>
+                        </div>
                     )}
                 </div>
             </header>
