@@ -558,9 +558,6 @@ router.post("/sessions/schedule", authenticate, authorize("instructor", "lab_ass
     });
 }));
 
-        data: { session }
-    });
-}));
 
 /**
  * @route   GET /api/viva/available-students
