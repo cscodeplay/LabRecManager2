@@ -265,9 +265,28 @@ export default function MeetingPage() {
     };
 
     // Categorize sessions
-    const upcomingSessions = sessions.filter(s => s.status === 'scheduled' && new Date(s.scheduledAt) > new Date());
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
     const liveSessions = sessions.filter(s => isSessionLive(s));
-    const expiredSessions = sessions.filter(s => s.status === 'scheduled' && isSessionExpired(s));
+    const expiredSessions = sessions.filter(s => s.status === 'scheduled' && isSessionExpired(s) && !isSessionLive(s));
+    
+    // Sessions scheduled for today that are not live and not expired
+    const todaySessions = sessions.filter(s => {
+        if (s.status !== 'scheduled' || isSessionLive(s) || isSessionExpired(s)) return false;
+        const scheduledTime = new Date(s.scheduledAt);
+        return scheduledTime >= today && scheduledTime < tomorrow;
+    });
+
+    // Upcoming sessions (tomorrow and beyond)
+    const upcomingSessions = sessions.filter(s => {
+        if (s.status !== 'scheduled') return false;
+        const scheduledTime = new Date(s.scheduledAt);
+        return scheduledTime >= tomorrow;
+    });
+
     const pastSessions = sessions.filter(s => s.status === 'completed' || s.status === 'cancelled');
 
     if (loading) {
@@ -455,6 +474,26 @@ export default function MeetingPage() {
                                                 </div>
                                             </div>
                                         </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {/* Today's Sessions */}
+                        {todaySessions.length > 0 && (
+                            <div className="mb-8">
+                                <h2 className="text-lg font-semibold text-primary-700 mb-4 flex items-center gap-2">
+                                    <Calendar className="w-5 h-5" />
+                                    Today's Sessions
+                                </h2>
+                                <div className="grid gap-4">
+                                    {todaySessions.map((session) => (
+                                        <SessionCard
+                                            key={session.id}
+                                            session={session}
+                                            isInstructor={isInstructor}
+                                            getStatusIcon={getStatusIcon}
+                                            getStatusBadge={getStatusBadge}
+                                        />
                                     ))}
                                 </div>
                             </div>

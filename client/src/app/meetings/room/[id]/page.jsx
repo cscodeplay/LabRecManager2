@@ -7,14 +7,15 @@ import {
     ArrowLeft, Video, VideoOff, Mic, MicOff, Phone,
     MessageSquare, Clock, User, Send, AlertCircle,
     CheckCircle, XCircle, Maximize2, Minimize2, Circle, Square, Download, Save,
-    Volume2, VolumeX, Settings, Sliders, PictureInPicture2, Pencil
+    Volume2, VolumeX, Settings, Sliders, PictureInPicture2, Pencil, BarChart2
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import { vivaAPI } from '@/lib/api';
+import { meetingAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
 import WhiteboardShareModal from '@/components/WhiteboardShareModal';
+import MeetingPollManager from '@/components/MeetingPollManager';
 
 export default function VivaRoomPage() {
     const router = useRouter();
@@ -70,10 +71,14 @@ export default function VivaRoomPage() {
     const [whiteboardShareTargets, setWhiteboardShareTargets] = useState([]);
     const [whiteboardSessionId, setWhiteboardSessionId] = useState(null);
 
-    // Grading state (for instructors)
-    const [showGradingPanel, setShowGradingPanel] = useState(false);
-    const [vivaMarks, setVivaMarks] = useState(0);
-    const [remarks, setRemarks] = useState('');
+    // Polling state
+    const [showPollPanel, setShowPollPanel] = useState(false);
+    const [activePoll, setActivePoll] = useState(null);
+    const [pollResults, setPollResults] = useState({});
+    const [hasVoted, setHasVoted] = useState(false);
+
+    // Audio analysis state
+    const [audioLevel, setAudioLevel] = useState(0);
 
     // Waiting room state
     const [participantStatus, setParticipantStatus] = useState('joining'); // joining, waiting, admitted, rejected
@@ -178,7 +183,7 @@ export default function VivaRoomPage() {
 
     const loadSession = async () => {
         try {
-            const res = await vivaAPI.getSession(params.id);
+            const res = await meetingAPI.getSession(params.id);
             const sessionData = res.data.data.session;
             setSession(sessionData);
 
@@ -195,7 +200,7 @@ export default function VivaRoomPage() {
             }
 
             // Join the session (waiting room)
-            const joinRes = await vivaAPI.joinSession(params.id);
+            const joinRes = await meetingAPI.joinSession(params.id);
             const { participant, isHost: hostFlag } = joinRes.data.data;
 
             setIsHost(hostFlag);
@@ -244,7 +249,7 @@ export default function VivaRoomPage() {
     const startStatusPolling = () => {
         const poll = setInterval(async () => {
             try {
-                const res = await vivaAPI.getMyStatus(params.id);
+                const res = await meetingAPI.getMyStatus(params.id);
                 const status = res.data.data.participant.status;
 
                 if (status === 'admitted') {
@@ -270,7 +275,7 @@ export default function VivaRoomPage() {
     const startParticipantPolling = () => {
         const poll = async () => {
             try {
-                const res = await vivaAPI.getParticipants(params.id);
+                const res = await meetingAPI.getParticipants(params.id);
                 setWaitingParticipants(res.data.data.waiting || []);
                 setAdmittedParticipants(res.data.data.admitted || []);
             } catch (error) {
@@ -287,10 +292,10 @@ export default function VivaRoomPage() {
 
     const handleAdmitParticipant = async (participantId) => {
         try {
-            await vivaAPI.admitParticipant(params.id, participantId);
+            await meetingAPI.admitParticipant(params.id, participantId);
             toast.success('Participant admitted');
             // Refresh participants list
-            const res = await vivaAPI.getParticipants(params.id);
+            const res = await meetingAPI.getParticipants(params.id);
             setWaitingParticipants(res.data.data.waiting || []);
             setAdmittedParticipants(res.data.data.admitted || []);
         } catch (error) {
@@ -300,9 +305,9 @@ export default function VivaRoomPage() {
 
     const handleRejectParticipant = async (participantId) => {
         try {
-            await vivaAPI.rejectParticipant(params.id, participantId);
+            await meetingAPI.rejectParticipant(params.id, participantId);
             toast.success('Participant removed');
-            const res = await vivaAPI.getParticipants(params.id);
+            const res = await meetingAPI.getParticipants(params.id);
             setWaitingParticipants(res.data.data.waiting || []);
         } catch (error) {
             toast.error('Failed to remove participant');
@@ -311,9 +316,9 @@ export default function VivaRoomPage() {
 
     const handleAdmitAll = async () => {
         try {
-            await vivaAPI.admitAll(params.id);
+            await meetingAPI.admitAll(params.id);
             toast.success('All participants admitted');
-            const res = await vivaAPI.getParticipants(params.id);
+            const res = await meetingAPI.getParticipants(params.id);
             setWaitingParticipants([]);
             setAdmittedParticipants(res.data.data.admitted || []);
         } catch (error) {
@@ -585,8 +590,33 @@ export default function VivaRoomPage() {
         });
 
         socketRef.current.on('session-ended', () => {
-            toast.success('Session has ended');
-            router.push('/viva');
+            toast('Session has been ended by the instructor', { icon: 'ℹ️' });
+            cleanup();
+            router.push('/meetings');
+        });
+
+        // Polling events
+        socketRef.current.on('poll:start', (pollData) => {
+            setActivePoll(pollData);
+            setPollResults({});
+            setHasVoted(false);
+            if (!isInstructor) {
+                toast.success('A new poll has started!');
+            }
+        });
+
+        socketRef.current.on('poll:vote', ({ optionIndex }) => {
+            setPollResults(prev => ({
+                ...prev,
+                [optionIndex]: (prev[optionIndex] || 0) + 1
+            }));
+        });
+
+        socketRef.current.on('poll:end', () => {
+            toast('The poll has ended.', { icon: 'ℹ️' });
+            if (!isInstructor) {
+                setActivePoll(null);
+            }
         });
     };
 
@@ -802,7 +832,7 @@ export default function VivaRoomPage() {
 
         try {
             const file = new File([recordedBlob], `viva_${session.id}_${Date.now()}.webm`, { type: 'video/webm' });
-            const res = await vivaAPI.uploadRecording(session.id, file, recordingTime);
+            const res = await meetingAPI.uploadRecording(session.id, file, recordingTime);
             toast.success('Recording saved to database!');
             setShowRecordingOptions(false);
             setRecordedBlob(null);
@@ -839,7 +869,7 @@ export default function VivaRoomPage() {
 
     const handleStartSession = async () => {
         try {
-            await vivaAPI.startSession(params.id);
+            await meetingAPI.startSession(params.id);
             setSessionStatus('active');
             toast.success('Viva session started!');
             socketRef.current.emit('session-started', { roomId: params.id });
@@ -879,14 +909,7 @@ export default function VivaRoomPage() {
                 }
             }
 
-            // Get max marks from session or default to 20
-            const maxMarks = session?.submission?.assignment?.vivaMarks || 20;
-
-            await vivaAPI.completeSession(params.id, {
-                marksObtained: parseFloat(vivaMarks) || 0,
-                maxMarks: parseFloat(maxMarks),
-                examinerRemarks: remarks || ''
-            });
+            await meetingAPI.completeSession(params.id, {});
             socketRef.current?.emit('session-ended', { roomId: params.id });
 
             // Auto-upload recording to database for admin review
@@ -894,7 +917,7 @@ export default function VivaRoomPage() {
                 toast.loading('Saving recording to database...');
                 try {
                     const file = new File([recordingToUpload], `viva_${session.id}_${Date.now()}.webm`, { type: 'video/webm' });
-                    await vivaAPI.uploadRecording(session.id, file, recordingTime);
+                    await meetingAPI.uploadRecording(session.id, file, recordingTime);
                     toast.dismiss();
                     toast.success('Recording saved for admin review');
                 } catch (uploadError) {
@@ -1127,12 +1150,50 @@ export default function VivaRoomPage() {
             </header>
 
             {/* Main content */}
-            <div className="flex-1 flex">
+            <div className="flex-1 flex relative">
+                {/* Whiteboard Background */}
+                {showWhiteboard && (
+                    <div className="absolute inset-0 z-0 bg-slate-900">
+                        <Whiteboard
+                            width={typeof window !== 'undefined' ? window.innerWidth : 800}
+                            height={typeof window !== 'undefined' ? window.innerHeight - 80 : 500}
+                            isFullscreen={true}
+                            onToggleFullscreen={() => setWhiteboardFullscreen(!whiteboardFullscreen)}
+                            onClose={() => {
+                                setShowWhiteboard(false);
+                            }}
+                            onSave={(imageData) => {
+                                setSavedWhiteboardImage(imageData);
+                                toast.success('Whiteboard saved! It will be included when session ends.');
+                            }}
+                            // Sharing props
+                            isInstructor={isInstructor}
+                            isSharing={isWhiteboardSharing}
+                            sharingTargets={whiteboardShareTargets}
+                            onShare={() => setShowShareModal(true)}
+                            onStopSharing={() => {
+                                setIsWhiteboardSharing(false);
+                                setWhiteboardShareTargets([]);
+                                if (socketRef.current && whiteboardSessionId) {
+                                    socketRef.current.emit('whiteboard:stop-share', {
+                                        sessionId: whiteboardSessionId
+                                    });
+                                }
+                                setWhiteboardSessionId(null);
+                                toast.success('Stopped sharing whiteboard');
+                            }}
+                            socket={socketRef.current}
+                            sessionId={whiteboardSessionId}
+                            whiteboardId={params?.id ? `viva_${params.id}` : null}
+                        />
+                    </div>
+                )}
+
                 {/* Video area */}
-                <div className="flex-1 p-4 flex flex-col">
-                    <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* Remote video (large) */}
-                        <div className="relative bg-slate-800 rounded-2xl overflow-hidden flex items-center justify-center lg:col-span-2 min-h-[400px]">
+                <div className={showWhiteboard ? "absolute top-4 right-4 w-72 flex flex-col gap-4 z-10" : "flex-1 p-4 flex flex-col"}>
+                    <div className={`flex-1 grid grid-cols-1 ${showWhiteboard ? '' : 'lg:grid-cols-2'} gap-4`}>
+                        {/* Remote video */}
+                        <div className={`relative bg-slate-800 rounded-2xl overflow-hidden flex items-center justify-center ${showWhiteboard ? 'aspect-video shadow-2xl border border-slate-700' : 'lg:col-span-2 min-h-[400px]'}`}>
                             {isRemoteConnected ? (
                                 <video
                                     ref={remoteVideoRef}
@@ -1160,7 +1221,7 @@ export default function VivaRoomPage() {
                     </div>
 
                     {/* Local video (small, floating) */}
-                    <div className="absolute bottom-28 right-8 w-48 h-36 bg-slate-800 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-700">
+                    <div className={showWhiteboard ? "relative w-full aspect-video bg-slate-800 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-700" : "absolute bottom-28 right-8 w-48 h-36 bg-slate-800 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-700"}>
                         <video
                             ref={localVideoRef}
                             autoPlay
@@ -1179,7 +1240,7 @@ export default function VivaRoomPage() {
                     </div>
 
                     {/* Controls */}
-                    <div className="mt-4 flex items-center justify-center gap-4">
+                    <div className={`${showWhiteboard ? 'fixed top-4 left-1/2 -translate-x-1/2 bg-slate-900/80 px-6 py-3 rounded-full z-20 shadow-2xl flex items-center justify-center gap-4' : 'mt-4 flex items-center justify-center gap-4'}`}>
                         <button
                             onClick={toggleVideo}
                             className={`w-10 h-10 rounded-full flex items-center justify-center transition ${isVideoEnabled
@@ -1261,6 +1322,20 @@ export default function VivaRoomPage() {
                             <Pencil className="w-6 h-6" />
                         </button>
 
+                        {/* Polling Toggle Button */}
+                        {isInstructor && (
+                            <button
+                                onClick={() => setShowPollPanel(!showPollPanel)}
+                                className={`w-10 h-10 rounded-full flex items-center justify-center transition ${showPollPanel || activePoll
+                                    ? 'bg-blue-500 text-white'
+                                    : 'bg-slate-700 hover:bg-slate-600 text-white'
+                                    }`}
+                                title="Polls"
+                            >
+                                <BarChart2 className="w-6 h-6" />
+                            </button>
+                        )}
+
                         <button
                             onClick={toggleFullscreen}
                             className="w-10 h-10 rounded-full bg-slate-700 hover:bg-slate-600 text-white flex items-center justify-center transition"
@@ -1315,9 +1390,9 @@ export default function VivaRoomPage() {
 
                         {isInstructor && sessionStatus === 'active' && (
                             <button
-                                onClick={() => setShowGradingPanel(true)}
+                                onClick={handleEndSession}
                                 className="w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition"
-                                title="End & Grade"
+                                title="End Session"
                             >
                                 <Phone className="w-6 h-6" />
                             </button>
@@ -1622,59 +1697,6 @@ export default function VivaRoomPage() {
                 </div>
             )}
 
-            {/* Grading Modal */}
-            {showGradingPanel && (
-                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
-                        <h2 className="text-xl font-semibold text-slate-900 mb-4">Complete Viva Session</h2>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Viva Marks (out of {session?.submission?.assignment?.vivaMarks || 20})
-                                </label>
-                                <input
-                                    type="number"
-                                    value={vivaMarks}
-                                    onChange={(e) => setVivaMarks(Number(e.target.value))}
-                                    min="0"
-                                    max={session?.submission?.assignment?.vivaMarks || 20}
-                                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Remarks
-                                </label>
-                                <textarea
-                                    value={remarks}
-                                    onChange={(e) => setRemarks(e.target.value)}
-                                    rows={3}
-                                    placeholder="Add notes about the student's performance..."
-                                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                                />
-                            </div>
-
-                            <div className="flex gap-3 pt-2">
-                                <button
-                                    onClick={() => setShowGradingPanel(false)}
-                                    className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleEndSession}
-                                    className="flex-1 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition"
-                                >
-                                    Complete Session
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {/* Recording Options Modal */}
             {showRecordingOptions && recordedBlob && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
@@ -1823,51 +1845,6 @@ export default function VivaRoomPage() {
                 </div>
             )}
 
-            {/* Whiteboard Modal */}
-            {showWhiteboard && (
-                <div className={`fixed z-[9999] ${whiteboardFullscreen ? 'inset-0' : 'inset-4 md:inset-8 lg:inset-12'} flex items-center justify-center`}>
-                    <div
-                        className="absolute inset-0 bg-black/50"
-                        onClick={() => !whiteboardFullscreen && setShowWhiteboard(false)}
-                    />
-                    <div className={`relative z-10 ${whiteboardFullscreen ? 'w-full h-full' : 'w-full max-w-4xl max-h-[80vh]'}`}>
-                        <Whiteboard
-                            width={800}
-                            height={500}
-                            isFullscreen={whiteboardFullscreen}
-                            onToggleFullscreen={() => setWhiteboardFullscreen(!whiteboardFullscreen)}
-                            onClose={() => {
-                                setShowWhiteboard(false);
-                                setWhiteboardFullscreen(false);
-                            }}
-                            onSave={(imageData) => {
-                                setSavedWhiteboardImage(imageData);
-                                toast.success('Whiteboard saved! It will be included when session ends.');
-                            }}
-                            // Sharing props
-                            isInstructor={isInstructor}
-                            isSharing={isWhiteboardSharing}
-                            sharingTargets={whiteboardShareTargets}
-                            onShare={() => setShowShareModal(true)}
-                            onStopSharing={() => {
-                                setIsWhiteboardSharing(false);
-                                setWhiteboardShareTargets([]);
-                                if (socketRef.current && whiteboardSessionId) {
-                                    socketRef.current.emit('whiteboard:stop-share', {
-                                        sessionId: whiteboardSessionId
-                                    });
-                                }
-                                setWhiteboardSessionId(null);
-                                toast.success('Stopped sharing whiteboard');
-                            }}
-                            socket={socketRef.current}
-                            sessionId={whiteboardSessionId}
-                            whiteboardId={params?.id ? `viva_${params.id}` : null}
-                        />
-                    </div>
-                </div>
-            )}
-
             {/* Whiteboard Share Modal */}
             <WhiteboardShareModal
                 isOpen={showShareModal}
@@ -1881,14 +1858,11 @@ export default function VivaRoomPage() {
                     setWhiteboardShareTargets(shareData.targetNames);
                     setShowShareModal(false);
 
-                    // Emit start sharing event
+                    // Notify server about sharing
                     if (socketRef.current) {
                         socketRef.current.emit('whiteboard:start-share', {
                             sessionId: newSessionId,
-                            vivaSessionId: params.id,
-                            instructorId: user?.id,
-                            instructorName: `${user?.firstName} ${user?.lastName}`,
-                            ...shareData
+                            targets: shareData.targets
                         });
                     }
 
@@ -1903,9 +1877,45 @@ export default function VivaRoomPage() {
                         });
                     }
                     setWhiteboardSessionId(null);
+                    setShowShareModal(false);
                     toast.success('Stopped sharing whiteboard');
                 }}
             />
+
+            {/* Poll Manager */}
+            {(showPollPanel || activePoll) && (
+                <MeetingPollManager
+                    socket={socketRef.current}
+                    isInstructor={isInstructor}
+                    activePoll={activePoll}
+                    pollResults={pollResults}
+                    hasVoted={hasVoted}
+                    onClose={() => setShowPollPanel(false)}
+                    onStartPoll={(pollData) => {
+                        setActivePoll(pollData);
+                        setPollResults({});
+                        if (socketRef.current) {
+                            socketRef.current.emit('poll:start', pollData);
+                        }
+                        toast.success('Poll started!');
+                    }}
+                    onEndPoll={() => {
+                        if (socketRef.current) {
+                            socketRef.current.emit('poll:end');
+                        }
+                        setActivePoll(null);
+                        setShowPollPanel(false);
+                        toast.success('Poll ended');
+                    }}
+                    onVote={(optionIndex) => {
+                        if (socketRef.current) {
+                            socketRef.current.emit('poll:vote', { optionIndex });
+                        }
+                        setHasVoted(true);
+                        toast.success('Vote submitted!');
+                    }}
+                />
+            )}
         </div>
     );
 }

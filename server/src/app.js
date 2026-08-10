@@ -633,6 +633,35 @@ io.on('connection', (socket) => {
     socket.join(`group-${groupId}`);
   });
 
+  // Polling Events
+  socket.on('poll:start', (data) => {
+    // broadcast to the room (we can use the room the socket joined, e.g., 'meeting-...' or 'viva-...')
+    // Usually the user joins a specific room. 
+    // In room/[id]/page.jsx, the socket joins via 'join-meeting' with the meetingId
+    // But since the frontend doesn't explicitly send the room in poll:start, we will broadcast to all rooms this socket is in
+    socket.rooms.forEach(room => {
+      if (room !== socket.id) {
+        socket.to(room).emit('poll:start', data);
+      }
+    });
+  });
+
+  socket.on('poll:vote', (data) => {
+    socket.rooms.forEach(room => {
+      if (room !== socket.id) {
+        socket.to(room).emit('poll:vote', data);
+      }
+    });
+  });
+
+  socket.on('poll:end', (data) => {
+    socket.rooms.forEach(room => {
+      if (room !== socket.id) {
+        socket.to(room).emit('poll:end', data);
+      }
+    });
+  });
+
   socket.on('disconnect', () => {
     // Remove from whiteboard sessions
     for (const [sessionId, session] of whiteboardSessions.entries()) {

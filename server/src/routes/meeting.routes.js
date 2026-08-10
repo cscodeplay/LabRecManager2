@@ -376,19 +376,7 @@ router.put('/sessions/:id/start', authenticate, authorize('instructor', 'lab_ass
  * @desc    Complete a viva session with evaluation
  * @access  Private (Examiner)
  */
-router.put('/sessions/:id/complete', authenticate, authorize('instructor', 'lab_assistant'), [
-    body('marksObtained').isFloat({ min: 0 }).withMessage('Valid marks required'),
-    body('maxMarks').isFloat({ min: 0 }).withMessage('Max marks required')
-], asyncHandler(async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        console.log('Validation errors:', errors.array());
-        return res.status(400).json({
-            success: false,
-            errors: errors.array()
-        });
-    }
-
+router.put('/sessions/:id/complete', authenticate, authorize('instructor', 'lab_assistant'), [], asyncHandler(async (req, res) => {
     const {
         marksObtained, maxMarks, performanceRating,
         questionsAsked, studentResponses,
@@ -430,8 +418,8 @@ router.put('/sessions/:id/complete', authenticate, authorize('instructor', 'lab_
             data: {
                 status: 'completed',
                 actualEndTime: new Date(),
-                marksObtained: parseFloat(marksObtained),
-                maxMarks: parseFloat(maxMarks),
+                marksObtained: marksObtained !== undefined ? parseFloat(marksObtained) : null,
+                maxMarks: maxMarks !== undefined ? parseFloat(maxMarks) : null,
                 performanceRating: performanceRating || null,
                 questionsAsked: questionsAsked || null,
                 studentResponses: studentResponses || null,

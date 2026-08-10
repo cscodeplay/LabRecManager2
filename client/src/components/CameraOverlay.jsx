@@ -438,16 +438,15 @@ export default function CameraOverlay({
                     
                     {/* Local Video Preview */}
                     <div className="relative aspect-video bg-slate-950">
-                        {isCameraOn ? (
-                            <video
-                                ref={videoRef}
-                                autoPlay
-                                playsInline
-                                muted
-                                className="w-full h-full object-cover mirror"
-                                style={{ transform: 'scaleX(-1)' }}
-                            />
-                        ) : (
+                        <video
+                            ref={videoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className={`w-full h-full object-cover mirror ${isCameraOn ? '' : 'hidden'}`}
+                            style={{ transform: 'scaleX(-1)' }}
+                        />
+                        {!isCameraOn && (
                             <div className="flex items-center justify-center h-full">
                                 <VideoOff className="w-12 h-12 text-slate-600" />
                             </div>
