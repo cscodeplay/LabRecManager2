@@ -103,6 +103,36 @@ export default function MeetingPage() {
         }
     }, [activeTab]);
 
+    const handleClearAllMeetings = async () => {
+        const confirmDelete = window.confirm('Are you sure you want to delete ALL meeting sessions and recording files? This cannot be undone.');
+        if (!confirmDelete) return;
+
+        try {
+            const res = await meetingAPI.clearAllMeetings();
+            toast.success(res.data?.message || 'All meetings and recordings deleted.');
+            loadSessions();
+            loadRecordings();
+        } catch (error) {
+            console.error('Clear meetings error:', error);
+            toast.error(error.response?.data?.message || 'Failed to clear meetings');
+        }
+    };
+
+    const handleCreateDemoTestMeeting = async () => {
+        try {
+            const res = await meetingAPI.createDemoTestMeeting();
+            const session = res.data?.data?.session;
+            toast.success('Demo test meeting created!', { icon: '✨' });
+            loadSessions();
+            if (session?.id) {
+                router.push(`/meeting/${session.id}`);
+            }
+        } catch (error) {
+            console.error('Create demo meeting error:', error);
+            toast.error(error.response?.data?.message || 'Failed to create demo test meeting');
+        }
+    };
+
     const loadSessions = async (isBackground = false) => {
         try {
             const res = await meetingAPI.getSessions({ limit: 50 });
