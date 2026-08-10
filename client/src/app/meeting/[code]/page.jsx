@@ -1692,50 +1692,7 @@ export default function MeetingRoomPage() {
             )}
 
             {/* Grading Modal */}
-            {/* Grading panel removed */}
-                                </label>
-                                <input
-                                    type="number"
-                                    value={meetingMarks}
-                                    onChange={(e) => setMeetingMarks(Number(e.target.value))}
-                                    min="0"
-                                    max={session?.submission?.assignment?.meetingMarks || 20}
-                                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Remarks
-                                </label>
-                                <textarea
-                                    value={remarks}
-                                    onChange={(e) => setRemarks(e.target.value)}
-                                    rows={3}
-                                    placeholder="Add notes about the student's performance..."
-                                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                                />
-                            </div>
-
-                            <div className="flex gap-3 pt-2">
-                                <button
-                                    onClick={() => setShowGradingPanel(false)}
-                                    className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleEndSession}
-                                    className="flex-1 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition"
-                                >
-                                    Complete Session
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
+{/* Grading panel removed */}
             {/* Recording Options Modal */}
             {showRecordingOptions && recordedBlob && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
