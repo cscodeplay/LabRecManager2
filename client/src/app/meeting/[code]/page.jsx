@@ -9,7 +9,9 @@ import {
     Settings, Sliders, MonitorUp, Pencil, Users, ChevronUp,
     ChevronDown, Eye, EyeOff, Radio, Sparkles, Pause, Play,
     GripVertical, Move, Search, ShieldCheck, ShieldAlert,
-    MoreVertical, UserCheck, UserX, PenTool, Coffee, Loader2
+    MoreVertical, UserCheck, UserX, PenTool, Coffee, Loader2,
+    Info, Copy, Check, Share2, Key, LayoutGrid, ScreenShare,
+    AlertTriangle, Shield
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { meetingAPI } from '@/lib/api';
@@ -46,14 +48,26 @@ export default function MeetingRoomPage() {
     const [remoteParticipants, setRemoteParticipants] = useState(new Map());
     const [pinnedSocketId, setPinnedSocketId] = useState(null);
 
+    // =========================================================================
+    // THREE PRESENTATION SPACES: 'vc_tiles' | 'whiteboard' | 'screen_share'
+    // =========================================================================
+    const [activeSpace, setActiveSpace] = useState('vc_tiles');
+
     // Layout & Overlay Controls (Zoom-style floating panels)
-    const [showWhiteboard, setShowWhiteboard] = useState(false);
     const [showChat, setShowChat] = useState(false);
     const [activeSidePanelTab, setActiveSidePanelTab] = useState('chat'); // 'chat' | 'participants'
     const [chatRecipient, setChatRecipient] = useState({ id: 'everyone', name: 'Everyone (in Meeting)' });
     const [participantSearchQuery, setParticipantSearchQuery] = useState('');
 
     const [showDeviceSettings, setShowDeviceSettings] = useState(false);
+    const [showMeetingInfoModal, setShowMeetingInfoModal] = useState(false);
+    const [copiedInfoField, setCopiedInfoField] = useState('');
+
+    // Leave Meeting with Countdown state
+    const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
+    const [leaveCountdown, setLeaveCountdown] = useState(5);
+    const leaveIntervalRef = useRef(null);
+
     const [isVideoPaletteMinimized, setIsVideoPaletteMinimized] = useState(false);
     const [isControlsHidden, setIsControlsHidden] = useState(false);
     const [controlsDock, setControlsDock] = useState('bottom'); // 'bottom' | 'top' | 'left' | 'right'
@@ -161,6 +175,9 @@ export default function MeetingRoomPage() {
         ]
     };
 
+    // Calculate passcode
+    const meetingPasscode = session?.passcode || (session?.id ? Math.abs(session.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 900000 + 100000).toString() : '589214');
+
     // ===========================================
     // 1. INITIALIZATION & LIFECYCLE
     // ===========================================
@@ -186,6 +203,7 @@ export default function MeetingRoomPage() {
     const cleanup = () => {
         if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
         if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+        if (leaveIntervalRef.current) clearInterval(leaveIntervalRef.current);
         if (micAnimFrameRef.current) cancelAnimationFrame(micAnimFrameRef.current);
         if (canvasAnimRef.current) cancelAnimationFrame(canvasAnimRef.current);
 
@@ -249,7 +267,28 @@ export default function MeetingRoomPage() {
     };
 
     // ===========================================
-    // 2. LOCAL MEDIA & AUDIO MONITORING
+    // 2. SPACE SWITCHING & PRESENTATION ENGINE
+    // ===========================================
+    const switchActiveSpace = (newSpace, broadcast = true) => {
+        setActiveSpace(newSpace);
+
+        if (broadcast && isInstructor && socketRef.current) {
+            socketRef.current.emit('meeting:set-active-space', {
+                roomId: activeRoomIdRef.current,
+                space: newSpace
+            });
+        }
+
+        const labels = {
+            vc_tiles: 'Gallery / Video Grid',
+            whiteboard: 'Collaborative Whiteboard',
+            screen_share: 'Screen Presentation'
+        };
+        toast.success(`Maximized ${labels[newSpace] || newSpace}`, { icon: '🔲', duration: 1500 });
+    };
+
+    // ===========================================
+    // 3. LOCAL MEDIA & AUDIO MONITORING
     // ===========================================
     const initializeLocalMedia = async () => {
         try {
@@ -483,6 +522,9 @@ export default function MeetingRoomPage() {
             if (isScreenSharing) {
                 await switchCamera(selectedCamera || '');
                 setIsScreenSharing(false);
+                if (activeSpace === 'screen_share') {
+                    switchActiveSpace('vc_tiles');
+                }
                 socketRef.current?.emit('meeting:media-toggle', {
                     roomId: activeRoomIdRef.current,
                     isCameraOn: isVideoEnabled,
@@ -499,6 +541,9 @@ export default function MeetingRoomPage() {
 
                 screenTrack.onended = () => {
                     setIsScreenSharing(false);
+                    if (activeSpace === 'screen_share') {
+                        switchActiveSpace('vc_tiles');
+                    }
                     switchCamera(selectedCamera || '');
                     socketRef.current?.emit('meeting:media-toggle', {
                         roomId: activeRoomIdRef.current,
@@ -521,6 +566,8 @@ export default function MeetingRoomPage() {
                 });
 
                 setIsScreenSharing(true);
+                switchActiveSpace('screen_share');
+
                 socketRef.current?.emit('meeting:media-toggle', {
                     roomId: activeRoomIdRef.current,
                     isCameraOn: true,
@@ -536,7 +583,7 @@ export default function MeetingRoomPage() {
     };
 
     // ===========================================
-    // 3. MULTI-DEVICE MESH WEBRTC SIGNALING & WAITING ROOM
+    // 4. MULTI-DEVICE MESH WEBRTC SIGNALING
     // ===========================================
     const createPeerConnection = (targetSocketId, isInitiator = false) => {
         if (peersRef.current.has(targetSocketId)) {
@@ -620,7 +667,6 @@ export default function MeetingRoomPage() {
             setMySocketId(socket.id);
 
             if (!isHost && !directAdmit) {
-                // Non-host joins waiting room
                 socket.emit('meeting:join-waiting-room', {
                     roomId: canonicalRoomId,
                     user: {
@@ -632,7 +678,6 @@ export default function MeetingRoomPage() {
                     }
                 });
             } else {
-                // Host or auto-admitted joins live room
                 socket.emit('meeting:join', {
                     roomId: canonicalRoomId,
                     user: {
@@ -649,8 +694,21 @@ export default function MeetingRoomPage() {
             }
         });
 
+        // Presentation Space synchronization from host
+        socket.on('meeting:active-space-changed', ({ space, senderSocketId }) => {
+            if (senderSocketId !== socket.id) {
+                setActiveSpace(space);
+                const labels = {
+                    vc_tiles: 'Gallery',
+                    whiteboard: 'Whiteboard',
+                    screen_share: 'Screen Share'
+                };
+                toast(`Host switched presentation to ${labels[space] || space}`, { icon: '📺', duration: 2500 });
+            }
+        });
+
         // Waiting room status from server
-        socket.on('meeting:waiting-status', ({ isWaiting, message }) => {
+        socket.on('meeting:waiting-status', ({ isWaiting }) => {
             setIsWaitingInRoom(isWaiting);
         });
 
@@ -854,7 +912,7 @@ export default function MeetingRoomPage() {
     };
 
     // ===========================================
-    // 4. HOST CONTROLS, WAITING ROOM & CHAT
+    // 5. HOST CONTROLS, WAITING ROOM & CHAT
     // ===========================================
     const handleAdmitUser = (targetSocketId) => {
         socketRef.current?.emit('meeting:admit-user', {
@@ -981,14 +1039,12 @@ export default function MeetingRoomPage() {
     const createCompositeRecordStream = () => {
         const stream = new MediaStream();
 
-        // 1. Video track source: local camera OR screen OR active visualizer canvas
         const hasLiveVideo = localStreamRef.current && localStreamRef.current.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
 
         if (hasLiveVideo) {
             const videoTrack = localStreamRef.current.getVideoTracks().find(t => t.enabled);
             if (videoTrack) stream.addTrack(videoTrack.clone());
         } else {
-            // Create active canvas visualizer
             const canvas = document.createElement('canvas');
             canvas.width = 640;
             canvas.height = 360;
@@ -1000,7 +1056,6 @@ export default function MeetingRoomPage() {
                 ctx.fillStyle = '#090d16';
                 ctx.fillRect(0, 0, 640, 360);
 
-                // Glow ring
                 const pulse = Math.sin(frame * 0.05) * 10;
                 ctx.strokeStyle = '#4f46e5';
                 ctx.lineWidth = 3;
@@ -1008,7 +1063,6 @@ export default function MeetingRoomPage() {
                 ctx.arc(320, 160, 45 + pulse, 0, Math.PI * 2);
                 ctx.stroke();
 
-                // Header
                 ctx.fillStyle = '#ffffff';
                 ctx.font = 'bold 18px sans-serif';
                 ctx.textAlign = 'center';
@@ -1018,7 +1072,6 @@ export default function MeetingRoomPage() {
                 ctx.font = '13px monospace';
                 ctx.fillText(`Room: ${params.code} • Recording Live`, 320, 95);
 
-                // Audio wave visualization
                 ctx.strokeStyle = '#10b981';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
@@ -1038,7 +1091,6 @@ export default function MeetingRoomPage() {
             if (canvasVideoTrack) stream.addTrack(canvasVideoTrack);
         }
 
-        // 2. Audio track source: local mic
         if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
             const audioTrack = localStreamRef.current.getAudioTracks()[0];
             stream.addTrack(audioTrack.clone());
@@ -1050,7 +1102,6 @@ export default function MeetingRoomPage() {
     const startRecording = () => {
         try {
             const recordStream = createCompositeRecordStream();
-
             recordedChunksRef.current = [];
             const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
                 ? 'video/webm;codecs=vp9,opus'
@@ -1144,37 +1195,86 @@ export default function MeetingRoomPage() {
         }
     };
 
-    // ===========================================
-    // 5. END / LEAVE MEETING
-    // ===========================================
-    const handleEndOrLeave = async () => {
-        if (isInstructor) {
-            const confirmEnd = window.confirm('Are you sure you want to end this meeting for all participants?');
-            if (!confirmEnd) return;
+    // =========================================================================
+    // 6. LEAVE MEETING WITH 5-SECOND COUNTDOWN & CANCEL
+    // =========================================================================
+    const handleInitiateLeave = () => {
+        setLeaveCountdown(5);
+        setShowLeaveConfirmModal(true);
 
+        if (leaveIntervalRef.current) clearInterval(leaveIntervalRef.current);
+        leaveIntervalRef.current = setInterval(() => {
+            setLeaveCountdown(prev => {
+                if (prev <= 1) {
+                    clearInterval(leaveIntervalRef.current);
+                    executeLeaveMeeting();
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+    };
+
+    const handleCancelLeave = () => {
+        if (leaveIntervalRef.current) clearInterval(leaveIntervalRef.current);
+        setShowLeaveConfirmModal(false);
+        setLeaveCountdown(5);
+        toast('Stayed in meeting', { icon: '🛡️', duration: 1500 });
+    };
+
+    const executeLeaveMeeting = async () => {
+        if (leaveIntervalRef.current) clearInterval(leaveIntervalRef.current);
+        setShowLeaveConfirmModal(false);
+
+        if (isInstructor) {
             try {
                 await meetingAPI.completeSession(activeRoomIdRef.current, {
                     marksObtained: 0,
                     maxMarks: 20,
                     examinerRemarks: 'Meeting completed'
                 }).catch(() => {});
-
                 socketRef.current?.emit('meeting:end-session', { roomId: activeRoomIdRef.current });
-                toast.success('Meeting ended successfully');
-                cleanup();
-                router.push('/meetings');
-            } catch (err) {
-                console.error('End session error:', err);
-                cleanup();
-                router.push('/meetings');
+            } catch (e) {
+                console.error('End session error:', e);
             }
-        } else {
-            const confirmLeave = window.confirm('Are you sure you want to leave the meeting?');
-            if (!confirmLeave) return;
-
-            cleanup();
-            router.push('/meetings');
         }
+
+        cleanup();
+        toast.success('Left meeting room');
+        router.push('/meetings');
+    };
+
+    // =========================================================================
+    // 7. COPY INVITATION DETAILS
+    // =========================================================================
+    const getInviteUrl = () => {
+        if (typeof window !== 'undefined') {
+            return `${window.location.origin}/meeting/${params.code}`;
+        }
+        return `https://domain/meeting/${params.code}`;
+    };
+
+    const copyToClipboard = (text, fieldName) => {
+        navigator.clipboard.writeText(text);
+        setCopiedInfoField(fieldName);
+        toast.success(`${fieldName} copied to clipboard!`, { icon: '📋' });
+        setTimeout(() => setCopiedInfoField(''), 2000);
+    };
+
+    const copyFullInvitation = () => {
+        const title = session?.submission?.assignment?.title || session?.title || 'Online Meeting Session';
+        const hostName = session?.host ? `${session.host.firstName} ${session.host.lastName}` : 'Instructor';
+        const inviteText = `Join Lab Record Manager Meeting
+Topic: ${title}
+Host: ${hostName}
+Meeting ID: ${params.code}
+Passcode: ${meetingPasscode}
+Link: ${getInviteUrl()}`;
+
+        navigator.clipboard.writeText(inviteText);
+        setCopiedInfoField('full');
+        toast.success('Full invitation copied to clipboard!', { icon: '🎉' });
+        setTimeout(() => setCopiedInfoField(''), 2000);
     };
 
     const formatTimer = (seconds) => {
@@ -1253,6 +1353,11 @@ export default function MeetingRoomPage() {
     const remoteList = Array.from(remoteParticipants.values());
     const totalParticipants = 1 + remoteList.length;
 
+    // Find if someone is sharing screen
+    const remoteSharingUser = remoteList.find(p => p.isScreenSharing);
+    const hasActiveScreenShare = isScreenSharing || !!remoteSharingUser;
+    const activeScreenStream = isScreenSharing ? localStream : remoteSharingUser?.stream;
+
     // Compute offline participants from targetClass or targetStudent
     const activeUserIds = new Set([
         user?.id,
@@ -1298,27 +1403,77 @@ export default function MeetingRoomPage() {
     return (
         <div className="relative w-screen h-screen bg-slate-950 text-white overflow-hidden select-none font-sans flex flex-col">
             {/* ========================================================================= */}
-            {/* LAYER 0 (BASE LAYER): FULLSCREEN WHITEBOARD OR MAIN STAGE GRID           */}
+            {/* LAYER 0 (BASE LAYER): THE THREE PRESENTATION SPACES                       */}
+            {/* SPACE 1: WHITEBOARD MAXIMIZED                                             */}
+            {/* SPACE 2: SHARED SCREEN MAXIMIZED                                          */}
+            {/* SPACE 3: VC GALLERY TILES MAXIMIZED                                       */}
             {/* ========================================================================= */}
             <div className="relative w-full h-full flex-1 overflow-hidden z-0">
-                {showWhiteboard ? (
-                    <div className="absolute inset-0 w-full h-full z-0 bg-slate-900">
+                {/* 1. WHITEBOARD SPACE */}
+                {activeSpace === 'whiteboard' && (
+                    <div className="absolute inset-0 w-full h-full z-0 bg-slate-900 animate-in fade-in">
                         <Whiteboard
                             width={typeof window !== 'undefined' ? window.innerWidth : 1280}
                             height={typeof window !== 'undefined' ? window.innerHeight : 800}
                             isFullscreen={true}
-                            onClose={() => setShowWhiteboard(false)}
+                            onClose={() => switchActiveSpace('vc_tiles')}
                             onSave={() => toast.success('Whiteboard snapshot saved!')}
                             isMeetingMode={true}
                             showCameraControls={false}
                             isInstructor={isInstructor}
                         />
                     </div>
-                ) : (
-                    /* Main Stage Video Gallery (Zoom-style responsive grid) */
-                    <div className="w-full h-full p-4 flex items-center justify-center">
+                )}
+
+                {/* 2. SHARED SCREEN SPACE */}
+                {activeSpace === 'screen_share' && (
+                    <div className="w-full h-full p-4 flex flex-col items-center justify-center bg-slate-950 animate-in fade-in">
+                        {hasActiveScreenShare ? (
+                            <div className="relative w-full h-full max-w-7xl max-h-[85vh] bg-black rounded-3xl overflow-hidden shadow-2xl border border-slate-800 flex items-center justify-center">
+                                <video
+                                    autoPlay
+                                    playsInline
+                                    muted={isScreenSharing}
+                                    ref={(videoEl) => {
+                                        if (videoEl && activeScreenStream) {
+                                            videoEl.srcObject = activeScreenStream;
+                                        }
+                                    }}
+                                    className="w-full h-full object-contain"
+                                />
+                                <div className="absolute top-4 left-4 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-700/80 text-xs text-white flex items-center gap-2 shadow-lg">
+                                    <MonitorUp className="w-4 h-4 text-emerald-400" />
+                                    <span>{isScreenSharing ? 'You are sharing your screen' : `${remoteSharingUser?.name || 'Presenter'}'s Screen`}</span>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center text-center p-8 bg-slate-900/80 rounded-3xl border border-slate-800 max-w-md space-y-4">
+                                <MonitorUp className="w-12 h-12 text-slate-500" />
+                                <h3 className="text-base font-semibold text-white">No Active Screen Share</h3>
+                                <p className="text-xs text-slate-400">Click below to start sharing your screen or switch back to the gallery view.</p>
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={toggleScreenShare}
+                                        className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-semibold shadow-lg transition"
+                                    >
+                                        Share My Screen
+                                    </button>
+                                    <button
+                                        onClick={() => switchActiveSpace('vc_tiles')}
+                                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold border border-slate-700 transition"
+                                    >
+                                        Back to Gallery
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* 3. VC GALLERY TILES SPACE */}
+                {activeSpace === 'vc_tiles' && (
+                    <div className="w-full h-full p-4 flex items-center justify-center animate-in fade-in">
                         {totalParticipants === 1 ? (
-                            /* Solo view */
                             <div className="w-full max-w-4xl h-[75vh]">
                                 <VideoTile
                                     stream={localStream}
@@ -1333,7 +1488,6 @@ export default function MeetingRoomPage() {
                                 />
                             </div>
                         ) : (
-                            /* Multi-Participant Responsive Grid */
                             <div
                                 className={`w-full h-full grid gap-4 place-items-center ${
                                     totalParticipants === 2
@@ -1345,7 +1499,6 @@ export default function MeetingRoomPage() {
                                         : 'grid-cols-3 md:grid-cols-4 max-w-full'
                                 }`}
                             >
-                                {/* Local Video Tile */}
                                 <VideoTile
                                     stream={localStream}
                                     isLocal={true}
@@ -1360,7 +1513,6 @@ export default function MeetingRoomPage() {
                                     className="w-full h-full min-h-[180px]"
                                 />
 
-                                {/* Remote Video Tiles */}
                                 {remoteList.map((participant) => (
                                     <div
                                         key={participant.socketId}
@@ -1394,9 +1546,10 @@ export default function MeetingRoomPage() {
             </div>
 
             {/* ========================================================================= */}
-            {/* LAYER 1 (FLOATING OVERLAY): DRAGGABLE FLOATING VIDEO PALETTE              */}
+            {/* LAYER 1 (FLOATING OVERLAYS): MINIMIZED FLOATING TILES FOR OTHER SPACES    */}
             {/* ========================================================================= */}
-            {showWhiteboard && (
+            {/* FLOATING VC VIDEO PALETTE (When Whiteboard or Screen Share is maximized) */}
+            {activeSpace !== 'vc_tiles' && (
                 <div
                     style={{
                         position: 'fixed',
@@ -1414,10 +1567,14 @@ export default function MeetingRoomPage() {
                         className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-700/80 shadow-2xl text-xs cursor-grab active:cursor-grabbing touch-none"
                     >
                         <GripVertical className="w-3.5 h-3.5 text-slate-400" />
-                        <span className="flex items-center gap-1 text-slate-200 font-medium">
-                            <Users className="w-3.5 h-3.5 text-primary-400" />
+                        <button
+                            onClick={() => switchActiveSpace('vc_tiles')}
+                            className="flex items-center gap-1 text-slate-200 hover:text-primary-300 font-medium transition"
+                            title="Maximize Video Gallery"
+                        >
+                            <LayoutGrid className="w-3.5 h-3.5 text-primary-400" />
                             {totalParticipants} in call
-                        </span>
+                        </button>
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -1432,7 +1589,7 @@ export default function MeetingRoomPage() {
 
                     {!isVideoPaletteMinimized && (
                         <div className="flex flex-col gap-2 max-h-[70vh] overflow-y-auto pr-1">
-                            <div className="w-48 h-32 rounded-xl overflow-hidden shadow-2xl border border-slate-700">
+                            <div className="w-48 h-32 rounded-xl overflow-hidden shadow-2xl border border-slate-700 relative group">
                                 <VideoTile
                                     stream={localStream}
                                     isLocal={true}
@@ -1445,6 +1602,13 @@ export default function MeetingRoomPage() {
                                     compact={true}
                                     className="w-full h-full"
                                 />
+                                <button
+                                    onClick={() => switchActiveSpace('vc_tiles')}
+                                    className="absolute bottom-1.5 right-1.5 p-1 bg-slate-900/80 hover:bg-primary-600 text-white rounded-md text-[10px] border border-slate-700 opacity-0 group-hover:opacity-100 transition"
+                                    title="Maximize Gallery"
+                                >
+                                    <Maximize2 className="w-3 h-3" />
+                                </button>
                             </div>
 
                             {remoteList.map((p) => (
@@ -1478,42 +1642,86 @@ export default function MeetingRoomPage() {
                 </div>
             )}
 
-            {/* Top Bar Header Badge (Title + Clock + Room Code) */}
-            <div className="absolute top-4 left-4 z-20 flex items-center gap-3 pointer-events-auto">
+            {/* TOP BAR HEADER BADGE (Title + Clock + Info/Invite + Space Switcher) */}
+            <div className="absolute top-4 left-4 z-20 flex items-center gap-2.5 pointer-events-auto">
                 <button
-                    onClick={handleEndOrLeave}
-                    className="bg-slate-900/80 backdrop-blur-md p-2 rounded-xl border border-slate-700/60 text-slate-400 hover:text-white transition shadow-lg"
+                    onClick={handleInitiateLeave}
+                    className="bg-slate-900/90 backdrop-blur-md p-2 rounded-xl border border-slate-700/60 text-slate-400 hover:text-white hover:bg-red-500/20 transition shadow-lg"
                     title="Leave Meeting"
                 >
                     <ArrowLeft className="w-5 h-5" />
                 </button>
 
-                <div className="bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-xl border border-slate-700/60 shadow-lg flex items-center gap-3">
+                <div className="bg-slate-900/90 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-slate-700/60 shadow-lg flex items-center gap-3">
                     <div>
-                        <h2 className="text-white text-sm font-semibold leading-tight">
-                            {session?.submission?.assignment?.title || session?.title || 'Live Meeting Session'}
+                        <h2 className="text-white text-xs md:text-sm font-semibold leading-tight flex items-center gap-2">
+                            <span>{session?.submission?.assignment?.title || session?.title || 'Live Meeting Session'}</span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         </h2>
-                        <div className="flex items-center gap-2 text-xs text-slate-400">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                            <span>Room: <strong className="text-slate-200 font-mono">{params.code}</strong></span>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                            <span>ID: <strong className="text-slate-200 font-mono">{params.code}</strong></span>
                         </div>
                     </div>
 
-                    <div className="h-6 w-[1px] bg-slate-700" />
+                    <div className="h-5 w-[1px] bg-slate-700" />
 
                     {/* Timer */}
-                    <div className="flex items-center gap-1.5 font-mono text-xs text-slate-300">
+                    <div className="flex items-center gap-1 font-mono text-xs text-slate-300">
                         <Clock className="w-3.5 h-3.5 text-primary-400" />
                         <span>{formatTimer(elapsedTime)}</span>
                     </div>
 
+                    {/* Info / Invite Details Button */}
+                    <button
+                        onClick={() => setShowMeetingInfoModal(true)}
+                        className="p-1.5 bg-slate-800 hover:bg-slate-700 text-primary-400 hover:text-white rounded-lg border border-slate-700 transition flex items-center gap-1 text-xs font-semibold shadow"
+                        title="Meeting Details, Passcode & Invitation Link"
+                    >
+                        <Shield className="w-3.5 h-3.5" />
+                        <span className="hidden md:inline">Details</span>
+                    </button>
+
                     {/* Recording Badge */}
                     {isRecording && (
-                        <div className="flex items-center gap-1.5 bg-red-500/20 text-red-400 border border-red-500/30 px-2.5 py-1 rounded-lg text-xs font-mono animate-pulse">
+                        <div className="flex items-center gap-1.5 bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-0.5 rounded-lg text-xs font-mono animate-pulse">
                             <span className="w-2 h-2 rounded-full bg-red-500" />
                             <span>REC {formatTimer(recordingTime)}</span>
                         </div>
                     )}
+                </div>
+
+                {/* 3 Presentation Spaces Quick Switcher */}
+                <div className="hidden lg:flex items-center bg-slate-900/90 backdrop-blur-md p-1 rounded-xl border border-slate-700/60 shadow-lg gap-1">
+                    <button
+                        onClick={() => switchActiveSpace('vc_tiles')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${
+                            activeSpace === 'vc_tiles' ? 'bg-primary-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                        }`}
+                        title="Maximize Video Gallery"
+                    >
+                        <LayoutGrid className="w-3.5 h-3.5" />
+                        <span>Gallery</span>
+                    </button>
+                    <button
+                        onClick={() => switchActiveSpace('whiteboard')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${
+                            activeSpace === 'whiteboard' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                        }`}
+                        title="Maximize Whiteboard"
+                    >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>Whiteboard</span>
+                    </button>
+                    <button
+                        onClick={() => switchActiveSpace('screen_share')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${
+                            activeSpace === 'screen_share' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                        }`}
+                        title="Maximize Screen Share"
+                    >
+                        <MonitorUp className="w-3.5 h-3.5" />
+                        <span>Screen</span>
+                    </button>
                 </div>
             </div>
 
@@ -1910,6 +2118,153 @@ export default function MeetingRoomPage() {
             )}
 
             {/* ========================================================================= */}
+            {/* LAYER 2 (FLOATING OVERLAY): MEETING DETAILS & INVITATION MODAL            */}
+            {/* ========================================================================= */}
+            {showMeetingInfoModal && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in">
+                    <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-primary-600/20 text-primary-400 flex items-center justify-center border border-primary-500/30">
+                                    <Shield className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-white">Meeting Information</h3>
+                                    <p className="text-[11px] text-slate-400">Share these credentials to invite participants</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowMeetingInfoModal(false)} className="text-slate-400 hover:text-white p-1 rounded-lg">
+                                <XCircle className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Meeting Details List */}
+                        <div className="space-y-3 bg-slate-800/50 p-4 rounded-2xl border border-slate-700/60">
+                            {/* Topic */}
+                            <div className="space-y-0.5">
+                                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Topic</span>
+                                <p className="text-xs font-medium text-white">{session?.submission?.assignment?.title || session?.title || 'Meeting Session'}</p>
+                            </div>
+
+                            {/* Meeting ID */}
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-700/50">
+                                <div>
+                                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Meeting ID</span>
+                                    <p className="text-xs font-mono font-bold text-primary-300">{params.code}</p>
+                                </div>
+                                <button
+                                    onClick={() => copyToClipboard(params.code, 'Meeting ID')}
+                                    className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-medium transition flex items-center gap-1"
+                                >
+                                    {copiedInfoField === 'Meeting ID' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                    <span>Copy</span>
+                                </button>
+                            </div>
+
+                            {/* Passcode */}
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-700/50">
+                                <div>
+                                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Passcode</span>
+                                    <p className="text-xs font-mono font-bold text-emerald-400">{meetingPasscode}</p>
+                                </div>
+                                <button
+                                    onClick={() => copyToClipboard(meetingPasscode, 'Passcode')}
+                                    className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-medium transition flex items-center gap-1"
+                                >
+                                    {copiedInfoField === 'Passcode' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                    <span>Copy</span>
+                                </button>
+                            </div>
+
+                            {/* Direct Invite Link */}
+                            <div className="pt-2 border-t border-slate-700/50 space-y-1.5">
+                                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Invite Link</span>
+                                <div className="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-slate-700">
+                                    <p className="text-[11px] font-mono text-slate-300 truncate flex-1">{getInviteUrl()}</p>
+                                    <button
+                                        onClick={() => copyToClipboard(getInviteUrl(), 'Invite Link')}
+                                        className="px-2.5 py-1 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-medium transition flex items-center gap-1"
+                                    >
+                                        {copiedInfoField === 'Invite Link' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                        <span>Copy Link</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Copy Full Invitation Action */}
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={copyFullInvitation}
+                                className="flex-1 py-2.5 bg-gradient-to-r from-primary-600 to-indigo-600 hover:from-primary-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg"
+                            >
+                                <Share2 className="w-4 h-4" />
+                                {copiedInfoField === 'full' ? 'Invitation Copied!' : 'Copy Full Invitation'}
+                            </button>
+                            <button
+                                onClick={() => setShowMeetingInfoModal(false)}
+                                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold border border-slate-700 transition"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* LAYER 2 (FLOATING OVERLAY): LEAVE MEETING WITH 5S COUNTDOWN MODAL         */}
+            {/* ========================================================================= */}
+            {showLeaveConfirmModal && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in zoom-in-95">
+                    <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-sm w-full p-6 shadow-2xl text-center space-y-5">
+                        <div className="relative mx-auto w-16 h-16 flex items-center justify-center">
+                            <span className="w-16 h-16 rounded-full bg-red-500/20 animate-ping absolute" />
+                            <div className="w-16 h-16 rounded-full bg-red-600/30 border border-red-500/50 flex items-center justify-center">
+                                <AlertTriangle className="w-8 h-8 text-red-400" />
+                            </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <h3 className="text-base font-bold text-white">
+                                {isInstructor ? 'End Meeting for All?' : 'Leave Meeting Session?'}
+                            </h3>
+                            <p className="text-xs text-slate-300">
+                                You are about to leave this call. Exiting permanently in:
+                            </p>
+                        </div>
+
+                        {/* Animated 5s Countdown Circle */}
+                        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-slate-800 border-2 border-red-500 text-xl font-bold font-mono text-white shadow-inner">
+                            {leaveCountdown}s
+                        </div>
+
+                        <p className="text-[11px] text-slate-400">
+                            Click <strong className="text-slate-200">Cancel</strong> to stay in the meeting room or leave immediately.
+                        </p>
+
+                        <div className="flex flex-col gap-2 pt-2">
+                            <button
+                                onClick={handleCancelLeave}
+                                className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold border border-slate-700 transition flex items-center justify-center gap-2 shadow"
+                            >
+                                <CheckCircle className="w-4 h-4 text-emerald-400" />
+                                Cancel & Stay in Meeting
+                            </button>
+
+                            <button
+                                onClick={executeLeaveMeeting}
+                                className="w-full py-2 px-4 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2 shadow-lg shadow-red-600/30"
+                            >
+                                <Phone className="w-3.5 h-3.5 rotate-[135deg]" />
+                                Leave Now
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ========================================================================= */}
             {/* LAYER 2 (FLOATING OVERLAY): DEVICE SETTINGS MODAL                         */}
             {/* ========================================================================= */}
             {showDeviceSettings && (
@@ -2084,30 +2439,43 @@ export default function MeetingRoomPage() {
                             {isVideoEnabled ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
                         </button>
 
-                        {/* Screen Share */}
+                        {/* Screen Share Toggle */}
                         <button
                             onClick={toggleScreenShare}
                             className={`p-1.5 rounded-full transition flex items-center justify-center ${
-                                isScreenSharing
-                                    ? 'bg-primary-600 text-white'
+                                isScreenSharing || activeSpace === 'screen_share'
+                                    ? 'bg-indigo-600 text-white'
                                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                             }`}
-                            title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
+                            title={isScreenSharing ? 'Stop Screen Share' : 'Share / Maximize Screen'}
                         >
                             <MonitorUp className="w-4 h-4" />
                         </button>
 
-                        {/* Whiteboard Toggle */}
+                        {/* Whiteboard Toggle / Space Switcher */}
                         <button
-                            onClick={() => setShowWhiteboard(!showWhiteboard)}
+                            onClick={() => switchActiveSpace(activeSpace === 'whiteboard' ? 'vc_tiles' : 'whiteboard')}
                             className={`p-1.5 rounded-full transition flex items-center justify-center ${
-                                showWhiteboard
+                                activeSpace === 'whiteboard'
                                     ? 'bg-emerald-600 text-white'
                                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                             }`}
-                            title={showWhiteboard ? 'Exit Whiteboard' : 'Open Whiteboard'}
+                            title={activeSpace === 'whiteboard' ? 'Restore Gallery Space' : 'Maximize Whiteboard Space'}
                         >
                             <Pencil className="w-4 h-4" />
+                        </button>
+
+                        {/* VC Gallery Toggle / Space Switcher */}
+                        <button
+                            onClick={() => switchActiveSpace('vc_tiles')}
+                            className={`p-1.5 rounded-full transition flex items-center justify-center ${
+                                activeSpace === 'vc_tiles'
+                                    ? 'bg-primary-600 text-white'
+                                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                            }`}
+                            title="Maximize Video Gallery Space"
+                        >
+                            <LayoutGrid className="w-4 h-4" />
                         </button>
 
                         {/* In-Meeting Recording */}
@@ -2121,6 +2489,15 @@ export default function MeetingRoomPage() {
                             title={isRecording ? 'Stop Recording' : 'Record Meeting'}
                         >
                             <Radio className="w-4 h-4" />
+                        </button>
+
+                        {/* Meeting Info & Passcode */}
+                        <button
+                            onClick={() => setShowMeetingInfoModal(true)}
+                            className="p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white rounded-full transition flex items-center justify-center"
+                            title="Meeting Info, Passcode & Link"
+                        >
+                            <Info className="w-4 h-4" />
                         </button>
 
                         {/* Side Panel: Participants & Chat */}
@@ -2166,7 +2543,7 @@ export default function MeetingRoomPage() {
                                 const next = { bottom: 'left', left: 'top', top: 'right', right: 'bottom' };
                                 const newDock = next[controlsDock] || 'bottom';
                                 setControlsDock(newDock);
-                                toast(`Meeting controls docked to ${newDock.toUpperCase()}`, { duration: 1500 });
+                                toast(`Controls docked to ${newDock.toUpperCase()}`, { duration: 1500 });
                             }}
                             className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full transition flex items-center justify-center"
                             title={`Controls Dock: ${controlsDock.toUpperCase()} (Click to cycle Top/Bottom/Left/Right)`}
@@ -2174,9 +2551,9 @@ export default function MeetingRoomPage() {
                             <Move className="w-3.5 h-3.5 text-primary-400" />
                         </button>
 
-                        {/* End / Leave Meeting */}
+                        {/* End / Leave Meeting (with 5-second countdown & cancel) */}
                         <button
-                            onClick={handleEndOrLeave}
+                            onClick={handleInitiateLeave}
                             className="p-1.5 bg-red-600 hover:bg-red-500 text-white rounded-full transition flex items-center justify-center shadow-lg shadow-red-600/30"
                             title={isInstructor ? 'End Meeting for All' : 'Leave Meeting'}
                         >

@@ -394,6 +394,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Set Active Presentation Space (whiteboard, vc_tiles, screen_share)
+  socket.on('meeting:set-active-space', (data) => {
+    const { roomId, space } = data || {};
+    if (roomId && space) {
+      io.to(`meeting-${roomId}`).emit('meeting:active-space-changed', {
+        space,
+        senderSocketId: socket.id
+      });
+    }
+  });
+
   // End meeting for everyone
   socket.on('meeting:end-session', (data) => {
     const { roomId } = data || {};
