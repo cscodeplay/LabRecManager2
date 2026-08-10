@@ -34,7 +34,7 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
                     OR: [{ targetStudentId: userId }, { targetClassId: { in: classIds } }], 
                     actualEndTime: null
                 } 
-            }),
+            }).catch(() => 0),
             // Get grades for avg score calculation
             prisma.grade.findMany({
                 where: {
@@ -63,7 +63,7 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
                     OR: [{ targetStudentId: userId }, { targetClassId: { in: classIds } }],
                     actualEndTime: { not: null }
                 } 
-            }),
+            }).catch(() => 0),
             avgScore,
             totalGrades: grades.length
         };
@@ -76,7 +76,7 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
                     status: { in: ['submitted', 'under_review'] }
                 }
             }),
-            prisma.meeting.count({ where: { hostId: userId, actualEndTime: null } }),
+            prisma.meeting.count({ where: { hostId: userId, actualEndTime: null } }).catch(() => 0),
             prisma.classEnrollment.count({
                 where: {
                     class: {
@@ -105,7 +105,7 @@ router.get('/stats', authenticate, asyncHandler(async (req, res) => {
             prisma.class.count({ where: { schoolId, ...(sessionId && { academicYearId: sessionId }) } }),
             prisma.assignment.count({ where: { schoolId, ...(sessionId && { academicYearId: sessionId }) } }),
             prisma.submission.count({ where: { ...(sessionId && { assignment: { academicYearId: sessionId } }) } }),
-            prisma.meeting.count({ where: { schoolId } }),
+            prisma.meeting.count({ where: { schoolId } }).catch(() => 0),
             prisma.lab.count({ where: { schoolId, status: 'active' } }),
             prisma.lab.count({ where: { schoolId, status: 'maintenance' } })
         ]);

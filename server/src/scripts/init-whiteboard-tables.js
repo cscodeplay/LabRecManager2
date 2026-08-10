@@ -101,7 +101,94 @@ async function initTables() {
             );
         `);
 
-        console.log('Whiteboard tables verified/created successfully.');
+        // Ensure meeting-related enums exist
+        await prisma.$executeRawUnsafe(`
+            DO $$ BEGIN
+                CREATE TYPE "MeetingMode" AS ENUM ('online', 'offline', 'recorded');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
+        `);
+
+        await prisma.$executeRawUnsafe(`
+            DO $$ BEGIN
+                CREATE TYPE "MeetingStatus" AS ENUM ('scheduled', 'in_progress', 'completed', 'cancelled', 'rescheduled', 'no_show');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
+        `);
+
+        await prisma.$executeRawUnsafe(`
+            DO $$ BEGIN
+                CREATE TYPE "ParticipantStatus" AS ENUM ('waiting', 'admitted', 'in_session', 'left', 'rejected');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
+        `);
+
+        // Ensure meetings table exists
+        await prisma.$executeRawUnsafe(`
+            CREATE TABLE IF NOT EXISTS "meetings" (
+                "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+                "school_id" UUID NOT NULL,
+                "title" VARCHAR(255) NOT NULL,
+                "type" VARCHAR(50) DEFAULT 'instant',
+                "target_class_id" UUID,
+                "target_group_id" UUID,
+                "target_student_id" UUID,
+                "submission_id" UUID,
+                "host_id" UUID NOT NULL,
+                "scheduled_at" TIMESTAMP(6),
+                "duration_minutes" INTEGER DEFAULT 10,
+                "actual_start_time" TIMESTAMP(6),
+                "actual_end_time" TIMESTAMP(6),
+                "mode" "MeetingMode" DEFAULT 'online',
+                "meeting_link" TEXT,
+                "recording_url" TEXT,
+                "questions_asked" JSONB,
+                "student_responses" JSONB,
+                "marks_obtained" DECIMAL(5,2),
+                "max_marks" DECIMAL(5,2),
+                "performance_rating" INTEGER,
+                "examiner_remarks" TEXT,
+                "examiner_remarks_hindi" TEXT,
+                "improvement_suggestions" TEXT,
+                "status" "MeetingStatus" DEFAULT 'scheduled',
+                "created_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+                "updated_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+                "scheduled_end_time" TIMESTAMP(6),
+                "auto_start" BOOLEAN DEFAULT true,
+                "recording_file_path" TEXT,
+                "recording_size_bytes" INTEGER,
+                "recording_duration_seconds" INTEGER,
+                CONSTRAINT "meetings_pkey" PRIMARY KEY ("id"),
+                CONSTRAINT "meetings_school_id_fkey" FOREIGN KEY ("school_id") REFERENCES "schools"("id") ON DELETE CASCADE ON UPDATE NO ACTION,
+                CONSTRAINT "meetings_host_id_fkey" FOREIGN KEY ("host_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION
+            );
+        `);
+
+        // Ensure meeting_participants table exists
+        await prisma.$executeRawUnsafe(`
+            CREATE TABLE IF NOT EXISTS "meeting_participants" (
+                "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+                "session_id" UUID NOT NULL,
+                "user_id" UUID NOT NULL,
+                "role" VARCHAR(50) DEFAULT 'student',
+                "status" "ParticipantStatus" DEFAULT 'waiting',
+                "joined_waiting_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+                "admitted_at" TIMESTAMP(6),
+                "left_at" TIMESTAMP(6),
+                "socket_id" VARCHAR(255),
+                "is_video_enabled" BOOLEAN DEFAULT false,
+                "is_audio_enabled" BOOLEAN DEFAULT false,
+                CONSTRAINT "meeting_participants_pkey" PRIMARY KEY ("id"),
+                CONSTRAINT "meeting_participants_session_id_fkey" FOREIGN KEY ("session_id") REFERENCES "meetings"("id") ON DELETE CASCADE ON UPDATE NO ACTION,
+                CONSTRAINT "meeting_participants_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION,
+                CONSTRAINT "meeting_participants_session_user_unique" UNIQUE ("session_id", "user_id")
+            );
+        `);
+
+        console.log('Whiteboard and Meeting tables verified/created successfully.');
     } catch (e) {
         console.error('Error creating whiteboard tables:', e);
     }
