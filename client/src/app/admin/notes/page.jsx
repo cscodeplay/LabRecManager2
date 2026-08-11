@@ -8,7 +8,7 @@ import {
     Search, LayoutGrid, List, ArrowUpDown, ArrowUp, ArrowDown,
     ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
     Eye, Table, Link2, Image as ImageIcon, Save, CheckCircle2,
-    RotateCcw, Sparkles, Copy, ExternalLink, Calendar
+    RotateCcw, Sparkles, Copy, ExternalLink, Calendar, Frame, Highlighter
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
@@ -25,6 +25,12 @@ const FONT_SIZES = [
     '20px', '22px', '24px', '28px', '32px', '36px', '48px', '72px'
 ];
 
+// Rich font families
+const FONT_FAMILIES = [
+    'arial', 'trebuchet-ms', 'inter', 'roboto', 'times-new-roman',
+    'georgia', 'garamond', 'courier-new', 'verdana', 'tahoma', 'impact', 'comic-sans'
+];
+
 // Rich color palette
 const COLOR_PALETTE = [
     '#000000', '#1e293b', '#475569', '#64748b', '#94a3b8', '#cbd5e1', '#ffffff',
@@ -35,6 +41,33 @@ const COLOR_PALETTE = [
     '#6366f1', '#818cf8', '#7c3aed', '#8b5cf6', '#9333ea', '#a855f7', '#c026d3',
     '#d946ef', '#db2777', '#ec4899', '#e11d48', '#f43f5e'
 ];
+
+// Reusable text highlighter for search matches
+function HighlightText({ text, query, className = '' }) {
+    if (!text) return null;
+    if (!query || !query.trim()) return <span className={className}>{text}</span>;
+
+    const escapedQuery = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedQuery})`, 'gi');
+    const parts = String(text).split(regex);
+
+    return (
+        <span className={className}>
+            {parts.map((part, index) =>
+                regex.test(part) ? (
+                    <mark
+                        key={index}
+                        className="bg-yellow-300 text-slate-900 font-bold px-1 py-0.5 rounded-sm shadow-xs border-b-2 border-yellow-500"
+                    >
+                        {part}
+                    </mark>
+                ) : (
+                    part
+                )
+            )}
+        </span>
+    );
+}
 
 export default function AdminNotesPage() {
     const router = useRouter();
@@ -50,10 +83,18 @@ export default function AdminNotesPage() {
     const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
     const [showModal, setShowModal] = useState(false);
     const [viewingNote, setViewingNote] = useState(null);
+
+    // Table Insertion Modal states
     const [showTableModal, setShowTableModal] = useState(false);
     const [tableRows, setTableRows] = useState(3);
     const [tableCols, setTableCols] = useState(3);
     const [tableHasHeader, setTableHasHeader] = useState(true);
+    const [tableBorderStyle, setTableBorderStyle] = useState('table-bordered');
+
+    // Image Frame Insertion Modal states
+    const [showImageFrameModal, setShowImageFrameModal] = useState(false);
+    const [imageFrameStyle, setImageFrameStyle] = useState('img-frame-shadow');
+    const [imageUrlInput, setImageUrlInput] = useState('');
 
     // Form state
     const [formData, setFormData] = useState({ title: '', content: '' });
@@ -73,7 +114,7 @@ export default function AdminNotesPage() {
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [jumpPageInput, setJumpPageInput] = useState('');
 
-    // Register Quill size whitelist on client side
+    // Register Quill size and font whitelists on client side
     useEffect(() => {
         if (typeof window !== 'undefined') {
             try {
@@ -82,9 +123,13 @@ export default function AdminNotesPage() {
                     const Size = Quill.import('attributors/style/size');
                     Size.whitelist = FONT_SIZES;
                     Quill.register(Size, true);
+
+                    const Font = Quill.import('attributors/style/font');
+                    Font.whitelist = FONT_FAMILIES;
+                    Quill.register(Font, true);
                 }
             } catch (err) {
-                console.error('Quill size whitelist registration failed:', err);
+                console.error('Quill size/font whitelist registration failed:', err);
             }
         }
     }, []);
@@ -107,14 +152,15 @@ export default function AdminNotesPage() {
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.key === 'Escape') {
-                if (showTableModal) setShowTableModal(false);
+                if (showImageFrameModal) setShowImageFrameModal(false);
+                else if (showTableModal) setShowTableModal(false);
                 else if (viewingNote) setViewingNote(null);
                 else if (showModal) setShowModal(false);
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [showTableModal, viewingNote, showModal]);
+    }, [showImageFrameModal, showTableModal, viewingNote, showModal]);
 
     // Auth check & load notes
     useEffect(() => {
@@ -273,7 +319,10 @@ export default function AdminNotesPage() {
                         if (quillRef.current) {
                             const editor = quillRef.current.getEditor();
                             const range = editor.getSelection(true) || { index: editor.getLength(), length: 0 };
-                            editor.insertEmbed(range.index, 'image', base64);
+                            editor.clipboard.dangerouslyPasteHTML(
+                                range.index,
+                                `<img src="${base64}" class="img-frame-shadow" alt="Pasted Image" /><p><br></p>`
+                            );
                             editor.setSelection(range.index + 1);
                             toast.success('Image pasted from clipboard!', { icon: '📷' });
                         }
@@ -285,13 +334,13 @@ export default function AdminNotesPage() {
         }
     };
 
-    // Insert Table into Quill Editor
+    // Insert Table into Quill Editor with chosen border style
     const handleInsertTable = () => {
         if (!quillRef.current) return;
         const rows = Math.max(1, Math.min(20, tableRows));
         const cols = Math.max(1, Math.min(10, tableCols));
 
-        let tableHtml = '<table class="notes-table"><tbody>';
+        let tableHtml = `<table class="notes-table ${tableBorderStyle}"><tbody>`;
         if (tableHasHeader) {
             tableHtml += '<tr>';
             for (let c = 1; c <= cols; c++) {
@@ -315,10 +364,41 @@ export default function AdminNotesPage() {
         toast.success(`Inserted ${rows}x${cols} table!`);
     };
 
-    // ReactQuill custom toolbar modules
+    // Insert Styled Image Frame into Quill Editor
+    const handleInsertFramedImage = (imageUrl) => {
+        if (!quillRef.current) return;
+        const urlToUse = imageUrl || imageUrlInput;
+        if (!urlToUse || !urlToUse.trim()) {
+            toast.error('Please enter a valid image URL or choose a file');
+            return;
+        }
+
+        const imgHtml = `<img src="${urlToUse.trim()}" class="${imageFrameStyle}" alt="Framed Image" /><p><br></p>`;
+        const editor = quillRef.current.getEditor();
+        const range = editor.getSelection(true) || { index: editor.getLength(), length: 0 };
+        editor.clipboard.dangerouslyPasteHTML(range.index, imgHtml);
+        setShowImageFrameModal(false);
+        setImageUrlInput('');
+        toast.success('Inserted framed image!');
+    };
+
+    const handleImageFileUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const base64 = event.target.result;
+                handleInsertFramedImage(base64);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    // ReactQuill custom toolbar modules with font families & sizes
     const quillModules = useMemo(() => ({
         toolbar: {
             container: [
+                [{ 'font': FONT_FAMILIES }],
                 [{ 'header': [1, 2, 3, 4, false] }],
                 [{ 'size': FONT_SIZES }],
                 ['bold', 'italic', 'underline', 'strike'],
@@ -414,6 +494,20 @@ export default function AdminNotesPage() {
         }
     };
 
+    // Generate highlighted HTML for View Modal
+    const getHighlightedModalContent = (htmlContent, query) => {
+        const cleanHtml = DOMPurify.sanitize(htmlContent || '', { ADD_ATTR: ['target', 'rel'] });
+        if (!query || !query.trim()) return cleanHtml;
+
+        const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Match text nodes outside tags
+        const regex = new RegExp(`(?![^<]*>)(${escaped})`, 'gi');
+        return cleanHtml.replace(
+            regex,
+            '<mark class="bg-yellow-300 text-slate-900 font-bold px-1 py-0.5 rounded-sm shadow-xs border-b-2 border-yellow-500">$1</mark>'
+        );
+    };
+
     if (!_hasHydrated || loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -495,13 +589,15 @@ export default function AdminNotesPage() {
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Search & Sorting Toolbar */}
                 <div className="card p-4 mb-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-                    {/* Search Bar */}
+                    {/* Search Bar with Highlight Alert */}
                     <div className="relative w-full md:w-96">
                         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <input
                             type="text"
                             placeholder="Search by title, content, or author..."
-                            className="input pl-10 pr-9 py-2 text-sm w-full"
+                            className={`input pl-10 pr-9 py-2 text-sm w-full transition ${
+                                searchQuery ? 'border-yellow-400 ring-2 ring-yellow-200/60 bg-yellow-50/20' : ''
+                            }`}
                             value={searchQuery}
                             onChange={(e) => {
                                 setSearchQuery(e.target.value);
@@ -512,6 +608,7 @@ export default function AdminNotesPage() {
                             <button
                                 onClick={() => setSearchQuery('')}
                                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                title="Clear Search"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -519,9 +616,16 @@ export default function AdminNotesPage() {
                     </div>
 
                     {/* Quick Sort Dropdown & Items Per Page */}
-                    <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+                    <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end flex-wrap">
+                        {searchQuery && (
+                            <div className="flex items-center gap-1.5 text-xs text-amber-800 bg-amber-100/80 px-2.5 py-1 rounded-lg border border-amber-200 font-medium">
+                                <Highlighter className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Highlighting matches for: <strong>"{searchQuery}"</strong></span>
+                            </div>
+                        )}
+
                         <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
-                            <span>Sort By:</span>
+                            <span>Sort:</span>
                             <select
                                 value={`${sortBy}-${sortOrder}`}
                                 onChange={(e) => {
@@ -572,7 +676,7 @@ export default function AdminNotesPage() {
                         </h3>
                         <p className="text-slate-500 text-sm mb-6 max-w-md mx-auto">
                             {searchQuery
-                                ? `No notes matched your search "${searchQuery}". Try clearing search filters.`
+                                ? `No notes matched your search query "${searchQuery}". Try searching with different keywords.`
                                 : 'Create notes to store build configurations, team announcements, or meeting documentation.'}
                         </p>
                         {searchQuery ? (
@@ -597,76 +701,74 @@ export default function AdminNotesPage() {
                         {/* 1. GRID VIEW */}
                         {viewMode === 'grid' && (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                                {paginatedNotes.map((note) => (
-                                    <div
-                                        key={note.id}
-                                        onClick={() => setViewingNote(note)}
-                                        className="card card-hover p-5 cursor-pointer flex flex-col justify-between border-slate-200 hover:border-primary-300 transition group relative"
-                                    >
-                                        <div>
-                                            <div className="flex items-start justify-between gap-3 mb-2.5">
-                                                <h3 className="font-bold text-base text-slate-900 group-hover:text-primary-600 transition line-clamp-1">
-                                                    {note.title}
-                                                </h3>
+                                {paginatedNotes.map((note) => {
+                                    const plainSnippet = note.content?.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || '';
+                                    return (
+                                        <div
+                                            key={note.id}
+                                            onClick={() => setViewingNote(note)}
+                                            className="card card-hover p-5 cursor-pointer flex flex-col justify-between border-slate-200 hover:border-primary-300 transition group relative"
+                                        >
+                                            <div>
+                                                <div className="flex items-start justify-between gap-3 mb-2.5">
+                                                    <h3 className="font-bold text-base text-slate-900 group-hover:text-primary-600 transition line-clamp-1">
+                                                        <HighlightText text={note.title} query={searchQuery} />
+                                                    </h3>
+                                                </div>
+
+                                                {/* Text snippet with yellow search highlight */}
+                                                <div className="text-slate-500 text-xs line-clamp-3 mb-4 leading-relaxed">
+                                                    <HighlightText text={plainSnippet || 'No text preview available'} query={searchQuery} />
+                                                </div>
                                             </div>
 
-                                            {/* Preview snippet */}
-                                            <div
-                                                className="prose prose-sm text-slate-500 text-xs line-clamp-3 mb-4 overflow-hidden"
-                                                dangerouslySetInnerHTML={{
-                                                    __html: typeof window !== 'undefined'
-                                                        ? DOMPurify.sanitize(note.content?.replace(/<table[\s\S]*?<\/table>/gi, '[Table]'))
-                                                        : ''
-                                                }}
-                                            />
-                                        </div>
-
-                                        <div className="pt-3 border-t border-slate-100 flex flex-col gap-3">
-                                            {/* Author and Date metadata */}
-                                            <div className="flex items-center justify-between text-xs text-slate-500">
-                                                <div className="flex items-center gap-1.5">
-                                                    <div className="w-5 h-5 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-[10px]">
-                                                        {note.author?.firstName?.charAt(0) || 'A'}
+                                            <div className="pt-3 border-t border-slate-100 flex flex-col gap-3">
+                                                {/* Author and Date metadata */}
+                                                <div className="flex items-center justify-between text-xs text-slate-500">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div className="w-5 h-5 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-[10px]">
+                                                            {note.author?.firstName?.charAt(0) || 'A'}
+                                                        </div>
+                                                        <span className="font-medium text-slate-700 truncate max-w-[120px]">
+                                                            <HighlightText text={`${note.author?.firstName || ''} ${note.author?.lastName || ''}`} query={searchQuery} />
+                                                        </span>
                                                     </div>
-                                                    <span className="font-medium text-slate-700 truncate max-w-[120px]">
-                                                        {note.author?.firstName} {note.author?.lastName}
+                                                    <span className="text-[11px] text-slate-400 font-mono" title={`Updated: ${formatDate(note.updatedAt || note.createdAt)}`}>
+                                                        {new Date(note.updatedAt || note.createdAt).toLocaleDateString()}
                                                     </span>
                                                 </div>
-                                                <span className="text-[11px] text-slate-400 font-mono" title={`Updated: ${formatDate(note.updatedAt || note.createdAt)}`}>
-                                                    {new Date(note.updatedAt || note.createdAt).toLocaleDateString()}
-                                                </span>
-                                            </div>
 
-                                            {/* Single-row Icon Actions Only */}
-                                            <div
-                                                className="flex items-center justify-end gap-1.5 pt-1"
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
-                                                <button
-                                                    onClick={() => setViewingNote(note)}
-                                                    className="p-1.5 rounded-lg text-slate-500 hover:text-primary-600 hover:bg-primary-50 transition"
-                                                    title="View Note"
+                                                {/* Single-row Icon Actions Only */}
+                                                <div
+                                                    className="flex items-center justify-end gap-1.5 pt-1"
+                                                    onClick={(e) => e.stopPropagation()}
                                                 >
-                                                    <Eye className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleEdit(note)}
-                                                    className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition"
-                                                    title="Edit Note"
-                                                >
-                                                    <Edit3 className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => handleDelete(note.id, e)}
-                                                    className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 transition"
-                                                    title="Delete Note"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                                    <button
+                                                        onClick={() => setViewingNote(note)}
+                                                        className="p-1.5 rounded-lg text-slate-500 hover:text-primary-600 hover:bg-primary-50 transition"
+                                                        title="View Note"
+                                                    >
+                                                        <Eye className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleEdit(note)}
+                                                        className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition"
+                                                        title="Edit Note"
+                                                    >
+                                                        <Edit3 className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => handleDelete(note.id, e)}
+                                                        className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 transition"
+                                                        title="Delete Note"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
 
@@ -733,62 +835,67 @@ export default function AdminNotesPage() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-sm">
-                                            {paginatedNotes.map((note) => (
-                                                <tr
-                                                    key={note.id}
-                                                    onClick={() => setViewingNote(note)}
-                                                    className="hover:bg-primary-50/40 transition cursor-pointer group"
-                                                >
-                                                    <td className="px-5 py-3.5 max-w-xs">
-                                                        <div className="font-semibold text-slate-900 group-hover:text-primary-600 transition truncate">
-                                                            {note.title}
-                                                        </div>
-                                                        <div className="text-xs text-slate-400 truncate mt-0.5">
-                                                            {note.content?.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || 'No text preview'}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-3.5 text-slate-600 text-xs hidden sm:table-cell whitespace-nowrap">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-[11px] border">
-                                                                {note.author?.firstName?.charAt(0) || 'A'}
+                                            {paginatedNotes.map((note) => {
+                                                const plainSnippet = note.content?.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || '';
+                                                return (
+                                                    <tr
+                                                        key={note.id}
+                                                        onClick={() => setViewingNote(note)}
+                                                        className="hover:bg-primary-50/40 transition cursor-pointer group"
+                                                    >
+                                                        <td className="px-5 py-3.5 max-w-xs">
+                                                            <div className="font-semibold text-slate-900 group-hover:text-primary-600 transition truncate">
+                                                                <HighlightText text={note.title} query={searchQuery} />
                                                             </div>
-                                                            <span>{note.author?.firstName} {note.author?.lastName}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-3.5 text-slate-500 text-xs font-mono hidden md:table-cell whitespace-nowrap">
-                                                        {formatDate(note.createdAt)}
-                                                    </td>
-                                                    <td className="px-4 py-3.5 text-slate-700 text-xs font-mono font-medium whitespace-nowrap">
-                                                        {formatDate(note.updatedAt || note.createdAt)}
-                                                    </td>
-                                                    <td className="px-5 py-3.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                                        {/* Icons Only in a Single Row */}
-                                                        <div className="flex items-center justify-end gap-1">
-                                                            <button
-                                                                onClick={() => setViewingNote(note)}
-                                                                className="p-1.5 rounded-lg text-slate-500 hover:text-primary-600 hover:bg-primary-50 transition"
-                                                                title="View Note"
-                                                            >
-                                                                <Eye className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleEdit(note)}
-                                                                className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition"
-                                                                title="Edit Note"
-                                                            >
-                                                                <Edit3 className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={(e) => handleDelete(note.id, e)}
-                                                                className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 transition"
-                                                                title="Delete Note"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                                            <div className="text-xs text-slate-400 truncate mt-0.5">
+                                                                <HighlightText text={plainSnippet || 'No text preview'} query={searchQuery} />
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3.5 text-slate-600 text-xs hidden sm:table-cell whitespace-nowrap">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-[11px] border">
+                                                                    {note.author?.firstName?.charAt(0) || 'A'}
+                                                                </div>
+                                                                <span>
+                                                                    <HighlightText text={`${note.author?.firstName || ''} ${note.author?.lastName || ''}`} query={searchQuery} />
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3.5 text-slate-500 text-xs font-mono hidden md:table-cell whitespace-nowrap">
+                                                            {formatDate(note.createdAt)}
+                                                        </td>
+                                                        <td className="px-4 py-3.5 text-slate-700 text-xs font-mono font-medium whitespace-nowrap">
+                                                            {formatDate(note.updatedAt || note.createdAt)}
+                                                        </td>
+                                                        <td className="px-5 py-3.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                            {/* Icons Only in a Single Row */}
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                <button
+                                                                    onClick={() => setViewingNote(note)}
+                                                                    className="p-1.5 rounded-lg text-slate-500 hover:text-primary-600 hover:bg-primary-50 transition"
+                                                                    title="View Note"
+                                                                >
+                                                                    <Eye className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleEdit(note)}
+                                                                    className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition"
+                                                                    title="Edit Note"
+                                                                >
+                                                                    <Edit3 className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => handleDelete(note.id, e)}
+                                                                    className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 transition"
+                                                                    title="Delete Note"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -913,7 +1020,9 @@ export default function AdminNotesPage() {
                         {/* Header */}
                         <div className="p-6 border-b border-slate-100 flex items-start justify-between gap-4 bg-slate-50/50">
                             <div>
-                                <h2 className="text-2xl font-bold text-slate-900">{viewingNote.title}</h2>
+                                <h2 className="text-2xl font-bold text-slate-900">
+                                    <HighlightText text={viewingNote.title} query={searchQuery} />
+                                </h2>
                                 <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 mt-2">
                                     <div className="flex items-center gap-1.5">
                                         <User className="w-3.5 h-3.5 text-primary-600" />
@@ -951,13 +1060,13 @@ export default function AdminNotesPage() {
                             </div>
                         </div>
 
-                        {/* Content Area with Rich Typography and Table Styling */}
+                        {/* Content Area with Rich Typography and Table Styling and Highlighted Search Matches */}
                         <div className="p-6 md:p-8 overflow-y-auto flex-1 bg-slate-50/40">
                             <div
                                 className="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-slate-200 notes-content prose max-w-none"
                                 dangerouslySetInnerHTML={{
                                     __html: typeof window !== 'undefined'
-                                        ? DOMPurify.sanitize(viewingNote.content, { ADD_ATTR: ['target', 'rel'] })
+                                        ? getHighlightedModalContent(viewingNote.content, searchQuery)
                                         : ''
                                 }}
                             />
@@ -1089,23 +1198,34 @@ export default function AdminNotesPage() {
                                 />
                             </div>
 
-                            {/* Extra Quick Tools Bar (Insert Table, Paste Hint) */}
-                            <div className="flex items-center justify-between gap-2 pt-1">
+                            {/* Extra Quick Tools Bar (Insert Table, Image Frame, Paste Hint) */}
+                            <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
                                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                                     Content & Formatting <span className="text-red-500">*</span>
                                 </label>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                     <button
                                         type="button"
                                         onClick={() => setShowTableModal(true)}
                                         className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition flex items-center gap-1.5 shadow-sm"
-                                        title="Insert customizable table"
+                                        title="Insert table with custom borders"
                                     >
                                         <Table className="w-3.5 h-3.5 text-primary-600" />
                                         <span>Insert Table</span>
                                     </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowImageFrameModal(true)}
+                                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition flex items-center gap-1.5 shadow-sm"
+                                        title="Insert image with custom frame & border styles"
+                                    >
+                                        <Frame className="w-3.5 h-3.5 text-indigo-600" />
+                                        <span>Framed Image</span>
+                                    </button>
+
                                     <span className="text-[11px] text-slate-400 hidden sm:inline">
-                                        💡 Tip: You can paste screenshots directly (<kbd className="font-mono px-1 py-0.5 bg-slate-100 rounded text-[10px]">Ctrl+V</kbd>)
+                                        💡 Paste screenshots directly (<kbd className="font-mono px-1 py-0.5 bg-slate-100 rounded text-[10px]">Ctrl+V</kbd>)
                                     </span>
                                 </div>
                             </div>
@@ -1121,7 +1241,7 @@ export default function AdminNotesPage() {
                                     value={formData.content}
                                     onChange={handleContentChange}
                                     modules={quillModules}
-                                    placeholder="Type your notes here... Use the toolbar above for custom font sizes, text & highlight colors, styles, tables, hyperlinks, and image insertion."
+                                    placeholder="Type your notes here... Use the toolbar above for custom fonts (Arial, Trebuchet MS, Roboto, etc.), sizes (8px to 72px), colors, tables, and hyperlinks."
                                     className="flex-1"
                                 />
                             </div>
@@ -1155,14 +1275,14 @@ export default function AdminNotesPage() {
                 </div>
             )}
 
-            {/* Table Insertion Modal */}
+            {/* Table Insertion Modal with Border Styles */}
             {showTableModal && (
                 <div
                     className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
                     onClick={() => setShowTableModal(false)}
                 >
                     <div
-                        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-slate-100"
+                        className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 border border-slate-100"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-4">
@@ -1178,29 +1298,51 @@ export default function AdminNotesPage() {
                             </button>
                         </div>
 
-                        <div className="space-y-3 mb-5">
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Rows</label>
-                                <input
-                                    type="number"
-                                    min={1}
-                                    max={20}
-                                    value={tableRows}
-                                    onChange={(e) => setTableRows(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                                    className="input py-2 text-sm w-full"
-                                />
+                        <div className="space-y-4 mb-6">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">Rows</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={20}
+                                        value={tableRows}
+                                        onChange={(e) => setTableRows(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                                        className="input py-2 text-sm w-full"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">Columns</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={10}
+                                        value={tableCols}
+                                        onChange={(e) => setTableCols(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                                        className="input py-2 text-sm w-full"
+                                    />
+                                </div>
                             </div>
+
+                            {/* Table Border Style Selection */}
                             <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Columns</label>
-                                <input
-                                    type="number"
-                                    min={1}
-                                    max={10}
-                                    value={tableCols}
-                                    onChange={(e) => setTableCols(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                                    className="input py-2 text-sm w-full"
-                                />
+                                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                                    Table Border Style
+                                </label>
+                                <select
+                                    value={tableBorderStyle}
+                                    onChange={(e) => setTableBorderStyle(e.target.value)}
+                                    className="input py-2 text-xs w-full font-medium"
+                                >
+                                    <option value="table-bordered">Standard Clean (1px slate borders)</option>
+                                    <option value="table-minimal">Minimalist Horizontal (Subtle dividers)</option>
+                                    <option value="table-bold">Bold Blueprint (2px dark slate grid)</option>
+                                    <option value="table-dashed">Dashed Modern (Dashed borders)</option>
+                                    <option value="table-primary">Primary Indigo Accent (Colored borders & header)</option>
+                                    <option value="table-emerald">Emerald Green Accent (Soft green header & border)</option>
+                                </select>
                             </div>
+
                             <div className="flex items-center gap-2 pt-1">
                                 <input
                                     type="checkbox"
@@ -1209,7 +1351,7 @@ export default function AdminNotesPage() {
                                     onChange={(e) => setTableHasHeader(e.target.checked)}
                                     className="w-4 h-4 text-primary-600 rounded border-slate-300 focus:ring-primary-500"
                                 />
-                                <label htmlFor="headerRow" className="text-xs text-slate-700 font-medium">
+                                <label htmlFor="headerRow" className="text-xs text-slate-700 font-medium cursor-pointer">
                                     Include Table Header Row
                                 </label>
                             </div>
@@ -1226,7 +1368,102 @@ export default function AdminNotesPage() {
                                 onClick={handleInsertTable}
                                 className="btn btn-primary text-xs shadow-md"
                             >
-                                Insert
+                                Insert Table
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Image Frame & Border Style Modal */}
+            {showImageFrameModal && (
+                <div
+                    className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+                    onClick={() => setShowImageFrameModal(false)}
+                >
+                    <div
+                        className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 border border-slate-100"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <Frame className="w-5 h-5 text-indigo-600" />
+                                <h3 className="text-base font-bold text-slate-900">Insert Framed Image</h3>
+                            </div>
+                            <button
+                                onClick={() => setShowImageFrameModal(false)}
+                                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4 mb-6">
+                            {/* Frame Style Selection */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                                    Image Frame & Border Style
+                                </label>
+                                <select
+                                    value={imageFrameStyle}
+                                    onChange={(e) => setImageFrameStyle(e.target.value)}
+                                    className="input py-2 text-xs w-full font-medium"
+                                >
+                                    <option value="img-frame-shadow">Modern Shadow & Border (Rounded + Soft Shadow)</option>
+                                    <option value="img-frame-solid">Crisp Solid Border (3px dark outline)</option>
+                                    <option value="img-frame-glow">Primary Glow Frame (Indigo border + Glow shadow)</option>
+                                    <option value="img-frame-dashed">Dashed Blueprint Frame (2px dashed border + padding)</option>
+                                    <option value="img-frame-pill">Curved Pill (High-radius border)</option>
+                                    <option value="img-frame-polaroid">Polaroid Snapshot (White border with bottom caption pad)</option>
+                                </select>
+                            </div>
+
+                            {/* Image Source (URL or File) */}
+                            <div>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">
+                                    Image Web URL
+                                </label>
+                                <input
+                                    type="url"
+                                    placeholder="https://example.com/image.png"
+                                    value={imageUrlInput}
+                                    onChange={(e) => setImageUrlInput(e.target.value)}
+                                    className="input py-2 text-sm w-full"
+                                />
+                            </div>
+
+                            <div className="relative flex py-1 items-center">
+                                <div className="flex-grow border-t border-slate-200"></div>
+                                <span className="flex-shrink mx-3 text-xs text-slate-400 font-medium">OR Upload File</span>
+                                <div className="flex-grow border-t border-slate-200"></div>
+                            </div>
+
+                            <div>
+                                <label className="btn btn-secondary w-full text-xs cursor-pointer justify-center border-dashed border-2 py-3">
+                                    <ImageIcon className="w-4 h-4 mr-2 text-slate-500" />
+                                    Choose Image File from Device
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={handleImageFileUpload}
+                                    />
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2">
+                            <button
+                                onClick={() => setShowImageFrameModal(false)}
+                                className="btn btn-secondary text-xs"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => handleInsertFramedImage()}
+                                className="btn btn-primary text-xs shadow-md"
+                            >
+                                Insert Framed Image
                             </button>
                         </div>
                     </div>
