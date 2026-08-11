@@ -1,146 +1,152 @@
 'use client';
 
-import { useEffect } from 'react';
-import { AlertTriangle, Trash2, X, AlertCircle } from 'lucide-react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { AlertTriangle, Trash2, Info, HelpCircle, X } from 'lucide-react';
 
-/**
- * Reusable Confirmation Dialog Component
- * 
- * @param {boolean} isOpen - Whether dialog is visible
- * @param {function} onClose - Called when dialog is closed
- * @param {function} onConfirm - Called when user confirms action
- * @param {string} title - Dialog title
- * @param {string} message - Dialog message
- * @param {string} confirmText - Text for confirm button (default: "Confirm")
- * @param {string} cancelText - Text for cancel button (default: "Cancel")
- * @param {string} type - Type of dialog: "danger", "warning", "info" (default: "danger")
- * @param {boolean} loading - Whether confirm action is in progress
- */
-export default function ConfirmDialog({
-    isOpen,
-    onClose,
-    onConfirm,
-    title = 'Confirm Action',
-    message = 'Are you sure you want to proceed?',
-    confirmText = 'Confirm',
-    cancelText = 'Cancel',
-    type = 'danger',
-    loading = false
-}) {
-    // Close on escape key
+const ConfirmContext = createContext(null);
+
+export function ConfirmProvider({ children }) {
+    const [confirmState, setConfirmState] = useState(null);
+
+    const confirm = useCallback((options) => {
+        return new Promise((resolve) => {
+            setConfirmState({
+                title: options?.title || 'Confirm Action',
+                message: options?.message || 'Are you sure you want to proceed?',
+                confirmText: options?.confirmText || 'Confirm',
+                cancelText: options?.cancelText || 'Cancel',
+                type: options?.type || 'danger', // 'danger', 'warning', 'info'
+                resolve,
+            });
+        });
+    }, []);
+
+    const handleConfirm = () => {
+        if (confirmState?.resolve) {
+            confirmState.resolve(true);
+        }
+        setConfirmState(null);
+    };
+
+    const handleCancel = () => {
+        if (confirmState?.resolve) {
+            confirmState.resolve(false);
+        }
+        setConfirmState(null);
+    };
+
     useEffect(() => {
-        const handleEscape = (e) => {
-            if (e.key === 'Escape' && isOpen) {
-                onClose();
+        if (!confirmState) return;
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                handleCancel();
+            } else if (e.key === 'Enter') {
+                handleConfirm();
             }
         };
-        document.addEventListener('keydown', handleEscape);
-        return () => document.removeEventListener('keydown', handleEscape);
-    }, [isOpen, onClose]);
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [confirmState]);
 
-    // Prevent body scroll when dialog is open
-    useEffect(() => {
-        if (isOpen) {
-            document.body.style.overflow = 'hidden';
-        } else {
-            document.body.style.overflow = 'unset';
-        }
-        return () => {
-            document.body.style.overflow = 'unset';
-        };
-    }, [isOpen]);
-
-    if (!isOpen) return null;
-
-    const typeStyles = {
-        danger: {
-            iconBg: 'bg-red-100',
-            iconColor: 'text-red-600',
-            buttonBg: 'bg-red-600 hover:bg-red-700',
-            Icon: Trash2
-        },
-        warning: {
-            iconBg: 'bg-amber-100',
-            iconColor: 'text-amber-600',
-            buttonBg: 'bg-amber-600 hover:bg-amber-700',
-            Icon: AlertTriangle
-        },
-        info: {
-            iconBg: 'bg-blue-100',
-            iconColor: 'text-blue-600',
-            buttonBg: 'bg-blue-600 hover:bg-blue-700',
-            Icon: AlertCircle
+    const getTypeDetails = () => {
+        switch (confirmState?.type) {
+            case 'warning':
+                return {
+                    icon: <AlertTriangle className="w-6 h-6 text-amber-400" />,
+                    iconBg: 'bg-amber-500/20 border-amber-500/30 text-amber-400',
+                    confirmBtn: 'bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white shadow-lg shadow-amber-500/25',
+                    glowRing: 'ring-amber-500/20',
+                };
+            case 'info':
+                return {
+                    icon: <Info className="w-6 h-6 text-cyan-400" />,
+                    iconBg: 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400',
+                    confirmBtn: 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/25',
+                    glowRing: 'ring-cyan-500/20',
+                };
+            case 'danger':
+            default:
+                return {
+                    icon: <Trash2 className="w-6 h-6 text-rose-400" />,
+                    iconBg: 'bg-rose-500/20 border-rose-500/30 text-rose-400',
+                    confirmBtn: 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white shadow-lg shadow-rose-500/30',
+                    glowRing: 'ring-rose-500/20',
+                };
         }
     };
 
-    const styles = typeStyles[type] || typeStyles.danger;
-    const { Icon } = styles;
+    const typeDetails = getTypeDetails();
 
     return (
-        <div className="fixed inset-0 z-[100] overflow-y-auto">
-            {/* Backdrop */}
-            <div
-                className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
-                onClick={onClose}
-            />
+        <ConfirmContext.Provider value={confirm}>
+            {children}
 
-            {/* Dialog */}
-            <div className="flex min-h-full items-center justify-center p-4">
+            {confirmState && (
                 <div
-                    className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full transform transition-all animate-in zoom-in-95 duration-200"
-                    onClick={(e) => e.stopPropagation()}
+                    className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-150"
+                    onClick={handleCancel}
                 >
-                    {/* Close button */}
-                    <button
-                        onClick={onClose}
-                        className="absolute right-4 top-4 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                    <div
+                        className={`relative w-full max-w-md bg-slate-900/95 backdrop-blur-2xl border border-slate-700/80 rounded-2xl p-6 text-white shadow-2xl ring-4 ${typeDetails.glowRing} animate-in zoom-in-95 duration-200`}
+                        onClick={(e) => e.stopPropagation()}
                     >
-                        <X className="w-5 h-5" />
-                    </button>
+                        {/* Top Close Button */}
+                        <button
+                            onClick={handleCancel}
+                            className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
 
-                    <div className="p-6">
-                        {/* Icon */}
-                        <div className={`mx-auto w-14 h-14 rounded-full ${styles.iconBg} flex items-center justify-center mb-4`}>
-                            <Icon className={`w-7 h-7 ${styles.iconColor}`} />
+                        <div className="flex items-start gap-4">
+                            {/* Icon Badge */}
+                            <div className={`p-3 rounded-2xl border ${typeDetails.iconBg} flex items-center justify-center flex-shrink-0`}>
+                                {typeDetails.icon}
+                            </div>
+
+                            {/* Title & Message */}
+                            <div className="flex-1 pt-0.5">
+                                <h3 className="text-lg font-bold text-slate-100 mb-1.5">
+                                    {confirmState.title}
+                                </h3>
+                                <p className="text-sm text-slate-300/90 leading-relaxed">
+                                    {confirmState.message}
+                                </p>
+                            </div>
                         </div>
 
-                        {/* Title */}
-                        <h3 className="text-lg font-semibold text-slate-900 text-center mb-2">
-                            {title}
-                        </h3>
-
-                        {/* Message */}
-                        <p className="text-slate-600 text-center mb-6">
-                            {message}
-                        </p>
-
-                        {/* Actions */}
-                        <div className="flex gap-3">
+                        {/* Action Buttons */}
+                        <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-800">
                             <button
-                                onClick={onClose}
-                                disabled={loading}
-                                className="flex-1 py-2.5 px-4 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition disabled:opacity-50"
+                                type="button"
+                                onClick={handleCancel}
+                                className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700/80 border border-slate-700 rounded-xl transition"
                             >
-                                {cancelText}
+                                {confirmState.cancelText}
                             </button>
                             <button
-                                onClick={onConfirm}
-                                disabled={loading}
-                                className={`flex-1 py-2.5 px-4 rounded-lg text-white font-medium transition disabled:opacity-50 flex items-center justify-center gap-2 ${styles.buttonBg}`}
+                                type="button"
+                                onClick={handleConfirm}
+                                className={`px-5 py-2 text-xs font-semibold rounded-xl transition ${typeDetails.confirmBtn}`}
+                                autoFocus
                             >
-                                {loading ? (
-                                    <>
-                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                        Processing...
-                                    </>
-                                ) : (
-                                    confirmText
-                                )}
+                                {confirmState.confirmText}
                             </button>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
+            )}
+        </ConfirmContext.Provider>
     );
+}
+
+export function useConfirm() {
+    const context = useContext(ConfirmContext);
+    if (!context) {
+        // Fallback to window.confirm if used outside provider
+        return async (options) => {
+            return window.confirm(options?.message || options?.title || 'Are you sure?');
+        };
+    }
+    return context;
 }

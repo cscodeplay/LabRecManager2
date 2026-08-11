@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Users, Search, Plus, Book, BarChart3, Mail, KeyRound, ToggleLeft, ToggleRight, Trash2, Copy, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
+import { useConfirm } from '@/components/ConfirmDialog';
 import api, { adminAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 export default function UsersPage() {
     const router = useRouter();
+    const confirm = useConfirm();
     const { user, isAuthenticated, accessToken, _hasHydrated, selectedSessionId } = useAuthStore();
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -119,7 +121,15 @@ export default function UsersPage() {
 
     // Delete user
     const handleDeleteUser = async (u) => {
-        if (!confirm(`Are you sure you want to delete ${u.firstName} ${u.lastName}?`)) return;
+        const ok = await confirm({
+            title: `Delete User: ${u.firstName} ${u.lastName}`,
+            message: `Are you sure you want to permanently remove ${u.firstName} ${u.lastName} (${u.email || u.role})? All associated records may be impacted.`,
+            confirmText: 'Delete User',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!ok) return;
+
         try {
             await api.delete(`/users/${u.id}`);
             toast.success('User deleted');

@@ -52,6 +52,8 @@ function ThemeInitializer() {
     return null;
 }
 
+import { ConfirmProvider } from './ConfirmDialog';
+
 export function Providers({ children }) {
     const [queryClient] = useState(() => new QueryClient({
         defaultOptions: {
@@ -64,13 +66,15 @@ export function Providers({ children }) {
 
     return (
         <QueryClientProvider client={queryClient}>
-            <ThemeInitializer />
-            <LanguageInitializer />
-            <AppLayout>
-                {children}
-            </AppLayout>
-            <WhiteboardNotificationListener />
-            <TimetableNotificationListener />
+            <ConfirmProvider>
+                <ThemeInitializer />
+                <LanguageInitializer />
+                <AppLayout>
+                    {children}
+                </AppLayout>
+                <WhiteboardNotificationListener />
+                <TimetableNotificationListener />
+            </ConfirmProvider>
         </QueryClientProvider>
     );
 }

@@ -12,10 +12,11 @@ import { useAuthStore, useThemeStore, useLanguageStore } from '@/lib/store';
 import { authAPI, gradeScalesAPI, devicesAPI, academicYearsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
-import ConfirmDialog from '@/components/ConfirmDialog';
+import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
 
 export default function SettingsPage() {
     const router = useRouter();
+    const confirm = useConfirm();
     const searchParams = useSearchParams();
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
     const [loading, setLoading] = useState(true);
@@ -336,7 +337,15 @@ export default function SettingsPage() {
     };
 
     const handleDeleteSession = async (id) => {
-        if (!confirm('Are you sure you want to delete this session? This cannot be undone.')) return;
+        const ok = await confirm({
+            title: 'Delete Academic Session?',
+            message: 'Are you sure you want to permanently delete this academic session? Associated class & assignment filters may be impacted.',
+            confirmText: 'Delete Session',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!ok) return;
+
         try {
             await academicYearsAPI.delete(id);
             toast.success('Session deleted');

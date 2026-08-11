@@ -10,6 +10,7 @@ import { useAuthStore } from '@/lib/store';
 import { calendarAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import { useConfirm } from '@/components/ConfirmDialog';
 
 const EVENT_TYPES = {
     gazetted_holiday: { label: 'Gazetted Holiday', icon: Flag, color: 'bg-red-100 text-red-700 border-red-200' },
@@ -25,6 +26,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 
 export default function AdminCalendarPage() {
     const router = useRouter();
+    const confirm = useConfirm();
     const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
 
     const [loading, setLoading] = useState(true);
@@ -123,7 +125,15 @@ export default function AdminCalendarPage() {
     };
 
     const handleDeleteEvent = async (eventId) => {
-        if (!confirm('Delete this event?')) return;
+        const ok = await confirm({
+            title: 'Delete Calendar Event?',
+            message: 'Are you sure you want to delete this event from the academic calendar?',
+            confirmText: 'Delete Event',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!ok) return;
+
         try {
             await calendarAPI.deleteEvent(eventId);
             toast.success('Event deleted');

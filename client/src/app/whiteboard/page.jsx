@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Pencil, Users, Share2, Video, VideoOff, Plus, Trash2, Copy, Image as ImageIcon, Edit3 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
+import { useConfirm } from '@/components/ConfirmDialog';
 import toast from 'react-hot-toast';
 import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
@@ -14,6 +15,7 @@ import api from '@/lib/api';
 
 export default function WhiteboardPage() {
     const router = useRouter();
+    const confirm = useConfirm();
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
 
     // Whiteboard state
@@ -166,7 +168,14 @@ export default function WhiteboardPage() {
 
     const handleDeleteFile = async (id, e) => {
         e.stopPropagation();
-        if (!confirm('Are you sure you want to delete this whiteboard?')) return;
+        const ok = await confirm({
+            title: 'Delete Whiteboard?',
+            message: 'Are you sure you want to permanently delete this whiteboard? Any drawings and elements will be removed.',
+            confirmText: 'Delete Whiteboard',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!ok) return;
         
         try {
             const res = await api.delete(`/whiteboard/files/${id}`);

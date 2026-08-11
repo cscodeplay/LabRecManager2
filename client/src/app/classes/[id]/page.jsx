@@ -9,10 +9,12 @@ import { classesAPI, labsAPI, trainingAPI, usersAPI } from '@/lib/api';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 export default function ClassDetailPage() {
     const router = useRouter();
+    const confirm = useConfirm();
     const params = useParams();
     const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [classData, setClassData] = useState(null);
@@ -187,7 +189,15 @@ export default function ClassDetailPage() {
 
     // Delete group handler
     const handleDeleteGroup = async (groupId) => {
-        if (!confirm('Are you sure you want to delete this group?')) return;
+        const ok = await confirm({
+            title: 'Delete Student Group?',
+            message: 'Are you sure you want to delete this group? Group members will be unassigned.',
+            confirmText: 'Delete Group',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!ok) return;
+
         try {
             await classesAPI.deleteGroup(params.id, groupId);
             toast.success('Group deleted');

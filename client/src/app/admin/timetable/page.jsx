@@ -12,6 +12,7 @@ import { timetableAPI, classesAPI } from '@/lib/api';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import { useConfirm } from '@/components/ConfirmDialog';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DAY_LABELS = { monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat' };
@@ -44,6 +45,7 @@ function getSlotColor(slotType) {
 
 export default function AdminTimetablePage() {
     const router = useRouter();
+    const confirm = useConfirm();
     const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
 
     const [loading, setLoading] = useState(true);
@@ -363,7 +365,14 @@ export default function AdminTimetablePage() {
     };
 
     const handleRemovePeriod = async (periodNumber) => {
-        if(!confirm(`Remove Period ${periodNumber} from all days? This will delete all slots assigned to this period.`)) return;
+        const ok = await confirm({
+            title: `Remove Period ${periodNumber}?`,
+            message: `Remove Period ${periodNumber} across all days? All assigned class slots for this period will be deleted.`,
+            confirmText: 'Remove Period',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!ok) return;
         setSaving(true);
         try {
             const slotsToDelete = [];

@@ -11,6 +11,7 @@ import {
     RotateCcw, Sparkles, Copy, ExternalLink, Calendar, Frame, Highlighter
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
+import { useConfirm } from '@/components/ConfirmDialog';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
@@ -71,6 +72,7 @@ function HighlightText({ text, query, className = '' }) {
 
 export default function AdminNotesPage() {
     const router = useRouter();
+    const confirm = useConfirm();
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
     const quillRef = useRef(null);
     const autoSaveTimerRef = useRef(null);
@@ -291,7 +293,15 @@ export default function AdminNotesPage() {
 
     const handleDelete = async (id, e) => {
         if (e) e.stopPropagation();
-        if (!window.confirm('Are you sure you want to delete this note?')) return;
+        const ok = await confirm({
+            title: 'Delete Note',
+            message: 'Are you sure you want to permanently delete this note? This action cannot be undone.',
+            confirmText: 'Delete Note',
+            cancelText: 'Keep Note',
+            type: 'danger',
+        });
+        if (!ok) return;
+
         try {
             await api.delete(`/admin-notes/${id}`);
             toast.success('Note deleted');
@@ -1104,9 +1114,16 @@ export default function AdminNotesPage() {
             {showModal && (
                 <div
                     className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 md:p-6 backdrop-blur-sm animate-in fade-in"
-                    onClick={() => {
+                    onClick={async () => {
                         if (saveStatus === 'unsaved') {
-                            if (window.confirm('You have unsaved changes. Close anyway?')) setShowModal(false);
+                            const ok = await confirm({
+                                title: 'Discard Unsaved Changes?',
+                                message: 'You have unsaved changes in this note. Are you sure you want to close and discard them?',
+                                confirmText: 'Discard Changes',
+                                cancelText: 'Keep Editing',
+                                type: 'warning',
+                            });
+                            if (ok) setShowModal(false);
                         } else {
                             setShowModal(false);
                         }

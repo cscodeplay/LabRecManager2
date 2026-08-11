@@ -8,12 +8,14 @@ import {
     Eye, MessageSquare, UserPlus, RefreshCw, ArrowLeft
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
+import { useConfirm } from '@/components/ConfirmDialog';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 
 export default function AdminWhiteboardsPage() {
     const router = useRouter();
+    const confirm = useConfirm();
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -51,7 +53,15 @@ export default function AdminWhiteboardsPage() {
     };
 
     const handleEndSession = async (sessionId) => {
-        if (!confirm('Are you sure you want to end this session?')) return;
+        const ok = await confirm({
+            title: 'End Whiteboard Session?',
+            message: 'Are you sure you want to forcibly terminate this active whiteboard session for all participants?',
+            confirmText: 'End Session',
+            cancelText: 'Cancel',
+            type: 'warning',
+        });
+        if (!ok) return;
+
         try {
             await api.put(`/whiteboard/sessions/${sessionId}/end`);
             toast.success('Session ended');

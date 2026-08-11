@@ -9,6 +9,7 @@ import {
     Link2, Copy, Check, Share2
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { meetingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import AssignmentCalendar from '@/components/AssignmentCalendar';
@@ -114,6 +115,7 @@ Direct Link: ${url}`;
 
 export default function MeetingPage() {
     const router = useRouter();
+    const confirm = useConfirm();
     const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -202,8 +204,14 @@ export default function MeetingPage() {
     }, [activeTab]);
 
     const handleClearAllMeetings = async () => {
-        const confirmDelete = window.confirm('Are you sure you want to delete ALL meeting sessions and recording files? This cannot be undone.');
-        if (!confirmDelete) return;
+        const ok = await confirm({
+            title: 'Delete All Meetings & Recordings?',
+            message: 'Are you sure you want to delete ALL meeting sessions and recording files? This action is permanent and cannot be undone.',
+            confirmText: 'Delete All Meetings',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!ok) return;
 
         try {
             const res = await meetingAPI.clearAllMeetings();

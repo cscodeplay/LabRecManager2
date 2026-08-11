@@ -7,7 +7,7 @@ import { useAuthStore } from '@/lib/store';
 import { documentsAPI, classesAPI, storageAPI, foldersAPI } from '@/lib/api';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import ConfirmDialog from '@/components/ConfirmDialog';
+import { useConfirm } from '@/components/ConfirmDialog';
 import FileViewer from '@/components/FileViewer';
 import QRCode from 'qrcode';
 
@@ -38,6 +38,7 @@ const FILE_ICONS = {
 
 export default function DocumentsPage() {
     const router = useRouter();
+    const confirm = useConfirm();
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
 
     const [documents, setDocuments] = useState([]);
@@ -270,7 +271,15 @@ export default function DocumentsPage() {
     };
 
     const handlePermanentDelete = async (doc) => {
-        if (!confirm(`Permanently delete "${doc.name}"? This cannot be undone.`)) return;
+        const ok = await confirm({
+            title: `Permanently Delete "${doc.name}"?`,
+            message: 'This document will be permanently destroyed. This action cannot be undone.',
+            confirmText: 'Delete Permanently',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!ok) return;
+
         try {
             await documentsAPI.permanentDelete(doc.id);
             toast.success('Document permanently deleted');
@@ -703,7 +712,15 @@ export default function DocumentsPage() {
 
     // Delete folder
     const handleDeleteFolder = async (folder) => {
-        if (!confirm(`Delete folder "${folder.name}" and all its contents?`)) return;
+        const ok = await confirm({
+            title: `Delete Folder "${folder.name}"?`,
+            message: `Are you sure you want to delete folder "${folder.name}" and all documents inside it?`,
+            confirmText: 'Delete Folder',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!ok) return;
+
         try {
             await foldersAPI.delete(folder.id);
             toast.success('Folder deleted');
@@ -827,7 +844,14 @@ export default function DocumentsPage() {
     };
 
     const handleBulkDelete = async () => {
-        if (!confirm(`Delete ${selectedDocs.size} documents and ${selectedFolders.size} folders?`)) return;
+        const ok = await confirm({
+            title: `Delete Selected Items?`,
+            message: `Are you sure you want to delete ${selectedDocs.size} documents and ${selectedFolders.size} folders?`,
+            confirmText: 'Delete All Selected',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!ok) return;
 
         try {
             if (selectedDocs.size > 0) {

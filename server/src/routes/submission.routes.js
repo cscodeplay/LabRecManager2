@@ -296,7 +296,7 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
             },
             vivaSessions: {
                 include: {
-                    examiner: {
+                    host: {
                         select: { id: true, firstName: true, lastName: true }
                     }
                 }
