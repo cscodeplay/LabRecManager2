@@ -52,7 +52,7 @@ const getPasscode = (session) => {
     return code;
 };
 
-export function useMeetingLink(session) {
+function useMeetingLink(session) {
     const [copied, setCopied] = useState(false);
 
     const roomCode = getRoomCode(session);
