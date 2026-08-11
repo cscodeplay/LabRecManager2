@@ -11,7 +11,7 @@ import {
     GripVertical, Move, Search, ShieldCheck, ShieldAlert,
     MoreVertical, UserCheck, UserX, PenTool, Coffee, Loader2,
     Info, Copy, Check, Share2, Key, LayoutGrid, ScreenShare,
-    AlertTriangle, Shield
+    AlertTriangle, Shield, UserPlus, Link2
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { meetingAPI } from '@/lib/api';
@@ -124,9 +124,16 @@ export default function MeetingRoomPage() {
 
     // Layout & Overlay Controls (Zoom-style floating panels)
     const [showChat, setShowChat] = useState(false);
-    const [activeSidePanelTab, setActiveSidePanelTab] = useState('chat'); // 'chat' | 'participants'
+    const [activeSidePanelTab, setActiveSidePanelTab] = useState('chat'); // 'chat' | 'participants' | 'invite'
     const [chatRecipient, setChatRecipient] = useState({ id: 'everyone', name: 'Everyone (in Meeting)' });
     const [participantSearchQuery, setParticipantSearchQuery] = useState('');
+
+    // In-Meeting Global Search & Invite State
+    const [inviteSearchQuery, setInviteSearchQuery] = useState('');
+    const [inviteFilter, setInviteFilter] = useState('all'); // 'all' | 'student' | 'class' | 'group'
+    const [inviteResults, setInviteResults] = useState({ students: [], classes: [], groups: [] });
+    const [loadingInvites, setLoadingInvites] = useState(false);
+    const [invitedMap, setInvitedMap] = useState({});
 
     const [showDeviceSettings, setShowDeviceSettings] = useState(false);
     const [showMeetingInfoModal, setShowMeetingInfoModal] = useState(false);
@@ -1128,6 +1135,71 @@ export default function MeetingRoomPage() {
         setNewMessage('');
     };
 
+    const handleShareInviteInChat = () => {
+        const roomFormatted = formatRoomCode(roomCode);
+        const pass = passcode || 'k8m2px9a';
+        const inviteTxt = `📋 Meeting Invitation:\n• Room ID: ${roomFormatted}\n• Passcode: ${pass}\n• Join Link: ${typeof window !== 'undefined' ? window.location.origin : ''}/meeting/${roomCode}`;
+        
+        const messageData = {
+            id: Date.now().toString(),
+            sender: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'Host',
+            senderId: user?.id,
+            senderSocketId: mySocketId,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            text: inviteTxt,
+            recipientId: 'everyone',
+            recipientName: 'Everyone (in Meeting)'
+        };
+
+        socketRef.current?.emit('meeting:chat-message', {
+            roomId: activeRoomIdRef.current,
+            message: messageData
+        });
+        setMessages(prev => [...prev, messageData]);
+        toast.success('Meeting invitation shared in chat!', { icon: '📋' });
+    };
+
+    const searchGlobalTargets = async (query) => {
+        if (!query || query.trim().length < 1) {
+            setInviteResults({ students: [], classes: [], groups: [] });
+            return;
+        }
+        setLoadingInvites(true);
+        try {
+            const res = await meetingAPI.searchTargets({ q: query.trim(), type: inviteFilter });
+            setInviteResults(res.data.data || { students: [], classes: [], groups: [] });
+        } catch (err) {
+            console.error('Invite target search error:', err);
+        } finally {
+            setLoadingInvites(false);
+        }
+    };
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (inviteSearchQuery) {
+                searchGlobalTargets(inviteSearchQuery);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [inviteSearchQuery, inviteFilter]);
+
+    const handleSendMeetingInvite = async (targetType, targetId, targetName) => {
+        try {
+            const meetingIdToUse = session?.id || code;
+            await meetingAPI.sendInvite(meetingIdToUse, {
+                targetType,
+                targetId,
+                message: `${user?.firstName || 'Host'} has invited you to join the live meeting "${session?.title || 'Online Meeting'}".`
+            });
+            setInvitedMap(prev => ({ ...prev, [targetId]: true }));
+            toast.success(`Invite sent to ${targetName}!`, { icon: '🚀' });
+        } catch (err) {
+            console.error('Send invite error:', err);
+            toast.error(err.response?.data?.message || 'Failed to send invite');
+        }
+    };
+
     const visibleMessages = messages.filter(m => {
         if (!m.recipientId || m.recipientId === 'everyone') return true;
         const myId = user?.id;
@@ -1995,6 +2067,18 @@ Link: ${getInviteUrl()}`;
                                         </span>
                                     )}
                                 </button>
+                                <button
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={() => setActiveSidePanelTab('invite')}
+                                    className={`px-3 py-1 rounded-md text-xs font-medium transition flex items-center gap-1.5 ${
+                                        activeSidePanelTab === 'invite'
+                                            ? 'bg-primary-600 text-white shadow'
+                                            : 'text-slate-400 hover:text-slate-200'
+                                    }`}
+                                >
+                                    <UserPlus className="w-3.5 h-3.5" />
+                                    <span>Invite</span>
+                                </button>
                             </div>
                         </div>
 
@@ -2014,6 +2098,24 @@ Link: ${getInviteUrl()}`;
                     {/* TAB 1: CHAT */}
                     {activeSidePanelTab === 'chat' && (
                         <div className="flex-1 flex flex-col overflow-hidden">
+                            {/* In-Chat Quick Action Banner */}
+                            <div className="px-3 py-1.5 bg-slate-800/60 border-b border-slate-700/60 flex items-center justify-between text-xs">
+                                <button
+                                    onClick={() => setActiveSidePanelTab('invite')}
+                                    className="text-primary-400 hover:text-primary-300 font-semibold flex items-center gap-1 transition"
+                                >
+                                    <UserPlus className="w-3.5 h-3.5" />
+                                    <span>+ Invite Participants</span>
+                                </button>
+                                <button
+                                    onClick={handleShareInviteInChat}
+                                    className="text-[10px] text-slate-300 hover:text-white bg-slate-700/60 hover:bg-slate-700 px-2 py-0.5 rounded-lg border border-slate-600/40 transition"
+                                    title="Post meeting details in chat"
+                                >
+                                    Post Info in Chat
+                                </button>
+                            </div>
+
                             <div className="px-3 py-2 bg-slate-800/40 border-b border-slate-800 flex items-center justify-between text-xs">
                                 <span className="text-slate-400 font-medium">To:</span>
                                 <select
@@ -2320,6 +2422,248 @@ Link: ${getInviteUrl()}`;
                                     </button>
                                 </div>
                             )}
+                        </div>
+                    )}
+
+                    {/* TAB 3: GLOBAL SEARCH & INVITE PARTICIPANTS */}
+                    {activeSidePanelTab === 'invite' && (
+                        <div className="flex-1 flex flex-col overflow-hidden bg-slate-900">
+                            {/* Search Header */}
+                            <div className="p-3 border-b border-slate-800 bg-slate-800/50 space-y-2">
+                                <div className="relative">
+                                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        value={inviteSearchQuery}
+                                        onChange={(e) => setInviteSearchQuery(e.target.value)}
+                                        placeholder="Search student, class, or group..."
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                    />
+                                    {inviteSearchQuery && (
+                                        <button
+                                            onClick={() => setInviteSearchQuery('')}
+                                            className="absolute right-2.5 top-2 text-slate-400 hover:text-white"
+                                        >
+                                            <XCircle className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Filter Pills */}
+                                <div className="flex gap-1 text-[10px]">
+                                    {[
+                                        { id: 'all', label: 'All' },
+                                        { id: 'student', label: 'Students' },
+                                        { id: 'class', label: 'Classes' },
+                                        { id: 'group', label: 'Groups' }
+                                    ].map(f => (
+                                        <button
+                                            key={f.id}
+                                            onClick={() => setInviteFilter(f.id)}
+                                            className={`px-2.5 py-1 rounded-lg font-medium transition ${
+                                                inviteFilter === f.id
+                                                    ? 'bg-primary-600 text-white'
+                                                    : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                                            }`}
+                                        >
+                                            {f.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Search Results List */}
+                            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                                {loadingInvites && (
+                                    <div className="flex items-center justify-center py-8 text-slate-400 text-xs gap-2">
+                                        <Loader2 className="w-4 h-4 animate-spin text-primary-400" />
+                                        Searching school directory...
+                                    </div>
+                                )}
+
+                                {!loadingInvites && !inviteSearchQuery && (
+                                    <div className="space-y-3">
+                                        <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-3 text-center space-y-2">
+                                            <UserPlus className="w-8 h-8 mx-auto text-primary-400 opacity-80" />
+                                            <p className="text-xs font-semibold text-white">Invite Anyone in Real-Time</p>
+                                            <p className="text-[11px] text-slate-400">
+                                                Search students, class sections, or study groups to send live meeting invites directly during the call.
+                                            </p>
+                                        </div>
+
+                                        {/* Meeting Quick Details Box */}
+                                        <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-3 space-y-2">
+                                            <p className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Quick Meeting Details</p>
+                                            <div className="flex items-center justify-between text-xs py-1 border-b border-slate-800/80">
+                                                <span className="text-slate-400">Room ID</span>
+                                                <span className="font-mono font-bold text-primary-400">{formatRoomCode(roomCode)}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-xs py-1 border-b border-slate-800/80">
+                                                <span className="text-slate-400">Passcode</span>
+                                                <span className="font-mono font-bold text-slate-200">{passcode}</span>
+                                            </div>
+                                            <button
+                                                onClick={handleShareInviteInChat}
+                                                className="w-full py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow"
+                                            >
+                                                <Share2 className="w-3.5 h-3.5" />
+                                                Share Invitation in Chat
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {!loadingInvites && inviteSearchQuery && (
+                                    <>
+                                        {/* Students Section */}
+                                        {inviteResults.students?.length > 0 && (
+                                            <div className="space-y-1.5">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
+                                                    Students ({inviteResults.students.length})
+                                                </p>
+                                                {inviteResults.students.map(s => (
+                                                    <div key={s.id} className="flex items-center justify-between p-2 rounded-xl bg-slate-800/60 border border-slate-700/60 hover:border-slate-600 transition">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-7 h-7 rounded-full bg-primary-900/60 text-primary-300 border border-primary-500/30 flex items-center justify-center text-[10px] font-bold">
+                                                                {s.firstName?.[0]}{s.lastName?.[0]}
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-xs font-semibold text-white leading-tight">
+                                                                    {s.firstName} {s.lastName}
+                                                                </p>
+                                                                <p className="text-[10px] text-slate-400">
+                                                                    {s.admissionNumber || s.studentId || s.email}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleSendMeetingInvite('student', s.id, `${s.firstName} ${s.lastName}`)}
+                                                            disabled={invitedMap[s.id]}
+                                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition ${
+                                                                invitedMap[s.id]
+                                                                    ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30'
+                                                                    : 'bg-primary-600 hover:bg-primary-500 text-white shadow'
+                                                            }`}
+                                                        >
+                                                            {invitedMap[s.id] ? (
+                                                                <>
+                                                                    <Check className="w-3 h-3 text-emerald-400" />
+                                                                    <span>Invited</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Send className="w-3 h-3" />
+                                                                    <span>Invite</span>
+                                                                </>
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Classes Section */}
+                                        {inviteResults.classes?.length > 0 && (
+                                            <div className="space-y-1.5">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
+                                                    Classes ({inviteResults.classes.length})
+                                                </p>
+                                                {inviteResults.classes.map(c => (
+                                                    <div key={c.id} className="flex items-center justify-between p-2 rounded-xl bg-slate-800/60 border border-slate-700/60 hover:border-slate-600 transition">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-7 h-7 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-500/30 flex items-center justify-center text-[10px] font-bold">
+                                                                📚
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-xs font-semibold text-white leading-tight">
+                                                                    Class: {c.name}
+                                                                </p>
+                                                                <p className="text-[10px] text-slate-400">
+                                                                    {c.section ? `Section: ${c.section}` : 'Entire Class'}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleSendMeetingInvite('class', c.id, `Class ${c.name}`)}
+                                                            disabled={invitedMap[c.id]}
+                                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition ${
+                                                                invitedMap[c.id]
+                                                                    ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30'
+                                                                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow'
+                                                            }`}
+                                                        >
+                                                            {invitedMap[c.id] ? (
+                                                                <>
+                                                                    <Check className="w-3 h-3 text-emerald-400" />
+                                                                    <span>Invited</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Users className="w-3 h-3" />
+                                                                    <span>Invite Class</span>
+                                                                </>
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Groups Section */}
+                                        {inviteResults.groups?.length > 0 && (
+                                            <div className="space-y-1.5">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
+                                                    Groups ({inviteResults.groups.length})
+                                                </p>
+                                                {inviteResults.groups.map(g => (
+                                                    <div key={g.id} className="flex items-center justify-between p-2 rounded-xl bg-slate-800/60 border border-slate-700/60 hover:border-slate-600 transition">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-7 h-7 rounded-full bg-purple-900/60 text-purple-300 border border-purple-500/30 flex items-center justify-center text-[10px] font-bold">
+                                                                👥
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-xs font-semibold text-white leading-tight">
+                                                                    {g.name}
+                                                                </p>
+                                                                <p className="text-[10px] text-slate-400">
+                                                                    Study Group
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleSendMeetingInvite('group', g.id, g.name)}
+                                                            disabled={invitedMap[g.id]}
+                                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition ${
+                                                                invitedMap[g.id]
+                                                                    ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30'
+                                                                    : 'bg-purple-600 hover:bg-purple-500 text-white shadow'
+                                                            }`}
+                                                        >
+                                                            {invitedMap[g.id] ? (
+                                                                <>
+                                                                    <Check className="w-3 h-3 text-emerald-400" />
+                                                                    <span>Invited</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Users className="w-3 h-3" />
+                                                                    <span>Invite Group</span>
+                                                                </>
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {inviteResults.students?.length === 0 && inviteResults.classes?.length === 0 && inviteResults.groups?.length === 0 && (
+                                            <div className="py-8 text-center text-slate-500 text-xs">
+                                                No students, classes, or groups found matching "{inviteSearchQuery}"
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
     Video, Calendar, Clock, User, Play, CheckCircle, XCircle,
     Plus, Search, X, Users, CalendarPlus, Award, Shield, Trash2, Sparkles,
-    Link2, Copy, Check, Share2
+    Link2, Copy, Check, Share2, Edit3, Lock, UserPlus
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -147,6 +147,20 @@ export default function MeetingPage() {
     const [sessionTitle, setSessionTitle] = useState('');
     const [autoAdmit, setAutoAdmit] = useState(true);
     const [scheduling, setScheduling] = useState(false);
+
+    // Edit Meeting modal state (Admin / Instructor)
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingSession, setEditingSession] = useState(null);
+    const [editTitle, setEditTitle] = useState('');
+    const [editTargetType, setEditTargetType] = useState('student');
+    const [editSelectedTarget, setEditSelectedTarget] = useState(null);
+    const [editAvailableTargets, setEditAvailableTargets] = useState([]);
+    const [editLoadingTargets, setEditLoadingTargets] = useState(false);
+    const [editTargetSearchQuery, setEditTargetSearchQuery] = useState('');
+    const [editScheduledDateTime, setEditScheduledDateTime] = useState('');
+    const [editDuration, setEditDuration] = useState(15);
+    const [editAutoAdmit, setEditAutoAdmit] = useState(true);
+    const [savingEdit, setSavingEdit] = useState(false);
 
     const isAdmin = user?.role === 'admin' || user?.role === 'principal';
     const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'lab_assistant';
@@ -333,6 +347,110 @@ export default function MeetingPage() {
         }, 300);
         return () => clearTimeout(debounceTimer);
     }, [targetSearchQuery, targetType]);
+
+    const searchEditTargets = async (query, type) => {
+        if (!query || query.length < 2) {
+            setEditAvailableTargets([]);
+            return;
+        }
+        setEditLoadingTargets(true);
+        try {
+            if (type === 'student') {
+                const res = await meetingAPI.getAvailableStudents({ search: query });
+                setEditAvailableTargets(res.data.data.students || []);
+            } else if (type === 'class') {
+                const res = await classesAPI.getAll({ search: query });
+                setEditAvailableTargets(res.data.data.classes || []);
+            } else if (type === 'group') {
+                setEditAvailableTargets([{ id: 'dummy-group', name: query + ' Group' }]);
+            }
+        } catch (error) {
+            console.error('Error searching edit targets:', error);
+            toast.error('Failed to search targets');
+        } finally {
+            setEditLoadingTargets(false);
+        }
+    };
+
+    useEffect(() => {
+        const debounceTimer = setTimeout(() => {
+            if (editTargetSearchQuery) {
+                searchEditTargets(editTargetSearchQuery, editTargetType);
+            }
+        }, 300);
+        return () => clearTimeout(debounceTimer);
+    }, [editTargetSearchQuery, editTargetType]);
+
+    const handleOpenEditModal = (session) => {
+        setEditingSession(session);
+        setEditTitle(session.title || '');
+        setEditDuration(session.durationMinutes || 15);
+        setEditAutoAdmit(session.autoAdmit ?? true);
+        
+        if (session.scheduledAt) {
+            const d = new Date(session.scheduledAt);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const hours = String(d.getHours()).padStart(2, '0');
+            const mins = String(d.getMinutes()).padStart(2, '0');
+            setEditScheduledDateTime(`${year}-${month}-${day}T${hours}:${mins}`);
+        } else {
+            setEditScheduledDateTime(getMinDateTime());
+        }
+
+        if (session.targetStudent || session.targetStudentId) {
+            setEditTargetType('student');
+            setEditSelectedTarget(session.targetStudent || { id: session.targetStudentId, firstName: 'Student', lastName: '' });
+        } else if (session.targetClass || session.targetClassId) {
+            setEditTargetType('class');
+            setEditSelectedTarget(session.targetClass || { id: session.targetClassId, name: session.targetClass?.name || 'Class' });
+        } else if (session.targetGroup || session.targetGroupId) {
+            setEditTargetType('group');
+            setEditSelectedTarget(session.targetGroup || { id: session.targetGroupId, name: session.targetGroup?.name || 'Group' });
+        } else {
+            setEditTargetType('student');
+            setEditSelectedTarget(null);
+        }
+
+        setEditTargetSearchQuery('');
+        setEditAvailableTargets([]);
+        setShowEditModal(true);
+    };
+
+    const handleSaveEditSession = async () => {
+        if (!editingSession) return;
+        if (!editSelectedTarget) {
+            toast.error(`Please select a target ${editTargetType}`);
+            return;
+        }
+        if (!editScheduledDateTime) {
+            toast.error('Please select a scheduled date and time');
+            return;
+        }
+
+        setSavingEdit(true);
+        try {
+            await meetingAPI.updateSession(editingSession.id, {
+                title: editTitle || 'Meeting Session',
+                targetType: editTargetType,
+                targetId: editSelectedTarget.id,
+                scheduledAt: new Date(editScheduledDateTime).toISOString(),
+                durationMinutes: editDuration,
+                autoAdmit: editAutoAdmit
+            });
+
+            toast.success('Meeting updated successfully!', { icon: '✨' });
+            setShowEditModal(false);
+            setEditingSession(null);
+            loadSessions();
+        } catch (error) {
+            console.error('Error updating meeting:', error);
+            toast.error(error.response?.data?.message || 'Failed to update meeting session');
+        } finally {
+            setSavingEdit(false);
+        }
+    };
 
     const handleScheduleSession = async () => {
         if (!selectedTarget) {
@@ -626,6 +744,7 @@ export default function MeetingPage() {
                                             getStatusIcon={getStatusIcon}
                                             getStatusBadge={getStatusBadge}
                                             isLive={true}
+                                            onEdit={handleOpenEditModal}
                                         />
                                     ))}
                                 </div>
@@ -647,6 +766,7 @@ export default function MeetingPage() {
                                             isInstructor={isInstructor}
                                             getStatusIcon={getStatusIcon}
                                             getStatusBadge={getStatusBadge}
+                                            onEdit={handleOpenEditModal}
                                         />
                                     ))}
                                 </div>
@@ -665,6 +785,7 @@ export default function MeetingPage() {
                                             isInstructor={isInstructor}
                                             getStatusIcon={getStatusIcon}
                                             getStatusBadge={getStatusBadge}
+                                            onEdit={handleOpenEditModal}
                                         />
                                     ))}
                                 </div>
@@ -729,14 +850,12 @@ export default function MeetingPage() {
                             </div>
                             <div className="card p-4 bg-gradient-to-r from-purple-500 to-indigo-500 text-white">
                                 <div className="flex items-center gap-3">
-                                    <Award className="w-8 h-8 opacity-80" />
+                                    <CheckCircle className="w-8 h-8 opacity-80" />
                                     <div>
                                         <p className="text-2xl font-bold">
-                                            {recordings.length > 0
-                                                ? (recordings.reduce((sum, r) => sum + (parseFloat(r.marksObtained) || 0), 0) / recordings.length).toFixed(1)
-                                                : 0}
+                                            {recordings.filter(r => r.status === 'completed').length}
                                         </p>
-                                        <p className="text-sm opacity-80">Avg Marks</p>
+                                        <p className="text-sm opacity-80">Completed Sessions</p>
                                     </div>
                                 </div>
                             </div>
@@ -817,10 +936,6 @@ export default function MeetingPage() {
                                                             <Clock className="w-4 h-4" />
                                                             {session.durationMinutes} min
                                                         </span>
-                                                        <span className="flex items-center gap-1">
-                                                            <Award className="w-4 h-4" />
-                                                            {session.marksObtained}/{session.maxMarks} marks
-                                                        </span>
                                                         {session.recordingSize && (
                                                             <span className="text-emerald-600">📁 {formatFileSize(session.recordingSize)}</span>
                                                         )}
@@ -889,14 +1004,10 @@ export default function MeetingPage() {
                             </video>
                             <div className="mt-4 bg-slate-50 rounded-lg p-4">
                                 <h3 className="font-medium text-slate-900 mb-2">Session Details</h3>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                                     <div>
                                         <p className="text-slate-500">Student</p>
                                         <p className="font-medium">{selectedRecording.student?.firstName} {selectedRecording.student?.lastName}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-slate-500">Marks</p>
-                                        <p className="font-medium">{selectedRecording.marksObtained}/{selectedRecording.maxMarks}</p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Duration</p>
@@ -1166,12 +1277,261 @@ export default function MeetingPage() {
                     </div>
                 </div>
             )}
+
+            {/* Edit Scheduled Meeting Modal (Admin / Instructor) */}
+            {showEditModal && editingSession && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl animate-in fade-in">
+                        {/* Modal Header */}
+                        <div className="p-6 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl z-10">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center">
+                                        <Edit3 className="w-5 h-5 text-primary-600" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-semibold text-slate-900">Edit Scheduled Meeting</h2>
+                                        <p className="text-sm text-slate-500">Update title, participant target, time, and duration</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setShowEditModal(false);
+                                        setEditingSession(null);
+                                    }}
+                                    className="p-2 hover:bg-slate-100 rounded-lg transition"
+                                    title="Close"
+                                >
+                                    <X className="w-5 h-5 text-slate-500" />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-6 space-y-5">
+                            {/* Read-Only Meeting ID & Passcode Notice */}
+                            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                                <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                                    <Lock className="w-3.5 h-3.5 text-slate-500" />
+                                    <span>Fixed Meeting Credentials (Immutable)</span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3 pt-1">
+                                    <div className="bg-white px-3 py-2 rounded-lg border border-slate-200">
+                                        <span className="text-[10px] text-slate-400 uppercase font-bold block">Meeting ID</span>
+                                        <span className="font-mono font-bold text-xs text-primary-700">
+                                            {getFormattedRoomCode(editingSession)}
+                                        </span>
+                                    </div>
+                                    <div className="bg-white px-3 py-2 rounded-lg border border-slate-200">
+                                        <span className="text-[10px] text-slate-400 uppercase font-bold block">Passcode</span>
+                                        <span className="font-mono font-bold text-xs text-slate-700">
+                                            {getPasscode(editingSession)}
+                                        </span>
+                                    </div>
+                                </div>
+                                <p className="text-[11px] text-slate-400 italic">
+                                    * Meeting ID and Passcode are permanently fixed and cannot be modified.
+                                </p>
+                            </div>
+
+                            {/* Session Title */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    Meeting Title <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editTitle}
+                                    onChange={(e) => setEditTitle(e.target.value)}
+                                    placeholder="e.g., Mid-term Meeting, Lab Review"
+                                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
+                                />
+                            </div>
+
+                            {/* Target Type */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    Participant Target Type <span className="text-red-500">*</span>
+                                </label>
+                                <select
+                                    value={editTargetType}
+                                    onChange={(e) => {
+                                        setEditTargetType(e.target.value);
+                                        setEditSelectedTarget(null);
+                                        setEditAvailableTargets([]);
+                                        setEditTargetSearchQuery('');
+                                    }}
+                                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
+                                >
+                                    <option value="student">Individual Student</option>
+                                    <option value="class">Entire Class</option>
+                                    <option value="group">Study Group</option>
+                                </select>
+                            </div>
+
+                            {/* Target Selection */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    Select {editTargetType.charAt(0).toUpperCase() + editTargetType.slice(1)} <span className="text-red-500">*</span>
+                                </label>
+
+                                {editSelectedTarget ? (
+                                    <div className="flex items-center justify-between p-4 bg-primary-50 border border-primary-200 rounded-xl">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-primary-500 text-white flex items-center justify-center font-medium">
+                                                {editSelectedTarget.firstName?.[0] || editSelectedTarget.name?.[0] || editTargetType[0].toUpperCase()}
+                                                {editSelectedTarget.lastName?.[0]}
+                                            </div>
+                                            <div>
+                                                <p className="font-medium text-slate-900">
+                                                    {editSelectedTarget.firstName ? `${editSelectedTarget.firstName} ${editSelectedTarget.lastName}` : editSelectedTarget.name}
+                                                </p>
+                                                <p className="text-sm text-slate-500">
+                                                    {editSelectedTarget.studentId || editSelectedTarget.admissionNumber || editSelectedTarget.email || `${editTargetType} ID: ${editSelectedTarget.id?.slice(0, 8)}`}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setEditSelectedTarget(null)}
+                                            className="text-primary-600 hover:text-primary-800 text-sm font-medium"
+                                        >
+                                            Change
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        <div className="relative">
+                                            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                                            <input
+                                                type="text"
+                                                value={editTargetSearchQuery}
+                                                onChange={(e) => setEditTargetSearchQuery(e.target.value)}
+                                                placeholder={`Search ${editTargetType}...`}
+                                                className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
+                                            />
+                                        </div>
+
+                                        {editLoadingTargets && (
+                                            <div className="flex items-center justify-center py-4">
+                                                <div className="animate-spin w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full"></div>
+                                            </div>
+                                        )}
+
+                                        {!editLoadingTargets && editAvailableTargets.length > 0 && (
+                                            <div className="border border-slate-200 rounded-xl max-h-48 overflow-y-auto">
+                                                {editAvailableTargets.map((target) => (
+                                                    <button
+                                                        key={target.id}
+                                                        onClick={() => {
+                                                            setEditSelectedTarget(target);
+                                                            setEditTargetSearchQuery('');
+                                                            setEditAvailableTargets([]);
+                                                        }}
+                                                        className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 transition border-b border-slate-100 last:border-0"
+                                                    >
+                                                        <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-sm font-medium">
+                                                            {target.firstName?.[0] || target.name?.[0] || editTargetType[0].toUpperCase()}{target.lastName?.[0]}
+                                                        </div>
+                                                        <div className="text-left flex-1">
+                                                            <div className="font-medium text-slate-900 text-sm">
+                                                                {target.firstName ? `${target.firstName} ${target.lastName}` : target.name}
+                                                            </div>
+                                                            <p className="text-xs text-slate-500">
+                                                                {target.studentId || target.admissionNumber || target.email || ''}
+                                                            </p>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Scheduled Date & Time */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    Scheduled Start Date & Time <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="datetime-local"
+                                    value={editScheduledDateTime}
+                                    onChange={(e) => setEditScheduledDateTime(e.target.value)}
+                                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
+                                />
+                            </div>
+
+                            {/* Duration */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    Duration (Minutes)
+                                </label>
+                                <div className="flex gap-2">
+                                    {[10, 15, 20, 30, 45, 60].map((mins) => (
+                                        <button
+                                            key={mins}
+                                            onClick={() => setEditDuration(mins)}
+                                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${editDuration === mins ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                                        >
+                                            {mins} min
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Auto-Join Toggle */}
+                            <div className="pt-1">
+                                <label className="flex items-start gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
+                                    <input
+                                        type="checkbox"
+                                        checked={editAutoAdmit}
+                                        onChange={(e) => setEditAutoAdmit(e.target.checked)}
+                                        className="mt-0.5 w-4 h-4 text-primary-600 rounded border-slate-300 focus:ring-primary-500"
+                                    />
+                                    <div>
+                                        <span className="text-sm font-medium text-slate-900 block">Auto-join & Bypass Waiting Room</span>
+                                        <span className="text-xs text-slate-500">Allow participants to join meeting directly without waiting for host approval</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-6 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex gap-3 justify-end">
+                            <button
+                                onClick={() => {
+                                    setShowEditModal(false);
+                                    setEditingSession(null);
+                                }}
+                                className="p-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition"
+                                title="Cancel"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                            <button
+                                onClick={handleSaveEditSession}
+                                disabled={savingEdit || !editSelectedTarget || !editScheduledDateTime}
+                                className="px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium"
+                            >
+                                {savingEdit ? (
+                                    <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
+                                ) : (
+                                    <>
+                                        <Check className="w-5 h-5" />
+                                        Save Changes
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
 
 // Session Card Component
-function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isLive }) {
+function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isLive, onEdit }) {
     const { roomCode, formattedCode, passcode, copied, copyLink, copyInvitation } = useMeetingLink(session);
 
     return (
@@ -1214,41 +1574,58 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                                 Passcode: {passcode}
                             </span>
                         </div>
-                        <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-500">
-                            <span className="flex items-center gap-1">
-                                <Calendar className="w-4 h-4" />
-                                {session.scheduledAt
-                                    ? new Date(session.scheduledAt).toLocaleString()
-                                    : 'Not scheduled'}
+                        <div className="flex flex-wrap gap-y-2 gap-x-4 mt-2.5 text-xs text-slate-500">
+                            <span className="flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5 text-primary-500" />
+                                <span>{session.scheduledAt ? new Date(session.scheduledAt).toLocaleString() : 'Not scheduled'}</span>
                             </span>
-                            <span className="flex items-center gap-1">
-                                <Clock className="w-4 h-4" />
-                                {session.durationMinutes} minutes
+                            <span className="flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                <span>{session.durationMinutes} minutes</span>
                             </span>
-                            {isInstructor && session.student && (
-                                <span className="flex items-center gap-1">
-                                    <User className="w-4 h-4" />
-                                    Participant: {session.student.firstName} {session.student.lastName}
+                            
+                            {/* Host Details */}
+                            <span className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">
+                                <Shield className="w-3 h-3 text-indigo-600" />
+                                <span>Host: <strong>{session.host ? `${session.host.firstName} ${session.host.lastName}` : (session.examiner ? `${session.examiner.firstName} ${session.examiner.lastName}` : 'Host')}</strong></span>
+                                <span className="text-indigo-500 font-mono text-[11px]">(ID: {session.host?.id?.slice(0, 8) || session.hostId?.slice(0, 8) || 'N/A'})</span>
+                            </span>
+
+                            {/* Target Participant / Group / Class Details */}
+                            {(session.targetStudent || session.student) && (
+                                <span className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
+                                    <User className="w-3 h-3 text-emerald-600" />
+                                    <span>Participant: <strong>{(session.targetStudent || session.student).firstName} {(session.targetStudent || session.student).lastName}</strong></span>
+                                    <span className="text-emerald-600 font-mono text-[11px]">
+                                        (ID: {(session.targetStudent || session.student).admissionNumber || (session.targetStudent || session.student).studentId || (session.targetStudent || session.student).id?.slice(0, 8)})
+                                    </span>
                                 </span>
                             )}
-                            {!isInstructor && (session.host || session.examiner) && (
-                                <span className="flex items-center gap-1">
-                                    <User className="w-4 h-4" />
-                                    Host: {session.host ? `${session.host.firstName} ${session.host.lastName}` : `${session.examiner?.firstName} ${session.examiner?.lastName}`}
+                            {session.targetClass && (
+                                <span className="flex items-center gap-1.5 bg-purple-50 border border-purple-100 text-purple-800 px-2 py-0.5 rounded-md">
+                                    <Users className="w-3 h-3 text-purple-600" />
+                                    <span>Target Class: <strong>{session.targetClass.name} {session.targetClass.section ? `(${session.targetClass.section})` : ''}</strong></span>
+                                    <span className="text-purple-500 font-mono text-[11px]">(ID: {session.targetClass.id?.slice(0, 8)})</span>
+                                </span>
+                            )}
+                            {session.targetGroup && (
+                                <span className="flex items-center gap-1.5 bg-amber-50 border border-amber-100 text-amber-800 px-2 py-0.5 rounded-md">
+                                    <Users className="w-3 h-3 text-amber-600" />
+                                    <span>Target Group: <strong>{session.targetGroup.name}</strong></span>
+                                    <span className="text-amber-600 font-mono text-[11px]">(ID: {session.targetGroup.id?.slice(0, 8)})</span>
+                                </span>
+                            )}
+                            {!session.targetStudent && !session.student && !session.targetClass && !session.targetGroup && (
+                                <span className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 text-slate-700 px-2 py-0.5 rounded-md">
+                                    <Users className="w-3 h-3 text-slate-500" />
+                                    <span>Participants: <strong>School-wide / Open Session</strong></span>
                                 </span>
                             )}
                         </div>
 
-                        {session.status === 'completed' && session.marksObtained && (
-                            <div className="mt-3 p-3 bg-emerald-50 rounded-lg">
-                                <p className="text-emerald-700">
-                                    <span className="font-medium">Marks:</span> {session.marksObtained} / {session.maxMarks}
-                                </p>
-                                {session.examinerRemarks && (
-                                    <p className="text-sm text-emerald-600 mt-1">
-                                        {session.examinerRemarks}
-                                    </p>
-                                )}
+                        {session.status === 'completed' && session.examinerRemarks && (
+                            <div className="mt-2.5 p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-600">
+                                <span className="font-semibold text-slate-700">Remarks:</span> {session.examinerRemarks}
                             </div>
                         )}
 
@@ -1287,6 +1664,18 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                         <Copy className="w-4 h-4 text-slate-600" />
                         <span className="hidden lg:inline">Invite</span>
                     </button>
+
+                    {/* Edit Scheduled Meeting Button (Admin / Instructor) */}
+                    {session.status === 'scheduled' && isInstructor && (
+                        <button
+                            onClick={() => onEdit(session)}
+                            className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                            title="Edit scheduled meeting details"
+                        >
+                            <Edit3 className="w-4 h-4 text-slate-600" />
+                            <span className="hidden md:inline">Edit</span>
+                        </button>
+                    )}
 
                     {/* Launch / Join Action Buttons */}
                     {session.status === 'scheduled' && (

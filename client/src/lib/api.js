@@ -245,6 +245,9 @@ export const meetingAPI = {
     clearAllMeetings: () => api.delete('/meetings/clear-all'),
     createDemoTestMeeting: () => api.post('/meetings/create-demotest'),
     getRecordingUrl: (filename) => `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'}/meetings/recordings/${filename}`,
+    updateSession: (id, data) => api.put(`/meetings/sessions/${id}`, data),
+    sendInvite: (id, data) => api.post(`/meetings/sessions/${id}/invite`, data),
+    searchTargets: (params) => api.get('/meetings/search-targets', { params }),
 };
 
 // Grades API

@@ -6,6 +6,7 @@ const { body, validationResult } = require('express-validator');
 const prisma = require('../config/database');
 const { authenticate, authorize, optionalAuth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const notificationService = require('../services/notificationService');
 
 const recordingsDir = path.join(__dirname, '../../uploads/recordings');
 if (!fs.existsSync(recordingsDir)) {
@@ -900,6 +901,251 @@ router.post("/sessions/schedule", authenticate, authorize("instructor", "lab_ass
         success: true,
         message: "Meeting session scheduled successfully",
         data: { session }
+    });
+}));
+
+/**
+ * @route   GET /api/meetings/search-targets
+ * @desc    Global search across students, classes, and groups in school
+ * @access  Private
+ */
+router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
+    const { q = '', type = 'all' } = req.query;
+    const searchTerm = q.trim();
+    const schoolId = req.user.schoolId;
+
+    let students = [];
+    let classes = [];
+    let groups = [];
+
+    if (searchTerm.length >= 1) {
+        if (type === 'all' || type === 'student') {
+            students = await prisma.user.findMany({
+                where: {
+                    schoolId,
+                    role: 'student',
+                    isActive: true,
+                    OR: [
+                        { firstName: { contains: searchTerm, mode: 'insensitive' } },
+                        { lastName: { contains: searchTerm, mode: 'insensitive' } },
+                        { admissionNumber: { contains: searchTerm, mode: 'insensitive' } },
+                        { email: { contains: searchTerm, mode: 'insensitive' } }
+                    ]
+                },
+                select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    admissionNumber: true,
+                    studentId: true,
+                    role: true
+                },
+                take: 20
+            });
+        }
+
+        if (type === 'all' || type === 'class') {
+            classes = await prisma.class.findMany({
+                where: {
+                    schoolId,
+                    OR: [
+                        { name: { contains: searchTerm, mode: 'insensitive' } },
+                        { section: { contains: searchTerm, mode: 'insensitive' } }
+                    ]
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    section: true,
+                    academicYearId: true
+                },
+                take: 15
+            });
+        }
+
+        if (type === 'all' || type === 'group') {
+            groups = await prisma.studentGroup.findMany({
+                where: {
+                    class: { schoolId },
+                    name: { contains: searchTerm, mode: 'insensitive' }
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    classId: true
+                },
+                take: 15
+            });
+        }
+    }
+
+    res.json({
+        success: true,
+        data: {
+            students,
+            classes,
+            groups
+        }
+    });
+}));
+
+/**
+ * @route   PUT /api/meetings/sessions/:id
+ * @desc    Edit scheduled meeting details (Title, Target, Scheduled Time, Duration, Auto-admit)
+ * @access  Private (Host, Admin, Principal)
+ */
+router.put('/sessions/:id', authenticate, authorize('instructor', 'lab_assistant', 'admin', 'principal'), [
+    body('title').optional().trim().notEmpty().withMessage('Title cannot be empty'),
+    body('targetType').optional().isIn(['student', 'group', 'class']),
+    body('targetId').optional().isUUID().withMessage('Valid target ID required'),
+    body('scheduledAt').optional().isISO8601(),
+    body('durationMinutes').optional().isInt({ min: 5, max: 240 })
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const session = await findMeetingByIdOrLink(req.params.id);
+    if (!session) {
+        return res.status(404).json({ success: false, message: 'Meeting session not found' });
+    }
+
+    // Only host or admin can edit
+    const isHost = session.hostId === req.user.id;
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'principal';
+    if (!isHost && !isAdmin) {
+        return res.status(403).json({ success: false, message: 'Not authorized to edit this meeting session' });
+    }
+
+    if (session.status !== 'scheduled') {
+        return res.status(400).json({ success: false, message: 'Only scheduled meetings can be modified' });
+    }
+
+    const { title, targetType, targetId, scheduledAt, durationMinutes, autoAdmit, description } = req.body;
+
+    const updateData = {};
+    if (title) updateData.title = title.trim();
+    if (scheduledAt) updateData.scheduledAt = new Date(scheduledAt);
+    if (durationMinutes) updateData.durationMinutes = parseInt(durationMinutes);
+    if (typeof autoAdmit === 'boolean') updateData.autoAdmit = autoAdmit;
+
+    if (targetType && targetId) {
+        updateData.targetStudentId = targetType === 'student' ? targetId : null;
+        updateData.targetGroupId = targetType === 'group' ? targetId : null;
+        updateData.targetClassId = targetType === 'class' ? targetId : null;
+    }
+
+    if (description !== undefined && session.questionsAsked) {
+        updateData.questionsAsked = {
+            ...session.questionsAsked,
+            description
+        };
+    }
+
+    const updatedSession = await prisma.meeting.update({
+        where: { id: session.id },
+        data: updateData,
+        include: {
+            targetStudent: { select: { id: true, firstName: true, lastName: true, admissionNumber: true, email: true } },
+            targetClass: { select: { id: true, name: true, section: true } },
+            targetGroup: { select: { id: true, name: true } },
+            host: { select: { id: true, firstName: true, lastName: true } }
+        }
+    });
+
+    try {
+        const io = req.app.get('io') || global.io;
+        if (io) {
+            io.emit('meetings:updated', { session: updatedSession });
+        }
+    } catch (ioErr) {}
+
+    res.json({
+        success: true,
+        message: 'Meeting session updated successfully',
+        data: { session: updatedSession }
+    });
+}));
+
+/**
+ * @route   POST /api/meetings/sessions/:id/invite
+ * @desc    Send meeting invite link to participant/class/group during or before meeting
+ * @access  Private
+ */
+router.post('/sessions/:id/invite', authenticate, asyncHandler(async (req, res) => {
+    const { targetType, targetId, message } = req.body;
+    if (!targetType || !targetId) {
+        return res.status(400).json({ success: false, message: 'targetType and targetId are required' });
+    }
+
+    const session = await findMeetingByIdOrLink(req.params.id);
+    if (!session) {
+        return res.status(404).json({ success: false, message: 'Meeting session not found' });
+    }
+
+    const roomCode = session.questionsAsked?.roomCode || session.id;
+    const meetingTitle = session.title || 'Meeting Session';
+    const hostName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Host';
+    const inviteMessage = message || `${hostName} has invited you to join the live meeting "${meetingTitle}".`;
+    const actionUrl = `/meeting/${roomCode}`;
+
+    let invitedCount = 0;
+
+    if (targetType === 'student') {
+        await notificationService.createNotification({
+            userId: targetId,
+            title: `Meeting Invitation: ${meetingTitle}`,
+            message: inviteMessage,
+            type: 'meeting_invite',
+            actionUrl
+        });
+        invitedCount = 1;
+    } else if (targetType === 'class') {
+        const result = await notificationService.notifyClass({
+            classId: targetId,
+            title: `Meeting Invitation: ${meetingTitle}`,
+            message: inviteMessage,
+            type: 'meeting_invite',
+            actionUrl
+        });
+        invitedCount = Array.isArray(result) ? result.length : 1;
+    } else if (targetType === 'group') {
+        const result = await notificationService.notifyGroup({
+            groupId: targetId,
+            title: `Meeting Invitation: ${meetingTitle}`,
+            message: inviteMessage,
+            type: 'meeting_invite',
+            actionUrl
+        });
+        invitedCount = Array.isArray(result) ? result.length : 1;
+    }
+
+    // Socket real-time broadcast
+    try {
+        const io = req.app.get('io') || global.io;
+        if (io) {
+            const payload = {
+                sessionId: session.id,
+                roomCode,
+                title: meetingTitle,
+                hostName,
+                inviteMessage,
+                actionUrl
+            };
+            if (targetType === 'student') {
+                io.to(`user-${targetId}`).emit('meeting:invitation-received', payload);
+            } else if (targetType === 'class') {
+                io.to(`class-${targetId}`).emit('meeting:invitation-received', payload);
+            }
+        }
+    } catch (err) {}
+
+    res.json({
+        success: true,
+        message: `Meeting invitation sent successfully`,
+        data: { invitedCount, roomCode, joinUrl: `${process.env.CLIENT_URL || ''}/meeting/${roomCode}` }
     });
 }));
 
