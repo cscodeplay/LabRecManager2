@@ -7,7 +7,7 @@ import { useAuthStore } from '@/lib/store';
 import { documentsAPI, classesAPI, storageAPI, foldersAPI } from '@/lib/api';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { useConfirm } from '@/components/ConfirmDialog';
+import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
 import FileViewer from '@/components/FileViewer';
 import QRCode from 'qrcode';
 
