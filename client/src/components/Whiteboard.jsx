@@ -4320,6 +4320,7 @@ export default function Whiteboard({
                         </button>
                     </div>
                 </div>
+            )}
                 
                 {/* Clipboard Panel */}
                 {showClipboard && clipboardHistory.length > 0 && (
