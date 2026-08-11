@@ -1144,9 +1144,10 @@ export default function MeetingRoomPage() {
     };
 
     const handleShareInviteInChat = () => {
-        const roomFormatted = formatRoomCode(roomCode);
+        const currentRoomCode = displayRoomCode || params.code || '';
+        const roomFormatted = formatRoomCode(currentRoomCode);
         const pass = passcode || 'k8m2px9a';
-        const inviteTxt = `📋 Meeting Invitation:\n• Room ID: ${roomFormatted}\n• Passcode: ${pass}\n• Join Link: ${typeof window !== 'undefined' ? window.location.origin : ''}/meeting/${roomCode}`;
+        const inviteTxt = `📋 Meeting Invitation:\n• Room ID: ${roomFormatted}\n• Passcode: ${pass}\n• Join Link: ${typeof window !== 'undefined' ? window.location.origin : ''}/meeting/${currentRoomCode}`;
         
         const messageData = {
             id: Date.now().toString(),
@@ -2504,7 +2505,7 @@ Link: ${getInviteUrl()}`;
                                             <p className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Quick Meeting Details</p>
                                             <div className="flex items-center justify-between text-xs py-1 border-b border-slate-800/80">
                                                 <span className="text-slate-400">Room ID</span>
-                                                <span className="font-mono font-bold text-primary-400">{formatRoomCode(roomCode)}</span>
+                                                <span className="font-mono font-bold text-primary-400">{formatRoomCode(displayRoomCode || params.code)}</span>
                                             </div>
                                             <div className="flex items-center justify-between text-xs py-1 border-b border-slate-800/80">
                                                 <span className="text-slate-400">Passcode</span>
