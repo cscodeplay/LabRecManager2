@@ -20,6 +20,15 @@ import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
 import VideoTile from '@/components/VideoTile';
 
+function formatRoomCode(code) {
+    if (!code) return '';
+    const str = code.toString().replace(/[^0-9]/g, '');
+    if (str.length === 10) {
+        return `${str.slice(0, 3)}-${str.slice(3, 6)}-${str.slice(6)}`;
+    }
+    return str || code.toString();
+}
+
 const ScreenSharePresenter = React.memo(function ScreenSharePresenter({
     stream,
     isLocal,
@@ -696,7 +705,10 @@ export default function MeetingRoomPage() {
     // ===========================================
     const createPeerConnection = (targetSocketId, isInitiator = false) => {
         if (peersRef.current.has(targetSocketId)) {
-            return peersRef.current.get(targetSocketId);
+            const existingPc = peersRef.current.get(targetSocketId);
+            if (existingPc.signalingState !== 'closed') {
+                return existingPc;
+            }
         }
 
         const pc = new RTCPeerConnection(iceServers);
@@ -704,7 +716,9 @@ export default function MeetingRoomPage() {
 
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach((track) => {
-                pc.addTrack(track, localStreamRef.current);
+                try {
+                    pc.addTrack(track, localStreamRef.current);
+                } catch (e) {}
             });
         }
 
@@ -743,23 +757,27 @@ export default function MeetingRoomPage() {
             });
         };
 
-        if (isInitiator) {
-            pc.onnegotiationneeded = async () => {
-                try {
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
-                    socketRef.current?.emit('meeting:signal', {
-                        targetSocketId,
-                        signal: {
-                            type: 'offer',
-                            sdp: offer
-                        }
-                    });
-                } catch (err) {
-                    console.error('Negotiation error:', err);
-                }
-            };
-        }
+        let isNegotiating = false;
+        pc.onnegotiationneeded = async () => {
+            try {
+                if (isNegotiating || pc.signalingState !== 'stable') return;
+                isNegotiating = true;
+                const offer = await pc.createOffer();
+                if (pc.signalingState !== 'stable') return;
+                await pc.setLocalDescription(offer);
+                socketRef.current?.emit('meeting:signal', {
+                    targetSocketId,
+                    signal: {
+                        type: 'offer',
+                        sdp: offer
+                    }
+                });
+            } catch (err) {
+                console.warn('WebRTC negotiation note:', err.message || err);
+            } finally {
+                isNegotiating = false;
+            }
+        };
 
         return pc;
     };
@@ -857,27 +875,14 @@ export default function MeetingRoomPage() {
             setMySocketId(yourSocketId);
             const otherParticipants = (participants || []).filter(p => p.socketId !== yourSocketId);
 
-            otherParticipants.forEach(async (participant) => {
+            otherParticipants.forEach((participant) => {
                 setRemoteParticipants(prev => {
                     const next = new Map(prev);
                     next.set(participant.socketId, { ...participant, canDraw: true });
                     return next;
                 });
 
-                const pc = createPeerConnection(participant.socketId, true);
-                try {
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
-                    socket.emit('meeting:signal', {
-                        targetSocketId: participant.socketId,
-                        signal: {
-                            type: 'offer',
-                            sdp: offer
-                        }
-                    });
-                } catch (err) {
-                    console.error('Error creating offer for peer:', participant.socketId, err);
-                }
+                createPeerConnection(participant.socketId, true);
             });
         });
 
@@ -899,6 +904,9 @@ export default function MeetingRoomPage() {
             try {
                 if (signal.type === 'offer') {
                     const pc = createPeerConnection(fromSocketId, false);
+                    if (pc.signalingState !== 'stable') {
+                        await pc.setLocalDescription({ type: 'rollback' }).catch(() => {});
+                    }
                     await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
                     const answer = await pc.createAnswer();
                     await pc.setLocalDescription(answer);
@@ -921,7 +929,7 @@ export default function MeetingRoomPage() {
                     }
                 }
             } catch (err) {
-                console.error('Signal handling error:', err);
+                console.warn('Signal handling note:', err.message || err);
             }
         });
 

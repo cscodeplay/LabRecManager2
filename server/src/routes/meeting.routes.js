@@ -918,13 +918,25 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
     let classes = [];
     let groups = [];
 
+    const userWhere = {
+        role: 'student',
+        isActive: true,
+        ...(schoolId ? { schoolId } : {})
+    };
+
+    const classWhere = {
+        ...(schoolId ? { schoolId } : {})
+    };
+
+    const groupWhere = {
+        ...(schoolId ? { class: { schoolId } } : {})
+    };
+
     if (searchTerm.length >= 1) {
         if (type === 'all' || type === 'student') {
             students = await prisma.user.findMany({
                 where: {
-                    schoolId,
-                    role: 'student',
-                    isActive: true,
+                    ...userWhere,
                     OR: [
                         { firstName: { contains: searchTerm, mode: 'insensitive' } },
                         { lastName: { contains: searchTerm, mode: 'insensitive' } },
@@ -948,7 +960,7 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
         if (type === 'all' || type === 'class') {
             classes = await prisma.class.findMany({
                 where: {
-                    schoolId,
+                    ...classWhere,
                     OR: [
                         { name: { contains: searchTerm, mode: 'insensitive' } },
                         { section: { contains: searchTerm, mode: 'insensitive' } }
@@ -967,7 +979,7 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
         if (type === 'all' || type === 'group') {
             groups = await prisma.studentGroup.findMany({
                 where: {
-                    class: { schoolId },
+                    ...groupWhere,
                     name: { contains: searchTerm, mode: 'insensitive' }
                 },
                 select: {
@@ -1081,12 +1093,8 @@ router.post('/sessions/:id/invite', authenticate, asyncHandler(async (req, res) 
     }
 
     const session = await findMeetingByIdOrLink(req.params.id);
-    if (!session) {
-        return res.status(404).json({ success: false, message: 'Meeting session not found' });
-    }
-
-    const roomCode = session.questionsAsked?.roomCode || session.id;
-    const meetingTitle = session.title || 'Meeting Session';
+    const roomCode = session?.questionsAsked?.roomCode || session?.id || req.params.id?.toString().replace(/[^0-9a-zA-Z]/g, '');
+    const meetingTitle = session?.title || 'Live Meeting Session';
     const hostName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Host';
     const inviteMessage = message || `${hostName} has invited you to join the live meeting "${meetingTitle}".`;
     const actionUrl = `/meeting/${roomCode}`;
@@ -1127,7 +1135,7 @@ router.post('/sessions/:id/invite', authenticate, asyncHandler(async (req, res) 
         const io = req.app.get('io') || global.io;
         if (io) {
             const payload = {
-                sessionId: session.id,
+                sessionId: session?.id || null,
                 roomCode,
                 title: meetingTitle,
                 hostName,
