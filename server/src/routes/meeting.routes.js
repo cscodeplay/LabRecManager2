@@ -815,32 +815,44 @@ router.post('/questions', authenticate, authorize('instructor', 'lab_assistant',
  * @desc    Schedule a standalone viva session for a student (without requiring submission)
  * @access  Private (Instructor, Admin)
  */
-router.post("/sessions/schedule", authenticate, authorize("instructor", "lab_assistant", "admin"), [
+router.post("/sessions/schedule", authenticate, authorize("instructor", "lab_assistant", "admin", "principal"), [
     body("type").optional().isIn(["instant", "scheduled"]),
-    body("targetType").isIn(["student", "group", "class"]),
-    body("targetId").isUUID().withMessage("Valid target ID required"),
     body("scheduledAt").optional().isISO8601(),
-    body("durationMinutes").optional().isInt({ min: 5, max: 120 }),
+    body("durationMinutes").optional().isInt({ min: 5, max: 240 }),
     body("title").notEmpty().withMessage("Title is required")
 ], asyncHandler(async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ success: false, errors: errors.array() });
     }
-    const { type, targetType, targetId, scheduledAt, durationMinutes, title, description } = req.body;
+    const { type, targetType, targetId, targets, scheduledAt, durationMinutes, title, description, autoAdmit } = req.body;
+    
+    // Normalize target list
+    let targetList = Array.isArray(targets) && targets.length > 0 ? targets : [];
+    if (targetList.length === 0 && targetType && targetId) {
+        targetList.push({ type: targetType, id: targetId });
+    }
+
     let targetClassId = null;
     let targetGroupId = null;
     let targetStudentId = null;
-    if (targetType === "student") targetStudentId = targetId;
-    if (targetType === "group") targetGroupId = targetId;
-    if (targetType === "class") targetClassId = targetId;
+
+    if (targetList.length > 0) {
+        const primaryTarget = targetList[0];
+        if (primaryTarget.type === "student") targetStudentId = primaryTarget.id;
+        if (primaryTarget.type === "group") targetGroupId = primaryTarget.id;
+        if (primaryTarget.type === "class") targetClassId = primaryTarget.id;
+    }
+
     const sessionId = require("uuid").v4();
     const roomCode = generate10DigitRoomCode();
     const passcode = generate8CharPasscode();
     const meetingLink = `${process.env.CLIENT_URL || "http://localhost:3000"}/meeting/${roomCode}`;
     const meetingType = type || "scheduled";
-    const finalScheduledAt = meetingType === "instant" ? new Date() : new Date(scheduledAt);
+    const finalScheduledAt = meetingType === "instant" ? new Date() : new Date(scheduledAt || Date.now());
     const finalStatus = meetingType === "instant" ? "in_progress" : "scheduled";
+    const hostName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Host';
+
     const session = await prisma.meeting.create({
         data: {
             id: sessionId,
@@ -855,27 +867,31 @@ router.post("/sessions/schedule", authenticate, authorize("instructor", "lab_ass
             durationMinutes: durationMinutes || 15,
             meetingLink,
             status: finalStatus,
+            autoAdmit: typeof autoAdmit === 'boolean' ? autoAdmit : true,
             questionsAsked: {
                 roomCode,
                 passcode,
                 formattedRoomCode: formatRoomCode(roomCode),
+                assignedTargets: targetList,
                 ...(description ? { description } : {})
             },
             actualStartTime: meetingType === "instant" ? new Date() : null
         },
         include: {
-            targetStudent: { select: { id: true, firstName: true, lastName: true } },
+            targetStudent: { select: { id: true, firstName: true, lastName: true, admissionNumber: true, email: true } },
             targetClass: { select: { id: true, name: true, section: true } },
-            targetGroup: { select: { id: true, name: true } }
+            targetGroup: { select: { id: true, name: true } },
+            host: { select: { id: true, firstName: true, lastName: true } }
         }
     });
+
     try {
         await prisma.activityLog.create({
             data: {
                 userId: req.user.id,
                 schoolId: req.user.schoolId,
                 actionType: "meeting",
-                description: `Scheduled meeting: ${title}`,
+                description: `Scheduled meeting: ${title} (${targetList.length} targets)`,
                 entityType: "meeting_session",
                 entityId: session.id,
                 ipAddress: req.ip,
@@ -884,13 +900,51 @@ router.post("/sessions/schedule", authenticate, authorize("instructor", "lab_ass
         });
     } catch (logError) {}
 
+    // Send notifications to all assigned targets
+    const inviteMessage = `${hostName} has scheduled a meeting "${title}" for ${new Date(finalScheduledAt).toLocaleString()}.`;
+    const actionUrl = `/meeting/${roomCode}`;
+
+    for (const tgt of targetList) {
+        try {
+            if (tgt.type === 'student' && tgt.id) {
+                await notificationService.createNotification({
+                    userId: tgt.id,
+                    title: `Meeting Invitation: ${title}`,
+                    message: inviteMessage,
+                    type: 'meeting_invite',
+                    actionUrl
+                });
+            } else if (tgt.type === 'class' && tgt.id) {
+                await notificationService.notifyClass({
+                    classId: tgt.id,
+                    title: `Class Meeting: ${title}`,
+                    message: inviteMessage,
+                    type: 'meeting_invite',
+                    actionUrl
+                });
+            } else if (tgt.type === 'group' && tgt.id) {
+                await notificationService.notifyGroup({
+                    groupId: tgt.id,
+                    title: `Group Meeting: ${title}`,
+                    message: inviteMessage,
+                    type: 'meeting_invite',
+                    actionUrl
+                });
+            }
+        } catch (notifErr) {
+            console.warn('Target notification error (non-fatal):', notifErr.message);
+        }
+    }
+
     // Broadcast real-time meeting notification to other devices
     try {
         const io = req.app.get('io') || global.io;
         if (io) {
             io.to(`user-${req.user.id}`).emit('meeting:created', { session });
-            if (targetStudentId) io.to(`user-${targetStudentId}`).emit('meeting:created', { session });
-            if (targetClassId) io.to(`class-${targetClassId}`).emit('meeting:created', { session });
+            for (const tgt of targetList) {
+                if (tgt.type === 'student') io.to(`user-${tgt.id}`).emit('meeting:created', { session });
+                if (tgt.type === 'class') io.to(`class-${tgt.id}`).emit('meeting:created', { session });
+            }
             io.emit('meetings:updated', { session });
         }
     } catch (ioErr) {

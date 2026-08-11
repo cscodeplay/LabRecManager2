@@ -120,7 +120,14 @@ export default function MeetingRoomPage() {
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [localStream, setLocalStream] = useState(null);
     const [isLocalSpeaking, setIsLocalSpeaking] = useState(false);
-    const [canDrawOnWhiteboard, setCanDrawOnWhiteboard] = useState(true);
+    const [canDrawOnWhiteboard, setCanDrawOnWhiteboard] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+
+    // Floating Draggable Video PIP Overlay States
+    const [isFloatingVideoMinimized, setIsFloatingVideoMinimized] = useState(false);
+    const [floatingVideoPos, setFloatingVideoPos] = useState({ x: 0, y: 0 });
+    const [isDraggingFloatingVideo, setIsDraggingFloatingVideo] = useState(false);
+    const floatingDragRef = useRef({ startX: 0, startY: 0, posX: 0, posY: 0 });
 
     // Multi-Device Mesh Remote Participants Map: socketId -> participant info
     const [remoteParticipants, setRemoteParticipants] = useState(new Map());
@@ -249,7 +256,64 @@ export default function MeetingRoomPage() {
     const canvasAnimRef = useRef(null);
     const activeRoomIdRef = useRef(params.code);
 
-    const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'lab_assistant';
+    const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'principal' || user?.role === 'lab_assistant';
+
+    // Sync initial drawing permission with role
+    useEffect(() => {
+        if (isInstructor) {
+            setCanDrawOnWhiteboard(true);
+        }
+    }, [isInstructor]);
+
+    // Fullscreen listeners
+    useEffect(() => {
+        const handleFsChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+        document.addEventListener('fullscreenchange', handleFsChange);
+        return () => document.removeEventListener('fullscreenchange', handleFsChange);
+    }, []);
+
+    const toggleFullscreen = () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.warn('Fullscreen error:', err);
+            });
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
+        }
+    };
+
+    // Floating video drag handlers
+    const handleFloatingDragStart = (e) => {
+        setIsDraggingFloatingVideo(true);
+        floatingDragRef.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            posX: floatingVideoPos.x,
+            posY: floatingVideoPos.y
+        };
+
+        const handleMouseMove = (moveEvent) => {
+            const dx = moveEvent.clientX - floatingDragRef.current.startX;
+            const dy = moveEvent.clientY - floatingDragRef.current.startY;
+            setFloatingVideoPos({
+                x: floatingDragRef.current.posX + dx,
+                y: floatingDragRef.current.posY + dy
+            });
+        };
+
+        const handleMouseUp = () => {
+            setIsDraggingFloatingVideo(false);
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+    };
 
     // Standard STUN servers for WebRTC mesh
     const iceServers = {
@@ -750,7 +814,7 @@ export default function MeetingRoomPage() {
                         isCameraOn: true,
                         isMicOn: true,
                         isScreenSharing: false,
-                        canDraw: true
+                        canDraw: false
                     });
                 }
                 return next;
@@ -878,7 +942,10 @@ export default function MeetingRoomPage() {
             otherParticipants.forEach((participant) => {
                 setRemoteParticipants(prev => {
                     const next = new Map(prev);
-                    next.set(participant.socketId, { ...participant, canDraw: true });
+                    next.set(participant.socketId, {
+                        ...participant,
+                        canDraw: participant.role === 'instructor' || participant.role === 'admin' || participant.role === 'principal'
+                    });
                     return next;
                 });
 
@@ -891,7 +958,10 @@ export default function MeetingRoomPage() {
             if (participant.socketId === socket.id) return;
             setRemoteParticipants(prev => {
                 const next = new Map(prev);
-                next.set(participant.socketId, { ...participant, canDraw: true });
+                next.set(participant.socketId, {
+                    ...participant,
+                    canDraw: participant.role === 'instructor' || participant.role === 'admin' || participant.role === 'principal'
+                });
                 return next;
             });
             toast(`${participant.name} joined the meeting`, { icon: '👋', duration: 2500 });
@@ -1730,7 +1800,7 @@ Link: ${getInviteUrl()}`;
                         <Whiteboard
                             width={typeof window !== 'undefined' ? window.innerWidth : 1280}
                             height={typeof window !== 'undefined' ? window.innerHeight : 800}
-                            isFullscreen={true}
+                            isFullscreen={isFullscreen}
                             onClose={() => switchActiveSpace('vc_tiles')}
                             onSave={() => toast.success('Whiteboard snapshot saved!')}
                             isMeetingMode={true}
@@ -1741,6 +1811,12 @@ Link: ${getInviteUrl()}`;
                             isSharing={true}
                             whiteboardId={session?.id || params.code}
                             userName={user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'User'}
+                            userIdentifier={user?.studentId || user?.admissionNumber || user?.id?.slice(0, 8) || ''}
+                            permissions={{
+                                canDraw: isInstructor ? true : canDrawOnWhiteboard,
+                                canShareAudio: isAudioEnabled,
+                                canShareVideo: isVideoEnabled
+                            }}
                             isStudent={!isInstructor}
                         />
                     </div>
@@ -1756,6 +1832,76 @@ Link: ${getInviteUrl()}`;
                             onStartShare={toggleScreenShare}
                             onBackToGallery={() => switchActiveSpace('vc_tiles')}
                         />
+                    </div>
+                )}
+
+                {/* FLOATING DRAGGABLE / MINIMIZABLE PIP VIDEO TILES (For Whiteboard & Screen Share) */}
+                {(activeSpace === 'whiteboard' || activeSpace === 'screen_share') && (
+                    <div
+                        style={{
+                            transform: `translate(${floatingVideoPos.x}px, ${floatingVideoPos.y}px)`,
+                            cursor: isDraggingFloatingVideo ? 'grabbing' : 'default'
+                        }}
+                        className="fixed top-16 right-6 z-30 transition-shadow select-none shadow-2xl rounded-2xl border border-slate-700/80 bg-slate-900/95 backdrop-blur-md overflow-hidden max-w-[90vw]"
+                    >
+                        {/* Drag Handle & Minimize Header */}
+                        <div
+                            onMouseDown={handleFloatingDragStart}
+                            className="flex items-center justify-between px-3 py-1.5 bg-slate-800/90 border-b border-slate-700/60 cursor-grab active:cursor-grabbing text-xs text-slate-300 gap-3"
+                        >
+                            <div className="flex items-center gap-1.5 font-semibold text-slate-200">
+                                <GripVertical className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Live Video Strip</span>
+                            </div>
+                            <button
+                                onClick={() => setIsFloatingVideoMinimized(!isFloatingVideoMinimized)}
+                                className="p-1 hover:bg-slate-700 text-slate-400 hover:text-white rounded-md transition"
+                                title={isFloatingVideoMinimized ? 'Expand Video Feeds' : 'Minimize Video Feeds'}
+                            >
+                                {isFloatingVideoMinimized ? <Maximize2 className="w-3.5 h-3.5 text-primary-400" /> : <Minimize2 className="w-3.5 h-3.5" />}
+                            </button>
+                        </div>
+
+                        {/* Video Tiles (Presenter / Host + Active Speakers) */}
+                        {!isFloatingVideoMinimized ? (
+                            <div className="p-2 flex gap-2 overflow-x-auto max-w-[460px] hide-scrollbar">
+                                <div className="w-40 h-28 shrink-0 rounded-xl overflow-hidden shadow-md border border-slate-700">
+                                    <VideoTile
+                                        stream={localStream}
+                                        isLocal={true}
+                                        isCameraOn={isVideoEnabled}
+                                        isMicOn={isAudioEnabled}
+                                        isScreenSharing={isScreenSharing}
+                                        name={user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'You'}
+                                        role={user?.role}
+                                        isSpeaking={isLocalSpeaking}
+                                        compact={true}
+                                        className="w-full h-full"
+                                    />
+                                </div>
+                                {remoteList.map((participant) => (
+                                    <div key={participant.socketId} className="w-40 h-28 shrink-0 rounded-xl overflow-hidden shadow-md border border-slate-700">
+                                        <VideoTile
+                                            stream={participant.stream}
+                                            isLocal={false}
+                                            isCameraOn={participant.isCameraOn}
+                                            isMicOn={participant.isMicOn}
+                                            isScreenSharing={participant.isScreenSharing}
+                                            name={participant.name}
+                                            role={participant.role}
+                                            isSpeaking={participant.isSpeaking}
+                                            compact={true}
+                                            className="w-full h-full"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="px-3 py-1.5 text-[11px] text-slate-300 font-medium flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                <span>{1 + remoteList.length} Active Video Feeds (Minimized)</span>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -3083,6 +3229,15 @@ Link: ${getInviteUrl()}`;
                                     {waitingParticipants.length}
                                 </span>
                             )}
+                        </button>
+
+                        {/* Fullscreen Toggle Button */}
+                        <button
+                            onClick={toggleFullscreen}
+                            className="p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white rounded-full transition flex items-center justify-center"
+                            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                        >
+                            {isFullscreen ? <Minimize2 className="w-4 h-4 text-primary-400" /> : <Maximize2 className="w-4 h-4" />}
                         </button>
 
                         {/* Device Settings */}

@@ -215,9 +215,10 @@ export default function Whiteboard({
     isMicOn = false,
     // Persistence prop - unique ID for this whiteboard (e.g., `wb_${userId}`)
     whiteboardId = null,
-    permissions = { canDraw: true, canShareAudio: true, canShareVideo: true },
+    permissions = { canDraw: false, canShareAudio: true, canShareVideo: true },
     isStudent = false,
     userName = 'Instructor',
+    userIdentifier = '',
     isMeetingMode = false
 }) {
     const canvasRef = useRef(null);
@@ -358,6 +359,7 @@ export default function Whiteboard({
     // Laser pointer state
     const [laserPos, setLaserPos] = useState(null);
     const [remoteCursors, setRemoteCursors] = useState({});
+    const [recentLiveActions, setRecentLiveActions] = useState([]);
 
     const [localPermissions, setLocalPermissions] = useState(permissions);
     const [showPermissions, setShowPermissions] = useState(false);
@@ -931,10 +933,29 @@ export default function Whiteboard({
             if (data.sessionId !== sessionId || data.socketId === socket.id) return;
             setRemoteCursors(prev => ({
                 ...prev,
-                [data.socketId]: { x: data.x, y: data.y, userName: data.userName, tool: data.tool, timestamp: Date.now() }
+                [data.socketId]: {
+                    x: data.x,
+                    y: data.y,
+                    userName: data.userName,
+                    userIdentifier: data.userIdentifier,
+                    action: data.action,
+                    tool: data.tool,
+                    timestamp: Date.now()
+                }
             }));
         };
+
+        const handleWhiteboardAction = (data) => {
+            if (data.sessionId !== sessionId || data.socketId === socket.id) return;
+            const actionText = `${data.userName || 'Participant'}${data.userIdentifier ? ` (${data.userIdentifier})` : ''} is ${data.action || 'drawing'}`;
+            setRecentLiveActions(prev => {
+                const filtered = prev.filter(a => a.socketId !== data.socketId);
+                return [{ ...data, text: actionText, timestamp: Date.now() }, ...filtered].slice(0, 3);
+            });
+        };
+
         socket.on('whiteboard:cursor-update', handleCursorUpdate);
+        socket.on('whiteboard:action', handleWhiteboardAction);
 
         socket.on('whiteboard:state-requested', handleStateRequest);
         socket.on('whiteboard:draw', handleDraw);
@@ -944,8 +965,8 @@ export default function Whiteboard({
         socket.on('whiteboard:objects-update', handleObjectsUpdate);
 
         return () => {
-            
             socket.off('whiteboard:cursor-update', handleCursorUpdate);
+            socket.off('whiteboard:action', handleWhiteboardAction);
 
             socket.off('whiteboard:state-requested', handleStateRequest);
             socket.off('whiteboard:draw', handleDraw);
@@ -1937,13 +1958,30 @@ export default function Whiteboard({
             socket.emit('whiteboard:draw', {
                 sessionId,
                 socketId: socket.id,
+                userName,
+                userIdentifier,
                 ...eventData
             });
         }
-    }, [socket, sessionId]);
+    }, [socket, sessionId, userName, userIdentifier]);
 
-    // Start drawing
-    
+    // Broadcast granular live action for any whiteboard interaction
+    const broadcastAction = useCallback((actionDescription, x = 0, y = 0) => {
+        if (socket && sessionId) {
+            socket.emit('whiteboard:action', {
+                sessionId,
+                socketId: socket.id,
+                userName,
+                userIdentifier,
+                action: actionDescription,
+                x,
+                y,
+                timestamp: Date.now()
+            });
+        }
+    }, [socket, sessionId, userName, userIdentifier]);
+
+    // Clean up stale cursors and live action notices
     useEffect(() => {
         const interval = setInterval(() => {
             const now = Date.now();
@@ -1958,6 +1996,7 @@ export default function Whiteboard({
                 }
                 return changed ? next : prev;
             });
+            setRecentLiveActions(prev => prev.filter(act => now - act.timestamp < 4000));
         }, 1000);
         return () => clearInterval(interval);
     }, []);
@@ -2077,7 +2116,9 @@ export default function Whiteboard({
             ctx.beginPath();
             ctx.moveTo(pos.x, pos.y);
 
-            // Emit start event
+            // Emit start event with action description
+            const currentAction = tool === 'eraser' ? 'erasing' : (tool === 'highlighter' ? 'highlighting' : (tool === 'line' || tool === 'arrow' ? `drawing ${tool}` : 'drawing with pen'));
+            broadcastAction(currentAction, pos.x, pos.y);
             emitDrawEvent({
                 type: 'path',
                 isStart: true,
@@ -2086,13 +2127,15 @@ export default function Whiteboard({
                 color: tool === 'eraser' ? 'eraser' : (tool === 'highlighter' ? highlighterColor : color),
                 strokeWidth: tool === 'eraser' ? eraserSize : (tool === 'highlighter' ? strokeWidth * 4 : strokeWidth),
                 isHighlighter: tool === 'highlighter',
-                isEraser: tool === 'eraser'
+                isEraser: tool === 'eraser',
+                action: currentAction
             });
         }
 
         // Handle laser pointer
         if (tool === 'laser') {
             setLaserPos(pos);
+            broadcastAction('pointing with laser', pos.x, pos.y);
             if (laserTimeoutRef.current) {
                 clearTimeout(laserTimeoutRef.current);
             }
@@ -2104,7 +2147,7 @@ export default function Whiteboard({
                 });
             }
         }
-    }, [getPosition, tool, color, strokeWidth, eraserSize, highlighterColor, emitDrawEvent, isSharing, socket, sessionId]);
+    }, [getPosition, tool, color, strokeWidth, eraserSize, highlighterColor, emitDrawEvent, broadcastAction, isSharing, socket, sessionId, localPermissions.canDraw]);
 
     // Handle text submission - creates a text object for manipulation
     const handleTextSubmit = useCallback(() => {
@@ -3532,7 +3575,22 @@ export default function Whiteboard({
                 </div>
             )}
 
-            {/* Floating Sleek Toolbar (Zoom-style with 4-edge dock positioning) */}
+            {/* Floating Sleek Toolbar / View-Only Status Pill */}
+            {!localPermissions?.canDraw ? (
+                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/70 px-4 py-2.5 flex items-center gap-3.5 rounded-full z-40 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-amber-300 text-xs font-semibold">
+                        <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>View Only (Whiteboard drawing is disabled by Host)</span>
+                    </div>
+                    <button
+                        onClick={handleFullscreen}
+                        className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full transition"
+                        title="Toggle Fullscreen"
+                    >
+                        {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                    </button>
+                </div>
+            ) : (
                 <div className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/50 px-2 py-1 flex items-center gap-0.5 rounded-full z-40 max-w-[95%] overflow-visible whitespace-nowrap hide-scrollbar transition-all ${
                     toolbarDock === 'top'
                         ? 'top-4 left-1/2 transform -translate-x-1/2 flex-row'
@@ -3559,12 +3617,7 @@ export default function Whiteboard({
                             { id: 'recorder', icon: Video, label: 'Toggle Recorder' },
                             { id: 'fullscreen', icon: isFullscreen ? Minimize2 : Maximize2, label: 'Toggle Fullscreen' },
                             ...(isInstructor ? [{ id: 'permissions', icon: Users, label: 'Manage Permissions' }] : []),
-                        ].filter(t => {
-                                if (!localPermissions?.canDraw) {
-                                    return ['select', 'laser', 'fullscreen', 'recorder'].includes(t.id);
-                                }
-                                return true;
-                            }).map(t => (
+                        ].map(t => (
                             <div key={t.id} className="relative">
                                 <button
                                     onClick={() => {
@@ -5347,16 +5400,29 @@ export default function Whiteboard({
                         );
                     })}
 
-                    {/* Laser Pointer Overlay */}
-                    
+                    {/* Top-Left Live Whiteboard Activity Banner */}
+                    {recentLiveActions.length > 0 && (
+                        <div className="absolute top-4 left-4 z-40 flex flex-col gap-2 pointer-events-none">
+                            {recentLiveActions.map((act) => (
+                                <div
+                                    key={act.socketId + act.timestamp}
+                                    className="bg-slate-900/90 text-white text-xs font-semibold px-3 py-1.5 rounded-xl border border-indigo-500/50 shadow-2xl backdrop-blur-md flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-200"
+                                >
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                                    <span>{act.text}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     {/* Remote Cursors */}
                     {Object.entries(remoteCursors).map(([id, cursor]) => (
                         <div key={id} className="absolute pointer-events-none z-50 flex items-center" style={{ left: cursor.x, top: cursor.y }}>
                             <svg className="w-5 h-5 text-indigo-500 drop-shadow-md" fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M7 2l12 11.2-5.8.5 3.3 7.3-2.2.9-3.2-7.4-4.4 5z"/>
                             </svg>
-                            <span className="ml-1 px-1.5 py-0.5 bg-indigo-500 text-white text-[10px] font-bold rounded-sm shadow-sm opacity-90 whitespace-nowrap">
-                                {cursor.userName}
+                            <span className="ml-1 px-2 py-0.5 bg-indigo-600 text-white text-[11px] font-bold rounded-md shadow-lg opacity-95 whitespace-nowrap border border-indigo-400/40">
+                                {cursor.userName}{cursor.userIdentifier ? ` (${cursor.userIdentifier})` : ''}{cursor.action ? ` • ${cursor.action}` : ''}
                             </span>
                         </div>
                     ))}

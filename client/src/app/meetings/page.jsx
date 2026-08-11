@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
     Video, Calendar, Clock, User, Play, CheckCircle, XCircle,
     Plus, Search, X, Users, CalendarPlus, Award, Shield, Trash2, Sparkles,
-    Link2, Copy, Check, Share2, Edit3, Lock, UserPlus
+    Link2, Copy, Check, Share2, Edit3, Lock, UserPlus, GraduationCap, CheckSquare, Square
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -133,15 +133,12 @@ export default function MeetingPage() {
     // Schedule modal state
     const [showScheduleModal, setShowScheduleModal] = useState(false);
     const [meetingType, setMeetingType] = useState('scheduled'); // 'instant' or 'scheduled'
-    const [targetType, setTargetType] = useState('student'); // 'student', 'class', 'group'
-    const [selectedTarget, setSelectedTarget] = useState(null);
-    const [availableTargets, setAvailableTargets] = useState([]);
+    const [targetCategoryFilter, setTargetCategoryFilter] = useState('all'); // 'all', 'class', 'group', 'student'
+    const [selectedTargets, setSelectedTargets] = useState([]); // array of { id, type, name, subtext }
+    const [availableTargetResults, setAvailableTargetResults] = useState({ classes: [], groups: [], students: [] });
     const [loadingTargets, setLoadingTargets] = useState(false);
     const [targetSearchQuery, setTargetSearchQuery] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
-    const [students, setStudents] = useState([]);
-    const [loadingStudents, setLoadingStudents] = useState(false);
-    const [selectedStudent, setSelectedStudent] = useState(null);
     const [scheduledDateTime, setScheduledDateTime] = useState('');
     const [duration, setDuration] = useState(15);
     const [sessionTitle, setSessionTitle] = useState('');
@@ -314,39 +311,79 @@ export default function MeetingPage() {
         return () => clearTimeout(debounceTimer);
     }, [searchQuery]);
 
-    const searchTargets = async (query, type) => {
-        if (!query || query.length < 2) {
-            setAvailableTargets([]);
-            return;
-        }
+    const fetchPopulatedTargets = async (query = '', category = 'all') => {
         setLoadingTargets(true);
         try {
-            if (type === 'student') {
-                const res = await meetingAPI.getAvailableStudents({ search: query });
-                setAvailableTargets(res.data.data.students || []);
-            } else if (type === 'class') {
-                // If API exists, use it. Otherwise placeholder search.
-                const res = await classesAPI.getAll({ search: query });
-                setAvailableTargets(res.data.data.classes || []);
-            } else if (type === 'group') {
-                setAvailableTargets([{ id: 'dummy-group', name: query + ' Group' }]);
+            const res = await meetingAPI.searchTargets({
+                query: query.trim(),
+                type: category === 'all' ? undefined : category
+            });
+            if (res.data?.success && res.data?.data) {
+                setAvailableTargetResults({
+                    classes: res.data.data.classes || [],
+                    groups: res.data.data.groups || [],
+                    students: res.data.data.students || []
+                });
             }
         } catch (error) {
             console.error('Error searching targets:', error);
-            toast.error('Failed to search targets');
         } finally {
             setLoadingTargets(false);
         }
     };
 
     useEffect(() => {
-        const debounceTimer = setTimeout(() => {
-            if (targetSearchQuery) {
-                searchTargets(targetSearchQuery, targetType);
+        if (showScheduleModal) {
+            const debounceTimer = setTimeout(() => {
+                fetchPopulatedTargets(targetSearchQuery, targetCategoryFilter);
+            }, 250);
+            return () => clearTimeout(debounceTimer);
+        }
+    }, [targetSearchQuery, targetCategoryFilter, showScheduleModal]);
+
+    const toggleTargetSelection = (targetItem) => {
+        setSelectedTargets(prev => {
+            const exists = prev.some(t => t.id === targetItem.id);
+            if (exists) {
+                return prev.filter(t => t.id !== targetItem.id);
+            } else {
+                return [...prev, targetItem];
             }
-        }, 300);
-        return () => clearTimeout(debounceTimer);
-    }, [targetSearchQuery, targetType]);
+        });
+    };
+
+    const removeSelectedTarget = (targetId) => {
+        setSelectedTargets(prev => prev.filter(t => t.id !== targetId));
+    };
+
+    const selectAllFilteredTargets = () => {
+        const toAdd = [];
+        if (targetCategoryFilter === 'all' || targetCategoryFilter === 'class') {
+            availableTargetResults.classes.forEach(c => {
+                toAdd.push({ id: c.id, type: 'class', name: c.name + (c.section ? ` (${c.section})` : ''), subtext: `${c._count?.students || 0} Students` });
+            });
+        }
+        if (targetCategoryFilter === 'all' || targetCategoryFilter === 'group') {
+            availableTargetResults.groups.forEach(g => {
+                toAdd.push({ id: g.id, type: 'group', name: g.name, subtext: 'Study Group' });
+            });
+        }
+        if (targetCategoryFilter === 'all' || targetCategoryFilter === 'student') {
+            availableTargetResults.students.forEach(s => {
+                toAdd.push({ id: s.id, type: 'student', name: `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.name, subtext: s.studentId || s.admissionNumber || s.email || '' });
+            });
+        }
+
+        setSelectedTargets(prev => {
+            const map = new Map(prev.map(item => [item.id, item]));
+            toAdd.forEach(item => map.set(item.id, item));
+            return Array.from(map.values());
+        });
+    };
+
+    const clearAllSelectedTargets = () => {
+        setSelectedTargets([]);
+    };
 
     const searchEditTargets = async (query, type) => {
         if (!query || query.length < 2) {
@@ -453,17 +490,18 @@ export default function MeetingPage() {
     };
 
     const handleScheduleSession = async () => {
-        if (!selectedTarget) {
-            toast.error(`Please select a ${targetType}`);
+        if (selectedTargets.length === 0) {
+            toast.error('Please select at least one class, group, or student');
             return;
         }
         
         const payload = {
             type: meetingType,
-            targetType,
-            targetId: selectedTarget.id,
+            targets: selectedTargets,
+            targetType: selectedTargets[0].type,
+            targetId: selectedTargets[0].id,
             durationMinutes: duration,
-            title: sessionTitle || 'Meeting Session',
+            title: sessionTitle || (selectedTargets.length === 1 ? `Meeting with ${selectedTargets[0].name}` : 'Group Meeting Session'),
             autoAdmit
         };
 
@@ -501,14 +539,14 @@ export default function MeetingPage() {
     };
 
     const resetModalState = () => {
-        setSelectedTarget(null);
+        setSelectedTargets([]);
         setTargetSearchQuery('');
-        setAvailableTargets([]);
+        setTargetCategoryFilter('all');
+        setAvailableTargetResults({ classes: [], groups: [], students: [] });
         setScheduledDateTime('');
         setDuration(15);
         setSessionTitle('');
         setMeetingType('scheduled');
-        setTargetType('student');
         setAutoAdmit(true);
     };
 
@@ -1090,110 +1128,218 @@ export default function MeetingPage() {
                                 />
                             </div>
 
-                            {/* Target Type */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Target Type <span className="text-red-500">*</span>
-                                </label>
-                                <select
-                                    value={targetType}
-                                    onChange={(e) => {
-                                        setTargetType(e.target.value);
-                                        setSelectedTarget(null);
-                                        setAvailableTargets([]);
-                                        setTargetSearchQuery('');
-                                    }}
-                                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
-                                >
-                                    <option value="student">Student</option>
-                                    <option value="class">Class</option>
-                                    <option value="group">Group</option>
-                                </select>
-                            </div>
-
-                            {/* Target Selection */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Select {targetType.charAt(0).toUpperCase() + targetType.slice(1)} <span className="text-red-500">*</span>
-                                </label>
-
-                                {selectedTarget ? (
-                                    <div className="flex items-center justify-between p-4 bg-primary-50 border border-primary-200 rounded-xl">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full bg-primary-500 text-white flex items-center justify-center font-medium">
-                                                {selectedTarget.firstName?.[0] || selectedTarget.name?.[0] || targetType[0].toUpperCase()}
-                                                {selectedTarget.lastName?.[0]}
-                                            </div>
-                                            <div>
-                                                <p className="font-medium text-slate-900">
-                                                    {selectedTarget.firstName ? `${selectedTarget.firstName} ${selectedTarget.lastName}` : selectedTarget.name}
-                                                </p>
-                                                <p className="text-sm text-slate-500">
-                                                    {selectedTarget.studentId || selectedTarget.email || `${targetType} ID`}
-                                                </p>
-                                            </div>
-                                        </div>
+                            {/* Multi-Target Participants Selection */}
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <label className="block text-sm font-semibold text-slate-900">
+                                        Choose Classes, Groups & Students <span className="text-red-500">*</span>
+                                    </label>
+                                    <div className="flex items-center gap-2">
                                         <button
-                                            onClick={() => setSelectedTarget(null)}
-                                            className="text-primary-600 hover:text-primary-800 text-sm font-medium"
+                                            type="button"
+                                            onClick={selectAllFilteredTargets}
+                                            className="text-xs text-primary-600 hover:text-primary-800 font-semibold"
                                         >
-                                            Change
+                                            Select All
+                                        </button>
+                                        <span className="text-slate-300">|</span>
+                                        <button
+                                            type="button"
+                                            onClick={clearAllSelectedTargets}
+                                            className="text-xs text-slate-500 hover:text-slate-700"
+                                        >
+                                            Clear
                                         </button>
                                     </div>
-                                ) : (
-                                    <div className="space-y-3">
-                                        <div className="relative">
-                                            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                            <input
-                                                type="text"
-                                                value={targetSearchQuery}
-                                                onChange={(e) => setTargetSearchQuery(e.target.value)}
-                                                placeholder={`Search ${targetType}...`}
-                                                className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
-                                            />
+                                </div>
+
+                                {/* Category Tabs */}
+                                <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+                                    {[
+                                        { id: 'all', label: 'All Targets' },
+                                        { id: 'class', label: 'Classes' },
+                                        { id: 'group', label: 'Groups' },
+                                        { id: 'student', label: 'Students' }
+                                    ].map(cat => (
+                                        <button
+                                            key={cat.id}
+                                            type="button"
+                                            onClick={() => setTargetCategoryFilter(cat.id)}
+                                            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold transition ${
+                                                targetCategoryFilter === cat.id
+                                                    ? 'bg-white text-primary-600 shadow-sm'
+                                                    : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                        >
+                                            {cat.label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Search Bar */}
+                                <div className="relative">
+                                    <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        value={targetSearchQuery}
+                                        onChange={(e) => setTargetSearchQuery(e.target.value)}
+                                        placeholder="Search by class name, group title, student name or ID..."
+                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
+                                    />
+                                    {targetSearchQuery && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setTargetSearchQuery('')}
+                                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Selected Targets Chips */}
+                                {selectedTargets.length > 0 && (
+                                    <div className="space-y-1.5 bg-primary-50/50 p-3 rounded-xl border border-primary-100">
+                                        <div className="flex items-center justify-between text-xs font-semibold text-primary-900">
+                                            <span>Selected Targets ({selectedTargets.length})</span>
+                                            <button
+                                                type="button"
+                                                onClick={clearAllSelectedTargets}
+                                                className="text-[11px] text-red-500 hover:text-red-700"
+                                            >
+                                                Clear all
+                                            </button>
                                         </div>
-
-                                        {loadingTargets && (
-                                            <div className="flex items-center justify-center py-4">
-                                                <div className="animate-spin w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full"></div>
-                                            </div>
-                                        )}
-
-                                        {!loadingTargets && availableTargets.length > 0 && (
-                                            <div className="border border-slate-200 rounded-xl max-h-48 overflow-y-auto">
-                                                {availableTargets.map((target) => (
+                                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                                            {selectedTargets.map((item) => (
+                                                <span
+                                                    key={item.id}
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white text-slate-800 border border-primary-200 shadow-sm"
+                                                >
+                                                    <span>
+                                                        {item.type === 'class' ? '🎓' : item.type === 'group' ? '👥' : '👤'} {item.name}
+                                                    </span>
                                                     <button
-                                                        key={target.id}
-                                                        onClick={() => {
-                                                            setSelectedTarget(target);
-                                                            setTargetSearchQuery('');
-                                                            setAvailableTargets([]);
-                                                        }}
-                                                        className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 transition border-b border-slate-100 last:border-0"
+                                                        type="button"
+                                                        onClick={() => removeSelectedTarget(item.id)}
+                                                        className="p-0.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-red-500 transition"
                                                     >
-                                                        <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-sm font-medium">
-                                                            {target.firstName?.[0] || target.name?.[0] || targetType[0].toUpperCase()}{target.lastName?.[0]}
-                                                        </div>
-                                                        <div className="text-left flex-1">
-                                                            <div className="font-medium text-slate-900 text-sm">
-                                                                {target.firstName ? `${target.firstName} ${target.lastName}` : target.name}
-                                                            </div>
-                                                            <p className="text-xs text-slate-500">
-                                                                {target.studentId || target.admissionNumber || target.email || ''}
-                                                            </p>
-                                                        </div>
+                                                        <X className="w-3 h-3" />
                                                     </button>
-                                                ))}
-                                            </div>
-                                        )}
-
-                                        {!loadingTargets && targetSearchQuery.length >= 2 && availableTargets.length === 0 && (
-                                            <p className="text-sm text-slate-500 text-center py-4">
-                                                No matches found for "{targetSearchQuery}"
-                                            </p>
-                                        )}
+                                                </span>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
+
+                                {/* Populated Target Lists */}
+                                <div className="border border-slate-200 rounded-2xl max-h-56 overflow-y-auto divide-y divide-slate-100">
+                                    {loadingTargets ? (
+                                        <div className="flex items-center justify-center py-8 text-xs text-slate-400">
+                                            <div className="animate-spin w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full mr-2" />
+                                            Loading populated targets...
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {/* Classes */}
+                                            {(targetCategoryFilter === 'all' || targetCategoryFilter === 'class') && availableTargetResults.classes.length > 0 && (
+                                                <div className="p-2 space-y-1">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Classes</p>
+                                                    {availableTargetResults.classes.map(c => {
+                                                        const isSelected = selectedTargets.some(t => t.id === c.id);
+                                                        return (
+                                                            <div
+                                                                key={c.id}
+                                                                onClick={() => toggleTargetSelection({ id: c.id, type: 'class', name: c.name + (c.section ? ` (${c.section})` : ''), subtext: `${c._count?.students || 0} Students` })}
+                                                                className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${
+                                                                    isSelected ? 'bg-primary-50 border border-primary-200' : 'hover:bg-slate-50'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center gap-2.5">
+                                                                    <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
+                                                                        🎓
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-xs font-semibold text-slate-900">{c.name} {c.section && `(${c.section})`}</p>
+                                                                        <p className="text-[10px] text-slate-500">{c._count?.students || 0} Students enrolled</p>
+                                                                    </div>
+                                                                </div>
+                                                                {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+
+                                            {/* Groups */}
+                                            {(targetCategoryFilter === 'all' || targetCategoryFilter === 'group') && availableTargetResults.groups.length > 0 && (
+                                                <div className="p-2 space-y-1">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Study Groups</p>
+                                                    {availableTargetResults.groups.map(g => {
+                                                        const isSelected = selectedTargets.some(t => t.id === g.id);
+                                                        return (
+                                                            <div
+                                                                key={g.id}
+                                                                onClick={() => toggleTargetSelection({ id: g.id, type: 'group', name: g.name, subtext: 'Study Group' })}
+                                                                className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${
+                                                                    isSelected ? 'bg-primary-50 border border-primary-200' : 'hover:bg-slate-50'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center gap-2.5">
+                                                                    <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center text-xs font-bold">
+                                                                        👥
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-xs font-semibold text-slate-900">{g.name}</p>
+                                                                        <p className="text-[10px] text-slate-500">Group Target</p>
+                                                                    </div>
+                                                                </div>
+                                                                {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+
+                                            {/* Students */}
+                                            {(targetCategoryFilter === 'all' || targetCategoryFilter === 'student') && availableTargetResults.students.length > 0 && (
+                                                <div className="p-2 space-y-1">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Students</p>
+                                                    {availableTargetResults.students.map(s => {
+                                                        const isSelected = selectedTargets.some(t => t.id === s.id);
+                                                        const sName = `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.name || 'Student';
+                                                        return (
+                                                            <div
+                                                                key={s.id}
+                                                                onClick={() => toggleTargetSelection({ id: s.id, type: 'student', name: sName, subtext: s.studentId || s.admissionNumber || s.email || '' })}
+                                                                className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${
+                                                                    isSelected ? 'bg-primary-50 border border-primary-200' : 'hover:bg-slate-50'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center gap-2.5">
+                                                                    <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold">
+                                                                        👤
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-xs font-semibold text-slate-900">{sName}</p>
+                                                                        <p className="text-[10px] text-slate-500">{s.studentId || s.admissionNumber || s.email || 'Student'}</p>
+                                                                    </div>
+                                                                </div>
+                                                                {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+
+                                            {availableTargetResults.classes.length === 0 && availableTargetResults.groups.length === 0 && availableTargetResults.students.length === 0 && (
+                                                <div className="py-8 text-center text-slate-400 text-xs">
+                                                    No targets found matching "{targetSearchQuery}"
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Date and Time (Only for scheduled) */}
