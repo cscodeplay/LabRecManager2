@@ -3583,7 +3583,7 @@ export default function Whiteboard({
                         <span>View Only (Whiteboard drawing is disabled by Host)</span>
                     </div>
                     <button
-                        onClick={handleFullscreen}
+                        onClick={onToggleFullscreen}
                         className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full transition"
                         title="Toggle Fullscreen"
                     >
