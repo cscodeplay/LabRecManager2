@@ -986,64 +986,73 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
         ...(schoolId ? { class: { schoolId } } : {})
     };
 
-    if (searchTerm.length >= 1) {
-        if (type === 'all' || type === 'student') {
-            students = await prisma.user.findMany({
-                where: {
-                    ...userWhere,
+    if (type === 'all' || type === 'student') {
+        students = await prisma.user.findMany({
+            where: {
+                ...userWhere,
+                ...(searchTerm.length >= 1 ? {
                     OR: [
                         { firstName: { contains: searchTerm, mode: 'insensitive' } },
                         { lastName: { contains: searchTerm, mode: 'insensitive' } },
                         { admissionNumber: { contains: searchTerm, mode: 'insensitive' } },
                         { email: { contains: searchTerm, mode: 'insensitive' } }
                     ]
-                },
-                select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    email: true,
-                    admissionNumber: true,
-                    studentId: true,
-                    role: true
-                },
-                take: 20
-            });
-        }
+                } : {})
+            },
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                admissionNumber: true,
+                studentId: true,
+                role: true
+            },
+            orderBy: { firstName: 'asc' },
+            take: 50
+        });
+    }
 
-        if (type === 'all' || type === 'class') {
-            classes = await prisma.class.findMany({
-                where: {
-                    ...classWhere,
+    if (type === 'all' || type === 'class') {
+        classes = await prisma.class.findMany({
+            where: {
+                ...classWhere,
+                ...(searchTerm.length >= 1 ? {
                     OR: [
                         { name: { contains: searchTerm, mode: 'insensitive' } },
                         { section: { contains: searchTerm, mode: 'insensitive' } }
                     ]
-                },
-                select: {
-                    id: true,
-                    name: true,
-                    section: true,
-                    academicYearId: true
-                },
-                take: 15
-            });
-        }
+                } : {})
+            },
+            select: {
+                id: true,
+                name: true,
+                section: true,
+                academicYearId: true,
+                _count: { select: { students: true } }
+            },
+            orderBy: { name: 'asc' },
+            take: 30
+        });
+    }
 
-        if (type === 'all' || type === 'group') {
-            groups = await prisma.studentGroup.findMany({
-                where: {
-                    ...groupWhere,
+    if (type === 'all' || type === 'group') {
+        groups = await prisma.studentGroup.findMany({
+            where: {
+                ...groupWhere,
+                ...(searchTerm.length >= 1 ? {
                     name: { contains: searchTerm, mode: 'insensitive' }
-                },
-                select: {
-                    id: true,
-                    name: true,
-                    classId: true
-                },
-                take: 15
-            });
-        }
+                } : {})
+            },
+            select: {
+                id: true,
+                name: true,
+                classId: true,
+                _count: { select: { members: true } }
+            },
+            orderBy: { name: 'asc' },
+            take: 30
+        });
     }
 
     res.json({

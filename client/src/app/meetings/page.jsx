@@ -315,7 +315,7 @@ export default function MeetingPage() {
         setLoadingTargets(true);
         try {
             const res = await meetingAPI.searchTargets({
-                query: query.trim(),
+                q: query.trim(),
                 type: category === 'all' ? undefined : category
             });
             if (res.data?.success && res.data?.data) {
@@ -1280,7 +1280,7 @@ export default function MeetingPage() {
                                                         return (
                                                             <div
                                                                 key={g.id}
-                                                                onClick={() => toggleTargetSelection({ id: g.id, type: 'group', name: g.name, subtext: 'Study Group' })}
+                                                                onClick={() => toggleTargetSelection({ id: g.id, type: 'group', name: g.name, subtext: `${g._count?.members || 0} Members` })}
                                                                 className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${
                                                                     isSelected ? 'bg-primary-50 border border-primary-200' : 'hover:bg-slate-50'
                                                                 }`}
@@ -1291,7 +1291,7 @@ export default function MeetingPage() {
                                                                     </div>
                                                                     <div>
                                                                         <p className="text-xs font-semibold text-slate-900">{g.name}</p>
-                                                                        <p className="text-[10px] text-slate-500">Group Target</p>
+                                                                        <p className="text-[10px] text-slate-500">{g._count?.members || 0} Members</p>
                                                                     </div>
                                                                 </div>
                                                                 {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
@@ -1334,7 +1334,7 @@ export default function MeetingPage() {
 
                                             {availableTargetResults.classes.length === 0 && availableTargetResults.groups.length === 0 && availableTargetResults.students.length === 0 && (
                                                 <div className="py-8 text-center text-slate-400 text-xs">
-                                                    No targets found matching "{targetSearchQuery}"
+                                                    {targetSearchQuery ? `No targets found matching "${targetSearchQuery}"` : 'No targets available'}
                                                 </div>
                                             )}
                                         </>
