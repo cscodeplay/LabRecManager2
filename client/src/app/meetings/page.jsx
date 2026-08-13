@@ -312,12 +312,12 @@ export default function MeetingPage() {
         return () => clearTimeout(debounceTimer);
     }, [searchQuery]);
 
-    const fetchPopulatedTargets = async (query = '', category = 'all') => {
+    const fetchPopulatedTargets = async (query = '') => {
         setLoadingTargets(true);
         try {
             const res = await meetingAPI.searchTargets({
-                q: query.trim(),
-                type: category === 'all' ? undefined : category
+                q: (query || '').trim(),
+                type: 'all'
             });
             if (res.data?.success && res.data?.data) {
                 setAvailableTargetResults({
@@ -336,11 +336,11 @@ export default function MeetingPage() {
     useEffect(() => {
         if (showScheduleModal) {
             const debounceTimer = setTimeout(() => {
-                fetchPopulatedTargets(targetSearchQuery, targetCategoryFilter);
-            }, 250);
+                fetchPopulatedTargets(targetSearchQuery);
+            }, targetSearchQuery ? 250 : 0);
             return () => clearTimeout(debounceTimer);
         }
-    }, [targetSearchQuery, targetCategoryFilter, showScheduleModal]);
+    }, [targetSearchQuery, showScheduleModal]);
 
     const MAX_PARTICIPANT_CAPACITY = 50;
 

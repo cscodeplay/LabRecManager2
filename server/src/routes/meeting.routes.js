@@ -974,7 +974,7 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
 
     const userWhere = {
         role: 'student',
-        isActive: true,
+        isActive: { not: false },
         ...(schoolId ? { schoolId } : {})
     };
 
@@ -983,7 +983,7 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
     };
 
     const groupWhere = {
-        ...(schoolId ? { class: { schoolId } } : {})
+        ...(schoolId ? { OR: [{ class: { schoolId } }, { class: null }] } : {})
     };
 
     if (type === 'all' || type === 'student') {
@@ -1009,7 +1009,6 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
                 studentId: true,
                 role: true,
                 enrollments: {
-                    where: { status: 'active' },
                     select: {
                         classId: true,
                         class: {
