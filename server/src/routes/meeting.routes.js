@@ -995,6 +995,7 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
                         { firstName: { contains: searchTerm, mode: 'insensitive' } },
                         { lastName: { contains: searchTerm, mode: 'insensitive' } },
                         { admissionNumber: { contains: searchTerm, mode: 'insensitive' } },
+                        { studentId: { contains: searchTerm, mode: 'insensitive' } },
                         { email: { contains: searchTerm, mode: 'insensitive' } }
                     ]
                 } : {})
@@ -1006,10 +1007,22 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
                 email: true,
                 admissionNumber: true,
                 studentId: true,
-                role: true
+                role: true,
+                enrollments: {
+                    where: { status: 'active' },
+                    select: {
+                        class: {
+                            select: { name: true, section: true }
+                        }
+                    },
+                    take: 1
+                }
             },
-            orderBy: { firstName: 'asc' },
-            take: 50
+            orderBy: [
+                { firstName: 'asc' },
+                { lastName: 'asc' }
+            ],
+            take: 1000
         });
     }
 
@@ -1028,11 +1041,15 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
                 id: true,
                 name: true,
                 section: true,
+                gradeLevel: true,
                 academicYearId: true,
-                _count: { select: { students: true } }
+                _count: { select: { enrollments: true, groups: true } }
             },
-            orderBy: { name: 'asc' },
-            take: 30
+            orderBy: [
+                { gradeLevel: 'asc' },
+                { name: 'asc' }
+            ],
+            take: 300
         });
     }
 
@@ -1041,17 +1058,27 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
             where: {
                 ...groupWhere,
                 ...(searchTerm.length >= 1 ? {
-                    name: { contains: searchTerm, mode: 'insensitive' }
+                    OR: [
+                        { name: { contains: searchTerm, mode: 'insensitive' } },
+                        { description: { contains: searchTerm, mode: 'insensitive' } },
+                        { class: { name: { contains: searchTerm, mode: 'insensitive' } } }
+                    ]
                 } : {})
             },
             select: {
                 id: true,
                 name: true,
+                description: true,
                 classId: true,
+                class: {
+                    select: { name: true, section: true }
+                },
                 _count: { select: { members: true } }
             },
-            orderBy: { name: 'asc' },
-            take: 30
+            orderBy: [
+                { name: 'asc' }
+            ],
+            take: 500
         });
     }
 

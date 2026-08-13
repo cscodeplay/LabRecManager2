@@ -348,6 +348,10 @@ export default function MeetingPage() {
             if (exists) {
                 return prev.filter(t => t.id !== targetItem.id);
             } else {
+                if (prev.length >= 50) {
+                    toast.error('Maximum limit reached: You can select up to 50 targets (classes, groups, or students).');
+                    return prev;
+                }
                 return [...prev, targetItem];
             }
         });
@@ -361,23 +365,50 @@ export default function MeetingPage() {
         const toAdd = [];
         if (targetCategoryFilter === 'all' || targetCategoryFilter === 'class') {
             availableTargetResults.classes.forEach(c => {
-                toAdd.push({ id: c.id, type: 'class', name: c.name + (c.section ? ` (${c.section})` : ''), subtext: `${c._count?.students || 0} Students` });
+                toAdd.push({ 
+                    id: c.id, 
+                    type: 'class', 
+                    name: c.name + (c.section ? ` (${c.section})` : ''), 
+                    subtext: `${c._count?.enrollments ?? c._count?.students ?? 0} Students` 
+                });
             });
         }
         if (targetCategoryFilter === 'all' || targetCategoryFilter === 'group') {
             availableTargetResults.groups.forEach(g => {
-                toAdd.push({ id: g.id, type: 'group', name: g.name, subtext: 'Study Group' });
+                const classInfo = g.class ? `Class ${g.class.name}${g.class.section ? ` (${g.class.section})` : ''} • ` : '';
+                toAdd.push({ 
+                    id: g.id, 
+                    type: 'group', 
+                    name: g.name, 
+                    subtext: `${classInfo}${g._count?.members || 0} Members` 
+                });
             });
         }
         if (targetCategoryFilter === 'all' || targetCategoryFilter === 'student') {
             availableTargetResults.students.forEach(s => {
-                toAdd.push({ id: s.id, type: 'student', name: `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.name, subtext: s.studentId || s.admissionNumber || s.email || '' });
+                const className = s.enrollments?.[0]?.class ? ` • ${s.enrollments[0].class.name} (${s.enrollments[0].class.section || ''})` : '';
+                toAdd.push({ 
+                    id: s.id, 
+                    type: 'student', 
+                    name: `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.name, 
+                    subtext: (s.studentId || s.admissionNumber || s.email || 'Student') + className 
+                });
             });
         }
 
         setSelectedTargets(prev => {
             const map = new Map(prev.map(item => [item.id, item]));
-            toAdd.forEach(item => map.set(item.id, item));
+            let reachedMax = false;
+            for (const item of toAdd) {
+                if (map.size >= 50) {
+                    reachedMax = true;
+                    break;
+                }
+                map.set(item.id, item);
+            }
+            if (reachedMax) {
+                toast('Selected 50 targets (maximum capacity reached)', { icon: 'ℹ️' });
+            }
             return Array.from(map.values());
         });
     };
@@ -387,20 +418,22 @@ export default function MeetingPage() {
     };
 
     const searchEditTargets = async (query, type) => {
-        if (!query || query.length < 2) {
-            setEditAvailableTargets([]);
-            return;
-        }
         setEditLoadingTargets(true);
         try {
+            const res = await meetingAPI.searchTargets({ q: query || '', type: type || 'all' });
+            const data = res.data?.data || {};
             if (type === 'student') {
-                const res = await meetingAPI.getAvailableStudents({ search: query });
-                setEditAvailableTargets(res.data.data.students || []);
+                setEditAvailableTargets(data.students || []);
             } else if (type === 'class') {
-                const res = await classesAPI.getAll({ search: query });
-                setEditAvailableTargets(res.data.data.classes || []);
+                setEditAvailableTargets(data.classes || []);
             } else if (type === 'group') {
-                setEditAvailableTargets([{ id: 'dummy-group', name: query + ' Group' }]);
+                setEditAvailableTargets(data.groups || []);
+            } else {
+                setEditAvailableTargets([
+                    ...(data.classes || []).map(c => ({ ...c, type: 'class' })),
+                    ...(data.groups || []).map(g => ({ ...g, type: 'group' })),
+                    ...(data.students || []).map(s => ({ ...s, type: 'student' }))
+                ]);
             }
         } catch (error) {
             console.error('Error searching edit targets:', error);
@@ -1201,7 +1234,14 @@ export default function MeetingPage() {
                                 {selectedTargets.length > 0 && (
                                     <div className="space-y-1.5 bg-primary-50/50 p-3 rounded-xl border border-primary-100">
                                         <div className="flex items-center justify-between text-xs font-semibold text-primary-900">
-                                            <span>Selected Targets ({selectedTargets.length})</span>
+                                            <div className="flex items-center gap-2">
+                                                <span>Selected Targets ({selectedTargets.length}/50)</span>
+                                                {selectedTargets.length >= 50 && (
+                                                    <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full font-bold">
+                                                        Max 50 Reached
+                                                    </span>
+                                                )}
+                                            </div>
                                             <button
                                                 type="button"
                                                 onClick={clearAllSelectedTargets}
@@ -1244,13 +1284,14 @@ export default function MeetingPage() {
                                             {/* Classes */}
                                             {(targetCategoryFilter === 'all' || targetCategoryFilter === 'class') && availableTargetResults.classes.length > 0 && (
                                                 <div className="p-2 space-y-1">
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Classes</p>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Classes ({availableTargetResults.classes.length})</p>
                                                     {availableTargetResults.classes.map(c => {
                                                         const isSelected = selectedTargets.some(t => t.id === c.id);
+                                                        const studentCount = c._count?.enrollments ?? c._count?.students ?? 0;
                                                         return (
                                                             <div
                                                                 key={c.id}
-                                                                onClick={() => toggleTargetSelection({ id: c.id, type: 'class', name: c.name + (c.section ? ` (${c.section})` : ''), subtext: `${c._count?.students || 0} Students` })}
+                                                                onClick={() => toggleTargetSelection({ id: c.id, type: 'class', name: c.name + (c.section ? ` (${c.section})` : ''), subtext: `${studentCount} Students` })}
                                                                 className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${
                                                                     isSelected ? 'bg-primary-50 border border-primary-200' : 'hover:bg-slate-50'
                                                                 }`}
@@ -1261,7 +1302,7 @@ export default function MeetingPage() {
                                                                     </div>
                                                                     <div>
                                                                         <p className="text-xs font-semibold text-slate-900">{c.name} {c.section && `(${c.section})`}</p>
-                                                                        <p className="text-[10px] text-slate-500">{c._count?.students || 0} Students enrolled</p>
+                                                                        <p className="text-[10px] text-slate-500">{studentCount} Students enrolled {c.gradeLevel ? `• Grade ${c.gradeLevel}` : ''}</p>
                                                                     </div>
                                                                 </div>
                                                                 {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
@@ -1274,13 +1315,14 @@ export default function MeetingPage() {
                                             {/* Groups */}
                                             {(targetCategoryFilter === 'all' || targetCategoryFilter === 'group') && availableTargetResults.groups.length > 0 && (
                                                 <div className="p-2 space-y-1">
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Study Groups</p>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Study & Lab Groups ({availableTargetResults.groups.length})</p>
                                                     {availableTargetResults.groups.map(g => {
                                                         const isSelected = selectedTargets.some(t => t.id === g.id);
+                                                        const classLabel = g.class ? `Class ${g.class.name}${g.class.section ? ` (${g.class.section})` : ''} • ` : '';
                                                         return (
                                                             <div
                                                                 key={g.id}
-                                                                onClick={() => toggleTargetSelection({ id: g.id, type: 'group', name: g.name, subtext: `${g._count?.members || 0} Members` })}
+                                                                onClick={() => toggleTargetSelection({ id: g.id, type: 'group', name: g.name, subtext: `${classLabel}${g._count?.members || 0} Members` })}
                                                                 className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${
                                                                     isSelected ? 'bg-primary-50 border border-primary-200' : 'hover:bg-slate-50'
                                                                 }`}
@@ -1291,7 +1333,7 @@ export default function MeetingPage() {
                                                                     </div>
                                                                     <div>
                                                                         <p className="text-xs font-semibold text-slate-900">{g.name}</p>
-                                                                        <p className="text-[10px] text-slate-500">{g._count?.members || 0} Members</p>
+                                                                        <p className="text-[10px] text-slate-500">{classLabel}{g._count?.members || 0} Members {g.description ? `• ${g.description}` : ''}</p>
                                                                     </div>
                                                                 </div>
                                                                 {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
@@ -1304,14 +1346,16 @@ export default function MeetingPage() {
                                             {/* Students */}
                                             {(targetCategoryFilter === 'all' || targetCategoryFilter === 'student') && availableTargetResults.students.length > 0 && (
                                                 <div className="p-2 space-y-1">
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Students</p>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Students ({availableTargetResults.students.length})</p>
                                                     {availableTargetResults.students.map(s => {
                                                         const isSelected = selectedTargets.some(t => t.id === s.id);
                                                         const sName = `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.name || 'Student';
+                                                        const classInfo = s.enrollments?.[0]?.class ? ` • ${s.enrollments[0].class.name}${s.enrollments[0].class.section ? ` (${s.enrollments[0].class.section})` : ''}` : '';
+                                                        const subtext = (s.studentId || s.admissionNumber || s.email || 'Student') + classInfo;
                                                         return (
                                                             <div
                                                                 key={s.id}
-                                                                onClick={() => toggleTargetSelection({ id: s.id, type: 'student', name: sName, subtext: s.studentId || s.admissionNumber || s.email || '' })}
+                                                                onClick={() => toggleTargetSelection({ id: s.id, type: 'student', name: sName, subtext })}
                                                                 className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${
                                                                     isSelected ? 'bg-primary-50 border border-primary-200' : 'hover:bg-slate-50'
                                                                 }`}
@@ -1322,7 +1366,7 @@ export default function MeetingPage() {
                                                                     </div>
                                                                     <div>
                                                                         <p className="text-xs font-semibold text-slate-900">{sName}</p>
-                                                                        <p className="text-[10px] text-slate-500">{s.studentId || s.admissionNumber || s.email || 'Student'}</p>
+                                                                        <p className="text-[10px] text-slate-500">{subtext}</p>
                                                                     </div>
                                                                 </div>
                                                                 {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
