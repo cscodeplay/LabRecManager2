@@ -157,6 +157,11 @@ export const devicesAPI = {
 };
 
 // Assignments API
+export const compilerAPI = {
+    execute: (data) => api.post('/compiler/execute', data),
+    getLanguages: () => api.get('/compiler/languages')
+};
+
 export const assignmentsAPI = {
     getAll: (params) => api.get('/assignments', { params }),
     getById: (id) => api.get(`/assignments/${id}`),
