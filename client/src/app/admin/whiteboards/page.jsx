@@ -12,6 +12,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import { formatDateTime } from '@/lib/dateUtils';
 
 export default function AdminWhiteboardsPage() {
     const router = useRouter();
@@ -244,7 +245,7 @@ export default function AdminWhiteboardsPage() {
                                 {session.scheduledAt && (
                                     <span className="flex items-center gap-1 w-full mt-1">
                                         <Clock className="w-4 h-4" />
-                                        Starts: {new Date(session.scheduledAt).toLocaleString()}
+                                        Starts: {formatDateTime(session.scheduledAt)}
                                     </span>
                                 )}
                                 {session.duration && (

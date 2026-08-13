@@ -13,6 +13,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { meetingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import AssignmentCalendar from '@/components/AssignmentCalendar';
+import { formatDate, formatDateTime, formatTime } from '@/lib/dateUtils';
 
 import io from 'socket.io-client';
 
@@ -85,7 +86,7 @@ function useMeetingLink(session) {
     const copyInvitation = async (e) => {
         if (e) e.stopPropagation();
         const url = getJoinUrl();
-        const scheduledTime = session?.scheduledAt ? new Date(session.scheduledAt).toLocaleString() : 'Now';
+        const scheduledTime = session?.scheduledAt ? formatDateTime(session.scheduledAt) : 'Now';
         const inviteText = `Join Meeting Session: ${title}
 Host: ${hostName}
 Time: ${scheduledTime}
@@ -968,7 +969,7 @@ export default function MeetingPage() {
                                                     <div className="flex flex-wrap gap-4 mt-3 text-sm text-slate-500">
                                                         <span className="flex items-center gap-1">
                                                             <Calendar className="w-4 h-4" />
-                                                            {new Date(session.actualEndTime || session.updatedAt).toLocaleDateString()}
+                                                            {formatDateTime(session.actualEndTime || session.updatedAt)}
                                                         </span>
                                                         <span className="flex items-center gap-1">
                                                             <Clock className="w-4 h-4" />
@@ -1020,8 +1021,7 @@ export default function MeetingPage() {
                                     Meeting Recording - {selectedRecording.student?.firstName} {selectedRecording.student?.lastName}
                                 </h2>
                                 <p className="text-sm text-slate-500">
-                                    Host: {selectedRecording.host ? `${selectedRecording.host.firstName} ${selectedRecording.host.lastName}` : (selectedRecording.examiner ? `${selectedRecording.examiner.firstName} ${selectedRecording.examiner.lastName}` : 'Host')} •
-                                    {new Date(selectedRecording.actualEndTime || selectedRecording.updatedAt).toLocaleDateString()}
+                                    Host: {selectedRecording.host ? `${selectedRecording.host.firstName} ${selectedRecording.host.lastName}` : (selectedRecording.examiner ? `${selectedRecording.examiner.firstName} ${selectedRecording.examiner.lastName}` : 'Host')} • {formatDateTime(selectedRecording.actualEndTime || selectedRecording.updatedAt)}
                                 </p>
                             </div>
                             <button
@@ -1723,7 +1723,7 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                         <div className="flex flex-wrap gap-y-2 gap-x-4 mt-2.5 text-xs text-slate-500">
                             <span className="flex items-center gap-1.5">
                                 <Calendar className="w-3.5 h-3.5 text-primary-500" />
-                                <span>{session.scheduledAt ? new Date(session.scheduledAt).toLocaleString() : 'Not scheduled'}</span>
+                                <span>{session.scheduledAt ? formatDateTime(session.scheduledAt) : 'Not scheduled'}</span>
                             </span>
                             <span className="flex items-center gap-1.5">
                                 <Clock className="w-3.5 h-3.5 text-slate-400" />

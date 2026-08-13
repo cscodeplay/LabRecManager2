@@ -12,6 +12,7 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { formatDate, formatDateTime } from '@/lib/dateUtils';
 
 export default function AssignedWorkPage() {
     const router = useRouter();
@@ -517,7 +518,7 @@ export default function AssignedWorkPage() {
                                                             </span>
                                                         )}
                                                         {target.assignedAt && (
-                                                            <span> • Assigned {new Date(target.assignedAt).toLocaleDateString()}</span>
+                                                            <span> • Assigned {formatDate(target.assignedAt)}</span>
                                                         )}
                                                     </p>
                                                 </div>
@@ -594,13 +595,13 @@ export default function AssignedWorkPage() {
                                     {viewModal.target?.dueDate && (
                                         <div className="flex items-center gap-2">
                                             <Calendar className="w-4 h-4 text-amber-500" />
-                                            <span>Due: {new Date(viewModal.target.dueDate).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                                            <span>Due: {formatDateTime(viewModal.target.dueDate)}</span>
                                         </div>
                                     )}
                                     {viewModal.target?.assignedAt && (
                                         <div className="flex items-center gap-2">
                                             <CheckCircle className="w-4 h-4 text-green-500" />
-                                            <span>Assigned: {new Date(viewModal.target.assignedAt).toLocaleDateString()}</span>
+                                            <span>Assigned: {formatDate(viewModal.target.assignedAt)}</span>
                                         </div>
                                     )}
                                 </div>

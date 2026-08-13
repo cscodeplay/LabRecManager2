@@ -12,6 +12,7 @@ import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import { formatDate } from '@/lib/dateUtils';
 
 export default function ActivityLogsPage() {
     const router = useRouter();
@@ -100,7 +101,7 @@ export default function ActivityLogsPage() {
         if (diffMins < 60) return `${diffMins}m ago`;
         if (diffHours < 24) return `${diffHours}h ago`;
         if (diffDays < 7) return `${diffDays}d ago`;
-        return date.toLocaleDateString();
+        return formatDate(date);
     };
 
     // Filter logs

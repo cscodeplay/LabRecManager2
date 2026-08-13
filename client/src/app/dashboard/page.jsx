@@ -11,6 +11,7 @@ import {
 import { useAuthStore } from '@/lib/store';
 import { dashboardAPI } from '@/lib/api';
 import AssignmentCalendar from '@/components/AssignmentCalendar';
+import { formatDate } from '@/lib/dateUtils';
 
 export default function DashboardPage() {
     const router = useRouter();
@@ -251,7 +252,7 @@ export default function DashboardPage() {
                                                     {item.status || t('dashboard.pending')}
                                                 </span>
                                                 <div className="text-right">
-                                                    <p className="text-sm font-medium text-slate-900">{dueDate.toLocaleDateString()}</p>
+                                                    <p className="text-sm font-medium text-slate-900">{formatDate(dueDate)}</p>
                                                     <p className={`text-xs mt-0.5 ${hoursLeft < 24 ? 'text-red-600 font-medium' : 'text-slate-500'}`}>
                                                         {timeLeftText}
                                                     </p>

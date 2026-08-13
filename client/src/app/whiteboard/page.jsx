@@ -12,6 +12,7 @@ import Whiteboard from '@/components/Whiteboard';
 import WhiteboardShareModal from '@/components/WhiteboardShareModal';
 import CameraOverlay from '@/components/CameraOverlay';
 import api from '@/lib/api';
+import { formatDate } from '@/lib/dateUtils';
 
 export default function WhiteboardPage() {
     const router = useRouter();
@@ -450,7 +451,7 @@ export default function WhiteboardPage() {
                                         <h3 className="font-semibold text-slate-900 line-clamp-1">{file.title}</h3>
                                     )}
                                     <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                                        <span>Modified: {new Date(file.lastOpenedAt).toLocaleDateString()}</span>
+                                        <span>Modified: {formatDate(file.lastOpenedAt)}</span>
                                         <span>•</span>
                                         <span>{file.pageCount || 1} {file.pageCount === 1 ? 'page' : 'pages'}</span>
                                     </div>

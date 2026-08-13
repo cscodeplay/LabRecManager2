@@ -11,6 +11,7 @@ import { useAuthStore } from '@/lib/store';
 import { useConfirm } from '@/components/ConfirmDialog';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
+import { formatTime, formatDateTime, formatRelativeTime } from '@/lib/dateUtils';
 
 export default function AdminWhiteboardDetailPage({ params: paramsPromise }) {
     const params = use(paramsPromise);
@@ -193,7 +194,7 @@ export default function AdminWhiteboardDetailPage({ params: paramsPromise }) {
                             )}
                             <div className="flex justify-between">
                                 <span className="text-slate-500">Started:</span>
-                                <span className="font-medium text-slate-800">{new Date(session.createdAt).toLocaleTimeString()}</span>
+                                <span className="font-medium text-slate-800">{formatDateTime(session.createdAt)}</span>
                             </div>
                         </div>
                     </div>
@@ -255,7 +256,7 @@ export default function AdminWhiteboardDetailPage({ params: paramsPromise }) {
                                         </div>
                                     </div>
                                     <span className="text-xs text-slate-400">
-                                        Joined {p.joinedAt ? new Date(p.joinedAt).toLocaleTimeString() : 'Recently'}
+                                        Joined {p.joinedAt ? formatRelativeTime(p.joinedAt) : 'Recently'}
                                     </span>
                                 </div>
                             ))}
