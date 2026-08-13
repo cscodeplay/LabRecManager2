@@ -1011,11 +1011,12 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
                 enrollments: {
                     where: { status: 'active' },
                     select: {
+                        classId: true,
                         class: {
-                            select: { name: true, section: true }
+                            select: { id: true, name: true, section: true }
                         }
                     },
-                    take: 1
+                    take: 5
                 }
             },
             orderBy: [

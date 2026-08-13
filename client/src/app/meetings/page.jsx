@@ -342,18 +342,108 @@ export default function MeetingPage() {
         }
     }, [targetSearchQuery, targetCategoryFilter, showScheduleModal]);
 
+    const MAX_PARTICIPANT_CAPACITY = 50;
+
+    // Set of selected class IDs
+    const selectedClassIds = useMemo(() => {
+        return new Set(selectedTargets.filter(t => t.type === 'class').map(t => t.id));
+    }, [selectedTargets]);
+
+    const selectedClassNames = useMemo(() => {
+        return selectedTargets.filter(t => t.type === 'class').map(t => t.name);
+    }, [selectedTargets]);
+
+    // Total participants / students count in meeting bucket
+    const totalParticipantCount = useMemo(() => {
+        return selectedTargets.reduce((sum, item) => {
+            const count = item.studentCount !== undefined ? item.studentCount : (item.type === 'student' ? 1 : 0);
+            return sum + count;
+        }, 0);
+    }, [selectedTargets]);
+
+    // Filter available groups: remove any groups that belong to an already selected class
+    const visibleGroups = useMemo(() => {
+        return (availableTargetResults.groups || []).filter(g => {
+            const groupClassId = g.classId || g.class?.id;
+            return !selectedClassIds.has(groupClassId);
+        });
+    }, [availableTargetResults.groups, selectedClassIds]);
+
+    // Filter available students: remove any students enrolled in an already selected class
+    const visibleStudents = useMemo(() => {
+        return (availableTargetResults.students || []).filter(s => {
+            const studentClassIds = (s.enrollments || []).map(e => e.classId || e.class?.id).filter(Boolean);
+            return !studentClassIds.some(cid => selectedClassIds.has(cid));
+        });
+    }, [availableTargetResults.students, selectedClassIds]);
+
+    const visibleClasses = availableTargetResults.classes || [];
+
+    // Count how many groups/students are covered by selected classes
+    const coveredGroupsCount = useMemo(() => {
+        return (availableTargetResults.groups || []).length - visibleGroups.length;
+    }, [availableTargetResults.groups, visibleGroups]);
+
+    const coveredStudentsCount = useMemo(() => {
+        return (availableTargetResults.students || []).length - visibleStudents.length;
+    }, [availableTargetResults.students, visibleStudents]);
+
     const toggleTargetSelection = (targetItem) => {
         setSelectedTargets(prev => {
             const exists = prev.some(t => t.id === targetItem.id);
             if (exists) {
                 return prev.filter(t => t.id !== targetItem.id);
-            } else {
-                if (prev.length >= 50) {
-                    toast.error('Maximum limit reached: You can select up to 50 targets (classes, groups, or students).');
+            }
+
+            // Target is a Class:
+            if (targetItem.type === 'class') {
+                const classStudentCount = targetItem.studentCount || 0;
+                
+                // Automatically remove any groups or students already selected that belong to this class
+                const filtered = prev.filter(t => {
+                    if (t.type === 'group' && (t.classId === targetItem.id)) return false;
+                    if (t.type === 'student' && (t.classIds?.includes(targetItem.id) || t.classId === targetItem.id)) return false;
+                    return true;
+                });
+
+                // Calculate current participant count without the subsumed items
+                const currentParticipants = filtered.reduce((sum, item) => sum + (item.studentCount || (item.type === 'student' ? 1 : 0)), 0);
+
+                if (currentParticipants + classStudentCount > MAX_PARTICIPANT_CAPACITY) {
+                    toast.error(`Cannot select ${targetItem.name}: Adding ${classStudentCount} students exceeds maximum meeting capacity of ${MAX_PARTICIPANT_CAPACITY} participants (Current: ${currentParticipants}).`);
+                    return prev;
+                }
+
+                const removedCount = prev.length - filtered.length;
+                if (removedCount > 0) {
+                    toast.success(`Selected ${targetItem.name} (${classStudentCount} students). Removed ${removedCount} covered group/student selections.`);
+                }
+                return [...filtered, targetItem];
+            }
+
+            // Target is a Group:
+            if (targetItem.type === 'group') {
+                const groupStudentCount = targetItem.studentCount || 0;
+                const currentParticipants = prev.reduce((sum, item) => sum + (item.studentCount || (item.type === 'student' ? 1 : 0)), 0);
+
+                if (currentParticipants + groupStudentCount > MAX_PARTICIPANT_CAPACITY) {
+                    toast.error(`Cannot select ${targetItem.name}: Adding ${groupStudentCount} students exceeds maximum meeting capacity of ${MAX_PARTICIPANT_CAPACITY} participants (Current: ${currentParticipants}).`);
                     return prev;
                 }
                 return [...prev, targetItem];
             }
+
+            // Target is a Student:
+            if (targetItem.type === 'student') {
+                const currentParticipants = prev.reduce((sum, item) => sum + (item.studentCount || (item.type === 'student' ? 1 : 0)), 0);
+                if (currentParticipants + 1 > MAX_PARTICIPANT_CAPACITY) {
+                    toast.error(`Cannot add student: Meeting participant capacity of ${MAX_PARTICIPANT_CAPACITY} students reached.`);
+                    return prev;
+                }
+                return [...prev, targetItem];
+            }
+
+            return [...prev, targetItem];
         });
     };
 
@@ -362,54 +452,94 @@ export default function MeetingPage() {
     };
 
     const selectAllFilteredTargets = () => {
-        const toAdd = [];
-        if (targetCategoryFilter === 'all' || targetCategoryFilter === 'class') {
-            availableTargetResults.classes.forEach(c => {
-                toAdd.push({ 
-                    id: c.id, 
-                    type: 'class', 
-                    name: c.name + (c.section ? ` (${c.section})` : ''), 
-                    subtext: `${c._count?.enrollments ?? c._count?.students ?? 0} Students` 
-                });
-            });
-        }
-        if (targetCategoryFilter === 'all' || targetCategoryFilter === 'group') {
-            availableTargetResults.groups.forEach(g => {
-                const classInfo = g.class ? `Class ${g.class.name}${g.class.section ? ` (${g.class.section})` : ''} • ` : '';
-                toAdd.push({ 
-                    id: g.id, 
-                    type: 'group', 
-                    name: g.name, 
-                    subtext: `${classInfo}${g._count?.members || 0} Members` 
-                });
-            });
-        }
-        if (targetCategoryFilter === 'all' || targetCategoryFilter === 'student') {
-            availableTargetResults.students.forEach(s => {
-                const className = s.enrollments?.[0]?.class ? ` • ${s.enrollments[0].class.name} (${s.enrollments[0].class.section || ''})` : '';
-                toAdd.push({ 
-                    id: s.id, 
-                    type: 'student', 
-                    name: `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.name, 
-                    subtext: (s.studentId || s.admissionNumber || s.email || 'Student') + className 
-                });
-            });
-        }
-
         setSelectedTargets(prev => {
-            const map = new Map(prev.map(item => [item.id, item]));
+            let workingList = [...prev];
+            let currentTotal = workingList.reduce((sum, item) => sum + (item.studentCount || (item.type === 'student' ? 1 : 0)), 0);
             let reachedMax = false;
-            for (const item of toAdd) {
-                if (map.size >= 50) {
-                    reachedMax = true;
-                    break;
+
+            // 1. Add visible classes
+            if (targetCategoryFilter === 'all' || targetCategoryFilter === 'class') {
+                for (const c of visibleClasses) {
+                    if (workingList.some(item => item.id === c.id)) continue;
+                    const studentCount = c._count?.enrollments ?? c._count?.students ?? 0;
+                    
+                    // Remove any group/student from this class from working list
+                    workingList = workingList.filter(t => {
+                        if (t.type === 'group' && (t.classId === c.id)) return false;
+                        if (t.type === 'student' && (t.classIds?.includes(c.id) || t.classId === c.id)) return false;
+                        return true;
+                    });
+                    currentTotal = workingList.reduce((sum, item) => sum + (item.studentCount || (item.type === 'student' ? 1 : 0)), 0);
+
+                    if (currentTotal + studentCount > MAX_PARTICIPANT_CAPACITY) {
+                        reachedMax = true;
+                        continue;
+                    }
+
+                    workingList.push({
+                        id: c.id,
+                        type: 'class',
+                        name: c.name + (c.section ? ` (${c.section})` : ''),
+                        studentCount,
+                        subtext: `${studentCount} Students`
+                    });
+                    currentTotal += studentCount;
                 }
-                map.set(item.id, item);
             }
+
+            // Update selected class ids for group & student filtering
+            const activeClassIds = new Set(workingList.filter(t => t.type === 'class').map(t => t.id));
+
+            // 2. Add visible groups
+            if (targetCategoryFilter === 'all' || targetCategoryFilter === 'group') {
+                for (const g of visibleGroups) {
+                    if (workingList.some(item => item.id === g.id)) continue;
+                    if (activeClassIds.has(g.classId || g.class?.id)) continue;
+                    const studentCount = g._count?.members || 0;
+                    if (currentTotal + studentCount > MAX_PARTICIPANT_CAPACITY) {
+                        reachedMax = true;
+                        continue;
+                    }
+                    const classInfo = g.class ? `Class ${g.class.name}${g.class.section ? ` (${g.class.section})` : ''} • ` : '';
+                    workingList.push({
+                        id: g.id,
+                        type: 'group',
+                        name: g.name,
+                        classId: g.classId || g.class?.id,
+                        studentCount,
+                        subtext: `${classInfo}${studentCount} Members`
+                    });
+                    currentTotal += studentCount;
+                }
+            }
+
+            // 3. Add visible students
+            if (targetCategoryFilter === 'all' || targetCategoryFilter === 'student') {
+                for (const s of visibleStudents) {
+                    if (workingList.some(item => item.id === s.id)) continue;
+                    const studentClassIds = (s.enrollments || []).map(e => e.classId || e.class?.id).filter(Boolean);
+                    if (studentClassIds.some(cid => activeClassIds.has(cid))) continue;
+                    if (currentTotal + 1 > MAX_PARTICIPANT_CAPACITY) {
+                        reachedMax = true;
+                        break;
+                    }
+                    const className = s.enrollments?.[0]?.class ? ` • ${s.enrollments[0].class.name} (${s.enrollments[0].class.section || ''})` : '';
+                    workingList.push({
+                        id: s.id,
+                        type: 'student',
+                        name: `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.name,
+                        classIds: studentClassIds,
+                        studentCount: 1,
+                        subtext: (s.studentId || s.admissionNumber || s.email || 'Student') + className
+                    });
+                    currentTotal += 1;
+                }
+            }
+
             if (reachedMax) {
-                toast('Selected 50 targets (maximum capacity reached)', { icon: 'ℹ️' });
+                toast(`Added targets up to maximum capacity (${currentTotal}/${MAX_PARTICIPANT_CAPACITY} students).`, { icon: 'ℹ️' });
             }
-            return Array.from(map.values());
+            return workingList;
         });
     };
 
@@ -1189,22 +1319,27 @@ export default function MeetingPage() {
                                 {/* Category Tabs */}
                                 <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
                                     {[
-                                        { id: 'all', label: 'All Targets' },
-                                        { id: 'class', label: 'Classes' },
-                                        { id: 'group', label: 'Groups' },
-                                        { id: 'student', label: 'Students' }
+                                        { id: 'all', label: 'All', count: visibleClasses.length + visibleGroups.length + visibleStudents.length },
+                                        { id: 'class', label: 'Classes', count: visibleClasses.length },
+                                        { id: 'group', label: 'Groups', count: visibleGroups.length },
+                                        { id: 'student', label: 'Students', count: visibleStudents.length }
                                     ].map(cat => (
                                         <button
                                             key={cat.id}
                                             type="button"
                                             onClick={() => setTargetCategoryFilter(cat.id)}
-                                            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold transition ${
+                                            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
                                                 targetCategoryFilter === cat.id
                                                     ? 'bg-white text-primary-600 shadow-sm'
                                                     : 'text-slate-600 hover:text-slate-900'
                                             }`}
                                         >
-                                            {cat.label}
+                                            <span>{cat.label}</span>
+                                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                                                targetCategoryFilter === cat.id ? 'bg-primary-50 text-primary-700' : 'bg-slate-200/80 text-slate-600'
+                                            }`}>
+                                                {cat.count}
+                                            </span>
                                         </button>
                                     ))}
                                 </div>
@@ -1230,34 +1365,52 @@ export default function MeetingPage() {
                                     )}
                                 </div>
 
-                                {/* Selected Targets Chips */}
+                                {/* Selected Targets & Participant Bucket Capacity Bar */}
                                 {selectedTargets.length > 0 && (
-                                    <div className="space-y-1.5 bg-primary-50/50 p-3 rounded-xl border border-primary-100">
+                                    <div className="space-y-2 bg-gradient-to-br from-primary-50/80 to-indigo-50/50 p-3.5 rounded-xl border border-primary-100 shadow-sm">
                                         <div className="flex items-center justify-between text-xs font-semibold text-primary-900">
                                             <div className="flex items-center gap-2">
-                                                <span>Selected Targets ({selectedTargets.length}/50)</span>
-                                                {selectedTargets.length >= 50 && (
+                                                <span>Participant Bucket:</span>
+                                                <span className="px-2 py-0.5 rounded-full bg-primary-100 text-primary-800 font-bold">
+                                                    👥 {totalParticipantCount} / {MAX_PARTICIPANT_CAPACITY} Students
+                                                </span>
+                                                {totalParticipantCount >= MAX_PARTICIPANT_CAPACITY && (
                                                     <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full font-bold">
-                                                        Max 50 Reached
+                                                        Capacity Full (50)
                                                     </span>
                                                 )}
                                             </div>
                                             <button
                                                 type="button"
                                                 onClick={clearAllSelectedTargets}
-                                                className="text-[11px] text-red-500 hover:text-red-700"
+                                                className="text-[11px] text-red-500 hover:text-red-700 font-medium"
                                             >
                                                 Clear all
                                             </button>
                                         </div>
-                                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+
+                                        {/* Capacity Progress Bar */}
+                                        <div className="w-full h-1.5 bg-slate-200/80 rounded-full overflow-hidden">
+                                            <div 
+                                                className={`h-full transition-all duration-300 ${
+                                                    totalParticipantCount >= MAX_PARTICIPANT_CAPACITY ? 'bg-amber-500' : 'bg-primary-600'
+                                                }`}
+                                                style={{ width: `${Math.min(100, (totalParticipantCount / MAX_PARTICIPANT_CAPACITY) * 100)}%` }}
+                                            />
+                                        </div>
+
+                                        {/* Target Chips */}
+                                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pt-1">
                                             {selectedTargets.map((item) => (
                                                 <span
                                                     key={item.id}
-                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white text-slate-800 border border-primary-200 shadow-sm"
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white text-slate-800 border border-primary-200 shadow-xs"
                                                 >
                                                     <span>
                                                         {item.type === 'class' ? '🎓' : item.type === 'group' ? '👥' : '👤'} {item.name}
+                                                    </span>
+                                                    <span className="text-[10px] text-primary-600 bg-primary-50 px-1.5 py-0.2 rounded">
+                                                        {item.type === 'class' ? `${item.studentCount || 0} stds` : item.type === 'group' ? `${item.studentCount || 0} mems` : '1 std'}
                                                     </span>
                                                     <button
                                                         type="button"
@@ -1273,7 +1426,7 @@ export default function MeetingPage() {
                                 )}
 
                                 {/* Populated Target Lists */}
-                                <div className="border border-slate-200 rounded-2xl max-h-56 overflow-y-auto divide-y divide-slate-100">
+                                <div className="border border-slate-200 rounded-2xl max-h-60 overflow-y-auto divide-y divide-slate-100">
                                     {loadingTargets ? (
                                         <div className="flex items-center justify-center py-8 text-xs text-slate-400">
                                             <div className="animate-spin w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full mr-2" />
@@ -1282,16 +1435,22 @@ export default function MeetingPage() {
                                     ) : (
                                         <>
                                             {/* Classes */}
-                                            {(targetCategoryFilter === 'all' || targetCategoryFilter === 'class') && availableTargetResults.classes.length > 0 && (
+                                            {(targetCategoryFilter === 'all' || targetCategoryFilter === 'class') && visibleClasses.length > 0 && (
                                                 <div className="p-2 space-y-1">
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Classes ({availableTargetResults.classes.length})</p>
-                                                    {availableTargetResults.classes.map(c => {
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Classes ({visibleClasses.length})</p>
+                                                    {visibleClasses.map(c => {
                                                         const isSelected = selectedTargets.some(t => t.id === c.id);
                                                         const studentCount = c._count?.enrollments ?? c._count?.students ?? 0;
                                                         return (
                                                             <div
                                                                 key={c.id}
-                                                                onClick={() => toggleTargetSelection({ id: c.id, type: 'class', name: c.name + (c.section ? ` (${c.section})` : ''), subtext: `${studentCount} Students` })}
+                                                                onClick={() => toggleTargetSelection({ 
+                                                                    id: c.id, 
+                                                                    type: 'class', 
+                                                                    name: c.name + (c.section ? ` (${c.section})` : ''), 
+                                                                    studentCount, 
+                                                                    subtext: `${studentCount} Students` 
+                                                                })}
                                                                 className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${
                                                                     isSelected ? 'bg-primary-50 border border-primary-200' : 'hover:bg-slate-50'
                                                                 }`}
@@ -1305,7 +1464,12 @@ export default function MeetingPage() {
                                                                         <p className="text-[10px] text-slate-500">{studentCount} Students enrolled {c.gradeLevel ? `• Grade ${c.gradeLevel}` : ''}</p>
                                                                     </div>
                                                                 </div>
-                                                                {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[10px] text-indigo-700 bg-indigo-50 font-medium px-2 py-0.5 rounded-full">
+                                                                        +{studentCount} seats
+                                                                    </span>
+                                                                    {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                                                </div>
                                                             </div>
                                                         );
                                                     })}
@@ -1313,16 +1477,31 @@ export default function MeetingPage() {
                                             )}
 
                                             {/* Groups */}
-                                            {(targetCategoryFilter === 'all' || targetCategoryFilter === 'group') && availableTargetResults.groups.length > 0 && (
+                                            {(targetCategoryFilter === 'all' || targetCategoryFilter === 'group') && (
                                                 <div className="p-2 space-y-1">
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Study & Lab Groups ({availableTargetResults.groups.length})</p>
-                                                    {availableTargetResults.groups.map(g => {
+                                                    <div className="flex items-center justify-between px-2 py-0.5">
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Study & Lab Groups ({visibleGroups.length})</p>
+                                                        {coveredGroupsCount > 0 && (
+                                                            <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-medium">
+                                                                {coveredGroupsCount} covered by selected class
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {visibleGroups.map(g => {
                                                         const isSelected = selectedTargets.some(t => t.id === g.id);
                                                         const classLabel = g.class ? `Class ${g.class.name}${g.class.section ? ` (${g.class.section})` : ''} • ` : '';
+                                                        const studentCount = g._count?.members || 0;
                                                         return (
                                                             <div
                                                                 key={g.id}
-                                                                onClick={() => toggleTargetSelection({ id: g.id, type: 'group', name: g.name, subtext: `${classLabel}${g._count?.members || 0} Members` })}
+                                                                onClick={() => toggleTargetSelection({ 
+                                                                    id: g.id, 
+                                                                    type: 'group', 
+                                                                    name: g.name, 
+                                                                    classId: g.classId || g.class?.id,
+                                                                    studentCount, 
+                                                                    subtext: `${classLabel}${studentCount} Members` 
+                                                                })}
                                                                 className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${
                                                                     isSelected ? 'bg-primary-50 border border-primary-200' : 'hover:bg-slate-50'
                                                                 }`}
@@ -1333,29 +1512,54 @@ export default function MeetingPage() {
                                                                     </div>
                                                                     <div>
                                                                         <p className="text-xs font-semibold text-slate-900">{g.name}</p>
-                                                                        <p className="text-[10px] text-slate-500">{classLabel}{g._count?.members || 0} Members {g.description ? `• ${g.description}` : ''}</p>
+                                                                        <p className="text-[10px] text-slate-500">{classLabel}{studentCount} Members {g.description ? `• ${g.description}` : ''}</p>
                                                                     </div>
                                                                 </div>
-                                                                {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[10px] text-purple-700 bg-purple-50 font-medium px-2 py-0.5 rounded-full">
+                                                                        +{studentCount} seats
+                                                                    </span>
+                                                                    {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                                                </div>
                                                             </div>
                                                         );
                                                     })}
+                                                    {visibleGroups.length === 0 && availableTargetResults.groups.length > 0 && (
+                                                        <div className="p-3 text-center text-xs text-slate-400 bg-slate-50 rounded-xl">
+                                                            All groups in search results belong to currently selected class(es).
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
 
                                             {/* Students */}
-                                            {(targetCategoryFilter === 'all' || targetCategoryFilter === 'student') && availableTargetResults.students.length > 0 && (
+                                            {(targetCategoryFilter === 'all' || targetCategoryFilter === 'student') && (
                                                 <div className="p-2 space-y-1">
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">Students ({availableTargetResults.students.length})</p>
-                                                    {availableTargetResults.students.map(s => {
+                                                    <div className="flex items-center justify-between px-2 py-0.5">
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Students ({visibleStudents.length})</p>
+                                                        {coveredStudentsCount > 0 && (
+                                                            <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-medium">
+                                                                {coveredStudentsCount} covered by selected class
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {visibleStudents.map(s => {
                                                         const isSelected = selectedTargets.some(t => t.id === s.id);
                                                         const sName = `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.name || 'Student';
+                                                        const studentClassIds = (s.enrollments || []).map(e => e.classId || e.class?.id).filter(Boolean);
                                                         const classInfo = s.enrollments?.[0]?.class ? ` • ${s.enrollments[0].class.name}${s.enrollments[0].class.section ? ` (${s.enrollments[0].class.section})` : ''}` : '';
                                                         const subtext = (s.studentId || s.admissionNumber || s.email || 'Student') + classInfo;
                                                         return (
                                                             <div
                                                                 key={s.id}
-                                                                onClick={() => toggleTargetSelection({ id: s.id, type: 'student', name: sName, subtext })}
+                                                                onClick={() => toggleTargetSelection({ 
+                                                                    id: s.id, 
+                                                                    type: 'student', 
+                                                                    name: sName, 
+                                                                    classIds: studentClassIds,
+                                                                    studentCount: 1, 
+                                                                    subtext 
+                                                                })}
                                                                 className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${
                                                                     isSelected ? 'bg-primary-50 border border-primary-200' : 'hover:bg-slate-50'
                                                                 }`}
@@ -1369,14 +1573,24 @@ export default function MeetingPage() {
                                                                         <p className="text-[10px] text-slate-500">{subtext}</p>
                                                                     </div>
                                                                 </div>
-                                                                {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[10px] text-emerald-700 bg-emerald-50 font-medium px-2 py-0.5 rounded-full">
+                                                                        +1 seat
+                                                                    </span>
+                                                                    {isSelected ? <CheckSquare className="w-4 h-4 text-primary-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                                                </div>
                                                             </div>
                                                         );
                                                     })}
+                                                    {visibleStudents.length === 0 && availableTargetResults.students.length > 0 && (
+                                                        <div className="p-3 text-center text-xs text-slate-400 bg-slate-50 rounded-xl">
+                                                            All students in search results are already covered by selected class(es).
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
 
-                                            {availableTargetResults.classes.length === 0 && availableTargetResults.groups.length === 0 && availableTargetResults.students.length === 0 && (
+                                            {visibleClasses.length === 0 && visibleGroups.length === 0 && visibleStudents.length === 0 && (
                                                 <div className="py-8 text-center text-slate-400 text-xs">
                                                     {targetSearchQuery ? `No targets found matching "${targetSearchQuery}"` : 'No targets available'}
                                                 </div>
