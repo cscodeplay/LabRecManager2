@@ -44,6 +44,7 @@ const teachingRoutes = require('./routes/teaching.routes');
 const trainingRoutes = require('./routes/training.routes');
 const chatbotRoutes = require('./routes/chatbot.routes');
 const adminNotesRoutes = require('./routes/admin-notes.routes');
+const compilerRoutes = require('./routes/compiler.routes');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -124,6 +125,7 @@ app.use('/api/timetable', timetableRoutes);
 app.use('/api/teaching', teachingRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/admin/chatbot', chatbotRoutes);
+app.use('/api/compiler', compilerRoutes);
 
 const prisma = require('./config/database');
 

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { ArrowLeft, Upload, Code, Image, FileText, Send, Play, Terminal, Loader2, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import { assignmentsAPI, submissionsAPI } from '@/lib/api';
+import { assignmentsAPI, submissionsAPI, compilerAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 export default function SubmitAssignmentPage() {
@@ -22,10 +22,13 @@ export default function SubmitAssignmentPage() {
 
     const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm();
 
-    const handleRunPythonCode = async () => {
+    const handleRunCode = async () => {
         const code = watch('codeContent');
+        const stdin = watch('customInput');
+        const language = assignment?.programmingLanguage || 'python';
+        
         if (!code || !code.trim()) {
-            toast.error('Please write or paste Python code first!');
+            toast.error('Please write or paste code first!');
             return;
         }
 
@@ -33,47 +36,27 @@ export default function SubmitAssignmentPage() {
         setExecStatus(null);
 
         try {
-            if (!window.pyodideInstance) {
-                if (!window.pyodidePromise) {
-                    window.pyodidePromise = (async () => {
-                        if (!document.getElementById('pyodide-cdn')) {
-                            const script = document.createElement('script');
-                            script.id = 'pyodide-cdn';
-                            script.src = 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js';
-                            document.body.appendChild(script);
-                            await new Promise((resolve, reject) => {
-                                script.onload = resolve;
-                                script.onerror = () => reject(new Error('Failed to load Pyodide CDN'));
-                            });
-                        }
-                        const pyodide = await window.loadPyodide();
-                        window.pyodideInstance = pyodide;
-                        return pyodide;
-                    })();
-                }
-                await window.pyodidePromise;
+            const response = await compilerAPI.execute({ language, code, stdin: stdin || '' });
+            const data = response.data.data;
+
+            if (data.compile_stderr) {
+                setValue('outputContent', (data.compile_stderr + '\n' + (data.stderr || '')).trim());
+                setExecStatus({ success: false, message: 'Compilation failed!' });
+                toast.error('Compilation error.');
+            } else if (data.stderr) {
+                setValue('outputContent', (data.stderr + '\n' + (data.stdout || '')).trim());
+                setExecStatus({ success: false, message: 'Runtime error!' });
+                toast.error('Runtime error.');
+            } else {
+                setValue('outputContent', data.stdout?.trim() || '[Program executed successfully with no stdout output]');
+                setExecStatus({ success: true, message: 'Code executed! Output auto-generated below.' });
+                toast.success('Code compiled & executed!');
             }
-
-            const pyodide = window.pyodideInstance;
-
-            let capturedOutput = '';
-            pyodide.setStdout({
-                batched: (str) => {
-                    capturedOutput += str + '\n';
-                }
-            });
-
-            await pyodide.runPythonAsync(code);
-
-            const finalOutput = capturedOutput.trim() || '[Program executed successfully with no stdout output]';
-            setValue('outputContent', finalOutput);
-            setExecStatus({ success: true, message: 'Python code executed! Output auto-generated below.' });
-            toast.success('Python code compiled & output generated!');
         } catch (err) {
-            console.error('Python compilation error:', err);
-            const errorMsg = err.message || String(err);
+            console.error('Compilation error:', err);
+            const errorMsg = err.response?.data?.message || err.message || String(err);
             setExecStatus({ success: false, message: errorMsg });
-            toast.error('Compilation / Execution error. Check Python code syntax.');
+            toast.error('Compilation / Execution error.');
         } finally {
             setRunningCode(false);
         }
@@ -197,19 +180,19 @@ export default function SubmitAssignmentPage() {
                 )}
 
                 <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-                    {/* Code Content & Python Compiler */}
+                    {/* Code Content & Compiler */}
                     <div className="card p-6 border border-slate-200">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                             <div className="flex items-center gap-2">
                                 <Code className="w-5 h-5 text-primary-600" />
-                                <h2 className="text-lg font-semibold text-slate-900">Code / Program</h2>
+                                <h2 className="text-lg font-semibold text-slate-900">Code / Program ({assignment?.programmingLanguage || 'Code'})</h2>
                             </div>
                             <button
                                 type="button"
-                                onClick={handleRunPythonCode}
+                                onClick={handleRunCode}
                                 disabled={runningCode}
                                 className="p-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center disabled:opacity-50"
-                                title="Run Code (Python Compiler)"
+                                title="Run Code"
                             >
                                 {runningCode ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -221,12 +204,21 @@ export default function SubmitAssignmentPage() {
 
                         <textarea
                             className="input font-mono text-sm min-h-[300px] bg-slate-900 text-emerald-400 p-4 rounded-xl shadow-inner focus:ring-2 focus:ring-emerald-500"
-                            placeholder="# Write your Python code here...\nprint('Hello, World!')"
+                            placeholder="Write your code here..."
                             {...register('codeContent', { required: assignment?.assignmentType === 'program' ? 'Code is required' : false })}
                         />
                         {errors.codeContent && (
                             <p className="text-red-500 text-sm mt-1">{errors.codeContent.message}</p>
                         )}
+                        
+                        <div className="mt-4">
+                            <label className="text-sm font-semibold text-slate-700 mb-2 block">Custom Input (stdin)</label>
+                            <textarea
+                                className="input font-mono text-sm min-h-[100px] bg-slate-800 text-emerald-100 p-3 rounded-lg shadow-inner focus:ring-2 focus:ring-emerald-500"
+                                placeholder="Enter dynamic inputs for your program here (e.g. if using input() in python, or cin in C++)"
+                                {...register('customInput')}
+                            />
+                        </div>
 
                         {/* Compiler Execution Status Banner */}
                         {execStatus && (
@@ -253,7 +245,7 @@ export default function SubmitAssignmentPage() {
                         </div>
                         <textarea
                             className="input font-mono text-sm min-h-[160px] bg-slate-950 text-slate-100 p-4 rounded-xl shadow-inner border border-slate-800"
-                            placeholder="Program output will be automatically generated here when you click 'Run Code (Python Compiler)'..."
+                            placeholder="Program output will be automatically generated here when you click 'Run Code'..."
                             {...register('outputContent')}
                         />
                     </div>

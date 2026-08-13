@@ -278,12 +278,18 @@ export default function CreateAssignmentPage() {
                             <div className="grid md:grid-cols-2 gap-4">
                                 <div>
                                     <label className="label">Programming Language</label>
-                                    <input
-                                        type="text"
+                                    <select
                                         className="input"
-                                        placeholder="Python, C++, Java..."
                                         {...register('programmingLanguage')}
-                                    />
+                                    >
+                                        <option value="">-- Select Language --</option>
+                                        <option value="python">Python</option>
+                                        <option value="java">Java</option>
+                                        <option value="c">C</option>
+                                        <option value="c++">C++</option>
+                                        <option value="sql">SQL</option>
+                                        <option value="javascript">JavaScript</option>
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="label">Aim</label>

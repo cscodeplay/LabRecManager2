@@ -867,12 +867,13 @@ router.post("/sessions/schedule", authenticate, authorize("instructor", "lab_ass
             durationMinutes: durationMinutes || 15,
             meetingLink,
             status: finalStatus,
-            autoAdmit: typeof autoAdmit === 'boolean' ? autoAdmit : true,
+            autoStart: typeof autoAdmit === 'boolean' ? autoAdmit : true,
             questionsAsked: {
                 roomCode,
                 passcode,
                 formattedRoomCode: formatRoomCode(roomCode),
                 assignedTargets: targetList,
+                autoAdmit: typeof autoAdmit === 'boolean' ? autoAdmit : true,
                 ...(description ? { description } : {})
             },
             actualStartTime: meetingType === "instant" ? new Date() : null
