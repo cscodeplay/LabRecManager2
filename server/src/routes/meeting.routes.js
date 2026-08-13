@@ -974,7 +974,6 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
 
     const userWhere = {
         role: 'student',
-        isActive: { not: false },
         ...(schoolId ? { schoolId } : {})
     };
 
@@ -983,11 +982,11 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
     };
 
     const groupWhere = {
-        ...(schoolId ? { OR: [{ class: { schoolId } }, { class: null }] } : {})
+        ...(schoolId ? { class: { schoolId } } : {})
     };
 
     if (type === 'all' || type === 'student') {
-        students = await prisma.user.findMany({
+        const rawStudents = await prisma.user.findMany({
             where: {
                 ...userWhere,
                 ...(searchTerm.length >= 1 ? {
@@ -1008,7 +1007,7 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
                 admissionNumber: true,
                 studentId: true,
                 role: true,
-                enrollments: {
+                classEnrollments: {
                     select: {
                         classId: true,
                         class: {
@@ -1024,6 +1023,11 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
             ],
             take: 1000
         });
+
+        students = rawStudents.map(s => ({
+            ...s,
+            enrollments: s.classEnrollments || []
+        }));
     }
 
     if (type === 'all' || type === 'class') {
