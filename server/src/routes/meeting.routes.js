@@ -1130,7 +1130,7 @@ router.put('/sessions/:id', authenticate, authorize('instructor', 'lab_assistant
         return res.status(400).json({ success: false, message: 'Only scheduled meetings can be modified' });
     }
 
-    const { title, targetType, targetId, scheduledAt, durationMinutes, autoAdmit, description } = req.body;
+    const { title, targetType, targetId, targets, scheduledAt, durationMinutes, autoAdmit, description } = req.body;
 
     const updateData = {};
     if (title) updateData.title = title.trim();
@@ -1138,16 +1138,36 @@ router.put('/sessions/:id', authenticate, authorize('instructor', 'lab_assistant
     if (durationMinutes) updateData.durationMinutes = parseInt(durationMinutes);
     if (typeof autoAdmit === 'boolean') updateData.autoAdmit = autoAdmit;
 
-    if (targetType && targetId) {
-        updateData.targetStudentId = targetType === 'student' ? targetId : null;
-        updateData.targetGroupId = targetType === 'group' ? targetId : null;
-        updateData.targetClassId = targetType === 'class' ? targetId : null;
+    // Handle composite targets if provided
+    let targetList = [];
+    if (Array.isArray(targets) && targets.length > 0) {
+        targetList = targets;
+    } else if (targetType && targetId) {
+        targetList.push({ type: targetType, id: targetId });
     }
 
-    if (description !== undefined && session.questionsAsked) {
+    if (targetList.length > 0) {
+        updateData.targetStudentId = null;
+        updateData.targetGroupId = null;
+        updateData.targetClassId = null;
+        
+        const primaryTarget = targetList[0];
+        if (primaryTarget.type === 'student') updateData.targetStudentId = primaryTarget.id;
+        if (primaryTarget.type === 'group') updateData.targetGroupId = primaryTarget.id;
+        if (primaryTarget.type === 'class') updateData.targetClassId = primaryTarget.id;
+
+        // Update the JSON field with the new composite targets
         updateData.questionsAsked = {
-            ...session.questionsAsked,
+            ...(session.questionsAsked || {}),
+            assignedTargets: targetList
+        };
+    }
+
+    if (description !== undefined) {
+        updateData.questionsAsked = {
+            ...(updateData.questionsAsked || session.questionsAsked || {}),
             description
+
         };
     }
 
