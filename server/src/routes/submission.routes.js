@@ -144,6 +144,10 @@ router.get('/my', authenticate, authorize('student'), asyncHandler(async (req, r
                         gradedAt: true,
                         gradedBy: { select: { firstName: true, lastName: true } }
                     }
+                },
+                revisions: {
+                    orderBy: { revisionNumber: 'desc' },
+                    take: 1
                 }
             }
         }),
@@ -650,10 +654,31 @@ router.put('/:id/status', authenticate, authorize('instructor', 'lab_assistant',
 
     const { status, remarks } = req.body;
 
+    const existingSubmission = await prisma.submission.findUnique({
+        where: { id: req.params.id }
+    });
+
+    if (!existingSubmission) {
+        return res.status(404).json({ success: false, message: 'Submission not found' });
+    }
+
     const submission = await prisma.submission.update({
         where: { id: req.params.id },
         data: { status }
     });
+
+    // Create a revision to record the instructor's remarks
+    if (remarks) {
+        await prisma.submissionRevision.create({
+            data: {
+                submissionId: submission.id,
+                revisionNumber: submission.submissionNumber,
+                codeContent: submission.codeContent,
+                outputContent: submission.outputContent,
+                revisionNote: remarks
+            }
+        });
+    }
 
     // TODO: Send notification to student about status change
 

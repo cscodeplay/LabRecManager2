@@ -186,8 +186,11 @@ export default function SubmissionDetailPage() {
     };
 
     const handleRequestRevision = async () => {
+        const remarks = window.prompt('Please enter remarks/comments for the student regarding this revision:');
+        if (remarks === null) return; // User cancelled
+
         try {
-            await submissionsAPI.updateStatus(submission.id, 'needs_revision');
+            await submissionsAPI.updateStatus(submission.id, 'needs_revision', remarks);
             toast.success('Revision requested');
             loadSubmission();
         } catch (error) {

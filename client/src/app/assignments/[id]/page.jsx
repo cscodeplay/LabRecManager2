@@ -128,13 +128,13 @@ export default function AssignmentDetailPage() {
                     {user?.role === 'student' && assignment.status === 'published' && (
                         <>
                             {/* Show Submit only if not submitted OR revision requested */}
-                            {(!assignment.userSubmission || assignment.userSubmission.status === 'revision_requested') && (
-                                <Link href={`/assignments/${assignment.id}/submit`} className={`p-2 rounded-lg shadow-sm transition flex items-center justify-center ${assignment.userSubmission?.status === 'revision_requested' ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-primary-600 hover:bg-primary-700 text-white'}`} title={assignment.userSubmission?.status === 'revision_requested' ? 'Revise' : 'Submit'}>
+                            {(!assignment.userSubmission || assignment.userSubmission.status === 'needs_revision') && (
+                                <Link href={`/assignments/${assignment.id}/submit`} className={`p-2 rounded-lg shadow-sm transition flex items-center justify-center ${assignment.userSubmission?.status === 'needs_revision' ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-primary-600 hover:bg-primary-700 text-white'}`} title={assignment.userSubmission?.status === 'needs_revision' ? 'Revise' : 'Submit'}>
                                     <Upload className="w-5 h-5" />
                                 </Link>
                             )}
                             {/* Show View Submission if submitted and not needing revision */}
-                            {assignment.userSubmission && assignment.userSubmission.status !== 'revision_requested' && (
+                            {assignment.userSubmission && assignment.userSubmission.status !== 'needs_revision' && (
                                 <Link href={`/submissions/${assignment.userSubmission.id}`} className="p-2 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition" title="View Submission">
                                     <Eye className="w-5 h-5" />
                                 </Link>

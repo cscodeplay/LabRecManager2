@@ -209,7 +209,7 @@ export const submissionsAPI = {
         });
     },
     update: (id, data) => api.put(`/submissions/${id}`, data),
-    updateStatus: (id, status) => api.put(`/submissions/${id}/status`, { status }),
+    updateStatus: (id, status, remarks) => api.put(`/submissions/${id}/status`, { status, remarks }),
 };
 
 // Viva API

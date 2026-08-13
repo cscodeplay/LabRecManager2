@@ -170,12 +170,18 @@ export default function SubmitAssignmentPage() {
 
             <main className="max-w-4xl mx-auto px-4 py-6">
                 {existingSubmission && (
-                    <div className="alert alert-info mb-6">
-                        <p>You have already submitted this assignment. You can update your submission below.</p>
+                    <div className={`alert mb-6 ${existingSubmission.status === 'needs_revision' ? 'alert-warning' : 'alert-info'}`}>
+                        <p>{existingSubmission.status === 'needs_revision' ? 'Your submission requires revision.' : 'You have already submitted this assignment. You can update your submission below.'}</p>
                         <p className="text-sm mt-1">
                             Submission #{existingSubmission.submissionNumber} •
                             Status: <span className="font-medium capitalize">{existingSubmission.status}</span>
                         </p>
+                        {existingSubmission.status === 'needs_revision' && existingSubmission.revisions?.[0]?.revisionNote && (
+                            <div className="mt-3 p-3 bg-white/50 rounded-lg text-amber-900 border border-amber-200">
+                                <p className="text-xs font-semibold uppercase tracking-wider mb-1 opacity-75">Instructor Comments</p>
+                                <p className="text-sm">{existingSubmission.revisions[0].revisionNote}</p>
+                            </div>
+                        )}
                     </div>
                 )}
 
