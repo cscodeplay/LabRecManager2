@@ -10,6 +10,7 @@ import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import { formatTime } from '@/lib/dateUtils';
 
 // Markdown-like renderer for AI messages
 function RenderMessage({ content }) {
@@ -376,7 +377,7 @@ export default function AIAssistantPage() {
                                         </div>
                                         <span className="text-xs font-medium text-slate-500 dark:text-slate-400">AI Assistant</span>
                                         <span className="text-[10px] text-slate-400">
-                                            {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : ''}
+                                            {msg.timestamp ? formatTime(msg.timestamp) : ''}
                                         </span>
                                     </div>
                                 )}

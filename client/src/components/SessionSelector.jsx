@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Calendar, ChevronDown, Lock, AlertTriangle } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
+import { formatDateRange } from '@/lib/dateUtils';
 
 export default function SessionSelector() {
     const {
@@ -129,7 +130,7 @@ export default function SessionSelector() {
                                                     {session.yearLabel}
                                                 </p>
                                                 <p className="text-xs text-slate-500">
-                                                    {new Date(session.startDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })} - {new Date(session.endDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
+                                                    {formatDateRange(session.startDate, session.endDate, true)}
                                                 </p>
                                             </div>
                                         </div>

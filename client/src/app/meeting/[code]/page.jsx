@@ -19,6 +19,7 @@ import toast from 'react-hot-toast';
 import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
 import VideoTile from '@/components/VideoTile';
+import { formatTime } from '@/lib/dateUtils';
 
 function formatRoomCode(code) {
     if (!code) return '';
@@ -1200,7 +1201,7 @@ export default function MeetingRoomPage() {
             sender: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'User',
             senderRole: user?.role,
             text: newMessage.trim(),
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            time: formatTime(new Date()),
             recipientId: chatRecipient.id,
             recipientName: chatRecipient.name
         };
@@ -1224,7 +1225,7 @@ export default function MeetingRoomPage() {
             sender: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'Host',
             senderId: user?.id,
             senderSocketId: mySocketId,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            time: formatTime(new Date()),
             text: inviteTxt,
             recipientId: 'everyone',
             recipientName: 'Everyone (in Meeting)'

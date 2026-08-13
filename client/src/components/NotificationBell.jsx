@@ -5,6 +5,7 @@ import { Bell, Check, X, Clock, BookOpen, Award, Video, MessageCircle } from 'lu
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import Link from 'next/link';
+import { formatRelativeTime } from '@/lib/dateUtils';
 
 export default function NotificationBell() {
     const { isAuthenticated } = useAuthStore();
@@ -85,17 +86,7 @@ export default function NotificationBell() {
     };
 
     const formatTime = (dateString) => {
-        const date = new Date(dateString);
-        const now = new Date();
-        const diff = now - date;
-        const mins = Math.floor(diff / 60000);
-        const hours = Math.floor(diff / 3600000);
-        const days = Math.floor(diff / 86400000);
-
-        if (mins < 60) return `${mins}m ago`;
-        if (hours < 24) return `${hours}h ago`;
-        if (days < 7) return `${days}d ago`;
-        return date.toLocaleDateString();
+        return formatRelativeTime(dateString);
     };
 
     if (!isAuthenticated) return null;

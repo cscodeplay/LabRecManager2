@@ -18,6 +18,7 @@ import AdminPermissionsPanel from './AdminPermissionsPanel';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
+import { formatDate, formatTime } from '@/lib/dateUtils';
 
 // Default colors (rainbow + black/white)
 const DEFAULT_COLORS = [
@@ -3156,7 +3157,7 @@ export default function Whiteboard({
     // Insert DateTime Text
     const handleInsertDateTime = useCallback(() => {
         const now = new Date();
-        const formatted = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' }) + ' - ' + now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        const formatted = `${formatDate(now, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })} - ${formatTime(now)}`;
         
         const newText = {
             id: 'datetime-stamp', // Fixed ID to overwrite previous

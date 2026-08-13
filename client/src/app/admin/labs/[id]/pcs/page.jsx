@@ -8,6 +8,7 @@ import { useAuthStore } from '@/lib/store';
 import { labsAPI, filesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { formatDate } from '@/lib/dateUtils';
 
 const ITEM_TYPES = {
     pc: { label: 'Computer', icon: Monitor, color: 'blue', specFields: ['processor', 'ram', 'storage', 'os', 'monitor'] },
@@ -1007,13 +1008,13 @@ export default function LabInventoryPage() {
                                         {viewingItem.purchaseDate && (
                                             <div className="flex items-center gap-2">
                                                 <Calendar className="w-4 h-4 text-slate-400" />
-                                                <div><p className="text-xs text-slate-500">Purchased</p><p className="font-medium text-slate-900">{new Date(viewingItem.purchaseDate).toLocaleDateString()}</p></div>
+                                                <div><p className="text-xs text-slate-500">Purchased</p><p className="font-medium text-slate-900">{formatDate(viewingItem.purchaseDate)}</p></div>
                                             </div>
                                         )}
                                         {viewingItem.warrantyEnd && (
                                             <div className="flex items-center gap-2">
                                                 <Shield className="w-4 h-4 text-slate-400" />
-                                                <div><p className="text-xs text-slate-500">Warranty Until</p><p className="font-medium text-slate-900">{new Date(viewingItem.warrantyEnd).toLocaleDateString()}</p></div>
+                                                <div><p className="text-xs text-slate-500">Warranty Until</p><p className="font-medium text-slate-900">{formatDate(viewingItem.warrantyEnd)}</p></div>
                                             </div>
                                         )}
                                     </div>
@@ -1112,7 +1113,7 @@ export default function LabInventoryPage() {
                                                         {record.type === 'replacement' && <RefreshCw className="w-4 h-4 text-purple-500" />}
                                                         {record.type === 'maintenance' && <Wrench className="w-4 h-4 text-amber-500" />}
                                                         <span className="font-medium capitalize">{record.type}</span>
-                                                        <span className="text-xs text-slate-500 ml-auto">{new Date(record.createdAt).toLocaleDateString()}</span>
+                                                        <span className="text-xs text-slate-500 ml-auto">{formatDate(record.createdAt)}</span>
                                                     </div>
                                                     <p className="text-slate-700">{record.description}</p>
                                                     {(record.cost || record.vendor || record.partName) && (

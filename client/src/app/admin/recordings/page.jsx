@@ -11,6 +11,7 @@ import { useAuthStore } from '@/lib/store';
 import { meetingAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import { formatDateTime } from '@/lib/dateUtils';
 
 export default function MeetingRecordingsPage() {
     const router = useRouter();
@@ -239,7 +240,7 @@ export default function MeetingRecordingsPage() {
                                         <div className="flex flex-wrap gap-4 mt-3 text-sm text-slate-500">
                                             <span className="flex items-center gap-1">
                                                 <Calendar className="w-4 h-4" />
-                                                {new Date(session.actualEndTime || session.updatedAt).toLocaleDateString()}
+                                                {formatDateTime(session.actualEndTime || session.updatedAt)}
                                             </span>
                                             <span className="flex items-center gap-1">
                                                 <Clock className="w-4 h-4" />
@@ -292,8 +293,7 @@ export default function MeetingRecordingsPage() {
                                     Meeting Recording - {selectedRecording.student ? `${selectedRecording.student.firstName} ${selectedRecording.student.lastName}` : (selectedRecording.title || 'Session')}
                                 </h2>
                                 <p className="text-sm text-slate-500">
-                                    Host: {selectedRecording.host ? `${selectedRecording.host.firstName} ${selectedRecording.host.lastName}` : (selectedRecording.examiner ? `${selectedRecording.examiner.firstName} ${selectedRecording.examiner.lastName}` : 'Host')} •
-                                    {new Date(selectedRecording.actualEndTime || selectedRecording.updatedAt).toLocaleDateString()}
+                                    Host: {selectedRecording.host ? `${selectedRecording.host.firstName} ${selectedRecording.host.lastName}` : (selectedRecording.examiner ? `${selectedRecording.examiner.firstName} ${selectedRecording.examiner.lastName}` : 'Host')} • {formatDateTime(selectedRecording.actualEndTime || selectedRecording.updatedAt)}
                                 </p>
                             </div>
                             <button

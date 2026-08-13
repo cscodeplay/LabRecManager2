@@ -12,6 +12,7 @@ import { adminAPI, classesAPI, usersAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { formatDateRange } from '@/lib/dateUtils';
 
 export default function AdminStudentsPage() {
     const router = useRouter();
@@ -258,7 +259,7 @@ export default function AdminStudentsPage() {
                                     )}
                                 </div>
                                 <p className="text-sm text-slate-500">
-                                    {new Date(selectedSession.startDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })} - {new Date(selectedSession.endDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
+                                    {formatDateRange(selectedSession.startDate, selectedSession.endDate, true)}
                                 </p>
                             </div>
                         </div>

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Video, Download, Share2, Calendar, Clock, User, School, Copy, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { formatDateTime } from '@/lib/dateUtils';
 
 export default function WatchRecordingPage() {
     const params = useParams();
@@ -61,13 +62,7 @@ export default function WatchRecordingPage() {
     };
 
     const formatDate = (date) => {
-        return new Date(date).toLocaleDateString(undefined, {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
+        return formatDateTime(date);
     };
 
     if (loading) {

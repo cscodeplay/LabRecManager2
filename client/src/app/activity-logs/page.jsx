@@ -12,7 +12,7 @@ import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
-import { formatDate } from '@/lib/dateUtils';
+import { formatDate, formatTime } from '@/lib/dateUtils';
 
 export default function ActivityLogsPage() {
     const router = useRouter();
@@ -225,9 +225,9 @@ export default function ActivityLogsPage() {
                                                     </div>
                                                 </div>
                                                 <div className="text-right flex-shrink-0">
-                                                    <p className="text-xs text-slate-500">{formatTime(log.createdAt)}</p>
+                                                    <p className="text-xs text-slate-500">{formatDate(log.createdAt)}</p>
                                                     <p className="text-xs text-slate-400 mt-0.5">
-                                                        {new Date(log.createdAt).toLocaleTimeString()}
+                                                        {formatTime(log.createdAt)}
                                                     </p>
                                                 </div>
                                             </div>

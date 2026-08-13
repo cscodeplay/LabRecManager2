@@ -10,6 +10,7 @@ import { useAuthStore } from '@/lib/store';
 import { timetableAPI, calendarAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import { formatDate } from '@/lib/dateUtils';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DAY_LABELS = { monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday' };
@@ -320,7 +321,7 @@ export default function TimetablePage() {
                                         {h.titleHindi && <span className="text-xs text-slate-500 ml-2">{h.titleHindi}</span>}
                                     </div>
                                     <span className="text-xs text-slate-500">
-                                        {new Date(h.date).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
+                                        {formatDate(h.date, { weekday: 'short', day: 'numeric', month: 'short' })}
                                     </span>
                                 </div>
                             ))}

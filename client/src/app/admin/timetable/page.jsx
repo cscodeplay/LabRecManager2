@@ -13,6 +13,7 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { formatDate, formatDateRange } from '@/lib/dateUtils';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DAY_LABELS = { monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat' };
@@ -670,8 +671,8 @@ export default function AdminTimetablePage() {
                                 <CheckCircle className="w-4 h-4 text-emerald-500" />
                                 <strong>{timetable.name}</strong>
                             </span>
-                            <span>From: {new Date(timetable.effectiveFrom).toLocaleDateString()}</span>
-                            {timetable.effectiveTo && <span>To: {new Date(timetable.effectiveTo).toLocaleDateString()}</span>}
+                            <span>From: {formatDate(timetable.effectiveFrom)}</span>
+                            {timetable.effectiveTo && <span>To: {formatDate(timetable.effectiveTo)}</span>}
                         </div>
                     )}
                 </div>
@@ -933,7 +934,7 @@ export default function AdminTimetablePage() {
                                                             {!isActive && !isPast && <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">UPCOMING</span>}
                                                         </h4>
                                                         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                                                            {sf.toLocaleDateString()} — {st ? st.toLocaleDateString() : 'Ongoing'}
+                                                            {formatDateRange(sf, st)}
                                                         </p>
                                                     </div>
                                                     <div>

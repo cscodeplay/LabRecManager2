@@ -8,6 +8,7 @@ import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import RecordingShareModal from '@/components/RecordingShareModal';
+import { formatDate } from '@/lib/dateUtils';
 
 export default function RecordingsPage() {
     const router = useRouter();
@@ -155,13 +156,7 @@ export default function RecordingsPage() {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
-    const formatDate = (date) => {
-        return new Date(date).toLocaleDateString(undefined, {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric'
-        });
-    };
+
 
     const formatFileSize = (bytes) => {
         if (!bytes) return '--';

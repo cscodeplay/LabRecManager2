@@ -8,6 +8,7 @@ import api, { teachingAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import { BookMarked, Video, CalendarDays, LineChart, Play, Users, Clock, Award, BarChart3, Plus } from 'lucide-react';
+import { formatDate } from '@/lib/dateUtils';
 import Link from 'next/link';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -185,7 +186,7 @@ export default function TeachingDashboard() {
                                                             L{plan.lectureNumber}: {plan.title}
                                                         </Link>
                                                         <div className="text-xs text-slate-500 mt-1 flex items-center gap-3">
-                                                            <span>📅 {new Date(plan.scheduledDate).toLocaleDateString()}</span>
+                                                            <span>📅 {formatDate(plan.scheduledDate)}</span>
                                                             <span>⏱️ {plan.scheduledDuration} min</span>
                                                         </div>
                                                     </div>

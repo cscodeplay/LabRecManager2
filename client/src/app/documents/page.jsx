@@ -8,6 +8,7 @@ import { documentsAPI, classesAPI, storageAPI, foldersAPI } from '@/lib/api';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
+import { formatDateTime } from '@/lib/dateUtils';
 import FileViewer from '@/components/FileViewer';
 import QRCode from 'qrcode';
 
@@ -914,7 +915,7 @@ export default function DocumentsPage() {
         }
     };
 
-    const formatDate = (date) => new Date(date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const formatDate = (date) => formatDateTime(date);
 
     // Filter documents by date range
     const filteredDocuments = (activeTab === 'my' ? documents : sharedDocuments).filter(item => {

@@ -12,6 +12,7 @@ import {
 import { useAuthStore } from '@/lib/store';
 import { trainingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import { formatDate } from '@/lib/dateUtils';
 
 // --- Pedagogy Score Engine ---
 function computePedagogyScore(moduleData) {
@@ -913,7 +914,7 @@ export default function PedagogyBuilderPage() {
                                                     ))}
                                                 </div>
                                                 <span className="text-slate-400 shrink-0 ml-2">
-                                                    {a.due_date ? `Due: ${new Date(a.due_date).toLocaleDateString()}` : 'No deadline'}
+                                                    {a.due_date ? `Due: ${formatDate(a.due_date)}` : 'No deadline'}
                                                 </span>
                                             </div>
                                         ))}

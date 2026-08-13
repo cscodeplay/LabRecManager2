@@ -8,6 +8,7 @@ import api, { teachingAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import { BookMarked, Search, Plus, Calendar, Clock, Video, FileText, ArrowRight, Play, Eye } from 'lucide-react';
+import { formatDate } from '@/lib/dateUtils';
 import Link from 'next/link';
 
 export default function LecturePlansPage() {
@@ -144,7 +145,7 @@ export default function LecturePlansPage() {
                                     <div className="mt-4 space-y-2 text-sm text-slate-600 dark:text-slate-400 flex-1">
                                         <div className="flex items-center gap-2">
                                             <Calendar className="w-4 h-4 text-slate-400" />
-                                            {new Date(plan.scheduledDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                                            {formatDate(plan.scheduledDate, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <Clock className="w-4 h-4 text-slate-400" />

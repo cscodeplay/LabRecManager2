@@ -16,6 +16,7 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
 import DOMPurify from 'dompurify';
+import { formatDate, formatDateTime, formatTime, formatRelativeTime } from '@/lib/dateUtils';
 
 const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
 import 'react-quill/dist/quill.snow.css';
@@ -423,18 +424,6 @@ export default function AdminNotesPage() {
         }
     }), []);
 
-    // Date formatting helper
-    const formatDate = (date) => {
-        if (!date) return 'N/A';
-        return new Date(date).toLocaleString(undefined, {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
-
     // Filter and Sort Notes
     const filteredAndSortedNotes = useMemo(() => {
         let result = [...notes];
@@ -743,8 +732,8 @@ export default function AdminNotesPage() {
                                                             <HighlightText text={`${note.author?.firstName || ''} ${note.author?.lastName || ''}`} query={searchQuery} />
                                                         </span>
                                                     </div>
-                                                    <span className="text-[11px] text-slate-400 font-mono" title={`Updated: ${formatDate(note.updatedAt || note.createdAt)}`}>
-                                                        {new Date(note.updatedAt || note.createdAt).toLocaleDateString()}
+                                                    <span className="text-[11px] text-slate-500 font-medium" title={`Updated: ${formatDateTime(note.updatedAt || note.createdAt)}`}>
+                                                        {formatDate(note.updatedAt || note.createdAt)}
                                                     </span>
                                                 </div>
 
@@ -871,11 +860,11 @@ export default function AdminNotesPage() {
                                                                 </span>
                                                             </div>
                                                         </td>
-                                                        <td className="px-4 py-3.5 text-slate-500 text-xs font-mono hidden md:table-cell whitespace-nowrap">
-                                                            {formatDate(note.createdAt)}
+                                                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap hidden md:table-cell">
+                                                            {formatDateTime(note.createdAt)}
                                                         </td>
-                                                        <td className="px-4 py-3.5 text-slate-700 text-xs font-mono font-medium whitespace-nowrap">
-                                                            {formatDate(note.updatedAt || note.createdAt)}
+                                                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
+                                                            {formatDateTime(note.updatedAt || note.createdAt)}
                                                         </td>
                                                         <td className="px-5 py-3.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                                                             {/* Icons Only in a Single Row */}
@@ -1040,11 +1029,9 @@ export default function AdminNotesPage() {
                                     </div>
                                     <div className="flex items-center gap-1.5">
                                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                                        <span>Created: {formatDate(viewingNote.createdAt)}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                        <span>Last Updated: {formatDate(viewingNote.updatedAt || viewingNote.createdAt)}</span>
+                                        <span>Created: {formatDateTime(viewingNote.createdAt)}</span>
+                                        <span>•</span>
+                                        <span>Last Updated: {formatDateTime(viewingNote.updatedAt || viewingNote.createdAt)}</span>
                                     </div>
                                 </div>
                             </div>
@@ -1267,7 +1254,7 @@ export default function AdminNotesPage() {
                         {/* Modal Footer Actions */}
                         <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
                             <span className="text-xs text-slate-500">
-                                {lastSavedAt && `Last saved at ${lastSavedAt.toLocaleTimeString()}`}
+                                {lastSavedAt && `Last saved at ${formatTime(lastSavedAt)}`}
                             </span>
                             <div className="flex items-center gap-3">
                                 <button

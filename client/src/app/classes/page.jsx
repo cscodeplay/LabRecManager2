@@ -8,6 +8,7 @@ import { Users, GraduationCap, Search, Plus, Eye, UserPlus, Calendar, Lock, Arro
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
+import { formatDateRange } from '@/lib/dateUtils';
 
 export default function ClassesPage() {
     const router = useRouter();
@@ -100,7 +101,7 @@ export default function ClassesPage() {
                                     )}
                                 </div>
                                 <p className="text-sm text-slate-500">
-                                    {new Date(selectedSession.startDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })} - {new Date(selectedSession.endDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
+                                    {formatDateRange(selectedSession.startDate, selectedSession.endDate, true)}
                                 </p>
                             </div>
                         </div>

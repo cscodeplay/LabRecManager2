@@ -3,6 +3,7 @@ import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play , GripVertica
 import { toast } from 'react-hot-toast';
 import api from '@/lib/api';
 import fixWebmDuration from 'fix-webm-duration';
+import { formatDate } from '@/lib/dateUtils';
 
 const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], textObjects = [], imageObjects = [], onRecordingComplete, isVisible = false }) => {
     const [isRecording, setIsRecording] = useState(false);
@@ -597,7 +598,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
 
             const formData = new FormData();
             formData.append('video', file);
-            formData.append('title', `Whiteboard Lecture - ${new Date().toLocaleDateString()}`);
+            formData.append('title', `Whiteboard Lecture - ${formatDate(new Date())}`);
             if (sessionId) {
                 formData.append('sessionId', sessionId);
             }

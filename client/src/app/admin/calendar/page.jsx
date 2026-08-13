@@ -11,6 +11,7 @@ import { calendarAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { formatDate } from '@/lib/dateUtils';
 
 const EVENT_TYPES = {
     gazetted_holiday: { label: 'Gazetted Holiday', icon: Flag, color: 'bg-red-100 text-red-700 border-red-200' },
@@ -332,7 +333,7 @@ export default function AdminCalendarPage() {
                                             <h4 className="font-medium text-slate-900 dark:text-slate-100 truncate">{event.title}</h4>
                                             {event.titleHindi && <p className="text-xs text-slate-500 truncate">{event.titleHindi}</p>}
                                             <p className="text-xs text-slate-400 mt-0.5">
-                                                {new Date(event.date).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+                                                {formatDate(event.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                                             </p>
                                         </div>
                                         <span className={`px-2 py-1 rounded text-[10px] font-medium border ${typeInfo.color}`}>

@@ -11,6 +11,7 @@ import {
 import { useAuthStore } from '@/lib/store';
 import { labsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import { formatDate, formatDateTime } from '@/lib/dateUtils';
 
 const STATUS_COLORS = {
     issued: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Issued' },
@@ -166,7 +167,7 @@ export default function LaptopIssuancesPage() {
         const v = voucherData;
         return `📋 LAPTOP ISSUANCE VOUCHER\n\n` +
             `Voucher No: ${v.voucherNumber}\n` +
-            `Date: ${new Date(v.issuedAt).toLocaleDateString()}\n\n` +
+            `Date: ${formatDate(v.issuedAt)}\n\n` +
             `🏫 ${v.school?.name || 'School'}\n\n` +
             `💻 LAPTOP DETAILS\n` +
             `Item No: ${v.laptop?.itemNumber}\n` +
@@ -180,7 +181,7 @@ export default function LaptopIssuancesPage() {
             `Phone: ${v.issuedTo?.phone || 'N/A'}\n\n` +
             `📝 Purpose: ${v.purpose || 'N/A'}\n` +
             `Condition: ${v.conditionOnIssue}\n` +
-            `Expected Return: ${v.expectedReturnDate ? new Date(v.expectedReturnDate).toLocaleDateString() : 'N/A'}\n\n` +
+            `Expected Return: ${v.expectedReturnDate ? formatDate(v.expectedReturnDate) : 'N/A'}\n\n` +
             `Issued By: ${v.issuedBy?.firstName} ${v.issuedBy?.lastName}`;
     };
 
@@ -268,9 +269,9 @@ export default function LaptopIssuancesPage() {
                 <div class="section section-slate">
                     <div class="section-title title-slate">Issue Details</div>
                     <div class="grid">
-                        <div><span class="grid-label-slate">Issue Date:</span> ${new Date(voucherData?.issuedAt).toLocaleDateString()}</div>
+                        <div><span class="grid-label-slate">Issue Date:</span> ${formatDate(voucherData?.issuedAt)}</div>
                         <div><span class="grid-label-slate">Condition:</span> ${voucherData?.conditionOnIssue || 'good'}</div>
-                        <div><span class="grid-label-slate">Expected Return:</span> ${voucherData?.expectedReturnDate ? new Date(voucherData?.expectedReturnDate).toLocaleDateString() : 'N/A'}</div>
+                        <div><span class="grid-label-slate">Expected Return:</span> ${voucherData?.expectedReturnDate ? formatDate(voucherData?.expectedReturnDate) : 'N/A'}</div>
                         <div><span class="grid-label-slate">Issued By:</span> ${voucherData?.issuedBy?.firstName} ${voucherData?.issuedBy?.lastName}</div>
                     </div>
                     ${voucherData?.purpose ? `<div class="row" style="margin-top: 8px;"><span class="grid-label-slate">Purpose:</span> ${voucherData.purpose}</div>` : ''}
@@ -456,12 +457,12 @@ export default function LaptopIssuancesPage() {
                                             </div>
                                             <div className="flex items-center gap-2 text-sm text-slate-500 mt-1">
                                                 <Calendar className="w-4 h-4" />
-                                                <span>Issued: {new Date(issuance.issuedAt).toLocaleDateString()}</span>
+                                                <span>Issued: {formatDate(issuance.issuedAt)}</span>
                                             </div>
                                             {issuance.returnedAt && (
                                                 <div className="flex items-center gap-2 text-sm text-green-600 mt-1">
                                                     <CheckCircle className="w-4 h-4" />
-                                                    <span>Returned: {new Date(issuance.returnedAt).toLocaleDateString()}</span>
+                                                    <span>Returned: {formatDate(issuance.returnedAt)}</span>
                                                 </div>
                                             )}
                                         </div>
@@ -833,9 +834,9 @@ export default function LaptopIssuancesPage() {
                                     <div className="p-4 bg-slate-50 rounded-lg">
                                         <h3 className="font-semibold text-slate-900 mb-2">Issue Details</h3>
                                         <div className="grid grid-cols-2 gap-2 text-sm">
-                                            <div><span className="text-slate-600">Issue Date:</span> {new Date(voucherData.issuedAt).toLocaleDateString()}</div>
+                                            <div><span className="text-slate-600">Issue Date:</span> {formatDate(voucherData.issuedAt)}</div>
                                             <div><span className="text-slate-600">Condition:</span> {voucherData.conditionOnIssue}</div>
-                                            <div><span className="text-slate-600">Expected Return:</span> {voucherData.expectedReturnDate ? new Date(voucherData.expectedReturnDate).toLocaleDateString() : 'N/A'}</div>
+                                            <div><span className="text-slate-600">Expected Return:</span> {voucherData.expectedReturnDate ? formatDate(voucherData.expectedReturnDate) : 'N/A'}</div>
                                             <div><span className="text-slate-600">Issued By:</span> {voucherData.issuedBy?.firstName} {voucherData.issuedBy?.lastName}</div>
                                         </div>
                                         {voucherData.purpose && (
@@ -886,7 +887,7 @@ export default function LaptopIssuancesPage() {
                                         <div className="p-4 bg-green-100 rounded-lg">
                                             <h3 className="font-semibold text-green-900 mb-2">Return Details</h3>
                                             <div className="text-sm">
-                                                <div><span className="text-green-700">Returned On:</span> {new Date(voucherData.returnedAt).toLocaleDateString()}</div>
+                                                <div><span className="text-green-700">Returned On:</span> {formatDate(voucherData.returnedAt)}</div>
                                                 <div><span className="text-green-700">Condition:</span> {voucherData.conditionOnReturn}</div>
                                                 {voucherData.receivedBy && (
                                                     <div><span className="text-green-700">Received By:</span> {voucherData.receivedBy.firstName} {voucherData.receivedBy.lastName}</div>

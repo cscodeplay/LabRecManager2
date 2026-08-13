@@ -13,6 +13,7 @@ import { authAPI, gradeScalesAPI, devicesAPI, academicYearsAPI } from '@/lib/api
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
+import { formatDate, formatDateTime, formatTime, formatDateRange } from '@/lib/dateUtils';
 
 export default function SettingsPage() {
     const router = useRouter();
@@ -168,7 +169,7 @@ export default function SettingsPage() {
 
     // Get unique creation dates for filter dropdown
     const uniqueDates = useMemo(() => {
-        const dates = [...new Set(gradeScales.map(g => new Date(g.createdAt).toLocaleDateString()))];
+        const dates = [...new Set(gradeScales.map(g => formatDate(g.createdAt)))];
         return dates.sort((a, b) => new Date(b) - new Date(a));
     }, [gradeScales]);
 
@@ -185,7 +186,7 @@ export default function SettingsPage() {
 
         // Apply date filter
         if (dateFilter) {
-            filtered = filtered.filter(g => new Date(g.createdAt).toLocaleDateString() === dateFilter);
+            filtered = filtered.filter(g => formatDate(g.createdAt) === dateFilter);
         }
 
         // Apply sorting
@@ -382,8 +383,8 @@ export default function SettingsPage() {
         const endYear = end.getFullYear();
         return {
             yearLabel: `${startYear}-${String(endYear).slice(-2)}`,
-            startDate: start.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }),
-            endDate: end.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+            startDate: formatDate(start),
+            endDate: formatDate(end)
         };
     }, [newSession.startDate]);
 
@@ -466,7 +467,7 @@ export default function SettingsPage() {
                                                     </p>
                                                     {lastCameraCheck && (
                                                         <p className="text-xs text-slate-400 mt-1">
-                                                            Last: {lastCameraCheck.toLocaleTimeString()}
+                                                            Last: {formatTime(lastCameraCheck)}
                                                         </p>
                                                     )}
                                                 </div>
@@ -486,7 +487,7 @@ export default function SettingsPage() {
                                                     </p>
                                                     {lastMicCheck && (
                                                         <p className="text-xs text-slate-400 mt-1">
-                                                            Last: {lastMicCheck.toLocaleTimeString()}
+                                                            Last: {formatTime(lastMicCheck)}
                                                         </p>
                                                     )}
                                                 </div>
@@ -505,7 +506,7 @@ export default function SettingsPage() {
                                                     </p>
                                                     {lastSpeakerCheck && (
                                                         <p className="text-xs text-slate-400 mt-1">
-                                                            Last: {lastSpeakerCheck.toLocaleTimeString()}
+                                                            Last: {formatTime(lastSpeakerCheck)}
                                                         </p>
                                                     )}
                                                 </div>
@@ -1111,13 +1112,8 @@ export default function SettingsPage() {
                                                                 </span>
                                                             </td>
                                                             <td className="py-3 px-4">
-                                                                <div className="text-xs">
-                                                                    <div className="text-slate-700 font-medium">
-                                                                        {new Date(scale.createdAt).toLocaleDateString()}
-                                                                    </div>
-                                                                    <div className="text-slate-400">
-                                                                        {new Date(scale.createdAt).toLocaleTimeString()}
-                                                                    </div>
+                                                                <div className="text-xs text-slate-600 font-medium">
+                                                                    {formatDateTime(scale.createdAt)}
                                                                 </div>
                                                             </td>
                                                             <td className="py-3 px-4 text-right">
@@ -1281,9 +1277,7 @@ export default function SettingsPage() {
                                                                         )}
                                                                     </div>
                                                                     <p className="text-sm text-slate-500">
-                                                                        {new Date(session.startDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
-                                                                        {' → '}
-                                                                        {new Date(session.endDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                        {formatDateRange(session.startDate, session.endDate)}
                                                                     </p>
                                                                 </div>
                                                             </div>

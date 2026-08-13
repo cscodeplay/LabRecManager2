@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { ticketsAPI, labsAPI, dashboardAPI } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { toast } from 'react-hot-toast';
+import { formatDate, formatDateTime, formatRelativeTime } from '@/lib/dateUtils';
 import {
     Ticket, Plus, Filter, Search, Clock, CheckCircle2, AlertCircle,
     MessageSquare, User, Monitor, Building2, ChevronRight, X, Send
@@ -349,7 +350,7 @@ export default function TicketsPage() {
                                             )}
                                             <span className="flex items-center gap-1">
                                                 <Clock size={14} />
-                                                {new Date(ticket.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                                                {formatDate(ticket.createdAt)}
                                             </span>
                                             {ticket._count?.comments > 0 && (
                                                 <span className="flex items-center gap-1">
@@ -596,7 +597,7 @@ export default function TicketsPage() {
                                     </div>
                                     <div>
                                         <p className="text-slate-400">Created</p>
-                                        <p className="font-medium">{new Date(selectedTicket.createdAt).toLocaleString()}</p>
+                                        <p className="font-medium">{formatDateTime(selectedTicket.createdAt)}</p>
                                     </div>
                                     {selectedTicket.lab && (
                                         <div>
@@ -648,7 +649,7 @@ export default function TicketsPage() {
                                                         </span>
                                                     </span>
                                                     <span className="text-xs text-slate-400">
-                                                        {new Date(comment.createdAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                        {formatDateTime(comment.createdAt)}
                                                     </span>
                                                 </div>
                                                 <p className="text-sm text-slate-700">{comment.content}</p>

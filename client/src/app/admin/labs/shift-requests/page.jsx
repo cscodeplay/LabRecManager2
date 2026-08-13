@@ -7,6 +7,7 @@ import { ArrowRightLeft, ArrowLeft, Check, X, Clock, CheckCircle, XCircle, Packa
 import { useAuthStore } from '@/lib/store';
 import { labsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import { formatDateTime } from '@/lib/dateUtils';
 
 const STATUS_CONFIG = {
     pending: { label: 'Pending', color: 'amber', icon: Clock },
@@ -182,7 +183,7 @@ export default function ShiftRequestsPage() {
                                                     <StatusIcon className="w-3 h-3" /> {statusConfig.label}
                                                 </span>
                                                 <span className="text-sm text-slate-500">
-                                                    {new Date(request.requestedAt).toLocaleDateString()} at {new Date(request.requestedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    {formatDateTime(request.requestedAt)}
                                                 </span>
                                             </div>
                                             <h3 className="text-lg font-semibold text-slate-900 mb-1">
