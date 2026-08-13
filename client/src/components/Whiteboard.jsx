@@ -215,7 +215,7 @@ export default function Whiteboard({
     isMicOn = false,
     // Persistence prop - unique ID for this whiteboard (e.g., `wb_${userId}`)
     whiteboardId = null,
-    permissions = { canDraw: false, canShareAudio: true, canShareVideo: true },
+    permissions = null,
     isStudent = false,
     userName = 'Instructor',
     userIdentifier = '',
@@ -361,14 +361,25 @@ export default function Whiteboard({
     const [remoteCursors, setRemoteCursors] = useState({});
     const [recentLiveActions, setRecentLiveActions] = useState([]);
 
-    const [localPermissions, setLocalPermissions] = useState(permissions);
+    // Draw permission check: Instructors/Admins always have draw access. Standalone non-students have draw access. Students in meetings/live sessions are controlled via permissions.
+    const canUserDraw = isInstructor ? true : (isStudent ? Boolean(localPermissions?.canDraw) : (localPermissions?.canDraw ?? true));
+
+    const [localPermissions, setLocalPermissions] = useState(() => ({
+        canDraw: isInstructor ? true : (permissions && typeof permissions.canDraw === 'boolean' ? permissions.canDraw : !isStudent),
+        canShareAudio: permissions?.canShareAudio ?? true,
+        canShareVideo: permissions?.canShareVideo ?? true
+    }));
     const [showPermissions, setShowPermissions] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [isInWaitingRoom, setIsInWaitingRoom] = useState(false);
     
     useEffect(() => {
-        setLocalPermissions(permissions);
-    }, [permissions]);
+        setLocalPermissions({
+            canDraw: isInstructor ? true : (permissions && typeof permissions.canDraw === 'boolean' ? permissions.canDraw : !isStudent),
+            canShareAudio: permissions?.canShareAudio ?? true,
+            canShareVideo: permissions?.canShareVideo ?? true
+        });
+    }, [permissions, isInstructor, isStudent]);
 
     const [isAutoShape, setIsAutoShape] = useState(false);
     const laserTimeoutRef = useRef(null);
@@ -2064,7 +2075,7 @@ export default function Whiteboard({
     }, []);
 
     const startDrawing = useCallback((e) => {
-        if (!localPermissions.canDraw) return;
+        if (!canUserDraw) return;
         e.preventDefault();
         let pos = getPosition(e);
         if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
@@ -2147,7 +2158,7 @@ export default function Whiteboard({
                 });
             }
         }
-    }, [getPosition, tool, color, strokeWidth, eraserSize, highlighterColor, emitDrawEvent, broadcastAction, isSharing, socket, sessionId, localPermissions.canDraw]);
+    }, [getPosition, tool, color, strokeWidth, eraserSize, highlighterColor, emitDrawEvent, broadcastAction, isSharing, socket, sessionId, canUserDraw]);
 
     // Handle text submission - creates a text object for manipulation
     const handleTextSubmit = useCallback(() => {
@@ -3576,7 +3587,7 @@ export default function Whiteboard({
             )}
 
             {/* Floating Sleek Toolbar / View-Only Status Pill */}
-            {!localPermissions?.canDraw ? (
+            {!canUserDraw ? (
                 <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/70 px-4 py-2.5 flex items-center gap-3.5 rounded-full z-40 animate-in fade-in">
                     <div className="flex items-center gap-2 text-amber-300 text-xs font-semibold">
                         <Lock className="w-4 h-4 text-amber-400 shrink-0" />
@@ -4596,7 +4607,7 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none" />
-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!localPermissions.canDraw) return; e.stopPropagation(); e.preventDefault(); if (imgObj.isLocked) return; setImageDragState({ id: imgObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...imgObj } }); }} />
+                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!canUserDraw) return; e.stopPropagation(); e.preventDefault(); if (imgObj.isLocked) return; setImageDragState({ id: imgObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...imgObj } }); }} />
 
                                         {!imgObj.isLocked && (
                                             <>
@@ -4834,7 +4845,7 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-green-500 pointer-events-none" />
-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!localPermissions.canDraw) return; e.stopPropagation(); e.preventDefault(); if (txtObj.isLocked) return; setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
+                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!canUserDraw) return; e.stopPropagation(); e.preventDefault(); if (txtObj.isLocked) return; setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) }); }} />
 
 
                                         {!txtObj.isLocked && (
@@ -5302,7 +5313,7 @@ export default function Whiteboard({
                                 {isSelected && (
                                     <>
                                         <div className="absolute inset-0 border-2 border-purple-500 pointer-events-none" />
-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!localPermissions.canDraw) return; e.stopPropagation(); e.preventDefault(); if (shpObj.isLocked) return; setShapeDragState({ id: shpObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...shpObj }, startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)) }); }} />
+                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!canUserDraw) return; e.stopPropagation(); e.preventDefault(); if (shpObj.isLocked) return; setShapeDragState({ id: shpObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...shpObj }, startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)) }); }} />
                                         
 
                                         

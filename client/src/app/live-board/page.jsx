@@ -124,7 +124,7 @@ export default function LiveBoardPage() {
                                 isInstructor={false}
                                 isStudent={true}
                                 userName={user?.name || 'Student'}
-                                permissions={sharedSession.permissions || { canDraw: true, canShareAudio: false, canShareVideo: false }}
+                                permissions={sharedSession.permissions || { canDraw: false, canShareAudio: false, canShareVideo: false }}
                                 showCameraControls={true}
                                 isCameraOn={showCamera}
                                 onCameraToggle={() => setShowCamera(!showCamera)}

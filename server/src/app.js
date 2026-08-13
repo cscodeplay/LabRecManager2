@@ -462,7 +462,7 @@ io.on('connection', (socket) => {
       id: userId || socket.id,
       name: userName || 'Unknown',
       role: role || 'student',
-      permissions: { canDraw: true, canShareAudio: false, canShareVideo: false },
+      permissions: { canDraw: role === 'instructor' || role === 'admin' || role === 'principal' ? true : false, canShareAudio: false, canShareVideo: false },
       joinedAt: Date.now(),
       isMicOn: false,
       isCameraOn: false,

@@ -48,9 +48,9 @@ export default function WhiteboardPage() {
             return;
         }
 
-        // Only instructors can access standalone whiteboard
+        // Only instructors and admins can access standalone whiteboard instances
         if (!isInstructor) {
-            toast.error('Only instructors can access the whiteboard');
+            toast.error('Only instructors and administrators can access the whiteboard');
             router.push('/dashboard');
             return;
         }
@@ -341,6 +341,10 @@ export default function WhiteboardPage() {
                             onToggleFullscreen={handleToggleFullscreen}
                             onSave={handleSave}
                             isInstructor={true}
+                            isStudent={false}
+                            permissions={{ canDraw: true, canShareAudio: true, canShareVideo: true }}
+                            userName={user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'Instructor'}
+                            userIdentifier={user?.employeeId || user?.id?.slice(0, 8) || ''}
                             isSharing={isSharing}
                             sharingTargets={shareTargets}
                             onShare={() => setShowShareModal(true)}
