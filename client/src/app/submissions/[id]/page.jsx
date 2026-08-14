@@ -9,7 +9,7 @@ import {
     CheckCircle, XCircle, Award, Send, MessageSquare, Play, Terminal, Loader2, CheckCircle2, AlertCircle
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import { submissionsAPI, gradesAPI } from '@/lib/api';
+import { submissionsAPI, gradesAPI, compilerAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 // Helper to get component max marks breakdown dynamically
@@ -63,52 +63,36 @@ export default function SubmissionDetailPage() {
     const [liveOutput, setLiveOutput] = useState(null);
     const [execError, setExecError] = useState(null);
 
-    const handleRunSubmittedPythonCode = async () => {
+    const handleRunCode = async () => {
         if (!submission?.codeContent) return;
         setRunningCode(true);
         setLiveOutput(null);
         setExecError(null);
 
+        const language = submission?.assignment?.programmingLanguage || 'python';
+        const stdin = ''; // Standard input is not currently supported in the admin view
+
         try {
-            if (!window.pyodideInstance) {
-                if (!window.pyodidePromise) {
-                    window.pyodidePromise = (async () => {
-                        if (!document.getElementById('pyodide-cdn')) {
-                            const script = document.createElement('script');
-                            script.id = 'pyodide-cdn';
-                            script.src = 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js';
-                            document.body.appendChild(script);
-                            await new Promise((resolve, reject) => {
-                                script.onload = resolve;
-                                script.onerror = () => reject(new Error('Failed to load Pyodide CDN'));
-                            });
-                        }
-                        const pyodide = await window.loadPyodide();
-                        window.pyodideInstance = pyodide;
-                        return pyodide;
-                    })();
-                }
-                await window.pyodidePromise;
+            const response = await compilerAPI.execute({ language, code: submission.codeContent, stdin });
+            const data = response.data.data;
+
+            if (data.compile_stderr) {
+                setLiveOutput((data.compile_stderr + '\n' + (data.stderr || '')).trim());
+                setExecError('Compilation failed!');
+                toast.error('Compilation error.');
+            } else if (data.stderr) {
+                setLiveOutput((data.stderr + '\n' + (data.stdout || '')).trim());
+                setExecError('Runtime error!');
+                toast.error('Runtime error.');
+            } else {
+                setLiveOutput(data.stdout?.trim() || '[Program executed with no stdout output]');
+                toast.success('Code executed successfully!');
             }
-
-            const pyodide = window.pyodideInstance;
-
-            let capturedOutput = '';
-            pyodide.setStdout({
-                batched: (str) => {
-                    capturedOutput += str + '\n';
-                }
-            });
-
-            await pyodide.runPythonAsync(submission.codeContent);
-
-            const finalOutput = capturedOutput.trim() || '[Program executed with no stdout output]';
-            setLiveOutput(finalOutput);
-            toast.success('Live Python execution completed!');
         } catch (err) {
-            console.error('Python execution error:', err);
-            setExecError(err.message || String(err));
-            toast.error('Execution error occurred!');
+            console.error('Execution error:', err);
+            const errorMsg = err.response?.data?.message || err.message || String(err);
+            setExecError(errorMsg);
+            toast.error('Compilation / Execution error.');
         } finally {
             setRunningCode(false);
         }
@@ -247,10 +231,10 @@ export default function SubmissionDetailPage() {
                                     </div>
                                     <button
                                         type="button"
-                                        onClick={handleRunSubmittedPythonCode}
+                                        onClick={handleRunCode}
                                         disabled={runningCode}
-                                        className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition shadow-sm disabled:opacity-50"
-                                        title="Re-run Code (Python Compiler)"
+                                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm font-medium transition flex items-center gap-2 disabled:opacity-50"
+                                        title="Run Code"
                                     >
                                         {runningCode ? (
                                             <Loader2 className="w-5 h-5 animate-spin" />
