@@ -140,6 +140,13 @@ export default function MeetingPage() {
     const [loadingTargets, setLoadingTargets] = useState(false);
     const [targetSearchQuery, setTargetSearchQuery] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
+    
+    // Edit Target Search states
+    const [editTargetSearchQuery, setEditTargetSearchQuery] = useState('');
+    const [editTargetType, setEditTargetType] = useState('all');
+    const [editAvailableTargets, setEditAvailableTargets] = useState([]);
+    const [editLoadingTargets, setEditLoadingTargets] = useState(false);
+
     const [scheduledDateTime, setScheduledDateTime] = useState('');
     const [duration, setDuration] = useState(15);
     const [sessionTitle, setSessionTitle] = useState('');
