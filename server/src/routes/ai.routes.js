@@ -17,14 +17,15 @@ const upload = multer({
  * @access  Private (Instructor / Admin)
  */
 router.post('/parse-assignments', authenticate, authorize('instructor', 'lab_assistant', 'admin', 'principal'), upload.single('image'), asyncHandler(async (req, res) => {
-    if (!req.file) {
+    const { prompt = '', provider = 'groq', subjectId = '' } = req.body;
+    
+    if (!req.file && (!prompt || !prompt.trim())) {
         return res.status(400).json({
             success: false,
-            message: 'Image file is required'
+            message: 'Either an image file or a prompt instruction is required'
         });
     }
 
-    const { prompt = '', provider = 'groq', subjectId = '' } = req.body;
     const schoolId = req.user.schoolId || null;
 
     // Fetch school context (Classes, Groups, Students, Subjects)
@@ -46,13 +47,21 @@ router.post('/parse-assignments', authenticate, authorize('instructor', 'lab_ass
         })
     ]);
 
-    // 1. Extract assignments from image via AI
-    const extractedAssignments = await aiService.extractAssignmentsFromImage(
-        req.file.buffer,
-        req.file.mimetype,
-        prompt,
-        provider
-    );
+    // 1. Extract assignments (via image vision AI or text-only generation AI)
+    let extractedAssignments = [];
+    if (req.file) {
+        extractedAssignments = await aiService.extractAssignmentsFromImage(
+            req.file.buffer,
+            req.file.mimetype,
+            prompt,
+            provider
+        );
+    } else {
+        extractedAssignments = await aiService.extractAssignmentsFromText(
+            prompt,
+            provider
+        );
+    }
 
     // 2. Parse targets and subject match from prompt via AI
     const targetResolution = await aiService.parseAssignmentTargets(

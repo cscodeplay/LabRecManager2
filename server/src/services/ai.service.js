@@ -108,6 +108,70 @@ RULES:
     }
 
     /**
+     * Generate structured assignment list from natural language text prompt (non-image case)
+     */
+    async extractAssignmentsFromText(customPrompt = '', preferredProvider = 'groq') {
+        const systemPrompt = `You are an expert computer science educational AI assistant.
+Your task is to generate one or more programming assignment(s) based on the user's natural language request (e.g. "python program assignment on fibonacci series").
+
+Return ONLY a valid JSON array of assignments with the following schema:
+[
+  {
+    "title": "Short title of the program/experiment",
+    "description": "Full problem statement and requirements",
+    "aim": "Aim of the experiment (e.g. To write a Python program that generates Fibonacci series...)",
+    "programmingLanguage": "python" | "cpp" | "c" | "java" | "html" | "sql" | "other",
+    "assignmentType": "program" | "experiment" | "project" | "observation",
+    "experimentNumber": "1",
+    "suggestedSubject": "Computer Science"
+  }
+]
+
+TEACHER REQUEST: ${customPrompt}
+
+RULES:
+1. Generate complete, comprehensive problem statements, aims, and descriptions.
+2. Default programmingLanguage to 'python' unless specified otherwise in request (e.g., C++, Java, SQL).
+3. Set experimentNumber sequentially ("1", "2"...) for generated tasks.
+4. Output MUST be ONLY valid JSON array starting with '[' and ending with ']'. No markdown formatting or extra text.`;
+
+        // 1. Try Groq (Primary)
+        if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
+            try {
+                console.log('[AIService] Generating assignments from text via Groq (llama-3.3-70b-versatile)...');
+                const completion = await this.groq.chat.completions.create({
+                    model: 'llama-3.3-70b-versatile',
+                    messages: [
+                        { role: 'user', content: systemPrompt }
+                    ],
+                    temperature: 0.3
+                });
+
+                let responseText = completion.choices[0]?.message?.content || '';
+                return this.parseJSONResponse(responseText);
+            } catch (err) {
+                console.warn(`[AIService] Groq text generation failed (${err.message}). Falling back to Gemini...`);
+            }
+        }
+
+        // 2. Try Gemini (Fallback)
+        if (this.genAI) {
+            try {
+                console.log('[AIService] Generating assignments from text via Gemini (gemini-2.0-flash)...');
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+                const result = await model.generateContent(systemPrompt);
+                const responseText = result.response.text();
+                return this.parseJSONResponse(responseText);
+            } catch (err) {
+                console.error('[AIService] Gemini text generation failed:', err);
+                throw new Error(`AI Assignment text generation failed: ${err.message}`);
+            }
+        }
+
+        throw new Error('No AI provider configured. Please set GROQ_API_KEY or GEMINI_API_KEY.');
+    }
+
+    /**
      * Parse natural language instructions for target entities (Classes, Groups, Students),
      * subject matching, and publish / due date flags.
      */

@@ -80,8 +80,8 @@ export default function AIAssignmentGenerator({ isOpen, onClose, onSuccess }) {
 
     const handleParse = async (e) => {
         e?.preventDefault();
-        if (!imageFile) {
-            toast.error('Please upload an image of the syllabus or assignment list!');
+        if (!imageFile && !prompt.trim()) {
+            toast.error('Please upload an image OR enter a prompt instruction!');
             return;
         }
 
@@ -245,7 +245,7 @@ export default function AIAssignmentGenerator({ isOpen, onClose, onSuccess }) {
                                 {/* Upload Box */}
                                 <div className="space-y-3">
                                     <label className="block text-sm font-semibold text-slate-900 dark:text-white">
-                                        1. Upload Syllabus / Program List Image <span className="text-red-500">*</span>
+                                        1. Upload Syllabus / Program List Image <span className="text-slate-400 font-normal">(Optional)</span>
                                     </label>
                                     <div className="relative border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-primary-500 rounded-2xl p-6 text-center transition-colors bg-slate-50 dark:bg-slate-800/50 flex flex-col items-center justify-center min-h-[220px]">
                                         {imagePreview ? (
@@ -552,7 +552,7 @@ export default function AIAssignmentGenerator({ isOpen, onClose, onSuccess }) {
                             <button
                                 type="button"
                                 onClick={handleParse}
-                                disabled={!imageFile || loading}
+                                disabled={(!imageFile && !prompt.trim()) || loading}
                                 className="px-6 py-2.5 bg-gradient-to-r from-primary-600 to-purple-600 hover:from-primary-700 hover:to-purple-700 text-white font-semibold rounded-xl transition shadow-md flex items-center gap-2 text-sm disabled:opacity-50"
                             >
                                 <Sparkles className="w-4 h-4" /> Extract Tasks with AI
