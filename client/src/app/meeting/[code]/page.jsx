@@ -1266,7 +1266,7 @@ export default function MeetingRoomPage() {
 
     const handleSendMeetingInvite = async (targetType, targetId, targetName) => {
         try {
-            const meetingIdToUse = session?.id || code;
+            const meetingIdToUse = session?.id || params.code;
             await meetingAPI.sendInvite(meetingIdToUse, {
                 targetType,
                 targetId,

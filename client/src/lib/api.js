@@ -208,7 +208,19 @@ export const submissionsAPI = {
             headers: { 'Content-Type': 'multipart/form-data' },
         });
     },
-    update: (id, data) => api.put(`/submissions/${id}`, data),
+    update: (id, data) => {
+        const formData = new FormData();
+        Object.keys(data).forEach((key) => {
+            if (key === 'files') {
+                data.files.forEach((file) => formData.append('attachments', file));
+            } else if (data[key] !== undefined && data[key] !== null) {
+                formData.append(key, data[key]);
+            }
+        });
+        return api.put(`/submissions/${id}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+    },
     updateStatus: (id, status, remarks) => api.put(`/submissions/${id}/status`, { status, remarks }),
 };
 

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import {
     ArrowLeft, Code, FileText, User, Calendar,
-    CheckCircle, XCircle, Award, Send, MessageSquare, Play, Terminal, Loader2, CheckCircle2, AlertCircle
+    CheckCircle, XCircle, Award, Send, MessageSquare, Play, Terminal, Loader2, CheckCircle2, AlertCircle, Edit2
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { submissionsAPI, gradesAPI, compilerAPI } from '@/lib/api';
@@ -225,6 +225,11 @@ export default function SubmissionDetailPage() {
                         }`}>
                         {submission.status.replace('_', ' ')}
                     </span>
+                    {user?.role === 'student' && submission.status === 'needs_revision' && (
+                        <Link href={`/assignments/${submission.assignmentId}/submit`} className="p-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg shadow-sm transition flex items-center justify-center gap-2 text-sm font-medium" title="Edit & Resubmit">
+                            <Edit2 className="w-4 h-4" /> Edit & Resubmit
+                        </Link>
+                    )}
                 </div>
             </header>
 

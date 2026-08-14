@@ -184,7 +184,8 @@ export function useConfirm() {
     const context = useContext(ConfirmContext);
     if (!context) {
         return async (options) => {
-            return window.confirm(options?.message || options?.title || 'Are you sure?');
+            console.warn('[useConfirm] ConfirmProvider not found in component tree. Auto-confirming action.');
+            return true;
         };
     }
     return context;

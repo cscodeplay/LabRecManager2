@@ -1233,7 +1233,7 @@ router.post('/sessions/:id/invite', authenticate, asyncHandler(async (req, res) 
             type: 'meeting_invite',
             actionUrl
         });
-        invitedCount = Array.isArray(result) ? result.length : 1;
+        invitedCount = typeof result === 'object' && result?.count !== undefined ? result.count : (Array.isArray(result) ? result.length : 1);
     } else if (targetType === 'group') {
         const result = await notificationService.notifyGroup({
             groupId: targetId,
@@ -1242,7 +1242,7 @@ router.post('/sessions/:id/invite', authenticate, asyncHandler(async (req, res) 
             type: 'meeting_invite',
             actionUrl
         });
-        invitedCount = Array.isArray(result) ? result.length : 1;
+        invitedCount = typeof result === 'object' && result?.count !== undefined ? result.count : (Array.isArray(result) ? result.length : 1);
     }
 
     // Socket real-time broadcast
