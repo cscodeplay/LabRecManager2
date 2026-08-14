@@ -105,9 +105,9 @@ export default function AIAssignmentGenerator({ isOpen, onClose, onSuccess }) {
                 setSelectedSubjectId(data.targetResolution.selectedSubjectId);
             }
 
-            if (data.targetResolution?.targetClassIds) setTargetClassIds(data.targetResolution.matchedClassIds || []);
-            if (data.targetResolution?.targetGroupIds) setTargetGroupIds(data.targetResolution.matchedGroupIds || []);
-            if (data.targetResolution?.targetStudentIds) setTargetStudentIds(data.targetResolution.matchedStudentIds || []);
+            setTargetClassIds(data.targetResolution?.matchedClassIds || []);
+            setTargetGroupIds(data.targetResolution?.matchedGroupIds || []);
+            setTargetStudentIds(data.targetResolution?.matchedStudentIds || []);
 
             // Due Date formatting for datetime-local input
             if (data.targetResolution?.dueDate) {
