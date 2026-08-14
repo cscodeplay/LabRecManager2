@@ -58,6 +58,8 @@ export default function SubmissionDetailPage() {
     const [loading, setLoading] = useState(true);
     const [grading, setGrading] = useState(false);
     const [showGradeForm, setShowGradeForm] = useState(false);
+    const [showRevisionModal, setShowRevisionModal] = useState(false);
+    const [revisionRemarks, setRevisionRemarks] = useState('');
 
     const [runningCode, setRunningCode] = useState(false);
     const [liveOutput, setLiveOutput] = useState(null);
@@ -169,13 +171,22 @@ export default function SubmissionDetailPage() {
         }
     };
 
-    const handleRequestRevision = async () => {
-        const remarks = window.prompt('Please enter remarks/comments for the student regarding this revision:');
-        if (remarks === null) return; // User cancelled
+    const handleRequestRevision = () => {
+        setShowRevisionModal(true);
+        setRevisionRemarks('');
+    };
+
+    const submitRevisionRequest = async () => {
+        if (!revisionRemarks.trim()) {
+            toast.error('Please enter revision remarks before submitting.');
+            return;
+        }
 
         try {
-            await submissionsAPI.updateStatus(submission.id, 'needs_revision', remarks);
+            await submissionsAPI.updateStatus(submission.id, 'needs_revision', revisionRemarks);
             toast.success('Revision requested');
+            setShowRevisionModal(false);
+            setRevisionRemarks('');
             loadSubmission();
         } catch (error) {
             toast.error('Failed to request revision');
@@ -597,6 +608,53 @@ export default function SubmissionDetailPage() {
                     </div>
                 </div>
             </main>
+
+            {/* Revision Request Modal */}
+            {showRevisionModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                            <h3 className="text-lg font-semibold text-slate-900">Request Revision</h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowRevisionModal(false)}
+                                className="text-slate-400 hover:text-slate-600 transition"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                                Remarks for Student
+                            </label>
+                            <textarea
+                                className="input-field min-h-[120px] resize-y"
+                                placeholder="Explain what the student needs to fix or improve..."
+                                value={revisionRemarks}
+                                onChange={(e) => setRevisionRemarks(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+                        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowRevisionModal(false)}
+                                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={submitRevisionRequest}
+                                disabled={!revisionRemarks.trim()}
+                                className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition disabled:opacity-50"
+                            >
+                                Submit Revision Request
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
