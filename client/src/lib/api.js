@@ -655,4 +655,12 @@ export const trainingAPI = {
     getModuleProgress: (moduleId) => api.get(`/training/modules/${moduleId}/progress`),
 };
 
+// AI Generator API
+export const aiAPI = {
+    parseAssignments: (formData) => api.post('/ai/parse-assignments', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+    batchCreate: (data) => api.post('/ai/batch-create', data),
+};
+
 export default api;

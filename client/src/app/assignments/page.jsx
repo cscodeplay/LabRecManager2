@@ -6,13 +6,14 @@ import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 import {
     FileText, Plus, Search, Filter, Calendar, Users,
-    ChevronRight, Clock, CheckCircle, Edit, Trash2, Eye, Send, Upload
+    ChevronRight, Clock, CheckCircle, Edit, Trash2, Eye, Send, Upload, Sparkles
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { assignmentsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import AIAssignmentGenerator from '@/components/AIAssignmentGenerator';
 
 export default function AssignmentsPage() {
     const router = useRouter();
@@ -22,6 +23,7 @@ export default function AssignmentsPage() {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
+    const [showAIGenerator, setShowAIGenerator] = useState(false);
 
     const [deleteDialog, setDeleteDialog] = useState({ open: false, id: null, title: '' });
     const [deleteLoading, setDeleteLoading] = useState(false);
@@ -116,9 +118,19 @@ export default function AssignmentsPage() {
         <div className="min-h-screen bg-slate-50">
             <PageHeader title={t('assignments.title')}>
                 {isInstructor && (
-                    <Link href="/assignments/create" className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center" title={t('assignments.createAssignment')}>
-                        <Plus className="w-5 h-5" />
-                    </Link>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setShowAIGenerator(true)}
+                            className="px-3 py-2 bg-gradient-to-r from-purple-600 to-primary-600 hover:from-purple-700 hover:to-primary-700 text-white rounded-lg shadow-sm transition flex items-center justify-center gap-1.5 text-sm font-medium"
+                            title="Generate assignments automatically using AI"
+                        >
+                            <Sparkles className="w-4 h-4 animate-pulse" />
+                            <span className="hidden sm:inline">AI Auto-Generate</span>
+                        </button>
+                        <Link href="/assignments/create" className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center" title={t('assignments.createAssignment')}>
+                            <Plus className="w-5 h-5" />
+                        </Link>
+                    </div>
                 )}
             </PageHeader>
 
@@ -263,6 +275,13 @@ export default function AssignmentsPage() {
                 confirmText={t('common.delete')}
                 type="danger"
                 loading={deleteLoading}
+            />
+
+            {/* AI Assignment Generator Modal */}
+            <AIAssignmentGenerator
+                isOpen={showAIGenerator}
+                onClose={() => setShowAIGenerator(false)}
+                onSuccess={loadAssignments}
             />
         </div>
     );
