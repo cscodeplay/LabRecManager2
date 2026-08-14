@@ -8,24 +8,24 @@ const { asyncHandler } = require('../middleware/errorHandler');
 /**
  * Maps common language names to Piston language identifiers and versions
  */
-const getPistonConfig = (language) => {
+const getWandboxCompiler = (language) => {
     const langMap = {
-        'python': { language: 'python', version: '3.10.0' },
-        'python3': { language: 'python', version: '3.10.0' },
-        'c': { language: 'c', version: '10.2.0' },
-        'c++': { language: 'c++', version: '10.2.0' },
-        'cpp': { language: 'c++', version: '10.2.0' },
-        'java': { language: 'java', version: '15.0.2' },
-        'sql': { language: 'sqlite3', version: '3.36.0' },
-        'javascript': { language: 'javascript', version: '18.15.0' },
-        'node': { language: 'javascript', version: '18.15.0' },
+        'python': 'cpython-3.14.0',
+        'python3': 'cpython-3.14.0',
+        'c': 'gcc-13.2.0-c',
+        'c++': 'gcc-13.2.0',
+        'cpp': 'gcc-13.2.0',
+        'java': 'openjdk-jdk-22+36',
+        'sql': 'sqlite-3.46.1',
+        'javascript': 'nodejs-20.17.0',
+        'node': 'nodejs-20.17.0',
     };
     return langMap[language.toLowerCase()] || null;
 };
 
 /**
  * @route   POST /api/compiler/execute
- * @desc    Compile and execute code using Piston API
+ * @desc    Compile and execute code using Wandbox API
  * @access  Private
  */
 router.post('/execute', authenticate, [
@@ -40,8 +40,8 @@ router.post('/execute', authenticate, [
 
     const { language, code, stdin } = req.body;
     
-    const config = getPistonConfig(language);
-    if (!config) {
+    const compiler = getWandboxCompiler(language);
+    if (!compiler) {
         return res.status(400).json({ 
             success: false, 
             message: `Language '${language}' is not supported.` 
@@ -49,29 +49,19 @@ router.post('/execute', authenticate, [
     }
 
     try {
-        const response = await axios.post('https://emkc.org/api/v2/piston/execute', {
-            language: config.language,
-            version: config.version,
-            files: [
-                {
-                    content: code
-                }
-            ],
-            stdin: stdin || "",
-            compile_timeout: 10000,
-            run_timeout: 3000,
-            compile_memory_limit: -1,
-            run_memory_limit: -1
+        const response = await axios.post('https://wandbox.org/api/compile.json', {
+            compiler: compiler,
+            code: code,
+            stdin: stdin || ""
         });
 
-        if (response.data && response.data.run) {
+        if (response.data) {
             return res.json({
                 success: true,
                 data: {
-                    stdout: response.data.run.stdout,
-                    stderr: response.data.run.stderr,
-                    code: response.data.run.code,
-                    compile_stderr: response.data.compile ? response.data.compile.stderr : null
+                    stdout: response.data.program_message || '',
+                    stderr: response.data.program_error || '',
+                    compile_stderr: response.data.compiler_error || null
                 }
             });
         } else {
