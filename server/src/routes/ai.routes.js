@@ -179,7 +179,10 @@ router.post('/batch-create', authenticate, authorize('instructor', 'lab_assistan
                 data: {
                     assignmentId: assignment.id,
                     targetType: 'class',
-                    targetClassId: classId
+                    targetClassId: classId,
+                    assignedById: req.user.id,
+                    dueDate: finalDueDate,
+                    publishDate: status === 'published' ? new Date() : null
                 }
             });
 
@@ -206,7 +209,10 @@ router.post('/batch-create', authenticate, authorize('instructor', 'lab_assistan
                 data: {
                     assignmentId: assignment.id,
                     targetType: 'group',
-                    targetGroupId: groupId
+                    targetGroupId: groupId,
+                    assignedById: req.user.id,
+                    dueDate: finalDueDate,
+                    publishDate: status === 'published' ? new Date() : null
                 }
             });
 
@@ -233,7 +239,10 @@ router.post('/batch-create', authenticate, authorize('instructor', 'lab_assistan
                 data: {
                     assignmentId: assignment.id,
                     targetType: 'student',
-                    targetStudentId: studentId
+                    targetStudentId: studentId,
+                    assignedById: req.user.id,
+                    dueDate: finalDueDate,
+                    publishDate: status === 'published' ? new Date() : null
                 }
             });
 

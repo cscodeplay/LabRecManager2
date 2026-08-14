@@ -10,6 +10,8 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Groq = require('groq-sdk');
 const prisma = require('../config/database');
+const aiService = require('./ai.service');
+const notificationService = require('./notificationService');
 
 class ChatbotService {
     constructor() {
@@ -310,6 +312,143 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
         }
 
         const { conversationHistory = [], documentContext = '', userId } = options;
+
+        // Intent detection: AI Assignment Creation & Targeting directly via Global Chatbot
+        const msgLower = message.toLowerCase();
+        const isAssignmentCreationIntent = (
+            (msgLower.includes('assignment') || msgLower.includes('program') || msgLower.includes('lab work') || msgLower.includes('task')) &&
+            (msgLower.includes('create') || msgLower.includes('assign') || msgLower.includes('give') || msgLower.includes('generate') || msgLower.includes('make'))
+        );
+
+        if (isAssignmentCreationIntent) {
+            try {
+                console.log('[ChatBot] Assignment creation intent detected in chatbot prompt:', message);
+
+                const [classes, groups, students, subjects] = await Promise.all([
+                    prisma.studentClass.findMany({ select: { id: true, name: true, gradeLevel: true, section: true } }),
+                    prisma.studentGroup.findMany({ select: { id: true, name: true, class: { select: { name: true } } } }),
+                    prisma.user.findMany({ where: { role: 'student' }, select: { id: true, firstName: true, lastName: true, admissionNumber: true } }),
+                    prisma.subject.findMany({ select: { id: true, name: true, code: true } })
+                ]);
+
+                // 1. AI Task extraction
+                const extractedAssignments = await aiService.extractAssignmentsFromText(message, 'groq');
+
+                // 2. AI Target resolution
+                const resolution = await aiService.parseAssignmentTargets(message, { classes, groups, students, subjects }, 'groq');
+
+                let targetSubjectId = resolution.selectedSubjectId;
+                if (!targetSubjectId) {
+                    const csSub = subjects.find(s => s.name?.toLowerCase().includes('computer'));
+                    targetSubjectId = csSub ? csSub.id : subjects[0]?.id;
+                }
+                const subjectObj = subjects.find(s => s.id === targetSubjectId);
+
+                const dueDate = new Date();
+                dueDate.setHours(dueDate.getHours() + (resolution.dueDateHoursFromNow || 24));
+                const status = 'published';
+
+                const matchedClassNames = classes.filter(c => resolution.matchedClassIds?.includes(c.id)).map(c => c.name);
+                const matchedGroupNames = groups.filter(g => resolution.matchedGroupIds?.includes(g.id)).map(g => g.name);
+                const targetSummaryStr = [...matchedClassNames, ...matchedGroupNames].join(', ') || 'All Assigned Students';
+
+                const createdList = [];
+                for (let i = 0; i < extractedAssignments.length; i++) {
+                    const item = extractedAssignments[i];
+                    const title = item.title || `Lab Task #${i + 1}`;
+
+                    const assignment = await prisma.assignment.create({
+                        data: {
+                            createdById: userId || (students[0]?.id || null),
+                            subjectId: targetSubjectId,
+                            title,
+                            description: item.description || title,
+                            aim: item.aim || null,
+                            experimentNumber: item.experimentNumber || `${i + 1}`,
+                            assignmentType: item.assignmentType || 'program',
+                            programmingLanguage: item.programmingLanguage || 'python',
+                            maxMarks: 100,
+                            practicalMarks: 60,
+                            vivaMarks: 20,
+                            outputMarks: 20,
+                            status,
+                            due_date: dueDate
+                        }
+                    });
+
+                    // Target Associations (Classes)
+                    for (const classId of (resolution.matchedClassIds || [])) {
+                        await prisma.assignmentTarget.create({
+                            data: {
+                                assignmentId: assignment.id,
+                                targetType: 'class',
+                                targetClassId: classId,
+                                assignedById: userId || assignment.createdById,
+                                dueDate: dueDate,
+                                publishDate: new Date()
+                            }
+                        });
+                        await notificationService.notifyClass({
+                            classId,
+                            title: `New Work Assigned: ${assignment.title}`,
+                            message: `You have been assigned new lab work. Due: ${dueDate.toLocaleDateString('en-IN')}`,
+                            type: 'work_assigned',
+                            referenceType: 'assignment',
+                            referenceId: assignment.id,
+                            actionUrl: '/my-work'
+                        }).catch(() => {});
+                    }
+
+                    // Target Associations (Groups)
+                    for (const groupId of (resolution.matchedGroupIds || [])) {
+                        await prisma.assignmentTarget.create({
+                            data: {
+                                assignmentId: assignment.id,
+                                targetType: 'group',
+                                targetGroupId: groupId,
+                                assignedById: userId || assignment.createdById,
+                                dueDate: dueDate,
+                                publishDate: new Date()
+                            }
+                        });
+                        await notificationService.notifyGroup({
+                            groupId,
+                            title: `New Work Assigned: ${assignment.title}`,
+                            message: `You have been assigned new lab work. Due: ${dueDate.toLocaleDateString('en-IN')}`,
+                            type: 'work_assigned',
+                            referenceType: 'assignment',
+                            referenceId: assignment.id,
+                            actionUrl: '/my-work'
+                        }).catch(() => {});
+                    }
+
+                    createdList.push(assignment);
+                }
+
+                const replyText = `✨ **AI Assignment Created & Assigned Successfully!**
+
+I have generated and assigned the following task(s) based on your request:
+
+${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
+   - **Aim**: ${a.aim || a.description}
+   - **Subject**: ${subjectObj ? subjectObj.name : 'Computer Science'}
+   - **Target Audience**: ${targetSummaryStr}
+   - **Due Date**: ${dueDate.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+   - **Status**: Published 🚀`).join('\n\n')}`;
+
+                return {
+                    text: replyText,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    provider: 'groq'
+                };
+            } catch (err) {
+                console.warn('[ChatBot] Direct AI assignment creation failed, proceeding with normal chat:', err.message);
+            }
+        }
+
         const schema = await this.getSchema();
         const systemPrompt = this.buildSystemPrompt(schema, documentContext);
 
