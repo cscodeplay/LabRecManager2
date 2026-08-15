@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
-const prisma = require('../config/prisma');
+const prisma = require('../config/database');
 const aiService = require('../services/ai.service');
 const notificationService = require('../services/notificationService');
 
