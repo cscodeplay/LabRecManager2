@@ -476,26 +476,35 @@ export default function MeetingRoomPage() {
     // 3. LOCAL MEDIA & AUDIO MONITORING
     // ===========================================
     const initializeLocalMedia = async () => {
+        let stream = new MediaStream();
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
+            stream = await navigator.mediaDevices.getUserMedia({
                 video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
                 audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
             });
-
-            localStreamRef.current = stream;
-            setLocalStream(stream);
-
-            stream.getVideoTracks().forEach(track => { track.enabled = false; });
-            stream.getAudioTracks().forEach(track => { track.enabled = false; });
-
-            setupAudioAnalysis(stream);
-            await enumerateDevices();
         } catch (error) {
-            console.warn('Initial camera/mic access deferred:', error);
-            const dummyStream = new MediaStream();
-            localStreamRef.current = dummyStream;
-            setLocalStream(dummyStream);
+            console.warn('Combined camera/mic access note:', error.message || error);
+            try {
+                const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioStream.getAudioTracks().forEach(t => stream.addTrack(t));
+            } catch (e) {}
+
+            try {
+                const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                videoStream.getVideoTracks().forEach(t => stream.addTrack(t));
+            } catch (e) {}
         }
+
+        localStreamRef.current = stream;
+        setLocalStream(stream);
+
+        stream.getVideoTracks().forEach(track => { track.enabled = false; });
+        stream.getAudioTracks().forEach(track => { track.enabled = false; });
+
+        if (stream.getAudioTracks().length > 0) {
+            setupAudioAnalysis(stream);
+        }
+        await enumerateDevices();
     };
 
     const setupAudioAnalysis = (stream) => {
