@@ -64,9 +64,7 @@ export default function VideoTile({
     return (
         <div
             className={`relative bg-slate-900 rounded-2xl overflow-hidden shadow-xl border-2 transition-all duration-200 flex items-center justify-center select-none ${
-                isSpeaking
-                    ? 'border-emerald-500 ring-2 ring-emerald-500/40 shadow-emerald-500/10'
-                    : isPinned
+                isPinned
                     ? 'border-primary-500 ring-2 ring-primary-500/30'
                     : 'border-slate-800 hover:border-slate-700'
             } ${className}`}
@@ -116,30 +114,29 @@ export default function VideoTile({
                     </span>
                 )}
 
-                {/* Mic Status & Dynamic Equalizer Animation */}
+                {/* Vertical Bottom-to-Top Mic Level Fill Badge */}
                 <div
-                    className={`px-2 py-1 rounded-lg backdrop-blur-md shadow text-xs flex items-center gap-1.5 transition-all ${
+                    className={`relative overflow-hidden rounded-full p-2 backdrop-blur-md shadow-lg border transition-all flex items-center justify-center ${
                         isMicOn
-                            ? isSpeaking
-                                ? 'bg-emerald-500/90 text-white ring-2 ring-emerald-400/50'
-                                : 'bg-slate-800/80 text-emerald-400'
-                            : 'bg-red-500/80 text-white'
+                            ? 'border-emerald-500/60 bg-slate-950/80 shadow-emerald-500/20'
+                            : 'border-red-500/60 bg-slate-950/80'
                     }`}
-                    title={isMicOn ? (isSpeaking ? 'Speaking' : 'Mic Active') : 'Muted'}
+                    title={isMicOn ? (isSpeaking ? 'Speaking (Mic Active)' : 'Mic On') : 'Muted'}
                 >
+                    {/* Bottom-to-top dynamic audio fill level */}
+                    {isMicOn && (
+                        <div
+                            className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-emerald-600 via-emerald-500 to-emerald-400 transition-all duration-150 ease-out ${
+                                isSpeaking ? 'opacity-95 shadow-[0_0_12px_rgba(52,211,153,0.9)] animate-pulse' : 'opacity-60'
+                            }`}
+                            style={{ height: isSpeaking ? '92%' : '32%' }}
+                        />
+                    )}
+
                     {isMicOn ? (
-                        <>
-                            <Mic className="w-3.5 h-3.5" />
-                            {/* Animated Audio Equalizer Waveform for host and participants */}
-                            <div className="flex items-end gap-[2px] h-3 px-0.5" title="Mic Audio Level">
-                                <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${isSpeaking ? 'h-3 animate-pulse' : 'h-1.5 opacity-70'}`} />
-                                <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-200 ${isSpeaking ? 'h-2.5 animate-bounce' : 'h-2 opacity-70'}`} />
-                                <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${isSpeaking ? 'h-3.5 animate-pulse' : 'h-1 opacity-70'}`} />
-                                <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-300 ${isSpeaking ? 'h-2 animate-bounce' : 'h-1.5 opacity-70'}`} />
-                            </div>
-                        </>
+                        <Mic className="relative z-10 w-3.5 h-3.5 text-white drop-shadow-md" />
                     ) : (
-                        <MicOff className="w-3.5 h-3.5" />
+                        <MicOff className="relative z-10 w-3.5 h-3.5 text-red-400" />
                     )}
                 </div>
 
@@ -169,14 +166,32 @@ export default function VideoTile({
                         {name} {isLocal ? '(You)' : ''}
                     </span>
 
-                    {/* Dynamic Mic Waveform next to Name */}
-                    {isMicOn && (
-                        <div className="flex items-end gap-[1.5px] h-2.5 px-0.5">
-                            <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${isSpeaking ? 'h-2.5 animate-pulse' : 'h-1 opacity-60'}`} />
-                            <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-200 ${isSpeaking ? 'h-2 animate-bounce' : 'h-1.5 opacity-60'}`} />
-                            <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${isSpeaking ? 'h-3 animate-pulse' : 'h-1 opacity-60'}`} />
+                    {/* Mic Fill Capsule next to Name */}
+                    <div
+                        className={`relative w-4 h-6 rounded-full overflow-hidden border flex items-end justify-center transition-all ${
+                            isMicOn
+                                ? 'border-emerald-500/70 bg-slate-950/80'
+                                : 'border-red-500/60 bg-slate-950/80'
+                        }`}
+                        title={isMicOn ? (isSpeaking ? 'Speaking' : 'Mic On') : 'Muted'}
+                    >
+                        {/* Dynamic Bottom-to-Top Fill */}
+                        {isMicOn && (
+                            <div
+                                className={`w-full bg-gradient-to-t from-emerald-600 to-emerald-400 transition-all duration-150 ease-out rounded-b-full ${
+                                    isSpeaking ? 'animate-pulse' : ''
+                                }`}
+                                style={{ height: isSpeaking ? '92%' : '35%' }}
+                            />
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            {isMicOn ? (
+                                <Mic className="w-2.5 h-2.5 text-white drop-shadow-sm z-10" />
+                            ) : (
+                                <MicOff className="w-2.5 h-2.5 text-red-400 z-10" />
+                            )}
                         </div>
-                    )}
+                    </div>
 
                     {/* Role Pill */}
                     {isHostOrAdmin ? (
