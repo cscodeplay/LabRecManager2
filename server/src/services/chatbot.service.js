@@ -204,7 +204,7 @@ DATABASE SCHEMA:
 ${schema}
 
 RESPONSE FORMAT RULES:
-1. When the user asks for data/stats, generate ONLY SELECT SQL queries in a ```sql block.
+1. When the user asks for data/stats, generate ONLY SELECT SQL queries in a \`\`\`sql block.
 2. DO NOT generate INSERT, UPDATE, or DELETE SQL queries under any circumstances.
 3. Add <!--EXEC_SQL:your_query_here:END_SQL--> at the end for auto-execution (SELECT/WITH only).
 4. DO NOT write "Result:" or try to summarize the output. The system will automatically execute the SQL and display the results to the user.
