@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Video, VideoOff, Mic, MicOff, Phone, Maximize2, Minimize2, Users, Move, Volume2, VolumeX } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, Phone, Maximize2, Minimize2, Users, Move, Volume2, VolumeX, ExternalLink } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import toast from 'react-hot-toast';
 
@@ -31,6 +31,21 @@ export function GlobalMeetingProvider({ children }) {
     const [pipPosition, setPipPosition] = useState({ x: 20, y: 20 });
     const [isDragging, setIsDragging] = useState(false);
     const dragRef = useRef({ startX: 0, startY: 0, initialX: 20, initialY: 20 });
+    const videoRef = useRef(null);
+
+    const toggleNativePiP = async () => {
+        if (!videoRef.current) return;
+        try {
+            if (document.pictureInPictureElement) {
+                await document.exitPictureInPicture();
+            } else {
+                await videoRef.current.requestPictureInPicture();
+            }
+        } catch (error) {
+            console.error('Failed to toggle Native OS PiP:', error);
+            toast.error('Native Picture-in-Picture not supported by your browser');
+        }
+    };
 
     const isMeetingRoute = pathname?.startsWith('/meeting/');
     const showPiP = activeMeeting && !isMeetingRoute;
@@ -128,6 +143,13 @@ export function GlobalMeetingProvider({ children }) {
                         </div>
                         <div className="flex items-center gap-1">
                             <button
+                                onClick={toggleNativePiP}
+                                className="p-1 text-indigo-400 hover:text-indigo-300 rounded hover:bg-indigo-500/20 transition"
+                                title="Pop Out to OS (Native PiP)"
+                            >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                            </button>
+                            <button
                                 onClick={() => setIsPiPMinimized(!isPiPMinimized)}
                                 className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition"
                                 title={isPiPMinimized ? 'Expand PiP' : 'Minimize PiP'}
@@ -151,6 +173,7 @@ export function GlobalMeetingProvider({ children }) {
                             {activeMeeting.stream ? (
                                 <video
                                     ref={el => {
+                                        videoRef.current = el;
                                         if (el && activeMeeting.stream) el.srcObject = activeMeeting.stream;
                                     }}
                                     autoPlay

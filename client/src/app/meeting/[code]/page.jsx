@@ -783,6 +783,11 @@ export default function MeetingRoomPage() {
                     if (sender) await sender.replaceTrack(screenTrack);
                 });
 
+                peersRef.current.forEach(async (pc) => {
+                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+                    if (sender) await sender.replaceTrack(screenTrack);
+                });
+
                 setIsScreenSharing(true);
                 switchActiveSpace('screen_share');
 
@@ -1505,7 +1510,11 @@ export default function MeetingRoomPage() {
         try {
             const recordStream = createCompositeRecordStream();
             recordedChunksRef.current = [];
-            const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+            const mimeType = MediaRecorder.isTypeSupported('video/mp4')
+                ? 'video/mp4'
+                : MediaRecorder.isTypeSupported('video/webm;codecs=h264')
+                ? 'video/webm;codecs=h264'
+                : MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
                 ? 'video/webm;codecs=vp9,opus'
                 : MediaRecorder.isTypeSupported('video/webm')
                 ? 'video/webm'
@@ -1532,7 +1541,8 @@ export default function MeetingRoomPage() {
                 const targetId = session?.id || activeRoomIdRef.current || params.code;
                 try {
                     const finalDuration = Math.max(recordingTime, 1);
-                    const file = new File([blob], `meeting_${targetId}_${Date.now()}.webm`, { type: 'video/webm' });
+                    const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+                    const file = new File([blob], `meeting_${targetId}_${Date.now()}.${ext}`, { type: mimeType });
                     await meetingAPI.uploadRecording(targetId, file, finalDuration);
                     toast.success('Recording saved to session records!', { icon: '💾' });
                 } catch (saveErr) {
@@ -1540,7 +1550,7 @@ export default function MeetingRoomPage() {
                 }
             };
 
-            mediaRecorder.start(1000);
+            mediaRecorder.start();
             setIsRecording(true);
             setRecordingTime(0);
 
@@ -1567,7 +1577,8 @@ export default function MeetingRoomPage() {
         const url = URL.createObjectURL(recordedBlob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `meeting_${session?.id || params.code}_${Date.now()}.webm`;
+        const ext = recordedBlob.type.includes('mp4') ? 'mp4' : 'webm';
+        a.download = `meeting_${session?.id || params.code}_${Date.now()}.${ext}`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -1586,7 +1597,8 @@ export default function MeetingRoomPage() {
             const timer2 = setTimeout(() => setUploadProgress(80), 700);
 
             const finalDuration = Math.max(recordingTime, 1);
-            const file = new File([recordedBlob], `meeting_${targetId}_${Date.now()}.webm`, { type: 'video/webm' });
+            const ext = recordedBlob.type.includes('mp4') ? 'mp4' : 'webm';
+            const file = new File([recordedBlob], `meeting_${targetId}_${Date.now()}.${ext}`, { type: recordedBlob.type });
             await meetingAPI.uploadRecording(targetId, file, finalDuration);
 
             clearTimeout(timer1);
@@ -2016,102 +2028,6 @@ Link: ${getInviteUrl()}`;
                 )}
             </div>
 
-            {/* ========================================================================= */}
-            {/* LAYER 1 (FLOATING OVERLAYS): MINIMIZED FLOATING TILES FOR OTHER SPACES    */}
-            {/* ========================================================================= */}
-            {/* FLOATING VC VIDEO PALETTE (When Whiteboard or Screen Share is maximized) */}
-            {activeSpace !== 'vc_tiles' && (
-                <div
-                    style={{
-                        position: 'fixed',
-                        left: videoPalettePos.x !== null ? `${videoPalettePos.x}px` : undefined,
-                        right: videoPalettePos.x === null ? '1rem' : undefined,
-                        top: `${videoPalettePos.y}px`,
-                        zIndex: 25
-                    }}
-                    className="flex flex-col items-end gap-2 pointer-events-auto select-none"
-                >
-                    <div
-                        onPointerDown={handleVideoPalettePointerDown}
-                        onPointerMove={handleVideoPalettePointerMove}
-                        onPointerUp={handleVideoPalettePointerUp}
-                        className="flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-700/80 shadow-2xl text-xs cursor-grab active:cursor-grabbing touch-none"
-                    >
-                        <GripVertical className="w-3.5 h-3.5 text-slate-400" />
-                        <button
-                            onClick={() => switchActiveSpace('vc_tiles')}
-                            className="flex items-center gap-1 text-slate-200 hover:text-primary-300 font-medium transition"
-                            title="Maximize Video Gallery"
-                        >
-                            <LayoutGrid className="w-3.5 h-3.5 text-primary-400" />
-                            {totalParticipants} in call
-                        </button>
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setIsVideoPaletteMinimized(!isVideoPaletteMinimized);
-                            }}
-                            className="p-1 text-slate-400 hover:text-white rounded-md transition"
-                            title={isVideoPaletteMinimized ? 'Show participant tiles' : 'Hide participant tiles'}
-                        >
-                            {isVideoPaletteMinimized ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                        </button>
-                    </div>
-
-                    {!isVideoPaletteMinimized && (
-                        <div className="flex flex-col gap-2 max-h-[70vh] overflow-y-auto pr-1">
-                            <div className="w-48 h-32 rounded-xl overflow-hidden shadow-2xl border border-slate-700 relative group">
-                                <VideoTile
-                                    stream={localStream}
-                                    isLocal={true}
-                                    isCameraOn={isVideoEnabled}
-                                    isMicOn={isAudioEnabled}
-                                    isScreenSharing={isScreenSharing}
-                                    name="You"
-                                    role={user?.role}
-                                    isSpeaking={isLocalSpeaking}
-                                    compact={true}
-                                    className="w-full h-full"
-                                />
-                                <button
-                                    onClick={() => switchActiveSpace('vc_tiles')}
-                                    className="absolute bottom-1.5 right-1.5 p-1 bg-slate-900/80 hover:bg-primary-600 text-white rounded-md text-[10px] border border-slate-700 opacity-0 group-hover:opacity-100 transition"
-                                    title="Maximize Gallery"
-                                >
-                                    <Maximize2 className="w-3 h-3" />
-                                </button>
-                            </div>
-
-                            {remoteList.map((p) => (
-                                <div
-                                    key={p.socketId}
-                                    onClick={() => handleOpenDirectChat(p)}
-                                    className="w-48 h-32 rounded-xl overflow-hidden shadow-2xl border border-slate-700 cursor-pointer relative group"
-                                    title="Click to chat"
-                                >
-                                    <VideoTile
-                                        stream={p.stream}
-                                        isLocal={false}
-                                        isCameraOn={p.isCameraOn}
-                                        isMicOn={p.isMicOn}
-                                        isScreenSharing={p.isScreenSharing}
-                                        name={p.name}
-                                        role={p.role}
-                                        isSpeaking={p.isSpeaking}
-                                        compact={true}
-                                        className="w-full h-full"
-                                    />
-                                    <div className="absolute inset-0 bg-primary-600/20 opacity-0 group-hover:opacity-100 transition flex items-center justify-center pointer-events-none">
-                                        <span className="bg-slate-900/90 text-white text-[10px] px-2 py-1 rounded-full border border-slate-600 flex items-center gap-1 shadow-lg">
-                                            <MessageSquare className="w-3 h-3 text-primary-400" /> Chat
-                                        </span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
 
             {/* TOP BAR HEADER BADGE (Title + Clock + Info/Invite + Space Switcher) */}
             <div className="absolute top-4 left-4 z-20 flex items-center gap-2.5 pointer-events-auto">
