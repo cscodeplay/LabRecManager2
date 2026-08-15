@@ -1,7 +1,50 @@
-'use client';
+// SVG Microphone component that fills the actual Microphone outline shape from bottom to top based on audio volume
+function MicOutlineFilled({ isMicOn = true, isSpeaking = false, className = "w-4 h-4" }) {
+    const fillPercent = isMicOn ? (isSpeaking ? 92 : 32) : 0;
+    const id = React.useId();
 
-import React, { useEffect, useRef, useState } from 'react';
-import { User, Mic, MicOff, MonitorUp, Pin, PinOff } from 'lucide-react';
+    if (!isMicOn) {
+        return <MicOff className={`${className} text-red-400`} />;
+    }
+
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            className={`${className} overflow-visible transition-all duration-150`}
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+        >
+            <defs>
+                <linearGradient id={id} x1="0" y1="1" x2="0" y2="0">
+                    <stop offset={`${fillPercent}%`} stopColor="#10b981" />
+                    <stop offset={`${fillPercent}%`} stopColor="rgba(255, 255, 255, 0.25)" />
+                </linearGradient>
+            </defs>
+
+            {/* Mic Body Inner Capsule (Fills bottom-to-top) */}
+            <rect
+                x="8.5"
+                y="2.5"
+                width="7"
+                height="11"
+                rx="3.5"
+                fill={`url(#${id})`}
+                stroke="#10b981"
+                strokeWidth="1.5"
+                className={isSpeaking ? "animate-pulse" : ""}
+            />
+
+            {/* Mic Stand Base & Arc */}
+            <path
+                d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8"
+                stroke={isSpeaking ? "#10b981" : "#94a3b8"}
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    );
+}
 
 export default function VideoTile({
     stream,
@@ -114,30 +157,18 @@ export default function VideoTile({
                     </span>
                 )}
 
-                {/* Vertical Bottom-to-Top Mic Level Fill Badge */}
+                {/* Mic Status Badge with Bottom-to-Top Mic Outline Fill */}
                 <div
-                    className={`relative overflow-hidden rounded-full p-2 backdrop-blur-md shadow-lg border transition-all flex items-center justify-center ${
+                    className={`p-1.5 rounded-xl backdrop-blur-md shadow-lg border transition-all flex items-center justify-center ${
                         isMicOn
-                            ? 'border-emerald-500/60 bg-slate-950/80 shadow-emerald-500/20'
+                            ? isSpeaking
+                                ? 'border-emerald-500/80 bg-slate-950/90 ring-2 ring-emerald-400/50'
+                                : 'border-emerald-500/40 bg-slate-950/80'
                             : 'border-red-500/60 bg-slate-950/80'
                     }`}
                     title={isMicOn ? (isSpeaking ? 'Speaking (Mic Active)' : 'Mic On') : 'Muted'}
                 >
-                    {/* Bottom-to-top dynamic audio fill level */}
-                    {isMicOn && (
-                        <div
-                            className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-emerald-600 via-emerald-500 to-emerald-400 transition-all duration-150 ease-out ${
-                                isSpeaking ? 'opacity-95 shadow-[0_0_12px_rgba(52,211,153,0.9)] animate-pulse' : 'opacity-60'
-                            }`}
-                            style={{ height: isSpeaking ? '92%' : '32%' }}
-                        />
-                    )}
-
-                    {isMicOn ? (
-                        <Mic className="relative z-10 w-3.5 h-3.5 text-white drop-shadow-md" />
-                    ) : (
-                        <MicOff className="relative z-10 w-3.5 h-3.5 text-red-400" />
-                    )}
+                    <MicOutlineFilled isMicOn={isMicOn} isSpeaking={isSpeaking} className="w-4 h-4" />
                 </div>
 
                 {/* Pin Button */}
@@ -166,31 +197,9 @@ export default function VideoTile({
                         {name} {isLocal ? '(You)' : ''}
                     </span>
 
-                    {/* Mic Fill Capsule next to Name */}
-                    <div
-                        className={`relative w-4 h-6 rounded-full overflow-hidden border flex items-end justify-center transition-all ${
-                            isMicOn
-                                ? 'border-emerald-500/70 bg-slate-950/80'
-                                : 'border-red-500/60 bg-slate-950/80'
-                        }`}
-                        title={isMicOn ? (isSpeaking ? 'Speaking' : 'Mic On') : 'Muted'}
-                    >
-                        {/* Dynamic Bottom-to-Top Fill */}
-                        {isMicOn && (
-                            <div
-                                className={`w-full bg-gradient-to-t from-emerald-600 to-emerald-400 transition-all duration-150 ease-out rounded-b-full ${
-                                    isSpeaking ? 'animate-pulse' : ''
-                                }`}
-                                style={{ height: isSpeaking ? '92%' : '35%' }}
-                            />
-                        )}
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            {isMicOn ? (
-                                <Mic className="w-2.5 h-2.5 text-white drop-shadow-sm z-10" />
-                            ) : (
-                                <MicOff className="w-2.5 h-2.5 text-red-400 z-10" />
-                            )}
-                        </div>
+                    {/* Mic Outline Fill Icon next to Name */}
+                    <div className="p-0.5">
+                        <MicOutlineFilled isMicOn={isMicOn} isSpeaking={isSpeaking} className="w-3.5 h-3.5" />
                     </div>
 
                     {/* Role Pill */}
