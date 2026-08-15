@@ -532,6 +532,31 @@ export default function DocumentsPage() {
         }
     };
 
+    const handleRemoveShare = async (share, item) => {
+        try {
+            if (item.documentCount !== undefined || item.subfolderCount !== undefined) {
+                // It's a folder
+                await foldersAPI.removeShare(item.id, share.id);
+            } else {
+                // It's a document
+                await documentsAPI.removeShare(share.id);
+            }
+            toast.success('Access revoked successfully');
+            
+            // Update local modal state
+            setShareInfoModal(prev => ({
+                ...prev,
+                shareInfo: prev.shareInfo.filter(s => s.id !== share.id),
+                shareCount: Math.max(0, (prev.shareCount || 1) - 1)
+            }));
+            
+            // Refresh list in background
+            fetchDocuments();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to revoke access');
+        }
+    };
+
     const handleShare = async (doc) => {
         setSharingDoc(doc);
         setSharingFolder(null);
@@ -2277,6 +2302,13 @@ export default function DocumentsPage() {
                                                 <p className="text-sm font-medium text-slate-900">{share.name || share.targetName}</p>
                                                 <p className="text-xs text-slate-500 capitalize">{share.type}</p>
                                             </div>
+                                            <button 
+                                                onClick={() => handleRemoveShare(share, shareInfoModal)}
+                                                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                                                title="Revoke Access"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
                                         </div>
                                     ))}
                                     {(!shareInfoModal.shareInfo || shareInfoModal.shareInfo.length === 0) && (

@@ -462,7 +462,7 @@ export default function FloatingChatbot() {
             const res = await api.post('/admin/chatbot/chat', { message: msg, conversationHistory: history, documentContext: docCtx });
             if (res.data.success) {
                 const d = res.data.data;
-                setMessages(prev => [...prev, { role: 'assistant', content: d.message, sql: d.sql, queryResult: d.queryResult, chartData: d.chartData, reportAction: d.reportAction, model: d.model, provider: d.provider, timestamp: d.timestamp }]);
+                setMessages(prev => [...prev, { role: 'assistant', content: d.message || d.text || '', sql: d.sql, queryResult: d.queryResult, chartData: d.chartData, reportAction: d.reportAction, model: d.model, provider: d.provider, timestamp: d.timestamp }]);
                 if (!isOpen) setUnread(u => u + 1);
             }
         } catch (err) {

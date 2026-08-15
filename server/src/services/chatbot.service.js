@@ -450,7 +450,7 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
    - **Status**: Published 🚀`).join('\n\n')}`;
 
                 return {
-                    text: replyText,
+                    message: replyText,
                     sql: null,
                     executionResult: null,
                     chartData: null,
@@ -460,7 +460,7 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
             } catch (err) {
                 console.error('[ChatBot] Direct AI assignment creation failed:', err.message);
                 return {
-                    text: `⚠️ **Unable to Auto-Create Assignment**\n\nReason: ${err.message}\n\nPlease try again or use the **✨ AI Auto-Generate** button on the Assignments page.`,
+                    message: `⚠️ **Unable to Auto-Create Assignment**\n\nReason: ${err.message}\n\nPlease try again or use the **✨ AI Auto-Generate** button on the Assignments page.`,
                     sql: null,
                     executionResult: null,
                     chartData: null,
