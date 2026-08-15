@@ -318,10 +318,9 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
         const { conversationHistory = [], documentContext = '', userId } = options;
 
         // Intent detection: AI Assignment Creation & Targeting directly via Global Chatbot
-        const msgLower = message.toLowerCase();
         const isAssignmentCreationIntent = (
-            (msgLower.includes('assignment') || msgLower.includes('program') || msgLower.includes('lab work') || msgLower.includes('task')) &&
-            (msgLower.includes('create') || msgLower.includes('assign') || msgLower.includes('give') || msgLower.includes('generate') || msgLower.includes('make'))
+            (msgLower.includes('assignment') || msgLower.includes('program') || msgLower.includes('lab work') || msgLower.includes('task') || msgLower.includes('experiment') || msgLower.includes('homework') || msgLower.includes('practical')) &&
+            (msgLower.includes('create') || msgLower.includes('assign') || msgLower.includes('give') || msgLower.includes('generate') || msgLower.includes('make') || msgLower.includes('add') || msgLower.includes('new') || msgLower.includes('set'))
         );
 
         if (isAssignmentCreationIntent) {
@@ -457,7 +456,15 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
                     provider: 'groq'
                 };
             } catch (err) {
-                console.warn('[ChatBot] Direct AI assignment creation failed, proceeding with normal chat:', err.message);
+                console.error('[ChatBot] Direct AI assignment creation failed:', err.message);
+                return {
+                    text: `⚠️ **Unable to Auto-Create Assignment**\n\nReason: ${err.message}\n\nPlease try again or use the **✨ AI Auto-Generate** button on the Assignments page.`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    provider: 'groq'
+                };
             }
         }
 
