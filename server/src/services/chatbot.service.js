@@ -204,9 +204,10 @@ DATABASE SCHEMA:
 ${schema}
 
 RESPONSE FORMAT RULES:
-1. When the user asks for data, generate ONLY the SQL query in a \`\`\`sql block. Do NOT explain or describe the query.
-2. Add <!--EXEC_SQL:your_query_here:END_SQL--> at the end for auto-execution (SELECT/WITH only).
-3. DO NOT write "Result:" or try to summarize the output. The system will automatically execute the SQL and display the results to the user.
+1. When the user asks for data/stats, generate ONLY SELECT SQL queries in a ```sql block.
+2. DO NOT generate INSERT, UPDATE, or DELETE SQL queries under any circumstances.
+3. Add <!--EXEC_SQL:your_query_here:END_SQL--> at the end for auto-execution (SELECT/WITH only).
+4. DO NOT write "Result:" or try to summarize the output. The system will automatically execute the SQL and display the results to the user.
 
 SQL BEST PRACTICES:
 - ALL id columns are UUIDs. NEVER use integers for IDs (e.g. lab_id = 1 is WRONG). Always JOIN to the related table and filter by name instead.
@@ -352,6 +353,12 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 const matchedGroupNames = groups.filter(g => resolution.matchedGroupIds?.includes(g.id)).map(g => g.name);
                 const targetSummaryStr = [...matchedClassNames, ...matchedGroupNames].join(', ') || 'All Assigned Students';
 
+                const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
+                const fallbackUser = await prisma.user.findFirst({ where: { role: { in: ['admin', 'instructor'] } } });
+                const creatorId = currentUser?.id || fallbackUser?.id;
+                const fallbackSchool = await prisma.school.findFirst({ select: { id: true } });
+                const schoolId = currentUser?.schoolId || fallbackSchool?.id;
+
                 const createdList = [];
                 for (let i = 0; i < extractedAssignments.length; i++) {
                     const item = extractedAssignments[i];
@@ -359,7 +366,8 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
                     const assignment = await prisma.assignment.create({
                         data: {
-                            createdById: userId || (students[0]?.id || null),
+                            schoolId,
+                            createdById: creatorId,
                             subjectId: targetSubjectId,
                             title,
                             description: item.description || title,
@@ -372,6 +380,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                             vivaMarks: 20,
                             outputMarks: 20,
                             status,
+                            publish_date: new Date(),
                             due_date: dueDate
                         }
                     });
@@ -383,7 +392,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                                 assignmentId: assignment.id,
                                 targetType: 'class',
                                 targetClassId: classId,
-                                assignedById: userId || assignment.createdById,
+                                assignedById: creatorId,
                                 dueDate: dueDate,
                                 publishDate: new Date()
                             }
@@ -406,7 +415,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                                 assignmentId: assignment.id,
                                 targetType: 'group',
                                 targetGroupId: groupId,
-                                assignedById: userId || assignment.createdById,
+                                assignedById: creatorId,
                                 dueDate: dueDate,
                                 publishDate: new Date()
                             }
@@ -511,7 +520,6 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
         }
 
         // If user prompt mentions report/pdf/excel/csv but model didn't emit tag, auto-build report action
-        const msgLower = message.toLowerCase();
         if (!reportAction && (msgLower.includes('report') || msgLower.includes('pdf') || msgLower.includes('excel') || msgLower.includes('csv'))) {
             const entities = [];
             if (msgLower.includes('student') || msgLower.includes('girl') || msgLower.includes('boy')) entities.push('students');

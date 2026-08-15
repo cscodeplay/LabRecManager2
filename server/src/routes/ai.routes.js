@@ -143,6 +143,9 @@ router.post('/batch-create', authenticate, authorize('instructor', 'lab_assistan
     // Default due date: 24 hours from now if not provided
     const finalDueDate = dueDate ? new Date(dueDate) : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+    const fallbackSchool = await prisma.school.findFirst({ select: { id: true } });
+    const schoolIdToUse = req.user.schoolId || fallbackSchool?.id;
+
     for (let i = 0; i < assignments.length; i++) {
         const item = assignments[i];
         const title = item.title || `Lab Assignment #${i + 1}`;
@@ -150,7 +153,7 @@ router.post('/batch-create', authenticate, authorize('instructor', 'lab_assistan
 
         const assignment = await prisma.assignment.create({
             data: {
-                schoolId: req.user.schoolId || null,
+                schoolId: schoolIdToUse,
                 createdById: req.user.id,
                 subjectId,
                 labId: labId || null,
