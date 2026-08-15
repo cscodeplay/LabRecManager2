@@ -317,6 +317,8 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
         const { conversationHistory = [], documentContext = '', userId } = options;
 
+        const msgLower = (message || '').toLowerCase();
+
         // Intent detection: AI Assignment Creation & Targeting directly via Global Chatbot
         const isAssignmentCreationIntent = (
             (msgLower.includes('assignment') || msgLower.includes('program') || msgLower.includes('lab work') || msgLower.includes('task') || msgLower.includes('experiment') || msgLower.includes('homework') || msgLower.includes('practical')) &&
