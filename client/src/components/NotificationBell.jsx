@@ -3,11 +3,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bell, Check, X, Clock, BookOpen, Award, Video, MessageCircle } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
+import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import Link from 'next/link';
 import { formatRelativeTime } from '@/lib/dateUtils';
 
 export default function NotificationBell() {
+    const router = useRouter();
     const { isAuthenticated } = useAuthStore();
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -136,36 +138,66 @@ export default function NotificationBell() {
                             </div>
                         ) : (
                             <ul>
-                                {notifications.map((notification) => (
-                                    <li
-                                        key={notification.id}
-                                        className={`px-4 py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition cursor-pointer ${!notification.isRead ? 'bg-blue-50/50' : ''
-                                            }`}
-                                        onClick={() => !notification.isRead && markAsRead(notification.id)}
-                                    >
-                                        <div className="flex gap-3">
-                                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
-                                                {getIcon(notification.type)}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-start justify-between gap-2">
-                                                    <p className={`text-sm ${!notification.isRead ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
-                                                        {notification.title}
-                                                    </p>
-                                                    {!notification.isRead && (
-                                                        <span className="w-2 h-2 bg-primary-500 rounded-full flex-shrink-0 mt-1.5"></span>
-                                                    )}
+                                {notifications.map((notification) => {
+                                    const actionTarget = notification.actionUrl || notification.action_url || (
+                                        (notification.type === 'meeting_invite' || notification.type === 'meeting') ? '/meetings' : null
+                                    );
+
+                                    const isMeetingInvite = notification.type === 'meeting_invite' || notification.type === 'meeting' || notification.title?.toLowerCase().includes('meeting');
+
+                                    return (
+                                        <li
+                                            key={notification.id}
+                                            className={`px-4 py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition cursor-pointer ${!notification.isRead ? 'bg-blue-50/50' : ''}`}
+                                            onClick={() => {
+                                                if (!notification.isRead) markAsRead(notification.id);
+                                                if (actionTarget) {
+                                                    setIsOpen(false);
+                                                    router.push(actionTarget);
+                                                }
+                                            }}
+                                        >
+                                            <div className="flex gap-3">
+                                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                                                    {getIcon(notification.type)}
                                                 </div>
-                                                <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
-                                                    {notification.message}
-                                                </p>
-                                                <p className="text-xs text-slate-400 mt-1">
-                                                    {formatTime(notification.createdAt)}
-                                                </p>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <p className={`text-sm ${!notification.isRead ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
+                                                            {notification.title}
+                                                        </p>
+                                                        {!notification.isRead && (
+                                                            <span className="w-2 h-2 bg-primary-500 rounded-full flex-shrink-0 mt-1.5"></span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
+                                                        {notification.message}
+                                                    </p>
+
+                                                    {/* Join Meeting Action Pill */}
+                                                    {isMeetingInvite && actionTarget && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (!notification.isRead) markAsRead(notification.id);
+                                                                setIsOpen(false);
+                                                                router.push(actionTarget);
+                                                            }}
+                                                            className="mt-2 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow transition"
+                                                        >
+                                                            <Video className="w-3.5 h-3.5" />
+                                                            Join Meeting
+                                                        </button>
+                                                    )}
+
+                                                    <p className="text-xs text-slate-400 mt-1">
+                                                        {formatTime(notification.createdAt)}
+                                                    </p>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </li>
-                                ))}
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         )}
                     </div>

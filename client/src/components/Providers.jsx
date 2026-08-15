@@ -6,6 +6,7 @@ import AppLayout from './AppLayout';
 import { useThemeStore, useLanguageStore } from '@/lib/store';
 import WhiteboardNotificationListener from './WhiteboardNotificationListener';
 import TimetableNotificationListener from './TimetableNotificationListener';
+import MeetingNotificationListener from './MeetingNotificationListener';
 import '@/lib/i18n'; // Initialize i18n
 
 function LanguageInitializer() {
@@ -74,6 +75,7 @@ export function Providers({ children }) {
                 </AppLayout>
                 <WhiteboardNotificationListener />
                 <TimetableNotificationListener />
+                <MeetingNotificationListener />
             </ConfirmProvider>
         </QueryClientProvider>
     );
