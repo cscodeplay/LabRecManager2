@@ -211,6 +211,9 @@ RESPONSE FORMAT RULES:
 
 SQL BEST PRACTICES:
 - ALL id columns are UUIDs. NEVER use integers for IDs (e.g. lab_id = 1 is WRONG). Always JOIN to the related table and filter by name instead.
+- NO COLUMN class_id ON assignments: The assignments table does NOT have a class_id column! To filter assignments by class, JOIN assignment_targets on assignment_targets.assignment_id = assignments.id and filter by assignment_targets.target_class_id.
+- NO COLUMN class_id ON users: Students are linked to classes via class_enrollments (JOIN class_enrollments ON users.id = class_enrollments.student_id WHERE class_enrollments.class_id = ...).
+- CLASS TABLE NAME: The class table in Postgres is named classes (or student_classes).
 - NEVER use strict = for text/varchar columns. Always use ILIKE for flexible matching. This applies EVERYWHERE, including inside CASE WHEN conditions. Use wildcards for loose/approximate matching (e.g. ILIKE '%pc%' or CASE WHEN col ILIKE '%printer%').
 - CASTING ENUMS: When using ILIKE on an ENUM column (like users.role), you MUST explicitly cast it to TEXT first (e.g., role::text ILIKE '%admin%'), otherwise Postgres will throw a type error.
 
@@ -577,7 +580,26 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
             executedSQL = sqlMatch[1].trim();
             const norm = executedSQL.toLowerCase().trim();
             if (norm.startsWith('select') || norm.startsWith('with')) {
-                try { queryResult = await this.executeSQL(executedSQL); } catch (e) { queryResult = { success: false, error: e.message }; }
+                try {
+                    queryResult = await this.executeSQL(executedSQL);
+                    
+                    // Automatic self-correction retry on SQL schema error (e.g. Code 42703 column does not exist)
+                    if (!queryResult.success && queryResult.error && !options._isRetry) {
+                        console.warn('[ChatBot] SQL execution failed. Attempting self-correction retry...', queryResult.error);
+                        const retryPrompt = `The SQL query you generated failed with PostgreSQL error:\n"${queryResult.error}"\n\nFailed Query:\n\`\`\`sql\n${executedSQL}\n\`\`\`\n\nPlease check the DATABASE SCHEMA carefully, fix column/table names (e.g. use assignment_targets for class assignments or class_enrollments for student classes), and output ONLY the corrected SQL in a \`\`\`sql block with <!--EXEC_SQL:...:END_SQL-->.`;
+                        return await this.chat(retryPrompt, {
+                            ...options,
+                            _isRetry: true,
+                            conversationHistory: [
+                                ...conversationHistory,
+                                { role: 'user', content: message },
+                                { role: 'assistant', content: aiText }
+                            ]
+                        });
+                    }
+                } catch (e) {
+                    queryResult = { success: false, error: e.message };
+                }
             }
             aiText = aiText.replace(/<!--EXEC_SQL:[\s\S]*?:END_SQL-->/g, '').trim();
         }
