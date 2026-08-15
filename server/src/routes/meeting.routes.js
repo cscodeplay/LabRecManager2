@@ -1202,74 +1202,88 @@ router.put('/sessions/:id', authenticate, authorize('instructor', 'lab_assistant
  * @access  Private
  */
 router.post('/sessions/:id/invite', authenticate, asyncHandler(async (req, res) => {
-    const { targetType, targetId, message } = req.body;
-    if (!targetType || !targetId) {
-        return res.status(400).json({ success: false, message: 'targetType and targetId are required' });
-    }
-
-    const session = await findMeetingByIdOrLink(req.params.id);
-    const roomCode = session?.questionsAsked?.roomCode || session?.id || req.params.id?.toString().replace(/[^0-9a-zA-Z]/g, '');
-    const meetingTitle = session?.title || 'Live Meeting Session';
-    const hostName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Host';
-    const inviteMessage = message || `${hostName} has invited you to join the live meeting "${meetingTitle}".`;
-    const actionUrl = `/meeting/${roomCode}`;
-
-    let invitedCount = 0;
-
-    if (targetType === 'student') {
-        await notificationService.createNotification({
-            userId: targetId,
-            title: `Meeting Invitation: ${meetingTitle}`,
-            message: inviteMessage,
-            type: 'meeting_invite',
-            actionUrl
-        });
-        invitedCount = 1;
-    } else if (targetType === 'class') {
-        const result = await notificationService.notifyClass({
-            classId: targetId,
-            title: `Meeting Invitation: ${meetingTitle}`,
-            message: inviteMessage,
-            type: 'meeting_invite',
-            actionUrl
-        });
-        invitedCount = typeof result === 'object' && result?.count !== undefined ? result.count : (Array.isArray(result) ? result.length : 1);
-    } else if (targetType === 'group') {
-        const result = await notificationService.notifyGroup({
-            groupId: targetId,
-            title: `Meeting Invitation: ${meetingTitle}`,
-            message: inviteMessage,
-            type: 'meeting_invite',
-            actionUrl
-        });
-        invitedCount = typeof result === 'object' && result?.count !== undefined ? result.count : (Array.isArray(result) ? result.length : 1);
-    }
-
-    // Socket real-time broadcast
     try {
-        const io = req.app.get('io') || global.io;
-        if (io) {
-            const payload = {
-                sessionId: session?.id || null,
-                roomCode,
-                title: meetingTitle,
-                hostName,
-                inviteMessage,
-                actionUrl
-            };
-            if (targetType === 'student') {
-                io.to(`user-${targetId}`).emit('meeting:invitation-received', payload);
-            } else if (targetType === 'class') {
-                io.to(`class-${targetId}`).emit('meeting:invitation-received', payload);
-            }
+        const { targetType, targetId, message } = req.body;
+        if (!targetType || !targetId) {
+            return res.status(400).json({ success: false, message: 'targetType and targetId are required' });
         }
-    } catch (err) {}
 
-    res.json({
-        success: true,
-        message: `Meeting invitation sent successfully`,
-        data: { invitedCount, roomCode, joinUrl: `${process.env.CLIENT_URL || ''}/meeting/${roomCode}` }
-    });
+        let session = null;
+        try {
+            session = await findMeetingByIdOrLink(req.params.id);
+        } catch (e) {
+            console.warn('findMeetingByIdOrLink warning:', e.message);
+        }
+
+        const rawCode = (req.params.id || '').toString().replace(/[^0-9a-zA-Z]/g, '');
+        const roomCode = session?.questionsAsked?.roomCode || session?.id || rawCode || 'meeting';
+        const meetingTitle = session?.title || 'Live Meeting Session';
+        const hostName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Host';
+        const inviteMessage = message || `${hostName} has invited you to join the live meeting "${meetingTitle}".`;
+        const actionUrl = `/meeting/${roomCode}`;
+
+        let invitedCount = 0;
+
+        if (targetType === 'student') {
+            await notificationService.createNotification({
+                userId: targetId,
+                title: `Meeting Invitation: ${meetingTitle}`,
+                message: inviteMessage,
+                type: 'meeting_invite',
+                actionUrl
+            }).catch(() => {});
+            invitedCount = 1;
+        } else if (targetType === 'class') {
+            const result = await notificationService.notifyClass({
+                classId: targetId,
+                title: `Meeting Invitation: ${meetingTitle}`,
+                message: inviteMessage,
+                type: 'meeting_invite',
+                actionUrl
+            }).catch(() => {});
+            invitedCount = typeof result === 'object' && result?.count !== undefined ? result.count : (Array.isArray(result) ? result.length : 1);
+        } else if (targetType === 'group') {
+            const result = await notificationService.notifyGroup({
+                groupId: targetId,
+                title: `Meeting Invitation: ${meetingTitle}`,
+                message: inviteMessage,
+                type: 'meeting_invite',
+                actionUrl
+            }).catch(() => {});
+            invitedCount = typeof result === 'object' && result?.count !== undefined ? result.count : (Array.isArray(result) ? result.length : 1);
+        }
+
+        // Socket real-time broadcast
+        try {
+            const io = req.app.get('io') || global.io;
+            if (io) {
+                const payload = {
+                    sessionId: session?.id || null,
+                    roomCode,
+                    title: meetingTitle,
+                    hostName,
+                    inviteMessage,
+                    actionUrl
+                };
+                if (targetType === 'student') {
+                    io.to(`user-${targetId}`).emit('meeting:invitation-received', payload);
+                } else if (targetType === 'class') {
+                    io.to(`class-${targetId}`).emit('meeting:invitation-received', payload);
+                } else if (targetType === 'group') {
+                    io.to(`group-${targetId}`).emit('meeting:invitation-received', payload);
+                }
+            }
+        } catch (err) {}
+
+        return res.json({
+            success: true,
+            message: `Meeting invitation sent successfully`,
+            data: { invitedCount, roomCode, joinUrl: `/meeting/${roomCode}` }
+        });
+    } catch (err) {
+        console.error('Invite endpoint error:', err);
+        return res.status(500).json({ success: false, message: err.message || 'Failed to send invite' });
+    }
 }));
 
 

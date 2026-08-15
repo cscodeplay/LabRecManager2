@@ -116,19 +116,32 @@ export default function VideoTile({
                     </span>
                 )}
 
-                {/* Mic Status */}
-                <span
-                    className={`p-1.5 rounded-lg backdrop-blur-md shadow text-xs flex items-center justify-center ${
+                {/* Mic Status & Dynamic Equalizer Animation */}
+                <div
+                    className={`px-2 py-1 rounded-lg backdrop-blur-md shadow text-xs flex items-center gap-1.5 transition-all ${
                         isMicOn
                             ? isSpeaking
-                                ? 'bg-emerald-500 text-white animate-pulse'
+                                ? 'bg-emerald-500/90 text-white ring-2 ring-emerald-400/50'
                                 : 'bg-slate-800/80 text-emerald-400'
                             : 'bg-red-500/80 text-white'
                     }`}
-                    title={isMicOn ? (isSpeaking ? 'Speaking' : 'Mic On') : 'Muted'}
+                    title={isMicOn ? (isSpeaking ? 'Speaking' : 'Mic Active') : 'Muted'}
                 >
-                    {isMicOn ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
-                </span>
+                    {isMicOn ? (
+                        <>
+                            <Mic className="w-3.5 h-3.5" />
+                            {/* Animated Audio Equalizer Waveform for host and participants */}
+                            <div className="flex items-end gap-[2px] h-3 px-0.5" title="Mic Audio Level">
+                                <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${isSpeaking ? 'h-3 animate-pulse' : 'h-1.5 opacity-70'}`} />
+                                <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-200 ${isSpeaking ? 'h-2.5 animate-bounce' : 'h-2 opacity-70'}`} />
+                                <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${isSpeaking ? 'h-3.5 animate-pulse' : 'h-1 opacity-70'}`} />
+                                <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-300 ${isSpeaking ? 'h-2 animate-bounce' : 'h-1.5 opacity-70'}`} />
+                            </div>
+                        </>
+                    ) : (
+                        <MicOff className="w-3.5 h-3.5" />
+                    )}
+                </div>
 
                 {/* Pin Button */}
                 {onTogglePin && !compact && (
@@ -155,6 +168,15 @@ export default function VideoTile({
                     <span className="text-white text-xs font-medium truncate">
                         {name} {isLocal ? '(You)' : ''}
                     </span>
+
+                    {/* Dynamic Mic Waveform next to Name */}
+                    {isMicOn && (
+                        <div className="flex items-end gap-[1.5px] h-2.5 px-0.5">
+                            <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${isSpeaking ? 'h-2.5 animate-pulse' : 'h-1 opacity-60'}`} />
+                            <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-200 ${isSpeaking ? 'h-2 animate-bounce' : 'h-1.5 opacity-60'}`} />
+                            <span className={`w-0.5 rounded-full bg-emerald-400 transition-all duration-150 ${isSpeaking ? 'h-3 animate-pulse' : 'h-1 opacity-60'}`} />
+                        </div>
+                    )}
 
                     {/* Role Pill */}
                     {isHostOrAdmin ? (
