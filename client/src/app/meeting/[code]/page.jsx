@@ -14,6 +14,7 @@ import {
     AlertTriangle, Shield, UserPlus, Link2
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
+import { useGlobalMeeting } from '@/components/GlobalMeetingContext';
 import { meetingAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import io from 'socket.io-client';
@@ -103,6 +104,7 @@ export default function MeetingRoomPage() {
     const router = useRouter();
     const params = useParams();
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { setActiveMeeting } = useGlobalMeeting();
 
     // Session & Connection state
     const [session, setSession] = useState(null);
@@ -555,37 +557,61 @@ export default function MeetingRoomPage() {
 
     const toggleVideo = async () => {
         try {
-            if (!localStreamRef.current || localStreamRef.current.getVideoTracks().length === 0) {
+            if (isVideoEnabled) {
+                // Turn camera OFF: stop video tracks to turn off hardware camera light
+                const videoTracks = localStreamRef.current?.getVideoTracks() || [];
+                videoTracks.forEach(track => {
+                    track.stop();
+                    localStreamRef.current?.removeTrack(track);
+                });
+
+                peersRef.current.forEach((pc) => {
+                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+                    if (sender) {
+                        sender.replaceTrack(null).catch(() => {});
+                    }
+                });
+
+                setIsVideoEnabled(false);
+                socketRef.current?.emit('meeting:media-toggle', {
+                    roomId: activeRoomIdRef.current,
+                    isCameraOn: false,
+                    isMicOn: isAudioEnabled,
+                    isScreenSharing
+                });
+                toast('Camera turned off', { icon: '📷' });
+            } else {
+                // Turn camera ON: obtain new video track from mediaDevices
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: selectedCamera ? { deviceId: { exact: selectedCamera } } : true,
                     audio: false
                 });
                 const newVideoTrack = stream.getVideoTracks()[0];
-                localStreamRef.current.addTrack(newVideoTrack);
-                setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
-
-                peersRef.current.forEach((pc) => {
-                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-                    if (sender) {
-                        sender.replaceTrack(newVideoTrack);
-                    } else {
-                        pc.addTrack(newVideoTrack, localStreamRef.current);
+                if (newVideoTrack) {
+                    if (!localStreamRef.current) {
+                        localStreamRef.current = new MediaStream();
                     }
-                });
-            }
+                    localStreamRef.current.addTrack(newVideoTrack);
+                    setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
 
-            const videoTrack = localStreamRef.current?.getVideoTracks()[0];
-            if (videoTrack) {
-                const nextState = !videoTrack.enabled;
-                videoTrack.enabled = nextState;
-                setIsVideoEnabled(nextState);
+                    peersRef.current.forEach((pc) => {
+                        const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+                        if (sender) {
+                            sender.replaceTrack(newVideoTrack).catch(() => {});
+                        } else {
+                            try { pc.addTrack(newVideoTrack, localStreamRef.current); } catch (e) {}
+                        }
+                    });
 
-                socketRef.current?.emit('meeting:media-toggle', {
-                    roomId: activeRoomIdRef.current,
-                    isCameraOn: nextState,
-                    isMicOn: isAudioEnabled,
-                    isScreenSharing
-                });
+                    setIsVideoEnabled(true);
+                    socketRef.current?.emit('meeting:media-toggle', {
+                        roomId: activeRoomIdRef.current,
+                        isCameraOn: true,
+                        isMicOn: isAudioEnabled,
+                        isScreenSharing
+                    });
+                    toast('Camera turned on', { icon: '📹' });
+                }
             }
         } catch (error) {
             console.error('Toggle video error:', error);

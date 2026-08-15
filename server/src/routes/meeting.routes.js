@@ -478,15 +478,24 @@ router.get('/sessions/:id', authenticate, asyncHandler(async (req, res) => {
         if (isEnrolled) isAuthorized = true;
     }
 
-    if (!isAuthorized && !session.targetClassId && !session.targetStudentId) {
-        isAuthorized = true; // Open meeting in school
+    if (!isAuthorized && session.targetGroupId) {
+        const isGroupMember = await prisma.studentGroupMember.findFirst({
+            where: { groupId: session.targetGroupId, studentId: req.user.id }
+        }).catch(() => null);
+        if (isGroupMember) isAuthorized = true;
     }
 
+    // Check if participant record exists or open meeting
     if (!isAuthorized) {
-        return res.status(403).json({
-            success: false,
-            message: 'You are not authorized for this meeting session'
-        });
+        const existingParticipant = await prisma.meetingParticipant.findFirst({
+            where: { sessionId: session.id, studentId: req.user.id }
+        }).catch(() => null);
+        if (existingParticipant) isAuthorized = true;
+    }
+
+    // Fallback: If not explicitly restricted or open room link, grant access to authenticated user in same school
+    if (!isAuthorized && (!session.targetStudentId || session.schoolId === req.user.schoolId)) {
+        isAuthorized = true; // School-wide / open meeting room
     }
 
     res.json({

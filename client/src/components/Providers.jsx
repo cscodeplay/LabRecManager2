@@ -54,6 +54,7 @@ function ThemeInitializer() {
 }
 
 import { ConfirmProvider } from './ConfirmDialog';
+import { GlobalMeetingProvider } from './GlobalMeetingContext';
 
 export function Providers({ children }) {
     const [queryClient] = useState(() => new QueryClient({
@@ -67,16 +68,18 @@ export function Providers({ children }) {
 
     return (
         <QueryClientProvider client={queryClient}>
-            <ConfirmProvider>
-                <ThemeInitializer />
-                <LanguageInitializer />
-                <AppLayout>
-                    {children}
-                </AppLayout>
-                <WhiteboardNotificationListener />
-                <TimetableNotificationListener />
-                <MeetingNotificationListener />
-            </ConfirmProvider>
+            <GlobalMeetingProvider>
+                <ConfirmProvider>
+                    <ThemeInitializer />
+                    <LanguageInitializer />
+                    <AppLayout>
+                        {children}
+                    </AppLayout>
+                    <WhiteboardNotificationListener />
+                    <TimetableNotificationListener />
+                    <MeetingNotificationListener />
+                </ConfirmProvider>
+            </GlobalMeetingProvider>
         </QueryClientProvider>
     );
 }
