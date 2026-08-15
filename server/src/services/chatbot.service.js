@@ -230,8 +230,9 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
 
 - For IN clauses on text, ALWAYS use LOWER(column) IN ('val1', 'val2') and ensure the values are lowercase. Do NOT rely on exact casing.
 - NEVER guess column values. If unsure, first query SELECT DISTINCT column_name FROM table LIMIT 20.
-- When user asks to read a document (e.g. stored in Cloudinary), first query the 'documents' table to get its 'file_url'.
-- ONCE YOU HAVE THE URL, output ONLY the special marker <!--FETCH_DOC:https://...--\> to read its contents. The system will fetch it and pass the text back to you.
+- When user asks to read a document (e.g. stored in Cloudinary), first query the 'documents' table to get its 'url'.
+- ONCE YOU HAVE THE URL, output ONLY the special marker <!--FETCH_DOC:https://...--> to read its contents. The system will fetch it and pass the text back to you.
+- When user asks to find/list documents (by date, size, category, etc.), generate a SQL query on the 'documents' table returning the 'name' and 'url' columns, so they appear as clickable links in the UI. For size, filter by 'file_size' (in bytes). For dates, use 'created_at'.
 - Use COUNT(DISTINCT ...) when counting unique entities.
 - Always handle case-insensitivity with ILIKE or LOWER().
 4. For destructive operations, warn and ask for confirmation. Never auto-execute INSERT/UPDATE/DELETE.

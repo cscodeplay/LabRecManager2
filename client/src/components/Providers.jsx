@@ -8,6 +8,8 @@ import WhiteboardNotificationListener from './WhiteboardNotificationListener';
 import TimetableNotificationListener from './TimetableNotificationListener';
 import MeetingNotificationListener from './MeetingNotificationListener';
 import '@/lib/i18n'; // Initialize i18n
+import { ConfirmProvider } from './ConfirmDialog';
+import { GlobalMeetingProvider } from './GlobalMeetingContext';
 
 function LanguageInitializer() {
     const { language } = useLanguageStore();
@@ -53,8 +55,6 @@ function ThemeInitializer() {
     return null;
 }
 
-import { ConfirmProvider } from './ConfirmDialog';
-import { GlobalMeetingProvider } from './GlobalMeetingContext';
 
 export function Providers({ children }) {
     const [queryClient] = useState(() => new QueryClient({

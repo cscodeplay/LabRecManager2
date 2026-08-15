@@ -102,6 +102,7 @@ export const documentsAPI = {
     getShared: (params) => api.get('/documents/shared', { params }),
     getShares: (id) => api.get(`/documents/${id}/shares`),
     removeShare: (shareId) => api.delete(`/documents/shares/${shareId}`),
+    getAnalytics: (id) => api.get(`/documents/${id}/analytics`),
     // Bulk Actions
     bulkCopy: (documentIds, targetFolderId) => api.post('/documents/bulk-copy', { documentIds, targetFolderId }),
     bulkDelete: (documentIds) => api.post('/documents/bulk-delete', { documentIds }),
@@ -142,7 +143,7 @@ export const foldersAPI = {
     copy: (folderId, targetFolderId) => api.post(`/folders/${folderId}/copy`, { targetFolderId }),
     bulkMove: (folderIds, targetFolderId) => api.post('/folders/bulk-move', { folderIds, targetFolderId }),
     // Folder sharing
-    share: (id, targets, message) => api.post(`/folders/${id}/share`, { targets, message }),
+    share: (id, targets, message, expiresAt, permission) => api.post(`/folders/${id}/share`, { targets, message, expiresAt, permission }),
     getShares: (id) => api.get(`/folders/${id}/shares`),
     removeShare: (id, shareId) => api.delete(`/folders/${id}/shares/${shareId}`),
 };

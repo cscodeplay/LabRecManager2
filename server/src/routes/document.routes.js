@@ -497,7 +497,7 @@ router.get('/:id/public', asyncHandler(async (req, res) => {
  * @access  Private (Admin/Principal/Lab Assistant)
  */
 router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
-    const { targets, message } = req.body;
+    const { targets, message, expiresAt, permission } = req.body;
     // targets: [{ type: 'class'|'group'|'instructor'|'admin', id: 'uuid' }]
 
     if (!targets || !Array.isArray(targets) || targets.length === 0) {
@@ -529,7 +529,9 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
             documentId: doc.id,
             sharedById: req.user.id,
             targetType: target.type,
-            message: message || null
+            message: message || null,
+            expiresAt: expiresAt ? new Date(expiresAt) : null,
+            permission: permission || 'download'
         };
 
         // Set the appropriate target field based on type
@@ -674,7 +676,15 @@ router.get('/shared', authenticate, asyncHandler(async (req, res) => {
         const shares = await prisma.documentShare.findMany({
             where: {
                 OR: orConditions,
-                document: { schoolId }
+                AND: [
+                    { document: { schoolId } },
+                    {
+                        OR: [
+                            { expiresAt: null },
+                            { expiresAt: { gt: new Date() } }
+                        ]
+                    }
+                ]
             },
             include: {
                 document: {
@@ -683,7 +693,7 @@ router.get('/shared', authenticate, asyncHandler(async (req, res) => {
                     }
                 },
                 sharedBy: { select: { id: true, firstName: true, lastName: true } },
-                targetClass: { select: { id: true, name: true } },
+                targetClass: { select: { id: true, name: true, gradeLevel: true, section: true } },
                 targetGroup: { select: { id: true, name: true } }
             },
             orderBy: { sharedAt: 'desc' }
@@ -695,6 +705,8 @@ router.get('/shared', authenticate, asyncHandler(async (req, res) => {
         const documents = shares.map(share => ({
             shareId: share.id,
             sharedAt: share.sharedAt,
+            expiresAt: share.expiresAt,
+            permission: share.permission,
             message: share.message,
             sharedBy: share.sharedBy,
             targetType: share.targetType,
@@ -925,6 +937,67 @@ router.post('/:id/extract-ai-inventory', authenticate, authorize('admin', 'princ
         console.error('AI Extraction Error:', error);
         res.status(500).json({ success: false, message: 'Failed to extract data: ' + error.message });
     }
+}));
+
+/**
+ * @route   POST /api/documents/:id/view
+ * @desc    Record a document view log
+ * @access  Private
+ */
+router.post('/:id/view', authenticate, asyncHandler(async (req, res) => {
+    const docId = req.params.id;
+    const userId = req.user.id;
+
+    const doc = await prisma.document.findUnique({ where: { id: docId } });
+    if (!doc) {
+        return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    await prisma.documentViewLog.create({
+        data: {
+            documentId: docId,
+            userId: userId,
+            ipAddress: req.ip || req.connection?.remoteAddress || null
+        }
+    });
+
+    res.json({ success: true, message: 'View recorded' });
+}));
+
+/**
+ * @route   GET /api/documents/:id/analytics
+ * @desc    Get view analytics for a document
+ * @access  Private (Admin/Principal/Lab Assistant/Instructor)
+ */
+router.get('/:id/analytics', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
+    const docId = req.params.id;
+
+    const doc = await prisma.document.findUnique({
+        where: { id: docId, schoolId: req.user.schoolId }
+    });
+
+    if (!doc) {
+        return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    const logs = await prisma.documentViewLog.findMany({
+        where: { documentId: docId },
+        include: {
+            user: { select: { id: true, firstName: true, lastName: true, role: true } }
+        },
+        orderBy: { viewedAt: 'desc' }
+    });
+
+    const uniqueViewers = new Set(logs.map(l => l.userId)).size;
+
+    res.json({
+        success: true,
+        data: {
+            totalViews: logs.length,
+            uniqueViewers,
+            logs
+        }
+    });
 }));
 
 module.exports = router;

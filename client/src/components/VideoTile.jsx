@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useId } from 'react';
 import { User, Mic, MicOff, MonitorUp, Pin, PinOff } from 'lucide-react';
 
 // SVG Microphone component that fills the actual Microphone outline shape from bottom to top based on audio volume
 function MicOutlineFilled({ isMicOn = true, isSpeaking = false, className = "w-4 h-4" }) {
     const fillPercent = isMicOn ? (isSpeaking ? 92 : 32) : 0;
-    const id = React.useId();
+    const id = useId();
 
     if (!isMicOn) {
         return <MicOff className={`${className} text-red-400`} />;

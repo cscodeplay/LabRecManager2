@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { documentsAPI, classesAPI, storageAPI, foldersAPI } from '@/lib/api';
 import api from '@/lib/api';
@@ -99,6 +99,8 @@ export default function DocumentsPage() {
     const [shareTargetType, setShareTargetType] = useState(''); // 'class', 'group', 'instructor', 'student'
     const [shareTargets, setShareTargets] = useState([]);
     const [shareMessage, setShareMessage] = useState('');
+    const [shareExpiresAt, setShareExpiresAt] = useState('');
+    const [sharePermission, setSharePermission] = useState('download');
     const [shareSearch, setShareSearch] = useState('');
     const [availableClasses, setAvailableClasses] = useState([]);
     const [availableGroups, setAvailableGroups] = useState([]);
@@ -122,6 +124,11 @@ export default function DocumentsPage() {
     const [aiExtractDoc, setAiExtractDoc] = useState(null);
     const [aiExtractData, setAiExtractData] = useState(null);
     const [aiEngine, setAiEngine] = useState('gemini');
+
+    // Analytics
+    const [analyticsDoc, setAnalyticsDoc] = useState(null);
+    const [analyticsData, setAnalyticsData] = useState(null);
+    const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -536,8 +543,10 @@ export default function DocumentsPage() {
         setSharingDoc(doc);
         setSharingFolder(null);
         setShareMode('target'); // Default to target sharing mode
-        setShareTargetType(''); // Reset to show type selection first
+        setShareTargetType('');
         setShareMessage('');
+        setShareExpiresAt('');
+        setSharePermission('download');
 
         // Preload existing shares as selected targets from shareInfo
         const existingTargets = (doc.shareInfo || []).map(share => ({
@@ -561,6 +570,8 @@ export default function DocumentsPage() {
         setShareMode('target');
         setShareTargetType('');
         setShareMessage('');
+        setShareExpiresAt('');
+        setSharePermission('download');
         setQrCodeUrl('');
 
         // Load existing folder shares
@@ -597,18 +608,22 @@ export default function DocumentsPage() {
                 // Document sharing
                 await documentsAPI.share(sharingDoc.id, {
                     targets: shareTargets,
-                    message: shareMessage
+                    message: shareMessage,
+                    expiresAt: shareExpiresAt || null,
+                    permission: sharePermission
                 });
                 toast.success('Document shared successfully!');
                 setSharingDoc(null);
             } else if (sharingFolder) {
                 // Folder sharing
-                await foldersAPI.share(sharingFolder.id, shareTargets, shareMessage);
+                await foldersAPI.share(sharingFolder.id, shareTargets, shareMessage, shareExpiresAt || null, sharePermission);
                 toast.success('Folder shared successfully!');
                 setSharingFolder(null);
             }
             setShareTargets([]);
             setShareMessage('');
+            setShareExpiresAt('');
+            setSharePermission('download');
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to share');
         } finally {
@@ -886,6 +901,20 @@ export default function DocumentsPage() {
             toast.error(err.response?.data?.message || 'AI Extraction failed');
         } finally {
             setAiExtracting(false);
+        }
+    };
+
+    const handleOpenAnalytics = async (doc) => {
+        setAnalyticsDoc(doc);
+        setAnalyticsLoading(true);
+        try {
+            const res = await documentsAPI.getAnalytics(doc.id);
+            setAnalyticsData(res.data.data);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to load analytics');
+            setAnalyticsDoc(null);
+        } finally {
+            setAnalyticsLoading(false);
         }
     };
 
@@ -1432,6 +1461,9 @@ export default function DocumentsPage() {
                                                         <Wand2 className="w-4 h-4" />
                                                     </button>
                                                 )}
+                                                <button onClick={() => handleOpenAnalytics(doc)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Analytics">
+                                                    <BarChart2 className="w-4 h-4" />
+                                                </button>
                                             </>
                                         )}
                                         {activeTab === 'shared' && (
@@ -1653,6 +1685,9 @@ export default function DocumentsPage() {
                                                                     <Wand2 className="w-4 h-4" />
                                                                 </button>
                                                             )}
+                                                            <button onClick={() => handleOpenAnalytics(doc)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Analytics">
+                                                                <BarChart2 className="w-4 h-4" />
+                                                            </button>
                                                         </>
                                                     )}
                                                     {activeTab === 'shared' && (
@@ -2192,6 +2227,32 @@ export default function DocumentsPage() {
                                             </div>
                                         )}
 
+                                        {/* Permission & Expiry */}
+                                        {shareTargetType && (
+                                            <div className="grid grid-cols-2 gap-4 mt-4 mb-4">
+                                                <div>
+                                                    <label className="label">Permission</label>
+                                                    <select
+                                                        value={sharePermission}
+                                                        onChange={(e) => setSharePermission(e.target.value)}
+                                                        className="input w-full"
+                                                    >
+                                                        <option value="view">View Only</option>
+                                                        <option value="download">View & Download</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="label">Expires At (Optional)</label>
+                                                    <input
+                                                        type="datetime-local"
+                                                        value={shareExpiresAt}
+                                                        onChange={(e) => setShareExpiresAt(e.target.value)}
+                                                        className="input w-full"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {/* Selected Count Summary */}
                                         {shareTargets.length > 0 && (
                                             <div className="bg-slate-50 rounded-lg p-3">
@@ -2275,7 +2336,17 @@ export default function DocumentsPage() {
                                             </span>
                                             <div className="flex-1">
                                                 <p className="text-sm font-medium text-slate-900">{share.name || share.targetName}</p>
-                                                <p className="text-xs text-slate-500 capitalize">{share.type}</p>
+                                                <div className="flex gap-2 items-center flex-wrap mt-1">
+                                                    <span className="text-xs text-slate-500 capitalize">{share.type}</span>
+                                                    <span className="text-xs px-2 py-0.5 bg-slate-100 rounded-full text-slate-600 capitalize">
+                                                        {share.permission || 'download'}
+                                                    </span>
+                                                    {share.expiresAt && (
+                                                        <span className="text-xs px-2 py-0.5 bg-amber-100 rounded-full text-amber-700">
+                                                            Expires: {new Date(share.expiresAt).toLocaleDateString()} {new Date(share.expiresAt).toLocaleTimeString()}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
@@ -2589,7 +2660,80 @@ export default function DocumentsPage() {
                         )}
                     </div>
                 </div>
-            )}
+            {/* Analytics Modal */}
+            {
+                analyticsDoc && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setAnalyticsDoc(null)}>
+                        <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-xl font-semibold">Document Analytics</h3>
+                                    <p className="text-sm text-slate-500">Analytics for: {analyticsDoc.name}</p>
+                                </div>
+                                <button onClick={() => setAnalyticsDoc(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                            </div>
+                            <div className="p-6 overflow-y-auto flex-1 bg-slate-50">
+                                {analyticsLoading ? (
+                                    <div className="text-center py-12 text-slate-500">Loading analytics...</div>
+                                ) : analyticsData ? (
+                                    <div className="space-y-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div className="bg-white p-4 rounded-xl border border-slate-200">
+                                                <p className="text-sm text-slate-500 mb-1">Total Views</p>
+                                                <p className="text-3xl font-bold text-slate-900">{analyticsData.totalViews}</p>
+                                            </div>
+                                            <div className="bg-white p-4 rounded-xl border border-slate-200">
+                                                <p className="text-sm text-slate-500 mb-1">Unique Viewers</p>
+                                                <p className="text-3xl font-bold text-slate-900">{analyticsData.uniqueViewers}</p>
+                                            </div>
+                                            <div className="bg-white p-4 rounded-xl border border-slate-200">
+                                                <p className="text-sm text-slate-500 mb-1">Avg Watch Time</p>
+                                                <p className="text-3xl font-bold text-slate-900">{Math.round(analyticsData.averageWatchTime || 0)}s</p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                                            <div className="p-4 border-b border-slate-200 font-semibold">Recent Views</div>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left text-sm">
+                                                    <thead className="bg-slate-50 text-slate-500">
+                                                        <tr>
+                                                            <th className="p-3">Viewer</th>
+                                                            <th className="p-3">Viewed At</th>
+                                                            <th className="p-3">IP Address</th>
+                                                            <th className="p-3">Device</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {analyticsData.recentViews?.length > 0 ? (
+                                                            analyticsData.recentViews.map(view => (
+                                                                <tr key={view.id} className="border-b border-slate-100 last:border-0">
+                                                                    <td className="p-3">
+                                                                        {view.user ? `${view.user.firstName} ${view.user.lastName}` : 'Anonymous'}
+                                                                    </td>
+                                                                    <td className="p-3">{formatDate(view.viewedAt)}</td>
+                                                                    <td className="p-3 font-mono text-xs">{view.ipAddress || '-'}</td>
+                                                                    <td className="p-3">{view.userAgent ? view.userAgent.split(' ')[0] : '-'}</td>
+                                                                </tr>
+                                                            ))
+                                                        ) : (
+                                                            <tr>
+                                                                <td colSpan="4" className="p-4 text-center text-slate-500">No views recorded yet</td>
+                                                            </tr>
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-12 text-slate-500">Failed to load data</div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
 
         </div>
     );

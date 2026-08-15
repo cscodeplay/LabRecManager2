@@ -5,11 +5,10 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 model School {
-  meetings         Meeting[]
+  meetings              Meeting[]
   id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                  String                 @db.VarChar(255)
   nameHindi             String?                @map("name_hindi") @db.VarChar(255)
@@ -101,131 +100,132 @@ model GradeScaleHistory {
 }
 
 model AcademicYear {
-  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  schoolId       String           @map("school_id") @db.Uuid
-  yearLabel      String           @map("year_label") @db.VarChar(20)
-  startDate      DateTime         @map("start_date") @db.Date
-  endDate        DateTime         @map("end_date") @db.Date
-  isCurrent      Boolean?         @default(false) @map("is_current")
-  createdAt      DateTime?        @default(now()) @map("created_at") @db.Timestamp(6)
-  school         School           @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  assignments    Assignment[]
-  classes        Class[]
-  feeStructures  FeeStructure[]
-  finalLabMarks  FinalLabMarks[]
-  grades         Grade[]
-  studentFees    StudentFee[]
-  timetables     Timetable[]
-  schoolCalendar SchoolCalendar[]
-  lecturePlans   LecturePlan[]
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId        String           @map("school_id") @db.Uuid
+  yearLabel       String           @map("year_label") @db.VarChar(20)
+  startDate       DateTime         @map("start_date") @db.Date
+  endDate         DateTime         @map("end_date") @db.Date
+  isCurrent       Boolean?         @default(false) @map("is_current")
+  createdAt       DateTime?        @default(now()) @map("created_at") @db.Timestamp(6)
+  school          School           @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  assignments     Assignment[]
+  classes         Class[]
+  feeStructures   FeeStructure[]
+  finalLabMarks   FinalLabMarks[]
+  grades          Grade[]
+  studentFees     StudentFee[]
+  timetables      Timetable[]
+  schoolCalendar  SchoolCalendar[]
+  lecturePlans    LecturePlan[]
   trainingModules TrainingModule[]
 
   @@map("academic_years")
 }
 
 model User {
-  id                                             String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  schoolId                                       String                    @map("school_id") @db.Uuid
-  email                                          String                    @unique @db.VarChar(255)
-  phone                                          String?                   @db.VarChar(20)
-  passwordHash                                   String                    @map("password_hash")
+  id                                             String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId                                       String                     @map("school_id") @db.Uuid
+  email                                          String                     @unique @db.VarChar(255)
+  phone                                          String?                    @db.VarChar(20)
+  passwordHash                                   String                     @map("password_hash")
   role                                           UserRole
-  firstName                                      String                    @map("first_name") @db.VarChar(100)
-  firstNameHindi                                 String?                   @map("first_name_hindi") @db.VarChar(100)
-  firstNameRegional                              String?                   @map("first_name_regional") @db.VarChar(100)
-  lastName                                       String                    @map("last_name") @db.VarChar(100)
-  lastNameHindi                                  String?                   @map("last_name_hindi") @db.VarChar(100)
-  lastNameRegional                               String?                   @map("last_name_regional") @db.VarChar(100)
-  admissionNumber                                String?                   @map("admission_number") @db.VarChar(50)
-  employeeId                                     String?                   @map("employee_id") @db.VarChar(50)
-  profileImageUrl                                String?                   @map("profile_image_url")
-  preferredLanguage                              String?                   @default("en") @map("preferred_language") @db.VarChar(10)
-  isActive                                       Boolean?                  @default(true) @map("is_active")
-  lastLogin                                      DateTime?                 @map("last_login") @db.Timestamp(6)
-  createdAt                                      DateTime?                 @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt                                      DateTime?                 @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-  studentId                                      String?                   @map("student_id") @db.VarChar(50)
-  gender                                         String?                   @db.VarChar(20)
-  resetPin                                       String?                   @map("reset_pin") @db.VarChar(255)
-  pinExpiresAt                                   DateTime?                 @map("pin_expires_at") @db.Timestamp(6)
-  storageQuotaMb                                 Int?                      @default(500) @map("storage_quota_mb")
-  storageUsedBytes                               BigInt?                   @default(0) @map("storage_used_bytes")
+  firstName                                      String                     @map("first_name") @db.VarChar(100)
+  firstNameHindi                                 String?                    @map("first_name_hindi") @db.VarChar(100)
+  firstNameRegional                              String?                    @map("first_name_regional") @db.VarChar(100)
+  lastName                                       String                     @map("last_name") @db.VarChar(100)
+  lastNameHindi                                  String?                    @map("last_name_hindi") @db.VarChar(100)
+  lastNameRegional                               String?                    @map("last_name_regional") @db.VarChar(100)
+  admissionNumber                                String?                    @map("admission_number") @db.VarChar(50)
+  employeeId                                     String?                    @map("employee_id") @db.VarChar(50)
+  profileImageUrl                                String?                    @map("profile_image_url")
+  preferredLanguage                              String?                    @default("en") @map("preferred_language") @db.VarChar(10)
+  isActive                                       Boolean?                   @default(true) @map("is_active")
+  lastLogin                                      DateTime?                  @map("last_login") @db.Timestamp(6)
+  createdAt                                      DateTime?                  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt                                      DateTime?                  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  studentId                                      String?                    @map("student_id") @db.VarChar(50)
+  gender                                         String?                    @db.VarChar(20)
+  resetPin                                       String?                    @map("reset_pin") @db.VarChar(255)
+  pinExpiresAt                                   DateTime?                  @map("pin_expires_at") @db.Timestamp(6)
+  storageQuotaMb                                 Int?                       @default(500) @map("storage_quota_mb")
+  storageUsedBytes                               BigInt?                    @default(0) @map("storage_used_bytes")
   activityLogs                                   ActivityLog[]
   assignmentsAssigned                            AssignmentTarget[]
   assignmentsCreated                             Assignment[]
   auditLogs                                      AuditLog[]
   classEnrollments                               ClassEnrollment[]
-  classSubjectsAsInstructor                      ClassSubject[]            @relation("Instructor")
-  classSubjectsAsLabInstructor                   ClassSubject[]            @relation("LabInstructor")
-  classTeacherOf                                 Class[]                   @relation("ClassTeacher")
+  classSubjectsAsInstructor                      ClassSubject[]             @relation("Instructor")
+  classSubjectsAsLabInstructor                   ClassSubject[]             @relation("LabInstructor")
+  classTeacherOf                                 Class[]                    @relation("ClassTeacher")
   deviceTests                                    DeviceTest?
-  documentSharesSent                             DocumentShare[]           @relation("DocumentSharedBy")
-  documentShares                                 DocumentShare[]           @relation("DocumentSharedToUser")
+  documentSharesSent                             DocumentShare[]            @relation("DocumentSharedBy")
+  documentShares                                 DocumentShare[]            @relation("DocumentSharedToUser")
   recordingSharesGiven                           WhiteboardRecordingShare[] @relation("RecordingSharedBy")
   recordingSharesReceived                        WhiteboardRecordingShare[] @relation("RecordingSharedToUser")
-  documents                                      Document[]                @relation("DocumentUploadedBy")
-  documentsDeleted                               Document[]                @relation("DocumentDeletedBy")
-  foldersCreated                                 DocumentFolder[]          @relation("FolderCreatedBy")
-  folderSharesSent                               FolderShare[]             @relation("FolderSharedBy")
-  folderSharesReceived                           FolderShare[]             @relation("FolderSharedToUser")
-  shiftHistoryApproved                           EquipmentShiftHistory[]   @relation("ShiftHistoryApprovedBy")
-  shiftHistoryPerformed                          EquipmentShiftHistory[]   @relation("ShiftedBy")
-  shiftRequestsApproved                          EquipmentShiftRequest[]   @relation("ShiftApprovedBy")
-  shiftRequestsCreated                           EquipmentShiftRequest[]   @relation("ShiftRequestedBy")
-  feePaymentsCollected                           FeePayment[]              @relation("Collector")
-  finalMarksFinalized                            FinalLabMarks[]           @relation("FinalMarksFinalized")
-  finalMarksAsStudent                            FinalLabMarks[]           @relation("FinalMarksStudent")
+  documents                                      Document[]                 @relation("DocumentUploadedBy")
+  documentsDeleted                               Document[]                 @relation("DocumentDeletedBy")
+  foldersCreated                                 DocumentFolder[]           @relation("FolderCreatedBy")
+  folderSharesSent                               FolderShare[]              @relation("FolderSharedBy")
+  folderSharesReceived                           FolderShare[]              @relation("FolderSharedToUser")
+  shiftHistoryApproved                           EquipmentShiftHistory[]    @relation("ShiftHistoryApprovedBy")
+  shiftHistoryPerformed                          EquipmentShiftHistory[]    @relation("ShiftedBy")
+  shiftRequestsApproved                          EquipmentShiftRequest[]    @relation("ShiftApprovedBy")
+  shiftRequestsCreated                           EquipmentShiftRequest[]    @relation("ShiftRequestedBy")
+  feePaymentsCollected                           FeePayment[]               @relation("Collector")
+  finalMarksFinalized                            FinalLabMarks[]            @relation("FinalMarksFinalized")
+  finalMarksAsStudent                            FinalLabMarks[]            @relation("FinalMarksStudent")
   reportsGenerated                               GeneratedReport[]
   grade_scale_history                            GradeScaleHistory[]
-  gradesGiven                                    Grade[]                   @relation("GradedBy")
-  gradesModified                                 Grade[]                   @relation("ModifiedBy")
+  gradesGiven                                    Grade[]                    @relation("GradedBy")
+  gradesModified                                 Grade[]                    @relation("ModifiedBy")
   groupMemberships                               GroupMember[]
   importHistory                                  ImportHistory[]
-  maintenanceRecords                             ItemMaintenanceHistory[]  @relation("MaintenanceRecordedBy")
-  lab_attendance_lab_attendance_marked_byTousers LabAttendance[]           @relation("lab_attendance_marked_byTousers")
-  labAttendanceAsStudent                         LabAttendance[]           @relation("AttendanceStudent")
-  labMaintenancePerformed                        LabMaintenanceHistory[]   @relation("LabMaintenancePerformer")
-  materialUsageRecorded                          LabMaterialUsage[]        @relation("MaterialUsageRecorded")
-  materialUsageAsStudent                         LabMaterialUsage[]        @relation("MaterialUsageStudent")
+  maintenanceRecords                             ItemMaintenanceHistory[]   @relation("MaintenanceRecordedBy")
+  lab_attendance_lab_attendance_marked_byTousers LabAttendance[]            @relation("lab_attendance_marked_byTousers")
+  labAttendanceAsStudent                         LabAttendance[]            @relation("AttendanceStudent")
+  labMaintenancePerformed                        LabMaintenanceHistory[]    @relation("LabMaintenancePerformer")
+  materialUsageRecorded                          LabMaterialUsage[]         @relation("MaterialUsageRecorded")
+  materialUsageAsStudent                         LabMaterialUsage[]         @relation("MaterialUsageStudent")
   labsInCharge                                   Lab[]
-  laptopsIssuedBy                                LaptopIssuance[]          @relation("LaptopIssuedBy")
-  laptopsIssuedTo                                LaptopIssuance[]          @relation("LaptopIssuedTo")
-  laptopsReceivedBy                              LaptopIssuance[]          @relation("LaptopReceivedBy")
+  laptopsIssuedBy                                LaptopIssuance[]           @relation("LaptopIssuedBy")
+  laptopsIssuedTo                                LaptopIssuance[]           @relation("LaptopIssuedTo")
+  laptopsReceivedBy                              LaptopIssuance[]           @relation("LaptopReceivedBy")
   notifications                                  Notification[]
   procurementCommittees                          ProcurementCommittee[]
-  procurementsApproved                           ProcurementRequest[]      @relation("ProcurementApprovedBy")
-  procurementsCreated                            ProcurementRequest[]      @relation("ProcurementCreatedBy")
-  procurementsReceived                           ProcurementRequest[]      @relation("ProcurementReceivedBy")
+  procurementsApproved                           ProcurementRequest[]       @relation("ProcurementApprovedBy")
+  procurementsCreated                            ProcurementRequest[]       @relation("ProcurementCreatedBy")
+  procurementsReceived                           ProcurementRequest[]       @relation("ProcurementReceivedBy")
   groupsCreated                                  StudentGroup[]
   submissions                                    Submission[]
   ticketComments                                 TicketComment[]
-  ticketsAssigned                                Ticket[]                  @relation("TicketAssignee")
-  ticketsCreated                                 Ticket[]                  @relation("TicketCreator")
-  ticketsResolved                                Ticket[]                  @relation("TicketResolver")
+  ticketsAssigned                                Ticket[]                   @relation("TicketAssignee")
+  ticketsCreated                                 Ticket[]                   @relation("TicketCreator")
+  ticketsResolved                                Ticket[]                   @relation("TicketResolver")
   sessions                                       UserSession[]
-  school                                         School                    @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  school                                         School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   vivaParticipations                             MeetingParticipant[]
   vivaQuestionsCreated                           MeetingQuestion[]
-  vivaSessionsAsExaminer                         Meeting[]             @relation("MeetingHost")
-  vivaSessionsAsStudent                          Meeting[]             @relation("MeetingStudent")
+  vivaSessionsAsExaminer                         Meeting[]                  @relation("MeetingHost")
+  vivaSessionsAsStudent                          Meeting[]                  @relation("MeetingStudent")
   whiteboardParticipations                       WhiteboardParticipant[]
-  whiteboardSessionsAsHost                       WhiteboardSession[]       @relation("WhiteboardHost")
+  whiteboardSessionsAsHost                       WhiteboardSession[]        @relation("WhiteboardHost")
   whiteboardRecordings                           WhiteboardRecording[]
-  procurementItemsReceived                       ProcurementItem[]         @relation("ProcurementItemReceivedBy")
-  labEventsPerformed                             LabEventHistory[]         @relation("LabEventPerformer")
-  labEventsAsOldIncharge                         LabEventHistory[]         @relation("LabEventOldIncharge")
-  labEventsAsNewIncharge                         LabEventHistory[]         @relation("LabEventNewIncharge")
-  timetableSlots                                 TimetableSlot[]           @relation("TimetableInstructor")
-  calendarEventsCreated                          SchoolCalendar[]          @relation("CalendarCreatedBy")
-  lecturePlans                                   LecturePlan[]             @relation("LecturePlanInstructor")
-  lectureAttendance                              LectureAttendance[]       @relation("LectureAttendanceStudent")
-  lectureResourcesUploaded                       LectureResource[]         @relation("ResourceUploader")
-  lecturePollResponses                           LecturePollResponse[]     @relation("PollResponseStudent")
-  studentTrainingProgress                        StudentTrainingProgress[] @relation("StudentTrainingProgress")
-  studentUnitMasteries                           StudentUnitMastery[]      @relation("StudentUnitMastery")
-  codingSubmissions                              CodingSubmission[]        @relation("CodingSubmissionStudent")
-  whiteboardFiles                                WhiteboardFile[]          @relation("WhiteboardFileOwner")
-  adminNotes                                     AdminNote[]               @relation("AdminNotesAuthor")
+  procurementItemsReceived                       ProcurementItem[]          @relation("ProcurementItemReceivedBy")
+  labEventsPerformed                             LabEventHistory[]          @relation("LabEventPerformer")
+  labEventsAsOldIncharge                         LabEventHistory[]          @relation("LabEventOldIncharge")
+  labEventsAsNewIncharge                         LabEventHistory[]          @relation("LabEventNewIncharge")
+  timetableSlots                                 TimetableSlot[]            @relation("TimetableInstructor")
+  calendarEventsCreated                          SchoolCalendar[]           @relation("CalendarCreatedBy")
+  lecturePlans                                   LecturePlan[]              @relation("LecturePlanInstructor")
+  lectureAttendance                              LectureAttendance[]        @relation("LectureAttendanceStudent")
+  lectureResourcesUploaded                       LectureResource[]          @relation("ResourceUploader")
+  lecturePollResponses                           LecturePollResponse[]      @relation("PollResponseStudent")
+  studentTrainingProgress                        StudentTrainingProgress[]  @relation("StudentTrainingProgress")
+  studentUnitMasteries                           StudentUnitMastery[]       @relation("StudentUnitMastery")
+  codingSubmissions                              CodingSubmission[]         @relation("CodingSubmissionStudent")
+  whiteboardFiles                                WhiteboardFile[]           @relation("WhiteboardFileOwner")
+  adminNotes                                     AdminNote[]                @relation("AdminNotesAuthor")
+  DocumentViewLog                                DocumentViewLog[]
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")
@@ -275,23 +275,23 @@ model UserSession {
 }
 
 model Class {
-  meetings         Meeting[]
-  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  schoolId           String              @map("school_id") @db.Uuid
-  academicYearId     String              @map("academic_year_id") @db.Uuid
-  name               String              @db.VarChar(100)
-  nameHindi          String?             @map("name_hindi") @db.VarChar(100)
-  gradeLevel         Int                 @map("grade_level")
-  section            String?             @db.VarChar(10)
-  stream             String?             @db.VarChar(50)
-  classTeacherId     String?             @map("class_teacher_id") @db.Uuid
-  maxStudents        Int?                @default(60) @map("max_students")
-  createdAt          DateTime?           @default(now()) @map("created_at") @db.Timestamp(6)
+  meetings           Meeting[]
+  id                 String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId           String                     @map("school_id") @db.Uuid
+  academicYearId     String                     @map("academic_year_id") @db.Uuid
+  name               String                     @db.VarChar(100)
+  nameHindi          String?                    @map("name_hindi") @db.VarChar(100)
+  gradeLevel         Int                        @map("grade_level")
+  section            String?                    @db.VarChar(10)
+  stream             String?                    @db.VarChar(50)
+  classTeacherId     String?                    @map("class_teacher_id") @db.Uuid
+  maxStudents        Int?                       @default(60) @map("max_students")
+  createdAt          DateTime?                  @default(now()) @map("created_at") @db.Timestamp(6)
   enrollments        ClassEnrollment[]
   classSubjects      ClassSubject[]
-  academicYear       AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  classTeacher       User?               @relation("ClassTeacher", fields: [classTeacherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  academicYear       AcademicYear               @relation(fields: [academicYearId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  classTeacher       User?                      @relation("ClassTeacher", fields: [classTeacherId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  school             School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   documentShares     DocumentShare[]
   folderShares       FolderShare[]
   recordingShares    WhiteboardRecordingShare[]
@@ -327,23 +327,23 @@ model ClassEnrollment {
 }
 
 model StudentGroup {
-  meetings         Meeting[]
-  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  classId            String              @map("class_id") @db.Uuid
-  name               String              @db.VarChar(100)
-  nameHindi          String?             @map("name_hindi") @db.VarChar(100)
+  meetings           Meeting[]
+  id                 String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  classId            String                     @map("class_id") @db.Uuid
+  name               String                     @db.VarChar(100)
+  nameHindi          String?                    @map("name_hindi") @db.VarChar(100)
   description        String?
-  createdById        String              @map("created_by") @db.Uuid
-  createdAt          DateTime?           @default(now()) @map("created_at") @db.Timestamp(6)
-  assignedPcId       String?             @map("assigned_pc_id") @db.Uuid
+  createdById        String                     @map("created_by") @db.Uuid
+  createdAt          DateTime?                  @default(now()) @map("created_at") @db.Timestamp(6)
+  assignedPcId       String?                    @map("assigned_pc_id") @db.Uuid
   targets            AssignmentTarget[]
   documentShares     DocumentShare[]
   folderShares       FolderShare[]
   recordingShares    WhiteboardRecordingShare[]
   members            GroupMember[]
-  assignedPc         LabItem?            @relation(fields: [assignedPcId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  class              Class               @relation(fields: [classId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  createdBy          User                @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  assignedPc         LabItem?                   @relation(fields: [assignedPcId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  class              Class                      @relation(fields: [classId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdBy          User                       @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   submissions        Submission[]
   whiteboardSessions WhiteboardSession[]
 
@@ -365,22 +365,22 @@ model GroupMember {
 }
 
 model Subject {
-  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  schoolId           String          @map("school_id") @db.Uuid
-  code               String          @db.VarChar(20)
-  name               String          @db.VarChar(100)
-  nameHindi          String?         @map("name_hindi") @db.VarChar(100)
-  nameRegional       String?         @map("name_regional") @db.VarChar(100)
-  hasLab             Boolean?        @default(false) @map("has_lab")
-  labHoursPerWeek    Int?            @default(0) @map("lab_hours_per_week")
-  theoryHoursPerWeek Int?            @default(0) @map("theory_hours_per_week")
-  createdAt          DateTime?       @default(now()) @map("created_at") @db.Timestamp(6)
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId           String            @map("school_id") @db.Uuid
+  code               String            @db.VarChar(20)
+  name               String            @db.VarChar(100)
+  nameHindi          String?           @map("name_hindi") @db.VarChar(100)
+  nameRegional       String?           @map("name_regional") @db.VarChar(100)
+  hasLab             Boolean?          @default(false) @map("has_lab")
+  labHoursPerWeek    Int?              @default(0) @map("lab_hours_per_week")
+  theoryHoursPerWeek Int?              @default(0) @map("theory_hours_per_week")
+  createdAt          DateTime?         @default(now()) @map("created_at") @db.Timestamp(6)
   assignments        Assignment[]
   classSubjects      ClassSubject[]
   feeStructures      FeeStructure[]
   finalLabMarks      FinalLabMarks[]
   labs               Lab[]
-  school             School          @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  school             School            @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   vivaQuestions      MeetingQuestion[]
   timetableSlots     TimetableSlot[]
   lecturePlans       LecturePlan[]
@@ -611,29 +611,30 @@ model EquipmentShiftHistory {
 }
 
 model Document {
-  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  schoolId     String          @map("school_id") @db.Uuid
-  uploadedById String          @map("uploaded_by") @db.Uuid
-  folderId     String?         @map("folder_id") @db.Uuid
-  name         String          @db.VarChar(255)
-  description  String?
-  fileName     String          @map("file_name") @db.VarChar(255)
-  fileType     String          @map("file_type") @db.VarChar(50)
-  mimeType     String          @map("mime_type") @db.VarChar(100)
-  fileSize     Int             @map("file_size")
-  cloudinaryId String          @map("cloudinary_id") @db.VarChar(255)
-  url          String
-  isPublic     Boolean?        @default(false) @map("is_public")
-  category     String?         @db.VarChar(100)
-  createdAt    DateTime?       @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt    DateTime?       @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-  deletedAt    DateTime?       @map("deleted_at") @db.Timestamp(6)
-  deletedById  String?         @map("deleted_by") @db.Uuid
-  shares       DocumentShare[]
-  school       School          @relation(fields: [schoolId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  uploadedBy   User            @relation("DocumentUploadedBy", fields: [uploadedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  deletedBy    User?           @relation("DocumentDeletedBy", fields: [deletedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  folder       DocumentFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId        String            @map("school_id") @db.Uuid
+  uploadedById    String            @map("uploaded_by") @db.Uuid
+  folderId        String?           @map("folder_id") @db.Uuid
+  name            String            @db.VarChar(255)
+  description     String?
+  fileName        String            @map("file_name") @db.VarChar(255)
+  fileType        String            @map("file_type") @db.VarChar(50)
+  mimeType        String            @map("mime_type") @db.VarChar(100)
+  fileSize        Int               @map("file_size")
+  cloudinaryId    String            @map("cloudinary_id") @db.VarChar(255)
+  url             String
+  isPublic        Boolean?          @default(false) @map("is_public")
+  category        String?           @db.VarChar(100)
+  createdAt       DateTime?         @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime?         @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt       DateTime?         @map("deleted_at") @db.Timestamp(6)
+  deletedById     String?           @map("deleted_by") @db.Uuid
+  shares          DocumentShare[]
+  school          School            @relation(fields: [schoolId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  uploadedBy      User              @relation("DocumentUploadedBy", fields: [uploadedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  deletedBy       User?             @relation("DocumentDeletedBy", fields: [deletedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  folder          DocumentFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  DocumentViewLog DocumentViewLog[]
 
   @@index([schoolId], map: "idx_documents_school_id")
   @@index([uploadedById], map: "idx_documents_uploaded_by")
@@ -672,6 +673,7 @@ model FolderShare {
   targetGroupId String?                    @map("target_group_id") @db.Uuid
   targetUserId  String?                    @map("target_user_id") @db.Uuid
   message       String?
+  permission    share_permission           @default(download)
   sharedAt      DateTime?                  @default(now()) @map("shared_at") @db.Timestamp(6)
   expiresAt     DateTime?                  @map("expires_at") @db.Timestamp(6)
   folder        DocumentFolder             @relation(fields: [folderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -697,6 +699,7 @@ model DocumentShare {
   targetGroupId String?                    @map("target_group_id") @db.Uuid
   targetUserId  String?                    @map("target_user_id") @db.Uuid
   message       String?
+  permission    share_permission           @default(download)
   sharedAt      DateTime?                  @default(now()) @map("shared_at") @db.Timestamp(6)
   expiresAt     DateTime?                  @map("expires_at") @db.Timestamp(6)
   document      Document                   @relation(fields: [documentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -874,50 +877,50 @@ model SubmissionRevision {
 }
 
 model Meeting {
-  id                     String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  schoolId               String            @map("school_id") @db.Uuid
-  title                  String            @db.VarChar(255)
-  type                   String            @default("instant") @db.VarChar(50) // instant, scheduled
-  
-  // Optional Targets
-  targetClassId          String?           @map("target_class_id") @db.Uuid
-  targetGroupId          String?           @map("target_group_id") @db.Uuid
-  targetStudentId        String?           @map("target_student_id") @db.Uuid
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId String @map("school_id") @db.Uuid
+  title    String @db.VarChar(255)
+  type     String @default("instant") @db.VarChar(50) // instant, scheduled
 
-  submissionId           String?           @map("submission_id") @db.Uuid
-  hostId                 String            @map("host_id") @db.Uuid
-  
-  scheduledAt            DateTime?         @map("scheduled_at") @db.Timestamp(6)
-  durationMinutes        Int?              @default(10) @map("duration_minutes")
-  actualStartTime        DateTime?         @map("actual_start_time") @db.Timestamp(6)
-  actualEndTime          DateTime?         @map("actual_end_time") @db.Timestamp(6)
-  mode                   MeetingMode?      @default(online)
-  meetingLink            String?           @map("meeting_link")
-  recordingUrl           String?           @map("recording_url")
-  questionsAsked         Json?             @map("questions_asked")
-  studentResponses       Json?             @map("student_responses")
-  marksObtained          Decimal?          @map("marks_obtained") @db.Decimal(5, 2)
-  maxMarks               Decimal?          @map("max_marks") @db.Decimal(5, 2)
-  performanceRating      Int?              @map("performance_rating")
-  examinerRemarks        String?           @map("examiner_remarks")
-  examinerRemarksHindi   String?           @map("examiner_remarks_hindi")
-  improvementSuggestions String?           @map("improvement_suggestions")
-  status                 MeetingStatus?    @default(scheduled)
-  createdAt              DateTime?         @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt              DateTime?         @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-  scheduledEndTime       DateTime?         @map("scheduled_end_time") @db.Timestamp(6)
-  autoStart              Boolean?          @default(true) @map("auto_start")
-  recordingFilePath      String?           @map("recording_file_path")
-  recordingSize          Int?              @map("recording_size_bytes")
-  recordingDuration      Int?              @map("recording_duration_seconds")
+  // Optional Targets
+  targetClassId   String? @map("target_class_id") @db.Uuid
+  targetGroupId   String? @map("target_group_id") @db.Uuid
+  targetStudentId String? @map("target_student_id") @db.Uuid
+
+  submissionId String? @map("submission_id") @db.Uuid
+  hostId       String  @map("host_id") @db.Uuid
+
+  scheduledAt            DateTime?            @map("scheduled_at") @db.Timestamp(6)
+  durationMinutes        Int?                 @default(10) @map("duration_minutes")
+  actualStartTime        DateTime?            @map("actual_start_time") @db.Timestamp(6)
+  actualEndTime          DateTime?            @map("actual_end_time") @db.Timestamp(6)
+  mode                   MeetingMode?         @default(online)
+  meetingLink            String?              @map("meeting_link")
+  recordingUrl           String?              @map("recording_url")
+  questionsAsked         Json?                @map("questions_asked")
+  studentResponses       Json?                @map("student_responses")
+  marksObtained          Decimal?             @map("marks_obtained") @db.Decimal(5, 2)
+  maxMarks               Decimal?             @map("max_marks") @db.Decimal(5, 2)
+  performanceRating      Int?                 @map("performance_rating")
+  examinerRemarks        String?              @map("examiner_remarks")
+  examinerRemarksHindi   String?              @map("examiner_remarks_hindi")
+  improvementSuggestions String?              @map("improvement_suggestions")
+  status                 MeetingStatus?       @default(scheduled)
+  createdAt              DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt              DateTime?            @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  scheduledEndTime       DateTime?            @map("scheduled_end_time") @db.Timestamp(6)
+  autoStart              Boolean?             @default(true) @map("auto_start")
+  recordingFilePath      String?              @map("recording_file_path")
+  recordingSize          Int?                 @map("recording_size_bytes")
+  recordingDuration      Int?                 @map("recording_duration_seconds")
   participants           MeetingParticipant[]
-  
-  host                   User              @relation("MeetingHost", fields: [hostId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  targetStudent          User?             @relation("MeetingStudent", fields: [targetStudentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  targetClass            Class?            @relation(fields: [targetClassId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  targetGroup            StudentGroup?     @relation(fields: [targetGroupId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  submission             Submission?       @relation(fields: [submissionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  school                 School            @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  host          User          @relation("MeetingHost", fields: [hostId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  targetStudent User?         @relation("MeetingStudent", fields: [targetStudentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  targetClass   Class?        @relation(fields: [targetClassId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  targetGroup   StudentGroup? @relation(fields: [targetGroupId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  submission    Submission?   @relation(fields: [submissionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  school        School        @relation(fields: [schoolId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([status, autoStart, scheduledAt], map: "idx_meetings_auto_start")
   @@map("meetings")
@@ -935,7 +938,7 @@ model MeetingParticipant {
   socketId        String?           @map("socket_id") @db.VarChar(255)
   isVideoEnabled  Boolean           @default(false) @map("is_video_enabled")
   isAudioEnabled  Boolean           @default(false) @map("is_audio_enabled")
-  session         Meeting       @relation(fields: [sessionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  session         Meeting           @relation(fields: [sessionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   user            User              @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([sessionId, userId])
@@ -1280,28 +1283,28 @@ model lab_materials {
 }
 
 model WhiteboardSession {
-  id            String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  schoolId      String                  @map("school_id") @db.Uuid
-  hostId        String                  @map("host_id") @db.Uuid
-  title         String?                 @db.VarChar(255)
-  status        WhiteboardSessionStatus @default(active)
-  targetType    WhiteboardTargetType?   @map("target_type")
-  meetingCode   String?                 @unique @map("meeting_code") @db.VarChar(8)
-  targetClassId String?                 @map("target_class_id") @db.Uuid
-  targetGroupId String?                 @map("target_group_id") @db.Uuid
-  startedAt     DateTime?               @default(now()) @map("started_at") @db.Timestamp(6)
-  endedAt       DateTime?               @map("ended_at") @db.Timestamp(6)
-  scheduledAt   DateTime?               @map("scheduled_at") @db.Timestamp(6)
-  durationMinutes Int?                  @map("duration_minutes")
-  recordingUrl  String?                 @map("recording_url")
-  isRecording   Boolean?                @default(false) @map("is_recording")
-  canvasData    String?                 @map("canvas_data")
-  createdAt     DateTime?               @default(now()) @map("created_at") @db.Timestamp(6)
-  participants  WhiteboardParticipant[]
-  host          User                    @relation("WhiteboardHost", fields: [hostId], references: [id], onDelete: Cascade)
-  school        School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  targetClass   Class?                  @relation(fields: [targetClassId], references: [id])
-  targetGroup   StudentGroup?           @relation(fields: [targetGroupId], references: [id])
+  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId        String                  @map("school_id") @db.Uuid
+  hostId          String                  @map("host_id") @db.Uuid
+  title           String?                 @db.VarChar(255)
+  status          WhiteboardSessionStatus @default(active)
+  targetType      WhiteboardTargetType?   @map("target_type")
+  meetingCode     String?                 @unique @map("meeting_code") @db.VarChar(8)
+  targetClassId   String?                 @map("target_class_id") @db.Uuid
+  targetGroupId   String?                 @map("target_group_id") @db.Uuid
+  startedAt       DateTime?               @default(now()) @map("started_at") @db.Timestamp(6)
+  endedAt         DateTime?               @map("ended_at") @db.Timestamp(6)
+  scheduledAt     DateTime?               @map("scheduled_at") @db.Timestamp(6)
+  durationMinutes Int?                    @map("duration_minutes")
+  recordingUrl    String?                 @map("recording_url")
+  isRecording     Boolean?                @default(false) @map("is_recording")
+  canvasData      String?                 @map("canvas_data")
+  createdAt       DateTime?               @default(now()) @map("created_at") @db.Timestamp(6)
+  participants    WhiteboardParticipant[]
+  host            User                    @relation("WhiteboardHost", fields: [hostId], references: [id], onDelete: Cascade)
+  school          School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  targetClass     Class?                  @relation(fields: [targetClassId], references: [id])
+  targetGroup     StudentGroup?           @relation(fields: [targetGroupId], references: [id])
 
   @@index([schoolId], map: "idx_whiteboard_sessions_school")
   @@index([hostId], map: "idx_whiteboard_sessions_host")
@@ -1310,21 +1313,21 @@ model WhiteboardSession {
 }
 
 model WhiteboardFile {
-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  schoolId      String    @map("school_id") @db.Uuid
-  ownerId       String    @map("owner_id") @db.Uuid
-  title         String    @default("Untitled Whiteboard") @db.VarChar(255)
-  description   String?   @db.Text
-  canvasData    String?   @map("canvas_data") @db.Text
-  thumbnailUrl  String?   @map("thumbnail_url") @db.Text
-  pageCount     Int?      @default(1) @map("page_count")
-  isArchived    Boolean?  @default(false) @map("is_archived")
-  lastOpenedAt  DateTime? @default(now()) @map("last_opened_at") @db.Timestamp(6)
-  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt     DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId     String    @map("school_id") @db.Uuid
+  ownerId      String    @map("owner_id") @db.Uuid
+  title        String    @default("Untitled Whiteboard") @db.VarChar(255)
+  description  String?   @db.Text
+  canvasData   String?   @map("canvas_data") @db.Text
+  thumbnailUrl String?   @map("thumbnail_url") @db.Text
+  pageCount    Int?      @default(1) @map("page_count")
+  isArchived   Boolean?  @default(false) @map("is_archived")
+  lastOpenedAt DateTime? @default(now()) @map("last_opened_at") @db.Timestamp(6)
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt    DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
 
-  owner         User      @relation("WhiteboardFileOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  school        School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  owner  User   @relation("WhiteboardFileOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([ownerId])
   @@index([schoolId])
@@ -1812,12 +1815,32 @@ enum MaterialUnit {
   set
 }
 
+model DocumentViewLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  viewedAt   DateTime @default(now()) @map("viewed_at") @db.Timestamp(6)
+  ipAddress  String?  @map("ip_address") @db.VarChar(50)
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([userId])
+  @@map("document_view_logs")
+}
+
 enum document_share_target_type {
   class
   group
   instructor
   admin
   student
+}
+
+enum share_permission {
+  view
+  download
 }
 
 enum TicketStatus {
@@ -1895,20 +1918,20 @@ model QueryLog {
 
 // Whiteboard Recording for storing canvas + mic + camera recordings
 model WhiteboardRecording {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId        String   @map("user_id") @db.Uuid
-  schoolId      String   @map("school_id") @db.Uuid
-  title         String   @db.VarChar(255)
-  description   String?  @db.Text
-  sessionId     String?  @map("session_id") @db.VarChar(100)
-  cloudinaryId  String   @map("cloudinary_id") @db.VarChar(255)
-  cloudinaryUrl String   @map("cloudinary_url") @db.Text
-  thumbnailUrl  String?  @map("thumbnail_url") @db.Text
+  id            String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String                     @map("user_id") @db.Uuid
+  schoolId      String                     @map("school_id") @db.Uuid
+  title         String                     @db.VarChar(255)
+  description   String?                    @db.Text
+  sessionId     String?                    @map("session_id") @db.VarChar(100)
+  cloudinaryId  String                     @map("cloudinary_id") @db.VarChar(255)
+  cloudinaryUrl String                     @map("cloudinary_url") @db.Text
+  thumbnailUrl  String?                    @map("thumbnail_url") @db.Text
   duration      Int? // seconds
-  fileSize      Int?     @map("file_size") // bytes
-  isPublic      Boolean  @default(true) @map("is_public")
-  shareToken    String?  @unique @map("share_token") @db.VarChar(64)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  fileSize      Int?                       @map("file_size") // bytes
+  isPublic      Boolean                    @default(true) @map("is_public")
+  shareToken    String?                    @unique @map("share_token") @db.VarChar(64)
+  createdAt     DateTime                   @default(now()) @map("created_at") @db.Timestamp(6)
   shares        WhiteboardRecordingShare[]
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -2236,7 +2259,7 @@ model TrainingModule {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
 
-  academicYear    AcademicYear? @relation(fields: [academicYearId], references: [id])
+  academicYear    AcademicYear?             @relation(fields: [academicYearId], references: [id])
   units           TrainingUnit[]
   assignments     Assignment[]
   studentProgress StudentTrainingProgress[]
@@ -2348,11 +2371,11 @@ model WhiteboardRecordingShare {
   message       String?
   sharedAt      DateTime?                  @default(now()) @map("shared_at") @db.Timestamp(6)
 
-  recording     WhiteboardRecording        @relation(fields: [recordingId], references: [id], onDelete: Cascade)
-  sharedBy      User                       @relation("RecordingSharedBy", fields: [sharedById], references: [id], onDelete: NoAction)
-  targetClass   Class?                     @relation(fields: [targetClassId], references: [id], onDelete: Cascade)
-  targetGroup   StudentGroup?              @relation(fields: [targetGroupId], references: [id], onDelete: Cascade)
-  targetUser    User?                      @relation("RecordingSharedToUser", fields: [targetUserId], references: [id], onDelete: Cascade)
+  recording   WhiteboardRecording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  sharedBy    User                @relation("RecordingSharedBy", fields: [sharedById], references: [id], onDelete: NoAction)
+  targetClass Class?              @relation(fields: [targetClassId], references: [id], onDelete: Cascade)
+  targetGroup StudentGroup?       @relation(fields: [targetGroupId], references: [id], onDelete: Cascade)
+  targetUser  User?               @relation("RecordingSharedToUser", fields: [targetUserId], references: [id], onDelete: Cascade)
 
   @@index([recordingId])
   @@index([targetUserId])

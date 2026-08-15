@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { documentsAPI, classesAPI, storageAPI, foldersAPI } from '@/lib/api';
 import api from '@/lib/api';
@@ -99,6 +99,8 @@ export default function DocumentsPage() {
     const [shareTargetType, setShareTargetType] = useState(''); // 'class', 'group', 'instructor', 'student'
     const [shareTargets, setShareTargets] = useState([]);
     const [shareMessage, setShareMessage] = useState('');
+    const [shareExpiresAt, setShareExpiresAt] = useState('');
+    const [sharePermission, setSharePermission] = useState('download');
     const [shareSearch, setShareSearch] = useState('');
     const [availableClasses, setAvailableClasses] = useState([]);
     const [availableGroups, setAvailableGroups] = useState([]);
@@ -123,6 +125,11 @@ export default function DocumentsPage() {
     const [aiExtractData, setAiExtractData] = useState(null);
     const [aiEngine, setAiEngine] = useState('gemini');
 
+    // Analytics
+    const [analyticsDoc, setAnalyticsDoc] = useState(null);
+    const [analyticsData, setAnalyticsData] = useState(null);
+    const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!isAuthenticated) { router.push('/login'); return; }
@@ -136,13 +143,9 @@ export default function DocumentsPage() {
     const loadDocuments = async () => {
         try {
             setLoading(true);
-            setLoading(true);
             const params = {};
             if (searchQuery) params.search = searchQuery;
             if (categoryFilter) params.category = categoryFilter;
-            // Only filter by folder if we are in 'my' documents tab and not searching globally
-            // (If searching, we might want to search all folders? For now, let's stick to current folder behavior or all if implemented server side)
-            // But typical behavior is search current folder or all. Let's assume current folder for now.
             if (activeTab === 'my') {
                 params.folderId = currentFolder ? currentFolder.id : 'root';
             }
@@ -202,17 +205,12 @@ export default function DocumentsPage() {
 
     const handleFolderClick = (folder) => {
         setCurrentFolder(folder);
-        // Update breadcrumbs
         if (folder) {
-            // If we are navigating down, add to breadcrumbs (or rebuild if we jumped)
-            // ideally we fetch breadcrumbs from server but local is faster for simple navigation
-            // For now let's just use what we have, but server does provide breadcrumbs on getById
-            // Let's implement full breadcrumb loading on folder click
             loadFolderDetails(folder.id);
         } else {
             setFolderBreadcrumbs([]);
         }
-        setSearchQuery(''); // Clear search on navigation
+        setSearchQuery('');
         setSelectedDocs(new Set());
         setSelectedFolders(new Set());
     };
@@ -223,15 +221,11 @@ export default function DocumentsPage() {
             setFolderBreadcrumbs(res.data.data.breadcrumbs || []);
         } catch (err) {
             console.error('Failed to load folder details:', err);
-            // If failed, maybe revert navigation?
         }
     };
 
     const handleNavigateBreadcrumb = (folder) => {
         setCurrentFolder(folder);
-        // When clicking a breadcrumb, we need to rebuild the breadcrumb trail up to that point
-        // But since we just set currentFolder, the next render + loadFolderDetails checks might be needed or 
-        // we can slice the current breadcrumbs.
         if (!folder) {
             setFolderBreadcrumbs([]);
         } else {
@@ -301,12 +295,10 @@ export default function DocumentsPage() {
 
     const loadShareOptions = async () => {
         try {
-            // Load ALL classes (all: true bypasses session filter)
             const classRes = await api.get('/classes', { params: { all: true } });
             const classes = classRes.data.data.classes || [];
             setAvailableClasses(classes);
 
-            // Load all groups from all classes
             const allGroups = [];
             const seenGroupIds = new Set();
             for (const cls of classes) {
@@ -319,11 +311,10 @@ export default function DocumentsPage() {
                             allGroups.push({ ...g, className: cls.name || `Grade ${cls.gradeLevel}-${cls.section}` });
                         }
                     });
-                } catch (e) { /* ignore if no groups */ }
+                } catch (e) { }
             }
             setAvailableGroups(allGroups);
 
-            // Load instructors and admins (no session filtering on users without classId)
             const userRes = await api.get('/users', { params: { role: 'instructor', limit: 500 } });
             const adminRes = await api.get('/users', { params: { role: 'admin', limit: 100 } });
             const principalRes = await api.get('/users', { params: { role: 'principal', limit: 20 } });
@@ -334,7 +325,6 @@ export default function DocumentsPage() {
             ];
             setAvailableInstructors(allInstructors);
 
-            // Load all students (no session filtering on users without classId)
             const studentRes = await api.get('/users', { params: { role: 'student', limit: 1000 } });
             setAvailableStudents(studentRes.data.data.users || []);
         } catch (err) {
@@ -352,7 +342,6 @@ export default function DocumentsPage() {
 
     const handleUpload = async () => {
         if (uploadMode === 'file') {
-            // Single file upload
             if (!uploadFile) { toast.error('Select a file'); return; }
             if (!uploadData.name) { toast.error('Name is required'); return; }
 
@@ -366,7 +355,7 @@ export default function DocumentsPage() {
                     folderId: currentFolder ? currentFolder.id : null
                 };
 
-                await documentsAPI.upload(uploadFile, dataWithFolder, (percent, loaded, total) => {
+                await documentsAPI.upload(uploadFile, dataWithFolder, (percent) => {
                     setUploadProgress(percent);
                 });
 
@@ -386,7 +375,6 @@ export default function DocumentsPage() {
                 setUploadStartTime(null);
             }
         } else {
-            // Folder upload - multiple files with paths
             if (uploadFiles.length === 0) { toast.error('Select a folder'); return; }
 
             setUploading(true);
@@ -394,36 +382,30 @@ export default function DocumentsPage() {
             setUploadStartTime(Date.now());
 
             try {
-                // Get folder name from first file's path
                 const firstPath = uploadFiles[0].webkitRelativePath || uploadFiles[0].name;
                 const folderName = firstPath.split('/')[0];
 
-                // Create the root folder for this upload
                 const createRes = await foldersAPI.create({
                     name: folderName,
                     parentId: currentFolder ? currentFolder.id : null
                 });
                 const rootFolderId = createRes.data.data.folder.id;
 
-                // Map to track created subfolders: { 'path/to/folder': folderId }
                 const createdFolders = { '': rootFolderId };
 
-                // Upload each file
                 for (let i = 0; i < uploadFiles.length; i++) {
                     const file = uploadFiles[i];
                     const relativePath = file.webkitRelativePath || file.name;
                     const pathParts = relativePath.split('/');
-                    const fileName = pathParts.pop(); // File name
-                    pathParts.shift(); // Remove root folder name (already created)
+                    const fileName = pathParts.pop();
+                    pathParts.shift();
 
-                    // Get or create parent folder
                     let parentFolderId = rootFolderId;
                     let currentPath = '';
 
                     for (const part of pathParts) {
                         currentPath = currentPath ? `${currentPath}/${part}` : part;
                         if (!createdFolders[currentPath]) {
-                            // Create this subfolder
                             const subRes = await foldersAPI.create({
                                 name: part,
                                 parentId: parentFolderId
@@ -433,7 +415,6 @@ export default function DocumentsPage() {
                         parentFolderId = createdFolders[currentPath];
                     }
 
-                    // Upload the file to the correct folder
                     setUploadCurrentFile(fileName);
                     setUploadProgress(Math.round(((i + 1) / uploadFiles.length) * 100));
 
@@ -468,7 +449,6 @@ export default function DocumentsPage() {
         }
     };
 
-    // Calculate time remaining for upload
     const getUploadTimeRemaining = () => {
         if (!uploadStartTime || uploadProgress === 0) return '';
         const elapsed = Date.now() - uploadStartTime;
@@ -479,7 +459,6 @@ export default function DocumentsPage() {
         return `${Math.ceil(remaining / 60000)}m remaining`;
     };
 
-    // Handle folder selection
     const handleFolderSelect = (e) => {
         const files = Array.from(e.target.files || []);
         if (files.length > 0) {
@@ -491,12 +470,11 @@ export default function DocumentsPage() {
     const handleEdit = (doc) => {
         setEditingDoc(doc);
         setEditData({ name: doc.name, description: doc.description || '', category: doc.category || '', isPublic: doc.isPublic });
-        setEditFile(null); // Reset file selection
+        setEditFile(null);
     };
 
     const handleSaveEdit = async () => {
         try {
-            // If there's a new file, upload it first
             if (editFile) {
                 const formData = new FormData();
                 formData.append('file', editFile);
@@ -505,7 +483,6 @@ export default function DocumentsPage() {
                 formData.append('category', editData.category);
                 formData.append('isPublic', editData.isPublic);
 
-                // Delete old and upload new
                 await documentsAPI.delete(editingDoc.id);
                 await documentsAPI.upload(formData);
                 toast.success('Document replaced successfully');
@@ -535,23 +512,19 @@ export default function DocumentsPage() {
     const handleRemoveShare = async (share, item) => {
         try {
             if (item.documentCount !== undefined || item.subfolderCount !== undefined) {
-                // It's a folder
                 await foldersAPI.removeShare(item.id, share.id);
             } else {
-                // It's a document
                 await documentsAPI.removeShare(share.id);
             }
             toast.success('Access revoked successfully');
             
-            // Update local modal state
             setShareInfoModal(prev => ({
                 ...prev,
                 shareInfo: prev.shareInfo.filter(s => s.id !== share.id),
                 shareCount: Math.max(0, (prev.shareCount || 1) - 1)
             }));
             
-            // Refresh list in background
-            fetchDocuments();
+            loadDocuments();
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to revoke access');
         }
@@ -560,15 +533,18 @@ export default function DocumentsPage() {
     const handleShare = async (doc) => {
         setSharingDoc(doc);
         setSharingFolder(null);
-        setShareMode('target'); // Default to target sharing mode
-        setShareTargetType(''); // Reset to show type selection first
+        setShareMode('target');
+        setShareTargetType('');
         setShareMessage('');
+        setShareExpiresAt('');
+        setSharePermission('download');
+        setQrCodeUrl('');
+        setShareTargets([]);
 
-        // Preload existing shares as selected targets from shareInfo
         const existingTargets = (doc.shareInfo || []).map(share => ({
             type: share.type,
-            id: share.targetId // Use targetId directly from backend
-        })).filter(t => t.id); // Filter out any with undefined IDs
+            id: share.targetId
+        })).filter(t => t.id);
 
         setShareTargets(existingTargets);
 
@@ -579,26 +555,25 @@ export default function DocumentsPage() {
         } catch { }
     };
 
-    // Share folder handler
     const handleShareFolder = async (folder) => {
         setSharingFolder(folder);
         setSharingDoc(null);
         setShareMode('target');
         setShareTargetType('');
         setShareMessage('');
+        setShareExpiresAt('');
+        setSharePermission('download');
+        setShareTargets([]);
         setQrCodeUrl('');
 
-        // Load existing folder shares
         try {
             const sharesRes = await foldersAPI.getShares(folder.id);
             const existingShares = (sharesRes.data.data.shares || []).map(share => {
-                // Determine the type and id based on which target field is populated
                 if (share.targetClassId) {
                     return { type: 'class', id: share.targetClassId };
                 } else if (share.targetGroupId) {
                     return { type: 'group', id: share.targetGroupId };
                 } else if (share.targetUserId) {
-                    // Determine user type from targetUser.role or targetType
                     const userType = share.targetUser?.role || share.targetType;
                     return { type: userType, id: share.targetUserId };
                 }
@@ -619,21 +594,24 @@ export default function DocumentsPage() {
         setSharingLoading(true);
         try {
             if (sharingDoc) {
-                // Document sharing
                 await documentsAPI.share(sharingDoc.id, {
                     targets: shareTargets,
-                    message: shareMessage
+                    message: shareMessage,
+                    expiresAt: shareExpiresAt || null,
+                    permission: sharePermission
                 });
                 toast.success('Document shared successfully!');
                 setSharingDoc(null);
             } else if (sharingFolder) {
-                // Folder sharing
-                await foldersAPI.share(sharingFolder.id, shareTargets, shareMessage);
+                await foldersAPI.share(sharingFolder.id, shareTargets, shareMessage, shareExpiresAt || null, sharePermission);
                 toast.success('Folder shared successfully!');
                 setSharingFolder(null);
             }
             setShareTargets([]);
             setShareMessage('');
+            setShareExpiresAt('');
+            setSharePermission('download');
+            loadDocuments();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to share');
         } finally {
@@ -647,10 +625,6 @@ export default function DocumentsPage() {
             setShareTargets(shareTargets.filter(t => !(t.type === type && t.id === id)));
         } else {
             setShareTargets([...shareTargets, { type, id }]);
-            // If it's a class, load its groups
-            if (type === 'class') {
-                loadGroupsForClass(id);
-            }
         }
     };
 
@@ -660,13 +634,11 @@ export default function DocumentsPage() {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
         toast.success('Link copied!');
-
     };
 
-    // --- Move Document Logic ---
     const handleOpenMoveDialog = (doc) => {
         setMoveDialog({ open: true, doc });
-        setMoveCurrentFolder(null); // Start at root
+        setMoveCurrentFolder(null);
         loadMoveFolders(null);
     };
 
@@ -685,21 +657,16 @@ export default function DocumentsPage() {
     };
 
     const handleMoveUp = async () => {
-        if (!moveCurrentFolder) return; // Already at root
+        if (!moveCurrentFolder) return;
         if (!moveCurrentFolder.parentId) {
-            handleMoveNavigate(null); // Go to root
+            handleMoveNavigate(null);
         } else {
-            // We need to find the parent object. Since we don't have it easily available,
-            // we can fetch the current folder details to get parent.
-            // Or we could have maintained a breadcrumb stack for the modal.
-            // For simplicity, let's just fetch parent.
             try {
                 const res = await foldersAPI.getById(moveCurrentFolder.id);
-                // The API returns parent object if exists
                 const parent = res.data.data.folder.parent;
-                handleMoveNavigate(parent || null); // parent might be null if root is parent
+                handleMoveNavigate(parent || null);
             } catch (err) {
-                handleMoveNavigate(null); // Fallback to root
+                handleMoveNavigate(null);
             }
         }
     };
@@ -708,11 +675,9 @@ export default function DocumentsPage() {
         if (!moveDialog.doc && !moveDialog.folder) return;
         try {
             if (moveDialog.doc) {
-                // Moving a document
                 await foldersAPI.moveDocuments(moveCurrentFolder ? moveCurrentFolder.id : 'root', [moveDialog.doc.id]);
                 toast.success('Document moved successfully');
             } else if (moveDialog.folder) {
-                // Moving a folder
                 const targetId = moveCurrentFolder ? moveCurrentFolder.id : null;
                 if (moveDialog.folder.id === targetId) {
                     toast.error("Cannot move folder into itself");
@@ -729,14 +694,12 @@ export default function DocumentsPage() {
         }
     };
 
-    // Open move dialog for folder
     const handleOpenFolderMoveDialog = (folder) => {
         setMoveDialog({ open: true, doc: null, folder });
         setMoveCurrentFolder(null);
         loadMoveFolders(null);
     };
 
-    // Delete folder
     const handleDeleteFolder = async (folder) => {
         const ok = await confirm({
             title: `Delete Folder "${folder.name}"?`,
@@ -757,29 +720,19 @@ export default function DocumentsPage() {
         }
     };
 
-    // Preview folder contents
     const handlePreviewFolder = async (folder) => {
         try {
-            // Load documents in this folder
             const docsRes = await documentsAPI.getAll({ folderId: folder.id });
             const docs = docsRes.data.data.documents || [];
-
-            // Load subfolders
             const foldersRes = await foldersAPI.getAll(folder.id);
             const subfolders = foldersRes.data.data.folders || [];
-
-            setFolderPreview({
-                folder,
-                documents: docs,
-                subfolders
-            });
+            setFolderPreview({ folder, documents: docs, subfolders });
         } catch (err) {
             console.error('Failed to load folder contents:', err);
             toast.error('Failed to load folder contents');
         }
     };
 
-    // --- Bulk & Clipboard Logic ---
     const toggleDocSelection = (id) => {
         const newSet = new Set(selectedDocs);
         if (newSet.has(id)) newSet.delete(id);
@@ -796,10 +749,8 @@ export default function DocumentsPage() {
 
     const handleSelectAll = (e) => {
         if (e.target.checked) {
-            // Select all documents
             const allDocIds = sortedDocuments.map(d => activeTab === 'my' ? d.id : d.document?.id).filter(Boolean);
             setSelectedDocs(new Set(allDocIds));
-            // Select all folders
             setSelectedFolders(new Set(folders.map(f => f.id)));
         } else {
             setSelectedDocs(new Set());
@@ -807,7 +758,6 @@ export default function DocumentsPage() {
         }
     };
 
-    // Check if all items are selected
     const isAllSelected = () => {
         const totalDocs = sortedDocuments.length;
         const totalFolders = folders.length;
@@ -816,14 +766,12 @@ export default function DocumentsPage() {
     };
 
     const handleBulkCopy = (mode) => {
-        // mode: 'copy' or 'cut'
         setClipboard({
             mode,
             documents: Array.from(selectedDocs),
             folders: Array.from(selectedFolders)
         });
         toast.success(`${selectedDocs.size + selectedFolders.size} items ${mode === 'copy' ? 'copied' : 'cut'} to clipboard`);
-        // Clear selection
         setSelectedDocs(new Set());
         setSelectedFolders(new Set());
     };
@@ -834,26 +782,21 @@ export default function DocumentsPage() {
         const { mode, documents: docIds, folders: folderIds } = clipboard;
 
         try {
-            // Handle Documents
             if (docIds.length > 0) {
                 if (mode === 'copy') {
                     await documentsAPI.bulkCopy(docIds, targetFolderId);
                 } else {
-                    // Move (cut)
                     await foldersAPI.moveDocuments(targetFolderId, docIds);
                 }
             }
 
-            // Handle Folders
             if (folderIds.length > 0) {
                 if (mode === 'copy') {
-                    // Copy each folder recursively
                     for (const fid of folderIds) {
-                        if (fid === targetFolderId) continue; // Can't copy into self
+                        if (fid === targetFolderId) continue;
                         await foldersAPI.copy(fid, targetFolderId);
                     }
                 } else {
-                    // Move (cut) using bulk move
                     await foldersAPI.bulkMove(folderIds, targetFolderId);
                 }
             }
@@ -862,7 +805,7 @@ export default function DocumentsPage() {
             setClipboard(null);
             loadDocuments();
             loadFolders();
-            loadStorage(); // Refresh storage after copy
+            loadStorage();
         } catch (err) {
             console.error(err);
             toast.error('Failed to paste items');
@@ -897,9 +840,7 @@ export default function DocumentsPage() {
             toast.error('Failed to delete items');
         }
     };
-    // ---------------------------
 
-    // --- AI Extraction Logic ---
     const handleExtractAI = async (doc) => {
         setAiExtractDoc(doc);
         setAiExtracting(true);
@@ -911,6 +852,20 @@ export default function DocumentsPage() {
             toast.error(err.response?.data?.message || 'AI Extraction failed');
         } finally {
             setAiExtracting(false);
+        }
+    };
+
+    const handleOpenAnalytics = async (doc) => {
+        setAnalyticsDoc(doc);
+        setAnalyticsLoading(true);
+        try {
+            const res = await documentsAPI.getAnalytics(doc.id);
+            setAnalyticsData(res.data.data);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to load analytics');
+            setAnalyticsDoc(null);
+        } finally {
+            setAnalyticsLoading(false);
         }
     };
 
@@ -942,7 +897,6 @@ export default function DocumentsPage() {
 
     const formatDate = (date) => formatDateTime(date);
 
-    // Filter documents by date range
     const filteredDocuments = (activeTab === 'my' ? documents : sharedDocuments).filter(item => {
         const doc = activeTab === 'my' ? item : item.document;
         if (!doc) return false;
@@ -955,7 +909,6 @@ export default function DocumentsPage() {
         return true;
     });
 
-    // Sort documents
     const sortedDocuments = [...filteredDocuments].sort((a, b) => {
         const docA = activeTab === 'my' ? a : a.document;
         const docB = activeTab === 'my' ? b : b.document;
@@ -987,7 +940,6 @@ export default function DocumentsPage() {
         return 0;
     });
 
-    // Handle column header click for sorting
     const handleSort = (field) => {
         if (sortField === field) {
             setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -997,7 +949,6 @@ export default function DocumentsPage() {
         }
     };
 
-    // Sort indicator component
     const SortIndicator = ({ field }) => {
         if (sortField !== field) return null;
         return sortDirection === 'asc'
@@ -1005,12 +956,10 @@ export default function DocumentsPage() {
             : <ChevronDown className="w-4 h-4 inline ml-1" />;
     };
 
-    // Check if user can upload (admin, principal, lab_assistant, instructor)
     const canUpload = ['admin', 'principal', 'lab_assistant', 'instructor'].includes(user?.role);
 
     return (
         <div className="p-6 max-w-7xl mx-auto pb-24 relative">
-            {/* Bulk Action Toolbar */}
             {(selectedDocs.size > 0 || selectedFolders.size > 0) && (
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-white shadow-2xl rounded-full px-6 py-3 flex items-center gap-4 border border-slate-200 animate-in slide-in-from-bottom-5 fade-in duration-300">
                     <span className="font-semibold text-slate-700 whitespace-nowrap">
@@ -1033,14 +982,12 @@ export default function DocumentsPage() {
                 </div>
             )}
 
-            {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900">Documents</h1>
                     <p className="text-slate-500">Upload and manage PDFs, documents, and spreadsheets</p>
                 </div>
                 <div className="flex items-center gap-4">
-                    {/* Storage Indicator */}
                     {storageInfo && canUpload && (
                         <div className="hidden sm:flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2">
                             <HardDrive className="w-4 h-4 text-slate-500" />
@@ -1076,7 +1023,7 @@ export default function DocumentsPage() {
                     )}
                 </div>
             </div>
-            {/* Tabs */}
+
             <div className="flex gap-2 mb-4 flex-wrap">
                 <button
                     onClick={() => setActiveTab('my')}
@@ -1121,7 +1068,6 @@ export default function DocumentsPage() {
                 }
             </div >
 
-            {/* Filters */}
             < div className="flex flex-col gap-3 mb-6" >
                 <div className="flex flex-col sm:flex-row gap-3">
                     <div className="relative flex-1">
@@ -1139,7 +1085,6 @@ export default function DocumentsPage() {
                     </select>
                 </div>
 
-                {/* Date Filter & View Toggle */}
                 <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
                     <div className="flex flex-wrap gap-2 items-center">
                         <div className="flex items-center gap-2">
@@ -1156,7 +1101,6 @@ export default function DocumentsPage() {
                         )}
                     </div>
 
-                    {/* View Toggle */}
                     <div className="flex bg-slate-100 rounded-lg p-1">
                         <button
                             onClick={() => setViewMode('grid')}
@@ -1176,7 +1120,6 @@ export default function DocumentsPage() {
                 </div>
             </div >
 
-            {/* Breadcrumbs */}
             {
                 activeTab === 'my' && (
                     <div className="flex items-center gap-2 mb-4 text-sm text-slate-600 overflow-x-auto pb-2">
@@ -1208,12 +1151,10 @@ export default function DocumentsPage() {
                 )
             }
 
-            {/* Documents Grid */}
             {
                 loading ? (
                     <div className="text-center py-12 text-slate-500">Loading...</div>
                 ) : activeTab === 'trash' ? (
-                    /* Trash View */
                     trashDocuments.length === 0 ? (
                         <div className="text-center py-12">
                             <Trash className="w-12 h-12 mx-auto text-slate-300 mb-3" />
@@ -1236,16 +1177,6 @@ export default function DocumentsPage() {
                                 <tbody>
                                     {trashDocuments.map(doc => (
                                         <tr key={doc.id} className={`border-b border-slate-100 hover:bg-slate-50 group ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}>
-                                            {activeTab === 'my' && (
-                                                <td className="p-3">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedDocs.has(doc.id)}
-                                                        onChange={() => toggleDocSelection(doc.id)}
-                                                        className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                                                    />
-                                                </td>
-                                            )}
                                             <td className="p-3">
                                                 <div className="flex items-center gap-3">
                                                     <span className="text-xl opacity-50">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
@@ -1295,7 +1226,6 @@ export default function DocumentsPage() {
                     </div>
                 ) : viewMode === 'grid' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {/* Folders (Grid) */}
                         {activeTab === 'my' && folders.map(folder => (
                             <div
                                 key={folder.id}
@@ -1316,7 +1246,6 @@ export default function DocumentsPage() {
                                                 {folder.documentCount || 0} files • {folder.subfolderCount || 0} folders
                                                 {folder.totalSizeFormatted && folder.totalSizeFormatted !== '-' && ` • ${folder.totalSizeFormatted}`}
                                             </p>
-                                            {/* Share info count */}
                                             {folder.shareInfo && folder.shareInfo.length > 0 && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); setShareInfoModal(folder); }}
@@ -1329,7 +1258,6 @@ export default function DocumentsPage() {
                                         </div>
                                     </div>
                                 </div>
-                                {/* Folder Actions */}
                                 <div className="flex gap-1 mt-3 pt-3 border-t border-slate-100">
                                     <button
                                         onClick={(e) => { e.stopPropagation(); handlePreviewFolder(folder); }}
@@ -1392,7 +1320,6 @@ export default function DocumentsPage() {
                                         <p className="text-sm text-slate-600 mt-3 line-clamp-2">{doc.description}</p>
                                     )}
 
-                                    {/* Share info for my documents */}
                                     {activeTab === 'my' && doc.shareCount > 0 && (
                                         <div className="mt-3 p-2 bg-emerald-50 rounded-lg text-xs">
                                             <div className="flex items-center gap-1 text-emerald-700 font-medium">
@@ -1412,7 +1339,6 @@ export default function DocumentsPage() {
                                         </div>
                                     )}
 
-                                    {/* Shared info for shared tab */}
                                     {shareInfo && (
                                         <div className="mt-3 p-2 bg-blue-50 rounded-lg text-xs text-blue-700">
                                             <div className="flex items-center gap-1">
@@ -1430,9 +1356,8 @@ export default function DocumentsPage() {
                                         {formatDate(shareInfo ? shareInfo.sharedAt : doc.createdAt)}
                                     </div>
 
-                                    {/* Actions */}
                                     <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
-                                        <button title="View" onClick={() => setViewingDoc(doc)} className="btn btn-secondary text-xs  py-1.5">
+                                        <button title="View" onClick={() => setViewingDoc(shareInfo ? { ...doc, sharePermission: shareInfo.permission } : doc)} className="btn btn-secondary text-xs py-1.5">
                                             <Eye className="w-4 h-4" />
                                         </button>
                                         {activeTab === 'my' && canUpload && (
@@ -1446,9 +1371,6 @@ export default function DocumentsPage() {
                                                 <button onClick={() => handleShare(doc)} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded">
                                                     <Share2 className="w-4 h-4" />
                                                 </button>
-                                                <button onClick={() => handleShare(doc)} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded">
-                                                    <Share2 className="w-4 h-4" />
-                                                </button>
                                                 <button onClick={() => setDeleteDialog({ open: true, doc })} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded">
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
@@ -1457,12 +1379,10 @@ export default function DocumentsPage() {
                                                         <Wand2 className="w-4 h-4" />
                                                     </button>
                                                 )}
+                                                <button onClick={() => handleOpenAnalytics(doc)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Analytics">
+                                                    <BarChart2 className="w-4 h-4" />
+                                                </button>
                                             </>
-                                        )}
-                                        {activeTab === 'shared' && (
-                                            <a title="Download" href={doc.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary text-xs  py-1.5">
-                                                <Download className="w-4 h-4" />
-                                            </a>
                                         )}
                                     </div>
                                 </div>
@@ -1470,7 +1390,6 @@ export default function DocumentsPage() {
                         })}
                     </div>
                 ) : (
-                    /* List View */
                     <div className="card overflow-hidden">
                         <table className="w-full">
                             <thead className="bg-slate-50 border-b border-slate-200">
@@ -1521,7 +1440,6 @@ export default function DocumentsPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {/* Folders (List) */}
                                 {activeTab === 'my' && folders.map(folder => (
                                     <tr key={folder.id}
                                         className={`border-b border-slate-100 hover:bg-slate-50 cursor-pointer group ${selectedFolders.has(folder.id) ? 'bg-primary-50' : ''}`}
@@ -1656,7 +1574,7 @@ export default function DocumentsPage() {
                                             <td className="p-3 text-sm text-slate-500 hidden lg:table-cell">{formatDate(shareInfo ? shareInfo.sharedAt : doc.createdAt)}</td>
                                             <td className="p-3">
                                                 <div className="flex gap-1">
-                                                    <button onClick={() => setViewingDoc(doc)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded" title="View">
+                                                    <button onClick={() => setViewingDoc(shareInfo ? { ...doc, sharePermission: shareInfo.permission } : doc)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded" title="View">
                                                         <Eye className="w-4 h-4" />
                                                     </button>
                                                     {activeTab === 'my' && canUpload && (
@@ -1678,9 +1596,12 @@ export default function DocumentsPage() {
                                                                     <Wand2 className="w-4 h-4" />
                                                                 </button>
                                                             )}
+                                                            <button onClick={() => handleOpenAnalytics(doc)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Analytics">
+                                                                <BarChart2 className="w-4 h-4" />
+                                                            </button>
                                                         </>
                                                     )}
-                                                    {activeTab === 'shared' && (
+                                                    {activeTab === 'shared' && shareInfo?.permission !== 'view' && (
                                                         <a href={doc.url} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded" title="Download">
                                                             <Download className="w-4 h-4" />
                                                         </a>
@@ -1696,614 +1617,93 @@ export default function DocumentsPage() {
                 )
             }
 
-            {/* Upload Modal */}
-            {
-                showUpload && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-2xl max-w-md w-full">
-                            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                                <h3 className="text-xl font-semibold">Upload {uploadMode === 'folder' ? 'Folder' : 'Document'}</h3>
-                                <button onClick={() => { setShowUpload(false); setUploadMode('file'); setUploadFiles([]); setUploadFile(null); }} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-                            </div>
-                            <div className="p-6 space-y-4">
-                                {/* Mode Toggle */}
-                                <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
-                                    <button
-                                        onClick={() => { setUploadMode('file'); setUploadFiles([]); }}
-                                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${uploadMode === 'file' ? 'bg-white shadow text-primary-600' : 'text-slate-600 hover:text-slate-900'}`}
-                                    >
-                                        <FileText className="w-4 h-4 inline mr-1" /> File
-                                    </button>
-                                    <button
-                                        onClick={() => { setUploadMode('folder'); setUploadFile(null); }}
-                                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${uploadMode === 'folder' ? 'bg-white shadow text-primary-600' : 'text-slate-600 hover:text-slate-900'}`}
-                                    >
-                                        <Folder className="w-4 h-4 inline mr-1" /> Folder
-                                    </button>
-                                </div>
-
-                                {/* File/Folder Drop Zone */}
-                                {uploadMode === 'file' ? (
-                                    <div
-                                        className={`border-2 border-dashed rounded-xl p-6 text-center ${uploadFile ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300'}`}
-                                        onDragOver={(e) => e.preventDefault()}
-                                        onDrop={(e) => { e.preventDefault(); handleFileSelect({ target: { files: e.dataTransfer.files } }); }}
-                                    >
-                                        {uploadFile ? (
-                                            <div className="flex items-center gap-3">
-                                                <span className="text-3xl">{FILE_ICONS[uploadFile.name.split('.').pop()] || FILE_ICONS.file}</span>
-                                                <div className="text-left flex-1">
-                                                    <p className="font-medium truncate">{uploadFile.name}</p>
-                                                    <p className="text-sm text-slate-500">{(uploadFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                                                </div>
-                                                <button onClick={() => setUploadFile(null)} className="text-red-500"><X className="w-5 h-5" /></button>
-                                            </div>
-                                        ) : (
-                                            <label className="cursor-pointer">
-                                                <Upload className="w-10 h-10 mx-auto text-slate-400 mb-2" />
-                                                <p className="text-slate-600">Drag & drop or click to select</p>
-                                                <p className="text-xs text-slate-400 mt-1">PDF, DOC, XLS, CSV, TXT, Images • Max 100MB</p>
-                                                <input type="file" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.gif,.webp" onChange={handleFileSelect} />
-                                            </label>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div
-                                        className={`border-2 border-dashed rounded-xl p-6 text-center ${uploadFiles.length > 0 ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300'}`}
-                                    >
-                                        {uploadFiles.length > 0 ? (
-                                            <div className="flex items-center gap-3">
-                                                <Folder className="w-10 h-10 text-yellow-500 fill-yellow-100" />
-                                                <div className="text-left flex-1">
-                                                    <p className="font-medium truncate">{(uploadFiles[0].webkitRelativePath || '').split('/')[0] || 'Folder'}</p>
-                                                    <p className="text-sm text-slate-500">{uploadFiles.length} files</p>
-                                                </div>
-                                                <button onClick={() => setUploadFiles([])} className="text-red-500"><X className="w-5 h-5" /></button>
-                                            </div>
-                                        ) : (
-                                            <label className="cursor-pointer">
-                                                <FolderPlus className="w-10 h-10 mx-auto text-slate-400 mb-2" />
-                                                <p className="text-slate-600">Click to select a folder</p>
-                                                <p className="text-xs text-slate-400 mt-1">All files in the folder will be uploaded</p>
-                                                <input
-                                                    type="file"
-                                                    className="hidden"
-                                                    webkitdirectory=""
-                                                    directory=""
-                                                    multiple
-                                                    onChange={handleFolderSelect}
-                                                />
-                                            </label>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Form fields - only show name for file mode */}
-                                {uploadMode === 'file' && (
-                                    <div>
-                                        <label className="label">Name</label>
-                                        <input type="text" value={uploadData.name} onChange={(e) => setUploadData({ ...uploadData, name: e.target.value })} className="input" placeholder="Document name" />
-                                    </div>
-                                )}
-                                {uploadMode === 'file' && (
-                                    <div>
-                                        <label className="label">Description</label>
-                                        <textarea value={uploadData.description} onChange={(e) => setUploadData({ ...uploadData, description: e.target.value })} className="input" rows={2} placeholder="Optional description" />
-                                    </div>
-                                )}
-                                <div>
-                                    <label className="label">Category</label>
-                                    <select value={uploadData.category} onChange={(e) => setUploadData({ ...uploadData, category: e.target.value })} className="input">
-                                        <option value="">Select category</option>
-                                        {CATEGORIES.slice(1).map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                                    </select>
-                                </div>
-                                <label className="flex items-center gap-2">
-                                    <input type="checkbox" checked={uploadData.isPublic} onChange={(e) => setUploadData({ ...uploadData, isPublic: e.target.checked })} className="rounded" />
-                                    <span className="text-sm text-slate-700">Make publicly shareable</span>
-                                </label>
-
-                                <div className="flex gap-3 pt-2">
-                                    <button onClick={() => { setShowUpload(false); setUploadMode('file'); setUploadFiles([]); setUploadFile(null); }} disabled={uploading} className="btn btn-secondary flex-1">Cancel</button>
-                                    <button
-                                        onClick={handleUpload}
-                                        disabled={uploading || (uploadMode === 'file' ? !uploadFile : uploadFiles.length === 0)}
-                                        className="btn btn-primary flex-1 relative overflow-hidden"
-                                    >
-                                        {uploading ? (
-                                            <div className="flex items-center justify-center gap-2">
-                                                {/* Circular Progress */}
-                                                <div className="relative w-5 h-5">
-                                                    <svg className="w-5 h-5 transform -rotate-90" viewBox="0 0 20 20">
-                                                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-20" />
-                                                        <circle
-                                                            cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2"
-                                                            strokeDasharray={`${uploadProgress * 0.5} 50`}
-                                                            className="transition-all duration-300"
-                                                        />
-                                                    </svg>
-                                                </div>
-                                                <span>{uploadProgress}%</span>
-                                                {getUploadTimeRemaining() && (
-                                                    <span className="text-xs opacity-75">• {getUploadTimeRemaining()}</span>
-                                                )}
-                                            </div>
-                                        ) : 'Upload'}
-                                    </button>
-                                </div>
-
-                                {/* Progress Bar */}
-                                {uploading && (
-                                    <div className="mt-2">
-                                        <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                                            <div
-                                                className="h-full bg-primary-600 transition-all duration-300 ease-out"
-                                                style={{ width: `${uploadProgress}%` }}
-                                            />
-                                        </div>
-                                        <p className="text-xs text-slate-500 mt-1 text-center">
-                                            {uploadMode === 'folder' && uploadCurrentFile ? `Uploading: ${uploadCurrentFile}` : 'Uploading...'} {uploadProgress}% {getUploadTimeRemaining()}
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
+            {showUpload && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full">
+                        <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                            <h3 className="text-xl font-semibold">Upload {uploadMode === 'folder' ? 'Folder' : 'Document'}</h3>
+                            <button onClick={() => { setShowUpload(false); setUploadMode('file'); setUploadFiles([]); setUploadFile(null); }} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
                         </div>
-                    </div>
-                )
-            }
+                        <div className="p-6 space-y-4">
+                            <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
+                                <button
+                                    onClick={() => { setUploadMode('file'); setUploadFiles([]); }}
+                                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${uploadMode === 'file' ? 'bg-white shadow text-primary-600' : 'text-slate-600 hover:text-slate-900'}`}
+                                >
+                                    <FileText className="w-4 h-4 inline mr-1" /> File
+                                </button>
+                                <button
+                                    onClick={() => { setUploadMode('folder'); setUploadFile(null); }}
+                                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${uploadMode === 'folder' ? 'bg-white shadow text-primary-600' : 'text-slate-600 hover:text-slate-900'}`}
+                                >
+                                    <Folder className="w-4 h-4 inline mr-1" /> Folder
+                                </button>
+                            </div>
 
-            {/* View/Preview Modal */}
-            {
-                viewingDoc && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
-                            <div className="p-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
-                                <div>
-                                    <h3 className="text-lg font-semibold">{viewingDoc.name}</h3>
-                                    <p className="text-sm text-slate-500">{viewingDoc.fileType.toUpperCase()} • {viewingDoc.fileSizeFormatted}</p>
+                            {uploadMode === 'file' ? (
+                                <div
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center ${uploadFile ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300'}`}
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onDrop={(e) => { e.preventDefault(); handleFileSelect({ target: { files: e.dataTransfer.files } }); }}
+                                >
+                                    {uploadFile ? (
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-3xl">{FILE_ICONS[uploadFile.name.split('.').pop()] || FILE_ICONS.file}</span>
+                                            <div className="text-left flex-1">
+                                                <p className="font-medium truncate">{uploadFile.name}</p>
+                                                <p className="text-sm text-slate-500">{(uploadFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                                            </div>
+                                            <button onClick={() => setUploadFile(null)} className="text-red-500"><X className="w-5 h-5" /></button>
+                                        </div>
+                                    ) : (
+                                        <label className="cursor-pointer">
+                                            <Upload className="w-10 h-10 mx-auto text-slate-400 mb-2" />
+                                            <p className="text-slate-600">Drag & drop or click to select</p>
+                                            <p className="text-xs text-slate-400 mt-1">PDF, DOC, XLS, CSV, TXT, Images • Max 100MB</p>
+                                            <input type="file" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.gif,.webp" onChange={handleFileSelect} />
+                                        </label>
+                                    )}
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <a title="Download" href={viewingDoc.url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary text-sm">
-                                        <Download className="w-5 h-5" />
-                                    </a>
-                                    <button onClick={() => setViewingDoc(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-                                </div>
-                            </div>
-                            <div className="flex-1 overflow-auto bg-slate-100 p-4">
-                                {['docx', 'xlsx', 'xls', 'csv'].includes(viewingDoc.fileType) ? (
-                                    <FileViewer url={viewingDoc.url} fileType={viewingDoc.fileType} name={viewingDoc.name} />
-                                ) : ['pdf', 'doc'].includes(viewingDoc.fileType) ? (
-                                    <iframe
-                                        src={`https://docs.google.com/viewer?url=${encodeURIComponent(viewingDoc.url)}&embedded=true`}
-                                        className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
-                                        title="Document Preview"
-                                    />
-                                ) : ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(viewingDoc.fileType) ? (
-                                    <div className="flex items-center justify-center h-full min-h-[400px] bg-white rounded-lg border border-slate-200">
-                                        <img
-                                            src={viewingDoc.url}
-                                            alt={viewingDoc.name}
-                                            className="max-w-full max-h-[500px] object-contain"
-                                        />
-                                    </div>
-                                ) : viewingDoc.fileType === 'txt' ? (
-                                    <iframe
-                                        src={viewingDoc.url}
-                                        className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
-                                        title="Text Preview"
-                                    />
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-slate-500">
-                                        <span className="text-6xl mb-4">{FILE_ICONS[viewingDoc.fileType] || FILE_ICONS.file}</span>
-                                        <p className="mb-4">Preview not available for {viewingDoc.fileType.toUpperCase()} files</p>
-                                        <a href={viewingDoc.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
-                                            <ExternalLink className="w-4 h-4" /> Open in New Tab
-                                        </a>
-                                    </div>
-                                )}
-                            </div>
-                            {viewingDoc.description && (
-                                <div className="p-4 border-t border-slate-200 bg-slate-50 flex-shrink-0">
-                                    <p className="text-sm text-slate-600">{viewingDoc.description}</p>
+                            ) : (
+                                <div
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center ${uploadFiles.length > 0 ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300'}`}
+                                >
+                                    {uploadFiles.length > 0 ? (
+                                        <div className="flex items-center gap-3">
+                                            <Folder className="w-10 h-10 text-yellow-500 fill-yellow-100" />
+                                            <div className="text-left flex-1">
+                                                <p className="font-medium truncate">{(uploadFiles[0].webkitRelativePath || '').split('/')[0] || 'Folder'}</p>
+                                                <p className="text-sm text-slate-500">{uploadFiles.length} files</p>
+                                            </div>
+                                            <button onClick={() => setUploadFiles([])} className="text-red-500"><X className="w-5 h-5" /></button>
+                                        </div>
+                                    ) : (
+                                        <label className="cursor-pointer">
+                                            <FolderPlus className="w-10 h-10 mx-auto text-slate-400 mb-2" />
+                                            <p className="text-slate-600">Click to select a folder</p>
+                                            <p className="text-xs text-slate-400 mt-1">All files in the folder will be uploaded</p>
+                                            <input
+                                                type="file"
+                                                className="hidden"
+                                                webkitdirectory=""
+                                                directory=""
+                                                multiple
+                                                onChange={handleFolderSelect}
+                                            />
+                                        </label>
+                                    )}
                                 </div>
                             )}
-                        </div>
-                    </div>
-                )
-            }
 
-            {/* Edit Modal */}
-            {
-                editingDoc && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-2xl max-w-md w-full">
-                            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                                <h3 className="text-xl font-semibold">Edit Document</h3>
-                                <button onClick={() => setEditingDoc(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-                            </div>
-                            <div className="p-6 space-y-4">
+                            {uploadMode === 'file' && (
                                 <div>
                                     <label className="label">Name</label>
-                                    <input type="text" value={editData.name} onChange={(e) => setEditData({ ...editData, name: e.target.value })} className="input" />
+                                    <input type="text" value={uploadData.name} onChange={(e) => setUploadData({ ...uploadData, name: e.target.value })} className="input" placeholder="Document name" />
                                 </div>
+                            )}
+                            {uploadMode === 'file' && (
                                 <div>
                                     <label className="label">Description</label>
-                                    <textarea value={editData.description} onChange={(e) => setEditData({ ...editData, description: e.target.value })} className="input" rows={3} />
-                                </div>
-                                <div>
-                                    <label className="label">Category</label>
-                                    <select value={editData.category} onChange={(e) => setEditData({ ...editData, category: e.target.value })} className="input">
-                                        <option value="">No category</option>
-                                        {CATEGORIES.slice(1).map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                                    </select>
-                                </div>
-
-                                {/* File replacement */}
-                                <div>
-                                    <label className="label">Replace File (optional)</label>
-                                    <div className="border-2 border-dashed border-slate-200 rounded-lg p-3 text-center">
-                                        {editFile ? (
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-sm text-slate-700">{editFile.name}</span>
-                                                <button onClick={() => setEditFile(null)} className="text-red-500 hover:text-red-700">
-                                                    <X className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <label className="cursor-pointer">
-                                                <input
-                                                    type="file"
-                                                    className="hidden"
-                                                    onChange={(e) => setEditFile(e.target.files[0])}
-                                                />
-                                                <div className="text-slate-500 text-sm">
-                                                    <Upload className="w-5 h-5 mx-auto mb-1" />
-                                                    Click to select new file
-                                                </div>
-                                            </label>
-                                        )}
-                                    </div>
-                                    <p className="text-xs text-slate-400 mt-1">Current: {editingDoc?.fileName}</p>
-                                </div>
-
-                                <label className="flex items-center gap-2">
-                                    <input type="checkbox" checked={editData.isPublic} onChange={(e) => setEditData({ ...editData, isPublic: e.target.checked })} className="rounded" />
-                                    <span className="text-sm text-slate-700">Make publicly shareable</span>
-                                </label>
-                                <div className="flex gap-3 pt-2">
-                                    <button onClick={() => setEditingDoc(null)} className="btn btn-secondary flex-1">Cancel</button>
-                                    <button onClick={handleSaveEdit} className="btn btn-primary flex-1">{editFile ? 'Replace & Save' : 'Save Changes'}</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* Share Modal */}
-            {
-                (sharingDoc || sharingFolder) && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col">
-                            <div className="p-6 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
-                                <h3 className="text-xl font-semibold">Share {sharingFolder ? 'Folder' : 'Document'}</h3>
-                                <button onClick={() => { setSharingDoc(null); setSharingFolder(null); }} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-                            </div>
-
-                            {/* Share Mode Tabs - Only show link tab for documents */}
-                            <div className="flex border-b border-slate-200 px-6">
-                                {sharingDoc && (
-                                    <button
-                                        onClick={() => setShareMode('link')}
-                                        className={`py-3 px-4 text-sm font-medium border-b-2 transition ${shareMode === 'link' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500'}`}
-                                    >
-                                        <QrCode className="w-4 h-4 inline mr-2" />Public Link
-                                    </button>
-                                )}
-                                <button
-                                    onClick={() => { setShareMode('target'); setShareTargetType(''); setShareSearch(''); }}
-                                    className={`py-3 px-4 text-sm font-medium border-b-2 transition ${shareMode === 'target' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500'}`}
-                                >
-                                    <Users className="w-4 h-4 inline mr-2" />Share with...
-                                </button>
-                            </div>
-
-                            <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                                {shareMode === 'link' && sharingDoc ? (
-                                    <>
-                                        {!sharingDoc?.isPublic ? (
-                                            <div className="text-center py-4 text-amber-600 bg-amber-50 rounded-lg">
-                                                <p className="font-medium">Document is not public</p>
-                                                <p className="text-sm mt-1">Enable "publicly shareable" in edit to share via link</p>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                {qrCodeUrl && (
-                                                    <div className="text-center">
-                                                        <img src={qrCodeUrl} alt="QR Code" className="mx-auto rounded-lg" />
-                                                    </div>
-                                                )}
-                                                <div className="flex gap-2">
-                                                    <input
-                                                        type="text"
-                                                        value={`${window.location.origin}/view-document/${sharingDoc?.id}`}
-                                                        readOnly
-                                                        className="input flex-1 text-sm"
-                                                    />
-                                                    <button title="Direct Download Link" onClick={copyShareLink} className="btn btn-primary">
-                                                        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                                                    </button>
-                                                </div>
-                                                <a
-                                                    href={sharingDoc?.url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="btn btn-secondary w-full"
-                                                >
-                                                    <Download className="w-5 h-5" />
-                                                </a>
-                                            </>
-                                        )}
-                                    </>
-                                ) : (
-                                    <>
-                                        {/* Step 1: Select Type */}
-                                        {!shareTargetType ? (
-                                            <div className="space-y-3">
-                                                <p className="text-sm text-slate-500">Select who you want to share with:</p>
-                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                                    <button
-                                                        onClick={() => setShareTargetType('class')}
-                                                        className="p-4 border-2 border-slate-200 rounded-xl hover:border-primary-400 hover:bg-primary-50 transition text-center"
-                                                    >
-                                                        <UsersRound className="w-8 h-8 mx-auto text-primary-600 mb-2" />
-                                                        <span className="text-sm font-medium">Classes</span>
-                                                        <p className="text-xs text-slate-500 mt-1">{availableClasses.length} available</p>
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setShareTargetType('group')}
-                                                        className="p-4 border-2 border-slate-200 rounded-xl hover:border-primary-400 hover:bg-primary-50 transition text-center"
-                                                    >
-                                                        <Users className="w-8 h-8 mx-auto text-emerald-600 mb-2" />
-                                                        <span className="text-sm font-medium">Groups</span>
-                                                        <p className="text-xs text-slate-500 mt-1">{availableGroups.length} available</p>
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setShareTargetType('student')}
-                                                        className="p-4 border-2 border-slate-200 rounded-xl hover:border-primary-400 hover:bg-primary-50 transition text-center"
-                                                    >
-                                                        <GraduationCap className="w-8 h-8 mx-auto text-blue-600 mb-2" />
-                                                        <span className="text-sm font-medium">Students</span>
-                                                        <p className="text-xs text-slate-500 mt-1">{availableStudents.length} available</p>
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setShareTargetType('instructor')}
-                                                        className="p-4 border-2 border-slate-200 rounded-xl hover:border-primary-400 hover:bg-primary-50 transition text-center"
-                                                    >
-                                                        <User className="w-8 h-8 mx-auto text-amber-600 mb-2" />
-                                                        <span className="text-sm font-medium">Instructors</span>
-                                                        <p className="text-xs text-slate-500 mt-1">{availableInstructors.length} available</p>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            /* Step 2: Show list with search */
-                                            <div className="space-y-3">
-                                                <div className="flex items-center justify-between">
-                                                    <button
-                                                        onClick={() => { setShareTargetType(''); setShareSearch(''); }}
-                                                        className="text-sm text-primary-600 hover:underline flex items-center gap-1"
-                                                    >
-                                                        ← Back
-                                                    </button>
-                                                    <span className="text-sm font-medium capitalize">
-                                                        {shareTargetType === 'class' ? 'Classes' : shareTargetType === 'group' ? 'Groups' : shareTargetType === 'student' ? 'Students' : 'Instructors/Admins'}
-                                                    </span>
-                                                </div>
-
-                                                {/* Search Box */}
-                                                <div className="relative">
-                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                                    <input
-                                                        type="text"
-                                                        value={shareSearch}
-                                                        onChange={(e) => setShareSearch(e.target.value)}
-                                                        placeholder={`Search ${shareTargetType}s...`}
-                                                        className="input pl-9 w-full text-sm"
-                                                    />
-                                                </div>
-
-                                                {/* List based on type */}
-                                                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg">
-                                                    {shareTargetType === 'class' && (
-                                                        availableClasses
-                                                            .filter(cls => {
-                                                                const name = cls.name || `Grade ${cls.gradeLevel}-${cls.section}`;
-                                                                return name.toLowerCase().includes(shareSearch.toLowerCase());
-                                                            })
-                                                            .map(cls => (
-                                                                <label key={cls.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={shareTargets.some(t => t.type === 'class' && t.id === cls.id)}
-                                                                        onChange={() => toggleShareTarget('class', cls.id)}
-                                                                        className="rounded text-primary-600"
-                                                                    />
-                                                                    <span className="text-sm">{cls.name || `Grade ${cls.gradeLevel}-${cls.section}`}</span>
-                                                                </label>
-                                                            ))
-                                                    )}
-                                                    {shareTargetType === 'group' && (
-                                                        availableGroups.length === 0 ? (
-                                                            <div className="p-4 text-center text-slate-500 text-sm">
-                                                                No groups found. Create groups in class settings first.
-                                                            </div>
-                                                        ) : (
-                                                            availableGroups
-                                                                .filter(grp => grp.name.toLowerCase().includes(shareSearch.toLowerCase()))
-                                                                .map(grp => (
-                                                                    <label key={grp.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={shareTargets.some(t => t.type === 'group' && t.id === grp.id)}
-                                                                            onChange={() => toggleShareTarget('group', grp.id)}
-                                                                            className="rounded text-primary-600"
-                                                                        />
-                                                                        <div>
-                                                                            <span className="text-sm">{grp.name}</span>
-                                                                            <span className="text-xs text-slate-400 ml-2">({grp.className})</span>
-                                                                        </div>
-                                                                    </label>
-                                                                ))
-                                                        )
-                                                    )}
-                                                    {shareTargetType === 'instructor' && (
-                                                        availableInstructors
-                                                            .filter(usr => `${usr.firstName} ${usr.lastName}`.toLowerCase().includes(shareSearch.toLowerCase()))
-                                                            .map(usr => (
-                                                                <label key={usr.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={shareTargets.some(t => (t.type === 'instructor' || t.type === 'admin') && t.id === usr.id)}
-                                                                        onChange={() => toggleShareTarget(usr.role === 'admin' || usr.role === 'principal' ? 'admin' : 'instructor', usr.id)}
-                                                                        className="rounded text-primary-600"
-                                                                    />
-                                                                    <span className="text-sm">{usr.firstName} {usr.lastName}</span>
-                                                                    <span className="text-xs text-slate-400 capitalize">({usr.role})</span>
-                                                                </label>
-                                                            ))
-                                                    )}
-                                                    {shareTargetType === 'student' && (
-                                                        availableStudents.length === 0 ? (
-                                                            <div className="p-4 text-center text-slate-500 text-sm">
-                                                                No students found.
-                                                            </div>
-                                                        ) : (
-                                                            availableStudents
-                                                                .filter(stu => `${stu.firstName} ${stu.lastName} ${stu.email || ''} ${stu.studentId || stu.admissionNumber || ''}`.toLowerCase().includes(shareSearch.toLowerCase()))
-                                                                .map(stu => (
-                                                                    <label key={stu.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={shareTargets.some(t => t.type === 'student' && t.id === stu.id)}
-                                                                            onChange={() => toggleShareTarget('student', stu.id)}
-                                                                            className="rounded text-primary-600"
-                                                                        />
-                                                                        <div className="flex-1">
-                                                                            <span className="text-sm">{stu.firstName} {stu.lastName}</span>
-                                                                            {(stu.studentId || stu.admissionNumber) && (
-                                                                                <span className="text-xs text-slate-400 ml-2">({stu.studentId || stu.admissionNumber})</span>
-                                                                            )}
-                                                                        </div>
-                                                                    </label>
-                                                                ))
-                                                        )
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Message */}
-                                        {shareTargetType && (
-                                            <div>
-                                                <label className="label">Message (optional)</label>
-                                                <textarea
-                                                    value={shareMessage}
-                                                    onChange={(e) => setShareMessage(e.target.value)}
-                                                    placeholder="Add a note to recipients..."
-                                                    className="input w-full"
-                                                    rows={2}
-                                                />
-                                            </div>
-                                        )}
-
-                                        {/* Selected Count Summary */}
-                                        {shareTargets.length > 0 && (
-                                            <div className="bg-slate-50 rounded-lg p-3">
-                                                <p className="text-sm font-medium text-slate-700 mb-2">Selected Recipients ({shareTargets.length}):</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {/* Count by type */}
-                                                    {['class', 'group', 'student', 'instructor', 'admin'].map(type => {
-                                                        const count = shareTargets.filter(t => t.type === type).length;
-                                                        if (count === 0) return null;
-                                                        const labels = { class: 'Classes', group: 'Groups', student: 'Students', instructor: 'Instructors', admin: 'Admins' };
-                                                        const colors = { class: 'bg-primary-100 text-primary-700', group: 'bg-emerald-100 text-emerald-700', student: 'bg-blue-100 text-blue-700', instructor: 'bg-amber-100 text-amber-700', admin: 'bg-purple-100 text-purple-700' };
-                                                        return (
-                                                            <span key={type} className={`px-2 py-1 text-xs rounded-full font-medium ${colors[type]}`}>
-                                                                {count} {labels[type]}
-                                                            </span>
-                                                        );
-                                                    })}
-                                                </div>
-                                                {/* List selected names */}
-                                                <div className="mt-2 text-xs text-slate-500 max-h-20 overflow-y-auto">
-                                                    {shareTargets.map((t, i) => {
-                                                        let name = '';
-                                                        // First check shareInfo for already-shared items (has the name already)
-                                                        const existingShare = sharingDoc?.shareInfo?.find(s => s.type === t.type && s.targetId === t.id);
-                                                        if (existingShare) {
-                                                            name = existingShare.targetName;
-                                                        } else if (t.type === 'class') {
-                                                            const cls = availableClasses.find(c => c.id === t.id);
-                                                            name = cls ? (cls.name || `Grade ${cls.gradeLevel}-${cls.section}`) : t.id;
-                                                        } else if (t.type === 'group') {
-                                                            const grp = availableGroups.find(g => g.id === t.id);
-                                                            name = grp ? `${grp.name} (${grp.className})` : t.id;
-                                                        } else if (t.type === 'student') {
-                                                            const stu = availableStudents.find(s => s.id === t.id);
-                                                            name = stu ? `${stu.firstName} ${stu.lastName}` : t.id;
-                                                        } else {
-                                                            const usr = availableInstructors.find(u => u.id === t.id);
-                                                            name = usr ? `${usr.firstName} ${usr.lastName}` : t.id;
-                                                        }
-                                                        return <span key={i}>{i > 0 ? ', ' : ''}{name}</span>;
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Share Button */}
-                                        <button
-                                            onClick={handleShareSubmit}
-                                            disabled={shareTargets.length === 0 || sharingLoading}
-                                            className="btn btn-primary w-full"
-                                        >
-                                            {sharingLoading ? 'Sharing...' : `Share with ${shareTargets.length} recipient(s)`}
-                                        </button>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
-
-
-            {/* Share Info Popup Modal */}
-            {
-                shareInfoModal && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShareInfoModal(null)}>
-                        <div className="bg-white rounded-2xl max-w-md w-full max-h-[60vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-                                <h3 className="text-lg font-semibold">Shared With</h3>
-                                <button onClick={() => setShareInfoModal(null)} className="text-slate-400 hover:text-slate-600">
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-                            <div className="p-4 overflow-y-auto max-h-[calc(60vh-80px)]">
-                                <p className="text-sm text-slate-600 mb-3">"{shareInfoModal.name}" is shared with:</p>
-                                <div className="space-y-2">
-                                    {shareInfoModal.shareInfo?.map((share, i) => (
-                                        <div key={share.id || i} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg">
-                                            <span className="text-lg">
-                                                {share.type === 'class' ? '📚' : share.type === 'group' ? '👥' : '👤'}
-                                            </span>
-                                            <div className="flex-1">
-                                                <p className="text-sm font-medium text-slate-900">{share.name || share.targetName}</p>
-                                                <p className="text-xs text-slate-500 capitalize">{share.type}</p>
-                                            </div>
-                                            <button 
-                                                onClick={() => handleRemoveShare(share, shareInfoModal)}
                                                 className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
                                                 title="Revoke Access"
                                             >
@@ -2621,7 +2021,80 @@ export default function DocumentsPage() {
                         )}
                     </div>
                 </div>
-            )}
+            {/* Analytics Modal */}
+            {
+                analyticsDoc && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setAnalyticsDoc(null)}>
+                        <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-xl font-semibold">Document Analytics</h3>
+                                    <p className="text-sm text-slate-500">Analytics for: {analyticsDoc.name}</p>
+                                </div>
+                                <button onClick={() => setAnalyticsDoc(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                            </div>
+                            <div className="p-6 overflow-y-auto flex-1 bg-slate-50">
+                                {analyticsLoading ? (
+                                    <div className="text-center py-12 text-slate-500">Loading analytics...</div>
+                                ) : analyticsData ? (
+                                    <div className="space-y-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div className="bg-white p-4 rounded-xl border border-slate-200">
+                                                <p className="text-sm text-slate-500 mb-1">Total Views</p>
+                                                <p className="text-3xl font-bold text-slate-900">{analyticsData.totalViews}</p>
+                                            </div>
+                                            <div className="bg-white p-4 rounded-xl border border-slate-200">
+                                                <p className="text-sm text-slate-500 mb-1">Unique Viewers</p>
+                                                <p className="text-3xl font-bold text-slate-900">{analyticsData.uniqueViewers}</p>
+                                            </div>
+                                            <div className="bg-white p-4 rounded-xl border border-slate-200">
+                                                <p className="text-sm text-slate-500 mb-1">Avg Watch Time</p>
+                                                <p className="text-3xl font-bold text-slate-900">{Math.round(analyticsData.averageWatchTime || 0)}s</p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                                            <div className="p-4 border-b border-slate-200 font-semibold">Recent Views</div>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left text-sm">
+                                                    <thead className="bg-slate-50 text-slate-500">
+                                                        <tr>
+                                                            <th className="p-3">Viewer</th>
+                                                            <th className="p-3">Viewed At</th>
+                                                            <th className="p-3">IP Address</th>
+                                                            <th className="p-3">Device</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {analyticsData.recentViews?.length > 0 ? (
+                                                            analyticsData.recentViews.map(view => (
+                                                                <tr key={view.id} className="border-b border-slate-100 last:border-0">
+                                                                    <td className="p-3">
+                                                                        {view.user ? `${view.user.firstName} ${view.user.lastName}` : 'Anonymous'}
+                                                                    </td>
+                                                                    <td className="p-3">{formatDate(view.viewedAt)}</td>
+                                                                    <td className="p-3 font-mono text-xs">{view.ipAddress || '-'}</td>
+                                                                    <td className="p-3">{view.userAgent ? view.userAgent.split(' ')[0] : '-'}</td>
+                                                                </tr>
+                                                            ))
+                                                        ) : (
+                                                            <tr>
+                                                                <td colSpan="4" className="p-4 text-center text-slate-500">No views recorded yet</td>
+                                                            </tr>
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-12 text-slate-500">Failed to load data</div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
 
         </div>
     );

@@ -148,6 +148,7 @@ function SQLResult({ sql, result, onRerun }) {
                                             {cols.map((c, ci) => (
                                                 <td key={ci} className="px-2 py-1 border-b border-slate-100 font-mono whitespace-nowrap max-w-[200px] truncate">
                                                     {row[c] === null ? <span className="text-slate-400 italic">NULL</span>
+                                                        : typeof row[c] === 'string' && row[c].startsWith('http') ? <a href={row[c]} target="_blank" rel="noopener noreferrer" className="text-indigo-500 underline hover:text-indigo-700">Open Link</a>
                                                         : typeof row[c] === 'object' ? JSON.stringify(row[c]) : String(row[c])}
                                                 </td>
                                             ))}
