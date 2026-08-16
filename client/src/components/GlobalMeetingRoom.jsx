@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import {
     ArrowLeft, Video, VideoOff, Mic, MicOff, Phone,
@@ -203,6 +204,8 @@ export default function GlobalMeetingRoom() {
     // Leave Meeting with Countdown state
     const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
     const [leaveCountdown, setLeaveCountdown] = useState(5);
+    const [transferHostTo, setTransferHostTo] = useState('');
+    const [isTransferringHost, setIsTransferringHost] = useState(false);
     const leaveIntervalRef = useRef(null);
 
     const [isVideoPaletteMinimized, setIsVideoPaletteMinimized] = useState(false);
@@ -1673,26 +1676,12 @@ export default function GlobalMeetingRoom() {
     };
 
     const handleInitiateLeave = () => {
-        setLeaveCountdown(5);
         setShowLeaveConfirmModal(true);
-
-        if (leaveIntervalRef.current) clearInterval(leaveIntervalRef.current);
-        leaveIntervalRef.current = setInterval(() => {
-            setLeaveCountdown(prev => {
-                if (prev <= 1) {
-                    clearInterval(leaveIntervalRef.current);
-                    executeLeaveMeeting();
-                    return 0;
-                }
-                return prev - 1;
-            });
-        }, 1000);
     };
 
     const handleCancelLeave = () => {
         if (leaveIntervalRef.current) clearInterval(leaveIntervalRef.current);
         setShowLeaveConfirmModal(false);
-        setLeaveCountdown(5);
         toast('Stayed in meeting', { icon: '🛡️', duration: 1500 });
     };
 
@@ -1709,15 +1698,28 @@ export default function GlobalMeetingRoom() {
         }
 
         if (isInstructor) {
-            try {
-                await meetingAPI.completeSession(activeRoomIdRef.current, {
-                    marksObtained: 0,
-                    maxMarks: 20,
-                    examinerRemarks: 'Meeting completed'
-                }).catch(() => {});
-                socketRef.current?.emit('meeting:end-session', { roomId: activeRoomIdRef.current });
-            } catch (e) {
-                console.error('End session error:', e);
+            if (transferHostTo) {
+                // Transfer host instead of ending the meeting
+                setIsTransferringHost(true);
+                try {
+                    socketRef.current?.emit('meeting:transfer-host', { roomId: activeRoomIdRef.current, newHostSocketId: transferHostTo });
+                    toast.success('Host control transferred.');
+                } catch (e) {
+                    console.error('Transfer host error:', e);
+                }
+                setIsTransferringHost(false);
+            } else {
+                // End meeting for everyone
+                try {
+                    await meetingAPI.completeSession(activeRoomIdRef.current, {
+                        marksObtained: 0,
+                        maxMarks: 20,
+                        examinerRemarks: 'Meeting completed'
+                    }).catch(() => {});
+                    socketRef.current?.emit('meeting:end-session', { roomId: activeRoomIdRef.current });
+                } catch (e) {
+                    console.error('End session error:', e);
+                }
             }
         }
 
@@ -1886,8 +1888,7 @@ Link: ${getInviteUrl()}`;
 
 
     // ==== PiP RENDER MODE ====
-    if (showPiP) {
-        // Determine what to show in PiP
+    if (!isFullScreen && showPiP) {
         let pipStream = null;
         let pipTitle = "Meeting PiP";
         
@@ -1895,42 +1896,36 @@ Link: ${getInviteUrl()}`;
             pipStream = activeScreenStream;
             pipTitle = "Screen Share";
         } else if (pinnedSocketId) {
-            // find the stream of pinned
             if (pinnedSocketId === 'local') {
                 pipStream = localStream;
                 pipTitle = "You (Pinned)";
             } else {
-                pipStream = remoteStreams[pinnedSocketId];
-                pipTitle = participants.find(p => p.socketId === pinnedSocketId)?.name + " (Pinned)";
+                pipStream = remoteList.find(p => p.socketId === pinnedSocketId)?.stream;
+                pipTitle = remoteList.find(p => p.socketId === pinnedSocketId)?.name + " (Pinned)";
             }
         } else {
-            // active speaker or local
             const firstRemote = remoteList[0];
             pipStream = firstRemote ? firstRemote.stream : localStream;
             pipTitle = firstRemote ? firstRemote.name : "You";
         }
 
         return (
-            <div
-                style={{ right: `${pipPosition.x}px`, bottom: `${pipPosition.y}px` }}
-                className="fixed z-[99999] bg-slate-900 border-2 border-emerald-500/80 rounded-2xl shadow-2xl overflow-hidden transition-all duration-150 text-white select-none w-72 md:w-80 h-48 md:h-52 flex flex-col"
+            <motion.div 
+                drag
+                dragMomentum={false}
+                className={`fixed z-[100] ${isFloatingVideoMinimized ? 'w-48 h-28' : 'w-72 h-40'} bg-slate-900 rounded-xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col group cursor-move`}
+                style={{ bottom: 24, right: 24 }}
             >
-                {/* Header Bar */}
-                <div
-                    onMouseDown={handlePiPMouseDown}
-                    className="bg-slate-950/90 px-3 py-2 border-b border-slate-800 flex items-center justify-between cursor-move"
-                >
-                    <div className="flex items-center gap-2 min-w-0">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <p className="text-xs font-bold truncate text-white max-w-[140px]">
-                            {session?.title || 'Live Meeting'}
-                        </p>
-                    </div>
+                {/* Header */}
+                <div className="absolute top-0 left-0 right-0 p-2 bg-gradient-to-b from-black/80 to-transparent flex justify-between items-center z-20">
+                    <span className="text-[10px] font-semibold text-white bg-black/40 px-1.5 py-0.5 rounded truncate max-w-[120px]">
+                        {pipTitle}
+                    </span>
                     <div className="flex items-center gap-1">
                         <button
                             onClick={() => router.push(`/meeting/${code}`)}
-                            className="p-1 text-emerald-400 hover:text-emerald-300 rounded hover:bg-emerald-500/20 transition"
-                            title="Open Fullscreen Meeting"
+                            className="p-1 hover:bg-slate-700/80 rounded bg-black/40 text-white transition"
+                            title="Return to Full Screen"
                         >
                             <Maximize2 className="w-3.5 h-3.5" />
                         </button>
@@ -1938,7 +1933,7 @@ Link: ${getInviteUrl()}`;
                 </div>
                 
                 {/* Content View */}
-                <div className="relative w-full flex-1 bg-slate-950 flex items-center justify-center overflow-hidden">
+                <div className="relative w-full h-full bg-slate-950 flex items-center justify-center overflow-hidden">
                     {activeSpace === 'whiteboard' ? (
                         <div className="flex flex-col items-center justify-center h-full w-full bg-white text-slate-800">
                             <PenTool className="w-6 h-6 mb-2 text-indigo-500" />
@@ -1959,15 +1954,13 @@ Link: ${getInviteUrl()}`;
                             <p className="text-[11px] text-emerald-400 font-semibold">Live Session Active</p>
                         </div>
                     )}
-                </div>
 
-                {/* Bottom Controls */}
-                <div className="bg-slate-950 px-3 py-2 border-t border-slate-800 flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
+                    {/* Overlaid Controls (Show on Hover) */}
+                    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-2 z-20">
                         <button
                             onClick={toggleAudio}
-                            className={`p-2 rounded-xl text-xs font-semibold flex items-center justify-center transition ${
-                                isAudioEnabled ? 'bg-slate-800 text-emerald-400 hover:bg-slate-700' : 'bg-red-500/80 text-white'
+                            className={`p-1.5 rounded-full text-xs font-semibold flex items-center justify-center transition ${
+                                isAudioEnabled ? 'text-white hover:bg-white/20' : 'bg-red-500 text-white'
                             }`}
                             title={isAudioEnabled ? 'Mute Mic' : 'Unmute Mic'}
                         >
@@ -1976,36 +1969,24 @@ Link: ${getInviteUrl()}`;
 
                         <button
                             onClick={toggleVideo}
-                            className={`p-2 rounded-xl text-xs font-semibold flex items-center justify-center transition ${
-                                isVideoEnabled ? 'bg-slate-800 text-emerald-400 hover:bg-slate-700' : 'bg-red-500/80 text-white'
+                            className={`p-1.5 rounded-full text-xs font-semibold flex items-center justify-center transition ${
+                                isVideoEnabled ? 'text-white hover:bg-white/20' : 'bg-red-500 text-white'
                             }`}
                             title={isVideoEnabled ? 'Turn Camera Off' : 'Turn Camera On'}
                         >
                             {isVideoEnabled ? <Video className="w-3.5 h-3.5" /> : <VideoOff className="w-3.5 h-3.5" />}
                         </button>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                        {joinState === 'disconnected' && (
-                             <button
-                                onClick={handleRejoin}
-                                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1 shadow transition"
-                            >
-                                Rejoin
-                            </button>
-                        )}
-                        {joinState === 'joined' && (
-                             <button
-                                onClick={handleDisconnect}
-                                className="p-2 bg-red-600 hover:bg-red-500 text-white rounded-xl transition shadow"
-                                title="Disconnect Meeting"
-                            >
-                                <Phone className="w-3.5 h-3.5 rotate-[135deg]" />
-                            </button>
-                        )}
+                        
+                        <button
+                            onClick={handleInitiateLeave}
+                            className="p-1.5 bg-red-600 hover:bg-red-500 text-white rounded-full transition shadow"
+                            title="Disconnect Meeting"
+                        >
+                            <Phone className="w-3 h-3 rotate-[135deg]" />
+                        </button>
                     </div>
                 </div>
-            </div>
+            </motion.div>
         );
     }
     // ==== END PiP RENDER MODE ====
@@ -2209,11 +2190,11 @@ Link: ${getInviteUrl()}`;
             {/* TOP BAR HEADER BADGE (Title + Clock + Info/Invite + Space Switcher) */}
             <div className="absolute top-4 left-4 z-20 flex items-center gap-2.5 pointer-events-auto">
                 <button
-                    onClick={handleInitiateLeave}
-                    className="bg-slate-900/90 backdrop-blur-md p-2 rounded-xl border border-slate-700/60 text-slate-400 hover:text-white hover:bg-red-500/20 transition shadow-lg"
-                    title="Leave Meeting"
+                    onClick={() => router.push('/dashboard')}
+                    className="bg-slate-900/90 backdrop-blur-md p-2 rounded-xl border border-slate-700/60 text-slate-400 hover:text-white transition shadow-lg"
+                    title="Minimize to PiP"
                 >
-                    <ArrowLeft className="w-5 h-5" />
+                    <Minimize2 className="w-5 h-5" />
                 </button>
 
                 <div className="bg-slate-900/90 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-slate-700/60 shadow-lg flex items-center gap-3">

@@ -417,6 +417,14 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Transfer host
+  socket.on('meeting:transfer-host', (data) => {
+    const { roomId, newHostSocketId } = data || {};
+    if (roomId && newHostSocketId) {
+      io.to(`meeting-${roomId}`).emit('meeting:transfer-host', { newHostSocketId });
+    }
+  });
+
   // Legacy room support
   socket.on('join-meeting', (meetingId) => {
     socket.join(`meeting-${meetingId}`);
