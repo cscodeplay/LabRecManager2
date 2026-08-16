@@ -9,8 +9,17 @@ import TimetableNotificationListener from './TimetableNotificationListener';
 import MeetingNotificationListener from './MeetingNotificationListener';
 import '@/lib/i18n'; // Initialize i18n
 import { ConfirmProvider } from './ConfirmDialog';
-import { GlobalMeetingProvider } from './GlobalMeetingContext';
+import { GlobalMeetingProvider, useGlobalMeeting } from './GlobalMeetingContext';
 import GlobalMeetingRoom from './GlobalMeetingRoom';
+import { usePathname } from 'next/navigation';
+
+function GlobalMeetingRoomWrapper() {
+    const { activeMeeting } = useGlobalMeeting();
+    const pathname = usePathname();
+    const isMeetingActive = activeMeeting || pathname?.startsWith('/meeting/');
+    if (!isMeetingActive) return null;
+    return <GlobalMeetingRoom />;
+}
 
 function LanguageInitializer() {
     const { language } = useLanguageStore();
@@ -79,7 +88,7 @@ export function Providers({ children }) {
                     <WhiteboardNotificationListener />
                     <TimetableNotificationListener />
                     <MeetingNotificationListener />
-                    <GlobalMeetingRoom />
+                    <GlobalMeetingRoomWrapper />
                 </ConfirmProvider>
             </GlobalMeetingProvider>
         </QueryClientProvider>

@@ -146,10 +146,7 @@ export default function GlobalMeetingRoom() {
         };
     }, [isDraggingPiP]);
 
-    // Don't render anything if no meeting is active and we are not on the meeting route
-    if (!activeMeeting && !pathname?.startsWith('/meeting/')) {
-        return null;
-    }
+
 
     // Session & Connection state
     const [session, setSession] = useState(null);
