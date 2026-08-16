@@ -13,10 +13,7 @@ export default function MeetingPageWrapper() {
     const { activeMeeting, setActiveMeeting } = useGlobalMeeting();
     const { user } = useAuthStore();
     
-    // Unwrap params in next.js
-    const unwrappedParams = React.use(params);
-    const code = unwrappedParams.code;
-
+    const code = params?.code;
     useEffect(() => {
         if (!user) {
             toast.error('You must be logged in to join a meeting.');
