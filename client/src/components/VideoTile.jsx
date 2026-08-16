@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useId } from 'react';
-import { User, Mic, MicOff, MonitorUp, Pin, PinOff } from 'lucide-react';
+import { User, Mic, MicOff, MonitorUp, Pin, PinOff, PictureInPicture } from 'lucide-react';
 
 // SVG Microphone component that fills the actual Microphone outline shape from bottom to top based on audio volume
 function MicOutlineFilled({ isMicOn = true, isSpeaking = false, className = "w-4 h-4" }) {
@@ -67,6 +67,42 @@ export default function VideoTile({
 }) {
     const videoRef = useRef(null);
     const [hasVideoTrack, setHasVideoTrack] = useState(false);
+    const [isPiP, setIsPiP] = useState(false);
+
+    // Handle PiP events
+    useEffect(() => {
+        const videoElement = videoRef.current;
+        if (!videoElement) return;
+
+        const handleEnterPiP = () => setIsPiP(true);
+        const handleLeavePiP = () => setIsPiP(false);
+
+        videoElement.addEventListener('enterpictureinpicture', handleEnterPiP);
+        videoElement.addEventListener('leavepictureinpicture', handleLeavePiP);
+
+        // Auto PiP when user switches tabs (requires Chrome 120+)
+        if ('autoPictureInPicture' in HTMLVideoElement.prototype) {
+            videoElement.autoPictureInPicture = isPinned || isScreenSharing;
+        }
+
+        return () => {
+            videoElement.removeEventListener('enterpictureinpicture', handleEnterPiP);
+            videoElement.removeEventListener('leavepictureinpicture', handleLeavePiP);
+        };
+    }, [isPinned, isScreenSharing]);
+
+    const togglePiP = async (e) => {
+        e.stopPropagation();
+        try {
+            if (document.pictureInPictureElement) {
+                await document.exitPictureInPicture();
+            } else if (videoRef.current && document.pictureInPictureEnabled) {
+                await videoRef.current.requestPictureInPicture();
+            }
+        } catch (error) {
+            console.error('Failed to enter/exit PiP:', error);
+        }
+    };
 
     useEffect(() => {
         const videoElement = videoRef.current;
@@ -175,6 +211,21 @@ export default function VideoTile({
                 >
                     <MicOutlineFilled isMicOn={isMicOn} isSpeaking={isSpeaking} className="w-4 h-4" />
                 </div>
+
+                {/* PiP Button */}
+                {!compact && (
+                    <button
+                        onClick={togglePiP}
+                        className={`p-1.5 rounded-lg backdrop-blur-md shadow transition ${
+                            isPiP
+                                ? 'bg-primary-500 text-white'
+                                : 'bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700'
+                        }`}
+                        title={isPiP ? 'Exit Picture-in-Picture' : 'Picture-in-Picture'}
+                    >
+                        <PictureInPicture className="w-3.5 h-3.5" />
+                    </button>
+                )}
 
                 {/* Pin Button */}
                 {onTogglePin && !compact && (

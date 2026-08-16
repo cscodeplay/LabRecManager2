@@ -90,6 +90,7 @@ const ScreenSharePresenter = React.memo(function ScreenSharePresenter({
                 autoPlay
                 playsInline
                 muted={isLocal}
+                autoPictureInPicture
                 className="w-full h-full object-contain"
             />
             <div className="absolute top-4 left-4 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-700/80 text-xs text-white flex items-center gap-2 shadow-lg z-10">

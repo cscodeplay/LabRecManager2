@@ -665,3 +665,8 @@ export const aiAPI = {
 };
 
 export default api;
+
+export const subjectsAPI = {
+    getAll: () => api.get('/subjects'),
+};
+

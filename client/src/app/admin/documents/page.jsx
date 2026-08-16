@@ -1695,15 +1695,233 @@ export default function DocumentsPage() {
                                 </div>
                             )}
 
-                            {uploadMode === 'file' && (
+                                {/* Form fields - only show name for file mode */}
+                                {uploadMode === 'file' && (
+                                    <div>
+                                        <label className="label">Name</label>
+                                        <input type="text" value={uploadData.name} onChange={(e) => setUploadData({ ...uploadData, name: e.target.value })} className="input" placeholder="Document name" />
+                                    </div>
+                                )}
+                                {uploadMode === 'file' && (
+                                    <div>
+                                        <label className="label">Description</label>
+                                        <textarea value={uploadData.description} onChange={(e) => setUploadData({ ...uploadData, description: e.target.value })} className="input" rows={2} placeholder="Optional description" />
+                                    </div>
+                                )}
                                 <div>
-                                    <label className="label">Name</label>
-                                    <input type="text" value={uploadData.name} onChange={(e) => setUploadData({ ...uploadData, name: e.target.value })} className="input" placeholder="Document name" />
+                                    <label className="label">Category</label>
+                                    <select value={uploadData.category} onChange={(e) => setUploadData({ ...uploadData, category: e.target.value })} className="input">
+                                        <option value="">Select category</option>
+                                        {CATEGORIES.slice(1).map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                    </select>
+                                </div>
+                                <label className="flex items-center gap-2">
+                                    <input type="checkbox" checked={uploadData.isPublic} onChange={(e) => setUploadData({ ...uploadData, isPublic: e.target.checked })} className="rounded" />
+                                    <span className="text-sm text-slate-700">Make publicly shareable</span>
+                                </label>
+
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={() => { setShowUpload(false); setUploadMode('file'); setUploadFiles([]); setUploadFile(null); }} disabled={uploading} className="btn btn-secondary flex-1">Cancel</button>
+                                    <button
+                                        onClick={handleUpload}
+                                        disabled={uploading || (uploadMode === 'file' ? !uploadFile : uploadFiles.length === 0)}
+                                        className="btn btn-primary flex-1 relative overflow-hidden"
+                                    >
+                                        {uploading ? (
+                                            <div className="flex items-center justify-center gap-2">
+                                                {/* Circular Progress */}
+                                                <div className="relative w-5 h-5">
+                                                    <svg className="w-5 h-5 transform -rotate-90" viewBox="0 0 20 20">
+                                                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-20" />
+                                                        <circle
+                                                            cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2"
+                                                            strokeDasharray={`${uploadProgress * 0.5} 50`}
+                                                            className="transition-all duration-300"
+                                                        />
+                                                    </svg>
+                                                </div>
+                                                <span>{uploadProgress}%</span>
+                                                {getUploadTimeRemaining() && (
+                                                    <span className="text-xs opacity-75">• {getUploadTimeRemaining()}</span>
+                                                )}
+                                            </div>
+                                        ) : 'Upload'}
+                                    </button>
+                                </div>
+
+                                {/* Progress Bar */}
+                                {uploading && (
+                                    <div className="mt-2">
+                                        <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-primary-600 transition-all duration-300 ease-out"
+                                                style={{ width: `${uploadProgress}%` }}
+                                            />
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-1 text-center">
+                                            {uploadMode === 'folder' && uploadCurrentFile ? `Uploading: ${uploadCurrentFile}` : 'Uploading...'} {uploadProgress}% {getUploadTimeRemaining()}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* View/Preview Modal */}
+            {
+                viewingDoc && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+                            <div className="p-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+                                <div>
+                                    <h3 className="text-lg font-semibold">{viewingDoc.name}</h3>
+                                    <p className="text-sm text-slate-500">{viewingDoc.fileType.toUpperCase()} • {viewingDoc.fileSizeFormatted}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <a title="Download" href={viewingDoc.url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary text-sm">
+                                        <Download className="w-5 h-5" />
+                                    </a>
+                                    <button onClick={() => setViewingDoc(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                                </div>
+                            </div>
+                            <div className="flex-1 overflow-auto bg-slate-100 p-4">
+                                {['docx', 'xlsx', 'xls', 'csv'].includes(viewingDoc.fileType) ? (
+                                    <FileViewer url={viewingDoc.url} fileType={viewingDoc.fileType} name={viewingDoc.name} />
+                                ) : ['pdf', 'doc'].includes(viewingDoc.fileType) ? (
+                                    <iframe
+                                        src={`https://docs.google.com/viewer?url=${encodeURIComponent(viewingDoc.url)}&embedded=true`}
+                                        className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
+                                        title="Document Preview"
+                                    />
+                                ) : ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(viewingDoc.fileType) ? (
+                                    <div className="flex items-center justify-center h-full min-h-[400px] bg-white rounded-lg border border-slate-200">
+                                        <img
+                                            src={viewingDoc.url}
+                                            alt={viewingDoc.name}
+                                            className="max-w-full max-h-[500px] object-contain"
+                                        />
+                                    </div>
+                                ) : viewingDoc.fileType === 'txt' ? (
+                                    <iframe
+                                        src={viewingDoc.url}
+                                        className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
+                                        title="Text Preview"
+                                    />
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-slate-500">
+                                        <span className="text-6xl mb-4">{FILE_ICONS[viewingDoc.fileType] || FILE_ICONS.file}</span>
+                                        <p className="mb-4">Preview not available for {viewingDoc.fileType.toUpperCase()} files</p>
+                                        <a href={viewingDoc.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
+                                            <ExternalLink className="w-4 h-4" /> Open in New Tab
+                                        </a>
+                                    </div>
+                                )}
+                            </div>
+                            {viewingDoc.description && (
+                                <div className="p-4 border-t border-slate-200 bg-slate-50 flex-shrink-0">
+                                    <p className="text-sm text-slate-600">{viewingDoc.description}</p>
                                 </div>
                             )}
-                            {uploadMode === 'file' && (
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Edit Modal */}
+            {
+                editingDoc && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-2xl max-w-md w-full">
+                            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                                <h3 className="text-xl font-semibold">Edit Document</h3>
+                                <button onClick={() => setEditingDoc(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                            </div>
+                            <div className="p-6 space-y-4">
+                                <div>
+                                    <label className="label">Name</label>
+                                    <input type="text" value={editData.name} onChange={(e) => setEditData({ ...editData, name: e.target.value })} className="input" />
+                                </div>
                                 <div>
                                     <label className="label">Description</label>
+                                    <textarea value={editData.description} onChange={(e) => setEditData({ ...editData, description: e.target.value })} className="input" rows={3} />
+                                </div>
+                                <div>
+                                    <label className="label">Category</label>
+                                    <select value={editData.category} onChange={(e) => setEditData({ ...editData, category: e.target.value })} className="input">
+                                        <option value="">No category</option>
+                                        {CATEGORIES.slice(1).map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                    </select>
+                                </div>
+
+                                {/* File replacement */}
+                                <div>
+                                    <label className="label">Replace File (optional)</label>
+                                    <div className="border-2 border-dashed border-slate-200 rounded-lg p-3 text-center">
+                                        {editFile ? (
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm text-slate-700">{editFile.name}</span>
+                                                <button onClick={() => setEditFile(null)} className="text-red-500 hover:text-red-700">
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <label className="cursor-pointer">
+                                                <input
+                                                    type="file"
+                                                    className="hidden"
+                                                    onChange={(e) => setEditFile(e.target.files[0])}
+                                                />
+                                                <div className="text-slate-500 text-sm">
+                                                    <Upload className="w-5 h-5 mx-auto mb-1" />
+                                                    Click to select new file
+                                                </div>
+                                            </label>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-slate-400 mt-1">Current: {editingDoc?.fileName}</p>
+                                </div>
+
+                                <label className="flex items-center gap-2">
+                                    <input type="checkbox" checked={editData.isPublic} onChange={(e) => setEditData({ ...editData, isPublic: e.target.checked })} className="rounded" />
+                                    <span className="text-sm text-slate-700">Make publicly shareable</span>
+                                </label>
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={() => setEditingDoc(null)} className="btn btn-secondary flex-1">Cancel</button>
+                                    <button onClick={handleSaveEdit} className="btn btn-primary flex-1">{editFile ? 'Replace & Save' : 'Save Changes'}</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Share Info Popup Modal */}
+            {
+                shareInfoModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShareInfoModal(null)}>
+                        <div className="bg-white rounded-2xl max-w-md w-full max-h-[60vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                                <h3 className="text-lg font-semibold">Shared With</h3>
+                                <button onClick={() => setShareInfoModal(null)} className="text-slate-400 hover:text-slate-600">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div className="p-4 overflow-y-auto max-h-[calc(60vh-80px)]">
+                                <p className="text-sm text-slate-600 mb-3">"{shareInfoModal.name}" is shared with:</p>
+                                <div className="space-y-2">
+                                    {shareInfoModal.shareInfo?.map((share, i) => (
+                                        <div key={share.id || i} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg">
+                                            <span className="text-lg">
+                                                {share.type === 'class' ? '📚' : share.type === 'group' ? '👥' : '👤'}
+                                            </span>
+                                            <div className="flex-1">
+                                                <p className="text-sm font-medium text-slate-900">{share.name || share.targetName}</p>
+                                                <p className="text-xs text-slate-500 capitalize">{share.type}</p>
+                                            </div>
+                                            <button 
+                                                onClick={() => handleRemoveShare(share, shareInfoModal)}
                                                 className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
                                                 title="Revoke Access"
                                             >
@@ -2021,6 +2239,7 @@ export default function DocumentsPage() {
                         )}
                     </div>
                 </div>
+            )}
             {/* Analytics Modal */}
             {
                 analyticsDoc && (

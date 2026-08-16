@@ -2660,6 +2660,7 @@ export default function DocumentsPage() {
                         )}
                     </div>
                 </div>
+            )}
             {/* Analytics Modal */}
             {
                 analyticsDoc && (
