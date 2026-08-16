@@ -13,7 +13,7 @@ import {
     GripVertical, Move, Search, ShieldCheck, ShieldAlert,
     MoreVertical, UserCheck, UserX, PenTool, Coffee, Loader2,
     Info, Copy, Check, Share2, Key, LayoutGrid, ScreenShare,
-    AlertTriangle, Shield, UserPlus, Link2
+    AlertTriangle, Shield, UserPlus, Link2, ExternalLink
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useGlobalMeeting } from '@/components/GlobalMeetingContext';
