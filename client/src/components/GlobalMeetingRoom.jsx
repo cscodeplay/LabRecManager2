@@ -1939,7 +1939,7 @@ Link: ${getInviteUrl()}`;
                 
                 {/* Content View */}
                 <div className="relative w-full flex-1 bg-slate-950 flex items-center justify-center overflow-hidden">
-                    {whiteboardActive ? (
+                    {activeSpace === 'whiteboard' ? (
                         <div className="flex flex-col items-center justify-center h-full w-full bg-white text-slate-800">
                             <PenTool className="w-6 h-6 mb-2 text-indigo-500" />
                             <span className="text-xs font-bold">Whiteboard Active</span>
