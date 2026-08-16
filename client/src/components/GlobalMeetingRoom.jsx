@@ -299,7 +299,7 @@ export default function GlobalMeetingRoom() {
     const analyserRef = useRef(null);
     const micAnimFrameRef = useRef(null);
     const canvasAnimRef = useRef(null);
-    const activeRoomIdRef = useRef(params.code);
+    const activeRoomIdRef = useRef(code);
 
     const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'principal' || user?.role === 'lab_assistant';
 
@@ -377,7 +377,7 @@ export default function GlobalMeetingRoom() {
             const rc = session.questionsAsked.roomCode;
             return rc.length === 10 ? `${rc.slice(0, 3)}-${rc.slice(3, 6)}-${rc.slice(6)}` : rc;
         }
-        const raw = (params.code || '').replace(/[^0-9]/g, '');
+        const raw = (code || '').replace(/[^0-9]/g, '');
         if (raw.length === 10) {
             return `${raw.slice(0, 3)}-${raw.slice(3, 6)}-${raw.slice(6)}`;
         }
@@ -385,12 +385,12 @@ export default function GlobalMeetingRoom() {
             const num = Math.abs(session.id.split('').reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) % 9000000000, 1000000000)).toString();
             return `${num.slice(0, 3)}-${num.slice(3, 6)}-${num.slice(6)}`;
         }
-        return params.code;
+        return code;
     };
 
     const getDisplayPasscode = () => {
         if (session?.questionsAsked?.passcode) return session.questionsAsked.passcode;
-        const targetStr = session?.id || params.code || 'default';
+        const targetStr = session?.id || code || 'default';
         const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
         let code = '';
         let hash = targetStr.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
@@ -425,7 +425,7 @@ export default function GlobalMeetingRoom() {
         return () => {
             cleanup();
         };
-    }, [_hasHydrated, isAuthenticated, params.code]);
+    }, [_hasHydrated, isAuthenticated, code]);
 
     const cleanup = () => {
         if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
@@ -451,10 +451,10 @@ export default function GlobalMeetingRoom() {
 
     const loadSession = async () => {
         try {
-            const res = await meetingAPI.getSession(params.code);
+            const res = await meetingAPI.getSession(code);
             const sessionData = res.data.data.session;
             setSession(sessionData);
-            activeRoomIdRef.current = sessionData.id || params.code;
+            activeRoomIdRef.current = sessionData.id || code;
 
             if (sessionData.status === 'completed') {
                 toast.error('This meeting session has already ended');
@@ -470,9 +470,9 @@ export default function GlobalMeetingRoom() {
                 setIsWaitingInRoom(true);
             }
 
-            await meetingAPI.joinSession(sessionData.id || params.code).catch(() => {});
+            await meetingAPI.joinSession(sessionData.id || code).catch(() => {});
             await initializeLocalMedia();
-            initializeSocket(sessionData.id || params.code, isHost, autoAdmit || sessionData.status === 'in_progress');
+            initializeSocket(sessionData.id || code, isHost, autoAdmit || sessionData.status === 'in_progress');
 
             if (sessionData.status === 'in_progress') {
                 setSessionStatus('active');
@@ -1297,7 +1297,7 @@ export default function GlobalMeetingRoom() {
     };
 
     const handleShareInviteInChat = () => {
-        const currentRoomCode = displayRoomCode || params.code || '';
+        const currentRoomCode = displayRoomCode || code || '';
         const roomFormatted = formatRoomCode(currentRoomCode);
         const pass = meetingPasscode || 'k8m2px9a';
         const inviteTxt = `📋 Meeting Invitation:\n• Room ID: ${roomFormatted}\n• Passcode: ${pass}\n• Join Link: ${typeof window !== 'undefined' ? window.location.origin : ''}/meeting/${currentRoomCode}`;
@@ -1348,7 +1348,7 @@ export default function GlobalMeetingRoom() {
 
     const handleSendMeetingInvite = async (targetType, targetId, targetName) => {
         try {
-            const meetingIdToUse = session?.id || params.code;
+            const meetingIdToUse = session?.id || code;
             await meetingAPI.sendInvite(meetingIdToUse, {
                 targetType,
                 targetId,
@@ -1480,7 +1480,7 @@ export default function GlobalMeetingRoom() {
 
             let frame = 0;
             const title = session?.title || session?.submission?.assignment?.title || 'Meeting Session Recording';
-            const roomCode = displayRoomCode || params.code;
+            const roomCode = displayRoomCode || code;
 
             const draw = () => {
                 frame++;
@@ -1580,7 +1580,7 @@ export default function GlobalMeetingRoom() {
                 if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
 
                 // Auto-upload immediately in background so recordings are never lost
-                const targetId = session?.id || activeRoomIdRef.current || params.code;
+                const targetId = session?.id || activeRoomIdRef.current || code;
                 try {
                     const finalDuration = Math.max(recordingTime, 1);
                     const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
@@ -1620,7 +1620,7 @@ export default function GlobalMeetingRoom() {
         const a = document.createElement('a');
         a.href = url;
         const ext = recordedBlob.type.includes('mp4') ? 'mp4' : 'webm';
-        a.download = `meeting_${session?.id || params.code}_${Date.now()}.${ext}`;
+        a.download = `meeting_${session?.id || code}_${Date.now()}.${ext}`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -1630,7 +1630,7 @@ export default function GlobalMeetingRoom() {
 
     const saveRecordingToDatabase = async () => {
         if (!recordedBlob) return;
-        const targetId = session?.id || activeRoomIdRef.current || params.code;
+        const targetId = session?.id || activeRoomIdRef.current || code;
         try {
             setIsUploadingRecording(true);
             setUploadProgress(20);
@@ -1731,9 +1731,9 @@ export default function GlobalMeetingRoom() {
     // =========================================================================
     const getInviteUrl = () => {
         if (typeof window !== 'undefined') {
-            return `${window.location.origin}/meeting/${params.code}`;
+            return `${window.location.origin}/meeting/${code}`;
         }
-        return `https://domain/meeting/${params.code}`;
+        return `https://domain/meeting/${code}`;
     };
 
     const copyToClipboard = (text, fieldName) => {
@@ -1889,8 +1889,8 @@ Link: ${getInviteUrl()}`;
         let pipStream = null;
         let pipTitle = "Meeting PiP";
         
-        if (screenShareStream) {
-            pipStream = screenShareStream;
+        if (activeScreenStream) {
+            pipStream = activeScreenStream;
             pipTitle = "Screen Share";
         } else if (pinnedSocketId) {
             // find the stream of pinned
@@ -2029,9 +2029,9 @@ Link: ${getInviteUrl()}`;
                             showCameraControls={false}
                             isInstructor={isInstructor}
                             socket={socketRef.current}
-                            sessionId={activeRoomIdRef.current || params.code}
+                            sessionId={activeRoomIdRef.current || code}
                             isSharing={true}
-                            whiteboardId={session?.id || params.code}
+                            whiteboardId={session?.id || code}
                             userName={user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'User'}
                             userIdentifier={user?.studentId || user?.admissionNumber || user?.id?.slice(0, 8) || ''}
                             permissions={{
@@ -2777,7 +2777,7 @@ Link: ${getInviteUrl()}`;
                                             <p className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Quick Meeting Details</p>
                                             <div className="flex items-center justify-between text-xs py-1 border-b border-slate-800/80">
                                                 <span className="text-slate-400">Room ID</span>
-                                                <span className="font-mono font-bold text-primary-400">{formatRoomCode(displayRoomCode || params.code)}</span>
+                                                <span className="font-mono font-bold text-primary-400">{formatRoomCode(displayRoomCode || code)}</span>
                                             </div>
                                             <div className="flex items-center justify-between text-xs py-1 border-b border-slate-800/80">
                                                 <span className="text-slate-400">Passcode</span>
