@@ -121,6 +121,8 @@ export default function GlobalMeetingRoom() {
     const [pipPosition, setPipPosition] = useState({ x: 20, y: 20 });
     const [isDraggingPiP, setIsDraggingPiP] = useState(false);
     const dragRef = useRef({ startX: 0, startY: 0, initialX: 20, initialY: 20 });
+    const pipWindowRef = useRef(null);
+    const [isOSPiPActive, setIsOSPiPActive] = useState(false);
     
     const handlePiPMouseDown = (e) => {
         setIsDraggingPiP(true);
@@ -1941,9 +1943,6 @@ Link: ${getInviteUrl()}`;
 
 
     // ==== DOCUMENT PiP (OS-LEVEL) ====
-    const pipWindowRef = useRef(null);
-    const [isOSPiPActive, setIsOSPiPActive] = useState(false);
-
     const toggleOSPiP = async () => {
         if (!('documentPictureInPicture' in window)) {
             toast.error('OS-level PiP is not supported in this browser. Try Chrome 116+.');
