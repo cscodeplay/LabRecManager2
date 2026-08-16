@@ -1766,8 +1766,9 @@ Link: ${getInviteUrl()}`;
     };
 
     if (loading) {
+        if (!isFullScreen) return null; // Don't show full screen loading if navigated away
         return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-950">
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950">
                 <div className="text-center space-y-4">
                     <div className="animate-spin w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full mx-auto" />
                     <p className="text-white font-medium text-lg">Joining meeting room...</p>
@@ -1780,8 +1781,9 @@ Link: ${getInviteUrl()}`;
     // ZOOM-STYLE WAITING ROOM SCREEN FOR STUDENTS / WAITING PARTICIPANTS
     // =========================================================================
     if (isWaitingInRoom) {
+        if (!isFullScreen) return null; // Don't show full screen waiting room if navigated away
         return (
-            <div className="min-h-screen w-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden text-white font-sans select-none">
+            <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col items-center justify-center p-4 overflow-hidden text-white font-sans select-none">
                 <div className="absolute w-96 h-96 bg-primary-600/20 rounded-full blur-3xl -top-20 -left-20 animate-pulse pointer-events-none" />
                 <div className="absolute w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl -bottom-20 -right-20 animate-pulse pointer-events-none" />
 
@@ -1903,8 +1905,9 @@ Link: ${getInviteUrl()}`;
             }
         } else {
             // active speaker or local
-            pipStream = activeSpeakerStream || localStream;
-            pipTitle = "Active Speaker";
+            const firstRemote = remoteList[0];
+            pipStream = firstRemote ? firstRemote.stream : localStream;
+            pipTitle = firstRemote ? firstRemote.name : "You";
         }
 
         return (
@@ -2008,7 +2011,7 @@ Link: ${getInviteUrl()}`;
     // ==== END PiP RENDER MODE ====
 
     return (
-        <div className="relative w-screen h-screen bg-slate-950 text-white overflow-hidden select-none font-sans flex flex-col">
+        <div className="fixed inset-0 z-[100] bg-slate-950 text-white overflow-hidden select-none font-sans flex flex-col">
             {/* ========================================================================= */}
             {/* LAYER 0 (BASE LAYER): THE THREE PRESENTATION SPACES                       */}
             {/* SPACE 1: WHITEBOARD MAXIMIZED                                             */}
