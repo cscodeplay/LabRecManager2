@@ -26,7 +26,22 @@ export function GlobalMeetingProvider({ children }) {
     const router = useRouter();
     const { user } = useAuthStore();
 
-    const [activeMeeting, setActiveMeeting] = useState(null); // { roomCode, title, hostName, participantCount }
+    const [activeMeeting, setActiveMeeting] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const stored = sessionStorage.getItem('activeMeeting');
+            return stored ? JSON.parse(stored) : null;
+        }
+        return null;
+    }); // { roomCode, title, hostName, participantCount }
+
+    useEffect(() => {
+        if (activeMeeting) {
+            sessionStorage.setItem('activeMeeting', JSON.stringify(activeMeeting));
+        } else {
+            sessionStorage.removeItem('activeMeeting');
+        }
+    }, [activeMeeting]);
+
     const [isMicOn, setIsMicOn] = useState(true);
     const [isCameraOn, setIsCameraOn] = useState(true);
     const [isPiPMinimized, setIsPiPMinimized] = useState(false);

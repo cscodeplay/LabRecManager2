@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import {
@@ -152,8 +153,9 @@ export default function GlobalMeetingRoom() {
     // Session & Connection state
     const [session, setSession] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [sessionStatus, setSessionStatus] = useState('connecting');
+    const [sessionStatus, setSessionStatus] = useState('waiting'); // waiting, active, finished
     const [elapsedTime, setElapsedTime] = useState(0);
+    const [currentTime, setCurrentTime] = useState(new Date());
     const [mySocketId, setMySocketId] = useState('');
 
     // Waiting Room state
@@ -161,8 +163,17 @@ export default function GlobalMeetingRoom() {
     const [waitingParticipants, setWaitingParticipants] = useState([]);
 
     // Local Media state
-    const [isVideoEnabled, setIsVideoEnabled] = useState(false);
-    const [isAudioEnabled, setIsAudioEnabled] = useState(false);
+    const [isVideoEnabled, setIsVideoEnabled] = useState(() => {
+        if (typeof window !== 'undefined') return localStorage.getItem('labrec_camera') === 'true';
+        return false;
+    });
+    const [isAudioEnabled, setIsAudioEnabled] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('labrec_mic');
+            return saved !== null ? saved === 'true' : true;
+        }
+        return true;
+    });
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [localStream, setLocalStream] = useState(null);
     const [isLocalSpeaking, setIsLocalSpeaking] = useState(false);
@@ -197,7 +208,8 @@ export default function GlobalMeetingRoom() {
     const [loadingInvites, setLoadingInvites] = useState(false);
     const [invitedMap, setInvitedMap] = useState({});
 
-    const [showDeviceSettings, setShowDeviceSettings] = useState(false);
+    const [showMicSettings, setShowMicSettings] = useState(false);
+    const [showCamSettings, setShowCamSettings] = useState(false);
     const [showMeetingInfoModal, setShowMeetingInfoModal] = useState(false);
     const [copiedInfoField, setCopiedInfoField] = useState('');
 
@@ -421,11 +433,14 @@ export default function GlobalMeetingRoom() {
 
         loadSession();
 
+        const clockInterval = setInterval(() => setCurrentTime(new Date()), 1000);
+
         sessionTimerRef.current = setInterval(() => {
             setElapsedTime(prev => prev + 1);
         }, 1000);
 
         return () => {
+            clearInterval(clockInterval);
             cleanup();
         };
     }, [_hasHydrated, isAuthenticated, code]);
@@ -521,35 +536,46 @@ export default function GlobalMeetingRoom() {
     // 3. LOCAL MEDIA & AUDIO MONITORING
     // ===========================================
     const initializeLocalMedia = async () => {
-        let stream = new MediaStream();
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-            });
-        } catch (error) {
-            console.warn('Combined camera/mic access note:', error.message || error);
-            try {
-                const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioStream.getAudioTracks().forEach(t => stream.addTrack(t));
-            } catch (e) {}
+        // Enumerate first to restore selection if possible
+        await enumerateDevices();
 
+        const savedCam = localStorage.getItem('labrec_cam_id');
+        const savedMic = localStorage.getItem('labrec_mic_id');
+
+        let stream = new MediaStream();
+        
+        try {
+            const audioStream = await navigator.mediaDevices.getUserMedia({ 
+                audio: savedMic ? { deviceId: { exact: savedMic }, echoCancellation: true, noiseSuppression: true, autoGainControl: true } : { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
+            });
+            audioStream.getAudioTracks().forEach(t => {
+                // Audio track starts according to isAudioEnabled state
+                t.enabled = isAudioEnabled;
+                stream.addTrack(t);
+            });
+        } catch (e) {
+            console.warn("Failed to get audio:", e);
+        }
+
+        if (isVideoEnabled) {
             try {
-                const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const videoStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: savedCam ? { deviceId: { exact: savedCam }, width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } 
+                });
                 videoStream.getVideoTracks().forEach(t => stream.addTrack(t));
-            } catch (e) {}
+            } catch (e) {
+                console.warn("Failed to get video:", e);
+                setIsVideoEnabled(false);
+                localStorage.setItem('labrec_camera', 'false');
+            }
         }
 
         localStreamRef.current = stream;
-        setLocalStream(stream);
-
-        stream.getVideoTracks().forEach(track => { track.enabled = false; });
-        stream.getAudioTracks().forEach(track => { track.enabled = false; });
+        setLocalStream(new MediaStream(stream.getTracks()));
 
         if (stream.getAudioTracks().length > 0) {
             setupAudioAnalysis(stream);
         }
-        await enumerateDevices();
     };
 
     const setupAudioAnalysis = (stream) => {
@@ -602,8 +628,20 @@ export default function GlobalMeetingRoom() {
 
             setAvailableDevices({ cameras, microphones, speakers });
 
-            if (cameras.length > 0 && !selectedCamera) setSelectedCamera(cameras[0].deviceId);
-            if (microphones.length > 0 && !selectedMicrophone) setSelectedMicrophone(microphones[0].deviceId);
+            const savedCam = localStorage.getItem('labrec_cam_id');
+            const savedMic = localStorage.getItem('labrec_mic_id');
+
+            if (savedCam && cameras.find(c => c.deviceId === savedCam)) {
+                setSelectedCamera(savedCam);
+            } else if (cameras.length > 0 && !selectedCamera) {
+                setSelectedCamera(cameras[0].deviceId);
+            }
+
+            if (savedMic && microphones.find(m => m.deviceId === savedMic)) {
+                setSelectedMicrophone(savedMic);
+            } else if (microphones.length > 0 && !selectedMicrophone) {
+                setSelectedMicrophone(microphones[0].deviceId);
+            }
         } catch (err) {
             console.error('Enumerate devices error:', err);
         }
@@ -627,6 +665,7 @@ export default function GlobalMeetingRoom() {
                 });
 
                 setIsVideoEnabled(false);
+                localStorage.setItem('labrec_camera', 'false');
                 socketRef.current?.emit('meeting:media-toggle', {
                     roomId: activeRoomIdRef.current,
                     isCameraOn: false,
@@ -658,6 +697,7 @@ export default function GlobalMeetingRoom() {
                     });
 
                     setIsVideoEnabled(true);
+                    localStorage.setItem('labrec_camera', 'true');
                     socketRef.current?.emit('meeting:media-toggle', {
                         roomId: activeRoomIdRef.current,
                         isCameraOn: true,
@@ -701,6 +741,7 @@ export default function GlobalMeetingRoom() {
                 const nextState = !audioTrack.enabled;
                 audioTrack.enabled = nextState;
                 setIsAudioEnabled(nextState);
+                localStorage.setItem('labrec_mic', nextState.toString());
 
                 socketRef.current?.emit('meeting:media-toggle', {
                     roomId: activeRoomIdRef.current,
@@ -739,6 +780,7 @@ export default function GlobalMeetingRoom() {
             });
 
             setSelectedCamera(deviceId);
+            localStorage.setItem('labrec_cam_id', deviceId);
             newTrack.enabled = isVideoEnabled;
             toast.success('Camera switched');
         } catch (error) {
@@ -772,6 +814,7 @@ export default function GlobalMeetingRoom() {
 
             setupAudioAnalysis(localStreamRef.current);
             setSelectedMicrophone(deviceId);
+            localStorage.setItem('labrec_mic_id', deviceId);
             newTrack.enabled = isAudioEnabled;
             toast.success('Microphone switched');
         } catch (error) {
@@ -1728,7 +1771,17 @@ export default function GlobalMeetingRoom() {
         router.push('/meetings');
     };
 
+    // Terminate meeting if duration is exceeded
+    useEffect(() => {
+        if (isInstructor && session?.duration && elapsedTime > session.duration * 60) {
+            toast.error(`Meeting duration (${session.duration} minutes) exceeded. Terminating...`);
+            executeLeaveMeeting();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [elapsedTime, session?.duration, isInstructor]);
+
     // =========================================================================
+    // 7. UI EVENT HANDLERS & HELPERS
     // 7. COPY INVITATION DETAILS
     // =========================================================================
     const getInviteUrl = () => {
@@ -1887,6 +1940,64 @@ Link: ${getInviteUrl()}`;
     }[controlsDock] || 'bottom-4 left-1/2 -translate-x-1/2 flex-row';
 
 
+    // ==== DOCUMENT PiP (OS-LEVEL) ====
+    const pipWindowRef = useRef(null);
+    const [isOSPiPActive, setIsOSPiPActive] = useState(false);
+
+    const toggleOSPiP = async () => {
+        if (!('documentPictureInPicture' in window)) {
+            toast.error('OS-level PiP is not supported in this browser. Try Chrome 116+.');
+            return;
+        }
+        
+        if (pipWindowRef.current) {
+            pipWindowRef.current.close();
+            return;
+        }
+
+        try {
+            const pipWindow = await window.documentPictureInPicture.requestWindow({
+                width: 320,
+                height: 240,
+            });
+
+            // Copy all styles to new window
+            [...document.styleSheets].forEach((styleSheet) => {
+                try {
+                    const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
+                    const style = document.createElement('style');
+                    style.textContent = cssRules;
+                    pipWindow.document.head.appendChild(style);
+                } catch (e) {
+                    const link = document.createElement('link');
+                    link.rel = 'stylesheet';
+                    link.type = styleSheet.type;
+                    link.media = styleSheet.media;
+                    link.href = styleSheet.href;
+                    pipWindow.document.head.appendChild(link);
+                }
+            });
+
+            const script = document.createElement('script');
+            script.src = "https://cdn.tailwindcss.com";
+            pipWindow.document.head.appendChild(script);
+
+            // Inherit global theme
+            pipWindow.document.documentElement.className = document.documentElement.className;
+
+            pipWindow.addEventListener('pagehide', () => {
+                pipWindowRef.current = null;
+                setIsOSPiPActive(false);
+            });
+
+            pipWindowRef.current = pipWindow;
+            setIsOSPiPActive(true);
+        } catch (err) {
+            console.error(err);
+            toast.error('Failed to open OS PiP');
+        }
+    };
+
     // ==== PiP RENDER MODE ====
     if (!isFullScreen && showPiP) {
         let pipStream = null;
@@ -1909,21 +2020,34 @@ Link: ${getInviteUrl()}`;
             pipTitle = firstRemote ? firstRemote.name : "You";
         }
 
-        return (
-            <motion.div 
-                drag
-                dragMomentum={false}
-                className={`fixed z-[100] ${isFloatingVideoMinimized ? 'w-48 h-28' : 'w-72 h-40'} bg-slate-900 rounded-xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col group cursor-move`}
-                style={{ bottom: 24, right: 24 }}
-            >
+        const pipContent = (
+            <>
                 {/* Header */}
                 <div className="absolute top-0 left-0 right-0 p-2 bg-gradient-to-b from-black/80 to-transparent flex justify-between items-center z-20">
-                    <span className="text-[10px] font-semibold text-white bg-black/40 px-1.5 py-0.5 rounded truncate max-w-[120px]">
-                        {pipTitle}
-                    </span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-semibold text-white bg-black/40 px-1.5 py-0.5 rounded truncate max-w-[120px]">
+                            {pipTitle}
+                        </span>
+                        <span className="text-[10px] font-mono text-emerald-400 bg-black/40 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
+                            <Clock className="w-2.5 h-2.5" />
+                            {formatTimer(elapsedTime)}
+                        </span>
+                    </div>
                     <div className="flex items-center gap-1">
+                        {!isOSPiPActive && (
+                            <button
+                                onClick={toggleOSPiP}
+                                className="p-1 hover:bg-slate-700/80 rounded bg-black/40 text-white transition mr-1"
+                                title="Pop out to OS Window"
+                            >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                            </button>
+                        )}
                         <button
-                            onClick={() => router.push(`/meeting/${code}`)}
+                            onClick={() => {
+                                if (isOSPiPActive && pipWindowRef.current) pipWindowRef.current.close();
+                                router.push(`/meeting/${code}`);
+                            }}
                             className="p-1 hover:bg-slate-700/80 rounded bg-black/40 text-white transition"
                             title="Return to Full Screen"
                         >
@@ -1978,7 +2102,7 @@ Link: ${getInviteUrl()}`;
                         </button>
                         
                         <button
-                            onClick={handleInitiateLeave}
+                            onClick={handleDisconnect}
                             className="p-1.5 bg-red-600 hover:bg-red-500 text-white rounded-full transition shadow"
                             title="Disconnect Meeting"
                         >
@@ -1986,6 +2110,26 @@ Link: ${getInviteUrl()}`;
                         </button>
                     </div>
                 </div>
+            </>
+        );
+
+        if (isOSPiPActive && pipWindowRef.current) {
+            return createPortal(
+                <div className="w-full h-full bg-slate-900 flex flex-col font-sans overflow-hidden group">
+                    {pipContent}
+                </div>,
+                pipWindowRef.current.document.body
+            );
+        }
+
+        return (
+            <motion.div 
+                drag
+                dragMomentum={false}
+                className={`fixed z-[100] ${isFloatingVideoMinimized ? 'w-48 h-28' : 'w-72 h-40'} bg-slate-900 rounded-xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col group cursor-move`}
+                style={{ bottom: 24, right: 24 }}
+            >
+                {pipContent}
             </motion.div>
         );
     }
@@ -2210,10 +2354,16 @@ Link: ${getInviteUrl()}`;
 
                     <div className="h-5 w-[1px] bg-slate-700" />
 
-                    {/* Timer */}
-                    <div className="flex items-center gap-1 font-mono text-xs text-slate-300">
-                        <Clock className="w-3.5 h-3.5 text-primary-400" />
-                        <span>{formatTimer(elapsedTime)}</span>
+                    {/* Clock & Timer */}
+                    <div className="flex flex-col md:flex-row items-center md:gap-3 text-slate-300">
+                        <div className="flex items-center gap-1 text-[11px] md:text-xs font-medium" title="Current Time">
+                            <span>{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <div className="hidden md:block h-3 w-[1px] bg-slate-700" />
+                        <div className="flex items-center gap-1 font-mono text-[11px] md:text-xs" title="Meeting Duration">
+                            <Clock className="w-3.5 h-3.5 text-primary-400" />
+                            <span>{formatTimer(elapsedTime)}</span>
+                        </div>
                     </div>
 
                     {/* Info / Invite Details Button */}
@@ -3084,82 +3234,7 @@ Link: ${getInviteUrl()}`;
             {/* ========================================================================= */}
             {/* LAYER 2 (FLOATING OVERLAY): DEVICE SETTINGS MODAL                         */}
             {/* ========================================================================= */}
-            {showDeviceSettings && (
-                <div className="absolute bottom-16 left-1/2 -translate-x-1/2 md:left-24 md:translate-x-0 w-88 bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-4 shadow-2xl z-40 pointer-events-auto">
-                    <div className="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
-                        <h3 className="text-xs font-semibold text-white flex items-center gap-2">
-                            <Settings className="w-3.5 h-3.5 text-primary-400" />
-                            Audio & Video Devices
-                        </h3>
-                        <button onClick={() => setShowDeviceSettings(false)} className="text-slate-400 hover:text-white">
-                            <XCircle className="w-4 h-4" />
-                        </button>
-                    </div>
 
-                    <div className="space-y-2 mb-3">
-                        <label className="text-[11px] font-medium text-slate-300 flex items-center justify-between">
-                            <span>Camera Source</span>
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded ${isVideoEnabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                                {isVideoEnabled ? 'ACTIVE' : 'OFF'}
-                            </span>
-                        </label>
-                        <select
-                            value={selectedCamera}
-                            onChange={(e) => switchCamera(e.target.value)}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:ring-1 focus:ring-primary-500"
-                        >
-                            {availableDevices.cameras.length === 0 ? (
-                                <option value="">Default Camera</option>
-                            ) : (
-                                availableDevices.cameras.map((c) => (
-                                    <option key={c.deviceId} value={c.deviceId}>
-                                        {c.label || `Camera (${c.deviceId.slice(0, 5)})`}
-                                    </option>
-                                ))
-                            )}
-                        </select>
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-[11px] font-medium text-slate-300 flex items-center justify-between">
-                            <span>Microphone Source</span>
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded ${isAudioEnabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                                {isAudioEnabled ? 'ACTIVE' : 'MUTED'}
-                            </span>
-                        </label>
-                        <select
-                            value={selectedMicrophone}
-                            onChange={(e) => switchMicrophone(e.target.value)}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:ring-1 focus:ring-primary-500"
-                        >
-                            {availableDevices.microphones.length === 0 ? (
-                                <option value="">Default Microphone</option>
-                            ) : (
-                                availableDevices.microphones.map((m) => (
-                                    <option key={m.deviceId} value={m.deviceId}>
-                                        {m.label || `Microphone (${m.deviceId.slice(0, 5)})`}
-                                    </option>
-                                ))
-                            )}
-                        </select>
-
-                        <div className="space-y-1 pt-1">
-                            <div className="flex items-center justify-between text-[9px] text-slate-400">
-                                <span>Input Level</span>
-                                <span>{micLevel}%</span>
-                            </div>
-                            <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                                <div
-                                    className={`h-full transition-all duration-75 ${
-                                        micLevel > 60 ? 'bg-red-500' : micLevel > 25 ? 'bg-amber-400' : 'bg-emerald-500'
-                                    }`}
-                                    style={{ width: `${micLevel}%` }}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* ========================================================================= */}
             {/* RECORDING COMPLETION / UPLOAD PROGRESS MODAL                             */}
@@ -3231,30 +3306,76 @@ Link: ${getInviteUrl()}`;
                         controlsDock === 'left' || controlsDock === 'right' ? 'flex-col' : 'flex-row'
                     }`}>
                         {/* Audio / Mic Toggle */}
-                        <button
-                            onClick={toggleAudio}
-                            className={`p-1.5 rounded-full transition flex items-center justify-center ${
-                                isAudioEnabled
-                                    ? 'bg-slate-800 hover:bg-slate-700 text-emerald-400'
-                                    : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                            }`}
-                            title={isAudioEnabled ? 'Mute Mic' : 'Unmute Mic'}
-                        >
-                            {isAudioEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-                        </button>
+                        <div className="relative group/mic flex items-center bg-slate-800 rounded-full transition-all hover:bg-slate-700">
+                            <button
+                                onClick={toggleAudio}
+                                className={`p-1.5 rounded-l-full transition flex items-center justify-center ${
+                                    isAudioEnabled ? 'text-emerald-400' : 'text-red-400'
+                                }`}
+                                title={isAudioEnabled ? 'Mute Mic' : 'Unmute Mic'}
+                            >
+                                {isAudioEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                            </button>
+                            <button
+                                onClick={() => { setShowMicSettings(!showMicSettings); setShowCamSettings(false); }}
+                                className="p-1 rounded-r-full text-slate-400 hover:text-white border-l border-slate-600/50"
+                                title="Mic Settings"
+                            >
+                                <ChevronUp className="w-3 h-3" />
+                            </button>
+                            {showMicSettings && (
+                                <div className="absolute bottom-[110%] left-0 w-48 bg-slate-800 border border-slate-700 rounded-xl p-2 shadow-xl z-50">
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Select Microphone</div>
+                                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                                        {availableDevices.microphones.map(m => (
+                                            <button
+                                                key={m.deviceId}
+                                                onClick={() => { switchMicrophone(m.deviceId); setShowMicSettings(false); }}
+                                                className={`w-full text-left px-2 py-1.5 text-xs rounded-lg transition ${selectedMicrophone === m.deviceId ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            >
+                                                {m.label || `Mic (${m.deviceId.slice(0,5)})`}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
 
                         {/* Video / Camera Toggle */}
-                        <button
-                            onClick={toggleVideo}
-                            className={`p-1.5 rounded-full transition flex items-center justify-center ${
-                                isVideoEnabled
-                                    ? 'bg-slate-800 hover:bg-slate-700 text-emerald-400'
-                                    : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                            }`}
-                            title={isVideoEnabled ? 'Stop Video' : 'Start Video'}
-                        >
-                            {isVideoEnabled ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
-                        </button>
+                        <div className="relative group/cam flex items-center bg-slate-800 rounded-full transition-all hover:bg-slate-700">
+                            <button
+                                onClick={toggleVideo}
+                                className={`p-1.5 rounded-l-full transition flex items-center justify-center ${
+                                    isVideoEnabled ? 'text-emerald-400' : 'text-red-400'
+                                }`}
+                                title={isVideoEnabled ? 'Stop Video' : 'Start Video'}
+                            >
+                                {isVideoEnabled ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+                            </button>
+                            <button
+                                onClick={() => { setShowCamSettings(!showCamSettings); setShowMicSettings(false); }}
+                                className="p-1 rounded-r-full text-slate-400 hover:text-white border-l border-slate-600/50"
+                                title="Camera Settings"
+                            >
+                                <ChevronUp className="w-3 h-3" />
+                            </button>
+                            {showCamSettings && (
+                                <div className="absolute bottom-[110%] left-0 w-48 bg-slate-800 border border-slate-700 rounded-xl p-2 shadow-xl z-50">
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Select Camera</div>
+                                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                                        {availableDevices.cameras.map(c => (
+                                            <button
+                                                key={c.deviceId}
+                                                onClick={() => { switchCamera(c.deviceId); setShowCamSettings(false); }}
+                                                className={`w-full text-left px-2 py-1.5 text-xs rounded-lg transition ${selectedCamera === c.deviceId ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            >
+                                                {c.label || `Camera (${c.deviceId.slice(0,5)})`}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
 
                         {/* Screen Share Toggle */}
                         <button
@@ -3350,16 +3471,7 @@ Link: ${getInviteUrl()}`;
                             {isFullscreen ? <Minimize2 className="w-4 h-4 text-primary-400" /> : <Maximize2 className="w-4 h-4" />}
                         </button>
 
-                        {/* Device Settings */}
-                        <button
-                            onClick={() => setShowDeviceSettings(!showDeviceSettings)}
-                            className={`p-1.5 rounded-full transition flex items-center justify-center ${
-                                showDeviceSettings ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                            }`}
-                            title="Device Settings"
-                        >
-                            <Settings className="w-4 h-4" />
-                        </button>
+
 
                         <div className={`bg-slate-700 ${controlsDock === 'left' || controlsDock === 'right' ? 'w-4 h-[1px] my-0.5' : 'h-4 w-[1px] mx-0.5'}`} />
 

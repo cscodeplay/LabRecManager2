@@ -10,16 +10,8 @@ import MeetingNotificationListener from './MeetingNotificationListener';
 import '@/lib/i18n'; // Initialize i18n
 import { ConfirmProvider } from './ConfirmDialog';
 import { GlobalMeetingProvider, useGlobalMeeting } from './GlobalMeetingContext';
-import GlobalMeetingRoom from './GlobalMeetingRoom';
-import { usePathname } from 'next/navigation';
-
-function GlobalMeetingRoomWrapper() {
-    const { activeMeeting } = useGlobalMeeting();
-    const pathname = usePathname();
-    const isMeetingActive = activeMeeting || pathname?.startsWith('/meeting/');
-    if (!isMeetingActive) return null;
-    return <GlobalMeetingRoom />;
-}
+import MeetingProvider from './MeetingProvider';
+import LiveMeetingBanner from './LiveMeetingBanner';
 
 function LanguageInitializer() {
     const { language } = useLanguageStore();
@@ -82,13 +74,14 @@ export function Providers({ children }) {
                 <ConfirmProvider>
                     <ThemeInitializer />
                     <LanguageInitializer />
+                    <LiveMeetingBanner />
                     <AppLayout>
                         {children}
                     </AppLayout>
                     <WhiteboardNotificationListener />
                     <TimetableNotificationListener />
                     <MeetingNotificationListener />
-                    <GlobalMeetingRoomWrapper />
+                    <MeetingProvider />
                 </ConfirmProvider>
             </GlobalMeetingProvider>
         </QueryClientProvider>

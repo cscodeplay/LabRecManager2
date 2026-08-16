@@ -1812,10 +1812,10 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                         <Link
                             href={`/meeting/${roomCode}`}
                             className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-semibold transition shadow-sm flex items-center gap-1.5 whitespace-nowrap"
-                            title={isInstructor ? 'Resume Meeting' : 'Rejoin'}
+                            title="Re-join Meeting"
                         >
                             <Video className="w-4 h-4" />
-                            <span>{isInstructor ? 'Resume' : 'Rejoin'}</span>
+                            <span>Re-join</span>
                         </Link>
                     )}
                 </div>
