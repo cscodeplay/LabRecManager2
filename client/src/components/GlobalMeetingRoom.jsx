@@ -392,13 +392,13 @@ export default function GlobalMeetingRoom() {
         if (session?.questionsAsked?.passcode) return session.questionsAsked.passcode;
         const targetStr = session?.id || code || 'default';
         const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
-        let code = '';
+        let passcode = '';
         let hash = targetStr.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
         for (let i = 0; i < 8; i++) {
             hash = (hash * 9301 + 49297) % 233280;
-            code += chars.charAt(Math.floor((hash / 233280) * chars.length));
+            passcode += chars.charAt(Math.floor((hash / 233280) * chars.length));
         }
-        return code;
+        return passcode;
     };
 
     const meetingPasscode = getDisplayPasscode();
