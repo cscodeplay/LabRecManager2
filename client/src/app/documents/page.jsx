@@ -2319,14 +2319,14 @@ export default function DocumentsPage() {
             {
                 shareInfoModal && (
                     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShareInfoModal(null)}>
-                        <div className="bg-white rounded-2xl max-w-md w-full max-h-[60vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                        <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                             <div className="p-4 border-b border-slate-200 flex items-center justify-between">
                                 <h3 className="text-lg font-semibold">Shared With</h3>
                                 <button onClick={() => setShareInfoModal(null)} className="text-slate-400 hover:text-slate-600">
                                     <X className="w-5 h-5" />
                                 </button>
                             </div>
-                            <div className="p-4 overflow-y-auto max-h-[calc(60vh-80px)]">
+                            <div className="p-4 overflow-y-auto flex-1 min-h-0">
                                 <p className="text-sm text-slate-600 mb-3">"{shareInfoModal.name}" is shared with:</p>
                                 <div className="space-y-2">
                                     {shareInfoModal.shareInfo?.map((share, i) => (
@@ -2365,7 +2365,7 @@ export default function DocumentsPage() {
                                         handleShare(shareInfoModal);
                                     }
                                 }} className="btn btn-primary w-full text-sm">
-                                    <Share2 className="w-5 h-5" />
+                                    <Share2 className="w-4 h-4" /> Edit Sharing
                                 </button>
                             </div>
                         </div>

@@ -321,6 +321,33 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
 }));
 
 /**
+ * @route   DELETE /api/documents/shares/:shareId
+ * @desc    Remove a share
+ * @access  Private (Admin/Principal/Owner)
+ */
+router.delete('/shares/:shareId', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
+    const share = await prisma.documentShare.findFirst({
+        where: { id: req.params.shareId },
+        include: {
+            document: { select: { schoolId: true } }
+        }
+    });
+
+    if (!share || share.document.schoolId !== req.user.schoolId) {
+        return res.status(404).json({ success: false, message: 'Share not found' });
+    }
+
+    await prisma.documentShare.delete({
+        where: { id: req.params.shareId }
+    });
+
+    res.json({
+        success: true,
+        message: 'Share removed successfully'
+    });
+}));
+
+/**
  * @route   DELETE /api/documents/:id
  * @desc    Soft delete a document (move to trash)
  * @access  Private (Admin/Principal)
@@ -764,33 +791,6 @@ router.get('/:id/shares', authenticate, asyncHandler(async (req, res) => {
 }));
 
 /**
- * @route   DELETE /api/documents/shares/:shareId
- * @desc    Remove a share
- * @access  Private (Admin/Principal/Owner)
- */
-router.delete('/shares/:shareId', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
-    const share = await prisma.documentShare.findFirst({
-        where: { id: req.params.shareId },
-        include: {
-            document: { select: { schoolId: true } }
-        }
-    });
-
-    if (!share || share.document.schoolId !== req.user.schoolId) {
-        return res.status(404).json({ success: false, message: 'Share not found' });
-    }
-
-    await prisma.documentShare.delete({
-        where: { id: req.params.shareId }
-    });
-
-    res.json({
-        success: true,
-        message: 'Share removed successfully'
-    });
-}));
-
-/**
  * @route   POST /api/documents/bulk-copy
  * @desc    Copy multiple documents to a folder (duplication)
  * @access  Private
@@ -972,7 +972,7 @@ router.post('/:id/view', authenticate, asyncHandler(async (req, res) => {
 router.get('/:id/analytics', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
     const docId = req.params.id;
 
-    const doc = await prisma.document.findUnique({
+    const doc = await prisma.document.findFirst({
         where: { id: docId, schoolId: req.user.schoolId }
     });
 
