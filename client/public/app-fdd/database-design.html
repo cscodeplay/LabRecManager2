@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ULRMS - Database Design</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            margin: 0;
+            padding: 0;
+            display: flex;
+        }
+        .sidebar {
+            width: 280px;
+            background-color: #1e293b;
+            padding: 2rem 1rem;
+            height: 100vh;
+            position: fixed;
+            overflow-y: auto;
+            border-right: 1px solid #334155;
+        }
+        .sidebar h2 {
+            font-size: 1.25rem;
+            margin-bottom: 1.5rem;
+            color: #38bdf8;
+            padding-left: 1rem;
+        }
+        .sidebar ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .sidebar li {
+            margin-bottom: 0.5rem;
+        }
+        .sidebar a {
+            color: #cbd5e1;
+            text-decoration: none;
+            display: block;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            transition: all 0.2s;
+        }
+        .sidebar a:hover {
+            background-color: #334155;
+            color: #fff;
+        }
+        .main-content {
+            flex: 1;
+            margin-left: 280px;
+            padding: 3rem 4rem;
+        }
+        header {
+            margin-bottom: 3rem;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 2rem;
+        }
+        h1 {
+            font-size: 2.5rem;
+            margin: 0 0 0.5rem 0;
+            color: #f8fafc;
+        }
+        .subtitle {
+            font-size: 1.25rem;
+            color: #94a3b8;
+            margin: 0;
+        }
+        .stats-container {
+            display: flex;
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        .stat-card {
+            background-color: #1e293b;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            border: 1px solid #334155;
+            flex: 1;
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #38bdf8;
+            margin-bottom: 0.5rem;
+        }
+        .stat-label {
+            color: #94a3b8;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .card {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 0.5rem;
+            padding: 2rem;
+            margin-bottom: 3rem;
+        }
+        .card h2 {
+            margin-top: 0;
+            color: #f8fafc;
+            font-size: 1.5rem;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 1rem;
+            margin-bottom: 1rem;
+        }
+        .card-desc {
+            color: #cbd5e1;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+        .mermaid {
+            background-color: #0f172a;
+            padding: 1.5rem;
+            border-radius: 0.375rem;
+            overflow-x: auto;
+            display: flex;
+            justify-content: center;
+        }
+        footer {
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 1px solid #334155;
+            color: #64748b;
+            text-align: center;
+            font-size: 0.875rem;
+        }
+        @media (max-width: 1024px) {
+            .sidebar {
+                width: 200px;
+            }
+            .main-content {
+                margin-left: 200px;
+                padding: 2rem;
+            }
+        }
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: static;
+                border-right: none;
+                border-bottom: 1px solid #334155;
+            }
+            .main-content {
+                margin-left: 0;
+                padding: 1.5rem;
+            }
+            .stats-container {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="sidebar">
+        <h2>Table of Contents</h2>
+        <ul>
+            <li><a href="#section-1">1. Core & Users</a></li>
+            <li><a href="#section-2">2. Academics</a></li>
+            <li><a href="#section-3">3. Assignments</a></li>
+            <li><a href="#section-4">4. Meetings</a></li>
+            <li><a href="#section-5">5. Documents</a></li>
+            <li><a href="#section-6">6. Lab Management</a></li>
+            <li><a href="#section-7">7. Fees & Finance</a></li>
+            <li><a href="#section-8">8. Timetable</a></li>
+            <li><a href="#section-9">9. Whiteboard</a></li>
+            <li><a href="#section-10">10. Tickets & Procurement</a></li>
+            <li><a href="#section-11">11. Training & Gamification</a></li>
+            <li><a href="#section-12">12. Notifications & Reports</a></li>
+        </ul>
+    </nav>
+
+    <main class="main-content">
+        <header>
+            <h1>ULRMS - Unified Lab Record Management System</h1>
+            <p class="subtitle">Functional Design Document - Database Design</p>
+            
+            <div class="stats-container">
+                <div class="stat-card">
+                    <div class="stat-value">85+</div>
+                    <div class="stat-label">Total Models</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">39</div>
+                    <div class="stat-label">Enums</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">200+</div>
+                    <div class="stat-label">Relations</div>
+                </div>
+            </div>
+        </header>
+
+        <section id="section-1" class="card">
+            <h2>1. Core & Users</h2>
+            <p class="card-desc">Foundational models for multi-tenant school architecture, user accounts, authentication, and core auditing.</p>
+            <div class="mermaid">
+erDiagram
+    School {
+        string id PK
+        string name
+        string slug
+    }
+    User {
+        string id PK
+        string email
+        string role
+        string schoolId FK
+    }
+    AcademicYear {
+        string id PK
+        string name
+        date startDate
+        date endDate
+        string schoolId FK
+    }
+    GradeScale {
+        string id PK
+        string name
+        string schoolId FK
+    }
+    UserSession {
+        string id PK
+        string token
+        string userId FK
+    }
+    DeviceTest {
+        string id PK
+        string deviceData
+        string userId FK
+    }
+    ActivityLog {
+        string id PK
+        string action
+        string userId FK
+    }
+    GradeScaleHistory {
+        string id PK
+        string changes
+        string gradeScaleId FK
+    }
+    AuditLog {
+        string id PK
+        string resource
+        string schoolId FK
+    }
+
+    School ||--o{ User : has
+    School ||--o{ AcademicYear : has
+    School ||--o{ GradeScale : has
+    User ||--o{ UserSession : has
+    User ||--o| DeviceTest : has
+    User ||--o{ ActivityLog : creates
+    GradeScale ||--o{ GradeScaleHistory : tracks
+    School ||--o{ AuditLog : logs
+            </div>
+        </section>
+
+        <section id="section-2" class="card">
+            <h2>2. Academics (Classes, Subjects, Groups)</h2>
+            <p class="card-desc">Entities managing academic structures including classes, subjects, enrollments, and student groupings.</p>
+            <div class="mermaid">
+erDiagram  
+    School {
+        string id PK
+    }
+    AcademicYear {
+        string id PK
+    }
+    Class {
+        string id PK
+        string name
+        string schoolId FK
+        string academicYearId FK
+    }
+    ClassEnrollment {
+        string id PK
+        string classId FK
+        string userId FK
+    }
+    User {
+        string id PK
+    }
+    StudentGroup {
+        string id PK
+        string name
+        string classId FK
+    }
+    GroupMember {
+        string id PK
+        string groupId FK
+        string userId FK
+    }
+    Subject {
+        string id PK
+        string name
+        string code
+        string schoolId FK
+    }
+    ClassSubject {
+        string id PK
+        string classId FK
+        string subjectId FK
+    }
+
+    School ||--o{ Class : has
+    AcademicYear ||--o{ Class : contains
+    Class ||--o{ ClassEnrollment : has
+    User ||--o{ ClassEnrollment : enrolled_in
+    Class ||--o{ StudentGroup : has
+    StudentGroup ||--o{ GroupMember : contains
+    School ||--o{ Subject : has
+    Class ||--o{ ClassSubject : teaches
+    Subject ||--o{ ClassSubject : taught_in
+            </div>
+        </section>
+
+        <section id="section-3" class="card">
+            <h2>3. Assignments & Submissions</h2>
+            <p class="card-desc">Tracking of academic assignments, student submissions, file attachments, and grading workflows.</p>
+            <div class="mermaid">
+erDiagram
+    Assignment {
+        string id PK
+        string title
+        datetime dueDate
+    }
+    AssignmentFile {
+        string id PK
+        string url
+        string assignmentId FK
+    }
+    AssignmentTarget {
+        string id PK
+        string targetId
+        string assignmentId FK
+    }
+    Submission {
+        string id PK
+        string status
+        string assignmentId FK
+    }
+    SubmissionFile {
+        string id PK
+        string url
+        string submissionId FK
+    }
+    SubmissionRevision {
+        string id PK
+        int revisionNumber
+        string submissionId FK
+    }
+    Grade {
+        string id PK
+        float score
+        string submissionId FK
+    }
+    GradeHistory {
+        string id PK
+        float oldScore
+        string gradeId FK
+    }
+    Subject {
+        string id PK
+    }
+    MeetingQuestion {
+        string id PK
+        string text
+        string subjectId FK
+    }
+    User {
+        string id PK
+    }
+    FinalLabMarks {
+        string id PK
+        float totalMarks
+        string userId FK
+    }
+
+    Assignment ||--o{ AssignmentFile : has
+    Assignment ||--o{ AssignmentTarget : targets
+    Assignment ||--o{ Submission : receives
+    Submission ||--o{ SubmissionFile : has
+    Submission ||--o{ SubmissionRevision : tracks
+    Submission ||--o| Grade : graded_by
+    Grade ||--o{ GradeHistory : tracks
+    Subject ||--o{ MeetingQuestion : has
+    User }o--o{ FinalLabMarks : earns
+            </div>
+        </section>
+
+        <section id="section-4" class="card">
+            <h2>4. Meetings & Video</h2>
+            <p class="card-desc">Models for scheduling and conducting online meetings, vivas, and video conferencing.</p>
+            <div class="mermaid">
+erDiagram
+    Meeting {
+        string id PK
+        string title
+        string type
+        string status
+        string mode
+        string meetingLink
+        string hostId FK
+    }
+    MeetingParticipant {
+        string id PK
+        string role
+        string meetingId FK
+        string userId FK
+    }
+    User {
+        string id PK
+    }
+    Submission {
+        string id PK
+    }
+    Class {
+        string id PK
+    }
+
+    Meeting ||--o{ MeetingParticipant : has
+    User ||--o{ Meeting : hosts
+    Submission ||--o{ Meeting : viva_for
+    Class ||--o{ Meeting : targets
+            </div>
+        </section>
+
+        <section id="section-5" class="card">
+            <h2>5. Documents & Sharing</h2>
+            <p class="card-desc">File management, hierarchical folder structures, document tracking, and access sharing policies.</p>
+            <div class="mermaid">
+erDiagram
+    Document {
+        string id PK
+        string name
+        string url
+        string folderId FK
+    }
+    DocumentFolder {
+        string id PK
+        string name
+        string parentId FK
+    }
+    DocumentShare {
+        string id PK
+        string permission
+        string documentId FK
+    }
+    FolderShare {
+        string id PK
+        string permission
+        string folderId FK
+    }
+    DocumentViewLog {
+        string id PK
+        datetime viewedAt
+        string documentId FK
+    }
+    Class {
+        string id PK
+    }
+    StudentGroup {
+        string id PK
+    }
+    User {
+        string id PK
+    }
+
+    DocumentFolder ||--o{ Document : contains
+    DocumentFolder ||--o{ FolderShare : shared_via
+    DocumentFolder ||--o{ DocumentFolder : parent_child
+    Document ||--o{ DocumentShare : shared_via
+    Document ||--o{ DocumentViewLog : tracked_by
+    DocumentShare }o--o| Class : targets
+    DocumentShare }o--o| StudentGroup : targets
+    DocumentShare }o--o| User : targets
+            </div>
+        </section>
+
+        <section id="section-6" class="card">
+            <h2>6. Lab Management</h2>
+            <p class="card-desc">Tracking lab equipment, materials, shift requests, inventory utilization, and maintenance logs.</p>
+            <div class="mermaid">
+erDiagram
+    Lab {
+        string id PK
+        string name
+        string location
+    }
+    LabItem {
+        string id PK
+        string name
+        string status
+        string labId FK
+    }
+    LabMaintenanceHistory {
+        string id PK
+        string details
+        string labId FK
+    }
+    LabEventHistory {
+        string id PK
+        string eventType
+        string labId FK
+    }
+    ItemMaintenanceHistory {
+        string id PK
+        string action
+        string labItemId FK
+    }
+    EquipmentShiftRequest {
+        string id PK
+        string status
+        string labItemId FK
+    }
+    EquipmentShiftHistory {
+        string id PK
+        string log
+        string requestId FK
+    }
+    lab_materials {
+        string id PK
+        string materialName
+        int quantity
+        string labId FK
+    }
+    LabMaterialUsage {
+        string id PK
+        int amountUsed
+        string materialId FK
+    }
+    LaptopIssuance {
+        string id PK
+        datetime issueDate
+        string labItemId FK
+    }
+
+    Lab ||--o{ LabItem : contains
+    Lab ||--o{ LabMaintenanceHistory : tracks
+    Lab ||--o{ LabEventHistory : logs
+    LabItem ||--o{ ItemMaintenanceHistory : tracks
+    LabItem ||--o{ EquipmentShiftRequest : requested_for
+    EquipmentShiftRequest ||--o{ EquipmentShiftHistory : results_in
+    Lab ||--o{ lab_materials : stocks
+    lab_materials ||--o{ LabMaterialUsage : consumed_by
+    LabItem ||--o{ LaptopIssuance : issued_as
+            </div>
+        </section>
+
+        <section id="section-7" class="card">
+            <h2>7. Fees & Finance</h2>
+            <p class="card-desc">Financial models handling fee categorization, structuring, student balances, and payments.</p>
+            <div class="mermaid">
+erDiagram
+    FeeCategory {
+        string id PK
+        string name
+        string description
+    }
+    FeeStructure {
+        string id PK
+        float amount
+        string categoryId FK
+    }
+    StudentFee {
+        string id PK
+        float balanceDue
+        string structureId FK
+        string studentId FK
+    }
+    FeePayment {
+        string id PK
+        float amountPaid
+        datetime paymentDate
+        string studentFeeId FK
+    }
+
+    FeeCategory ||--o{ FeeStructure : defines
+    FeeStructure ||--o{ StudentFee : generates
+    StudentFee ||--o{ FeePayment : paid_via
+            </div>
+        </section>
+
+        <section id="section-8" class="card">
+            <h2>8. Timetable & Teaching</h2>
+            <p class="card-desc">Academic scheduling, lecture planning, session delivery, attendance, and interactive polling.</p>
+            <div class="mermaid">
+erDiagram
+    Timetable {
+        string id PK
+        string name
+        string classId FK
+    }
+    TimetableSlot {
+        string id PK
+        string dayOfWeek
+        time startTime
+        time endTime
+        string timetableId FK
+    }
+    LecturePlan {
+        string id PK
+        string topic
+        string subjectId FK
+    }
+    LectureSession {
+        string id PK
+        datetime date
+        string planId FK
+    }
+    LectureAttendance {
+        string id PK
+        string status
+        string sessionId FK
+    }
+    LecturePoll {
+        string id PK
+        string question
+        string sessionId FK
+    }
+    LecturePollResponse {
+        string id PK
+        string answer
+        string pollId FK
+    }
+    LectureResource {
+        string id PK
+        string url
+        string planId FK
+    }
+    SchoolCalendar {
+        string id PK
+        string eventName
+        date eventDate
+        string schoolId FK
+    }
+    School {
+        string id PK
+    }
+
+    Timetable ||--o{ TimetableSlot : has
+    LecturePlan ||--o{ LectureSession : delivered_as
+    LectureSession ||--o{ LectureAttendance : tracks
+    LectureSession ||--o{ LecturePoll : has
+    LecturePoll ||--o{ LecturePollResponse : receives
+    LecturePlan ||--o{ LectureResource : uses
+    SchoolCalendar }o--|| School : belongs_to
+            </div>
+        </section>
+
+        <section id="section-9" class="card">
+            <h2>9. Whiteboard & Recordings</h2>
+            <p class="card-desc">Models storing real-time whiteboard collaboration states, recordings, and access rules.</p>
+            <div class="mermaid">
+erDiagram
+    WhiteboardSession {
+        string id PK
+        string title
+        datetime startedAt
+    }
+    WhiteboardParticipant {
+        string id PK
+        string role
+        string sessionId FK
+    }
+    WhiteboardRecording {
+        string id PK
+        string videoUrl
+        string sessionId FK
+    }
+    WhiteboardRecordingShare {
+        string id PK
+        string permission
+        string recordingId FK
+    }
+    WhiteboardFile {
+        string id PK
+        string url
+        string schoolId FK
+    }
+    School {
+        string id PK
+    }
+
+    WhiteboardSession ||--o{ WhiteboardParticipant : has
+    WhiteboardRecording ||--o{ WhiteboardRecordingShare : shared_via
+    School ||--o{ WhiteboardFile : has
+            </div>
+        </section>
+
+        <section id="section-10" class="card">
+            <h2>10. Tickets & Procurement</h2>
+            <p class="card-desc">Helpdesk support tickets, institutional procurement requests, vendor management, and quotations.</p>
+            <div class="mermaid">
+erDiagram
+    Ticket {
+        string id PK
+        string subject
+        string status
+    }
+    TicketComment {
+        string id PK
+        string content
+        string ticketId FK
+    }
+    ProcurementRequest {
+        string id PK
+        string title
+        string status
+    }
+    ProcurementItem {
+        string id PK
+        string itemName
+        int quantity
+        string requestId FK
+    }
+    VendorQuotation {
+        string id PK
+        float totalAmount
+        string requestId FK
+        string vendorId FK
+    }
+    QuotationItem {
+        string id PK
+        float price
+        string quotationId FK
+    }
+    ProcurementCommittee {
+        string id PK
+        string reviewNotes
+        string requestId FK
+    }
+    Vendor {
+        string id PK
+        string name
+        string contactInfo
+    }
+
+    Ticket ||--o{ TicketComment : has
+    ProcurementRequest ||--o{ ProcurementItem : contains
+    ProcurementRequest ||--o{ VendorQuotation : receives
+    VendorQuotation ||--o{ QuotationItem : contains
+    ProcurementRequest ||--o{ ProcurementCommittee : reviewed_by
+    Vendor ||--o{ VendorQuotation : submits
+            </div>
+        </section>
+
+        <section id="section-11" class="card">
+            <h2>11. Training & Gamification</h2>
+            <p class="card-desc">Self-paced learning modules, skill tracking, gamified masteries, and code execution submissions.</p>
+            <div class="mermaid">
+erDiagram
+    TrainingModule {
+        string id PK
+        string title
+        string description
+    }
+    TrainingUnit {
+        string id PK
+        string name
+        string moduleId FK
+    }
+    TrainingExercise {
+        string id PK
+        string prompt
+        string unitId FK
+    }
+    User {
+        string id PK
+    }
+    StudentTrainingProgress {
+        string id PK
+        int completionPercentage
+        string userId FK
+    }
+    StudentUnitMastery {
+        string id PK
+        boolean isMastered
+        string userId FK
+    }
+    CodingSubmission {
+        string id PK
+        string codeSnippet
+        string userId FK
+    }
+
+    TrainingModule ||--o{ TrainingUnit : has
+    TrainingUnit ||--o{ TrainingExercise : contains
+    User ||--o{ StudentTrainingProgress : tracks
+    User ||--o{ StudentUnitMastery : masters
+    User ||--o{ CodingSubmission : submits
+            </div>
+        </section>
+
+        <section id="section-12" class="card">
+            <h2>12. Notifications & Reports</h2>
+            <p class="card-desc">System alerts, automated notification templates, and generated custom reports.</p>
+            <div class="mermaid">
+erDiagram
+    NotificationTemplate {
+        string id PK
+        string subjectTemplate
+        string bodyTemplate
+    }
+    Notification {
+        string id PK
+        string recipientId
+        string status
+        string templateId FK
+    }
+    ReportTemplate {
+        string id PK
+        string name
+        string layout
+    }
+    GeneratedReport {
+        string id PK
+        string fileUrl
+        datetime generatedAt
+        string templateId FK
+    }
+
+    NotificationTemplate ||--o{ Notification : generates
+    ReportTemplate ||--o{ GeneratedReport : produces
+            </div>
+        </section>
+
+        <footer>
+            <p>Generated on: <script>document.write(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }));</script></p>
+            <p>ULRMS Internal Architecture Documentation</p>
+        </footer>
+    </main>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'dark', er: { useMaxWidth: true } });
+    </script>
+</body>
+</html>

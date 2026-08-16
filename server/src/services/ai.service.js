@@ -243,6 +243,71 @@ RULES:
         };
     }
 
+    /**
+     * Parse natural language instructions to share documents with targets (Classes, Groups, Students, and Documents).
+     */
+    async parseDocumentShareTargets(prompt, availableContext, preferredProvider = 'groq') {
+        const { documents = [], classes = [], groups = [], students = [] } = availableContext;
+
+        const systemPrompt = `You are an AI entity resolution assistant for an educational management app.
+Analyze the user's natural language request to share a document, and match it against the provided database context.
+
+USER REQUEST: "${prompt}"
+
+AVAILABLE DATABASE CONTEXT:
+Documents: ${JSON.stringify(documents.map(d => ({ id: d.id, name: d.name })))}
+Classes: ${JSON.stringify(classes.map(c => ({ id: c.id, name: c.name, gradeLevel: c.gradeLevel, section: c.section })))}
+Groups: ${JSON.stringify(groups.map(g => ({ id: g.id, name: g.name, className: g.class?.name })))}
+Students: ${JSON.stringify(students.map(s => ({ id: s.id, name: `${s.firstName} ${s.lastName}`, admissionNumber: s.admissionNumber })))}
+
+Return ONLY valid JSON matching this schema:
+{
+  "matchedDocumentId": "document_uuid_or_null",
+  "matchedClassIds": ["class_uuid1"],
+  "matchedGroupIds": ["group_uuid1"],
+  "matchedStudentIds": ["student_uuid1"]
+}
+
+RULES:
+1. Match Document and Class names liberally.
+2. Return null for matchedDocumentId if no matching document is found in the Documents list.
+3. Output MUST be valid JSON only.`;
+
+        // 1. Try Groq (Primary)
+        if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
+            try {
+                const completion = await this.groq.chat.completions.create({
+                    model: 'llama-3.3-70b-versatile',
+                    messages: [
+                        { role: 'user', content: systemPrompt }
+                    ],
+                    temperature: 0.1
+                });
+                return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+            } catch (err) {
+                console.warn(`[AIService] Groq document target parsing failed (${err.message}). Falling back to Gemini...`);
+            }
+        }
+
+        // 2. Try Gemini (Fallback)
+        if (this.genAI) {
+            try {
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+                const result = await model.generateContent(systemPrompt);
+                return this.parseJSONResponse(result.response.text());
+            } catch (err) {
+                console.error('[AIService] Gemini document target parsing failed:', err);
+            }
+        }
+
+        return {
+            matchedDocumentId: null,
+            matchedClassIds: [],
+            matchedGroupIds: [],
+            matchedStudentIds: []
+        };
+    }
+
     parseJSONResponse(text) {
         let cleanText = text.trim();
         cleanText = cleanText.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();

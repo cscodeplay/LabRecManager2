@@ -320,6 +320,112 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
         const msgLower = (message || '').toLowerCase();
 
+        const isDocumentShareIntent = (
+            (msgLower.includes('share') || msgLower.includes('send') || msgLower.includes('distribute') || msgLower.includes('give access')) &&
+            (msgLower.includes('document') || msgLower.includes('file') || msgLower.includes('pdf') || msgLower.includes('doc') || msgLower.includes('notes'))
+        );
+
+        if (isDocumentShareIntent) {
+            try {
+                console.log('[ChatBot] Document share intent detected in chatbot prompt:', message);
+
+                const [documents, classes, groups, students] = await Promise.all([
+                    prisma.document.findMany({ select: { id: true, name: true } }),
+                    prisma.studentClass.findMany({ select: { id: true, name: true, gradeLevel: true, section: true } }),
+                    prisma.studentGroup.findMany({ select: { id: true, name: true, class: { select: { name: true } } } }),
+                    prisma.user.findMany({ where: { role: 'student' }, select: { id: true, firstName: true, lastName: true, admissionNumber: true } })
+                ]);
+
+                // AI Target resolution
+                const resolution = await aiService.parseDocumentShareTargets(message, { documents, classes, groups, students }, 'groq');
+
+                if (!resolution.matchedDocumentId) {
+                     return {
+                         message: `⚠️ **Document Not Found**\n\nI couldn't identify which document you want to share from your prompt. Please mention the specific document name (e.g., "Share 'Physics Notes' with Class 10A").`,
+                         sql: null,
+                         executionResult: null,
+                         chartData: null,
+                         reportAction: null,
+                         provider: 'groq'
+                     };
+                }
+
+                const doc = documents.find(d => d.id === resolution.matchedDocumentId);
+                const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
+                const fallbackUser = await prisma.user.findFirst({ where: { role: { in: ['admin', 'instructor'] } } });
+                const sharedById = currentUser?.id || fallbackUser?.id;
+
+                let targetSummary = [];
+                let shareCount = 0;
+
+                // Share with Classes
+                if (resolution.matchedClassIds?.length > 0) {
+                    for (const classId of resolution.matchedClassIds) {
+                        await prisma.documentShare.create({
+                            data: { documentId: doc.id, targetType: 'class', targetClassId: classId, sharedById }
+                        });
+                        const c = classes.find(c => c.id === classId);
+                        if (c) targetSummary.push(`Class ${c.name}`);
+                        shareCount++;
+                    }
+                }
+
+                // Share with Groups
+                if (resolution.matchedGroupIds?.length > 0) {
+                    for (const groupId of resolution.matchedGroupIds) {
+                        await prisma.documentShare.create({
+                            data: { documentId: doc.id, targetType: 'group', targetGroupId: groupId, sharedById }
+                        });
+                        const g = groups.find(g => g.id === groupId);
+                        if (g) targetSummary.push(`Group ${g.name}`);
+                        shareCount++;
+                    }
+                }
+
+                // Share with Students
+                if (resolution.matchedStudentIds?.length > 0) {
+                    for (const studentId of resolution.matchedStudentIds) {
+                        await prisma.documentShare.create({
+                            data: { documentId: doc.id, targetType: 'user', targetUserId: studentId, sharedById }
+                        });
+                        const s = students.find(s => s.id === studentId);
+                        if (s) targetSummary.push(`${s.firstName} ${s.lastName}`);
+                        shareCount++;
+                    }
+                }
+                
+                if (shareCount === 0) {
+                     return {
+                         message: `⚠️ **No Targets Found**\n\nI found the document **${doc.name}**, but I couldn't understand who to share it with. Please specify a class, group, or student name.`,
+                         sql: null,
+                         executionResult: null,
+                         chartData: null,
+                         reportAction: null,
+                         provider: 'groq'
+                     };
+                }
+
+                return {
+                    message: `✨ **Document Shared Successfully!**\n\nI have shared the document **${doc.name}** with the following targets:\n- ${targetSummary.join('\n- ')}`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    provider: 'groq'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Direct document sharing failed:', err.message);
+                return {
+                    message: `⚠️ **Unable to Auto-Share Document**\n\nReason: ${err.message}\n\nPlease try again or use the manual Share button in Documents.`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    provider: 'groq'
+                };
+            }
+        }
+
         // Intent detection: AI Assignment Creation & Targeting directly via Global Chatbot
         const isAssignmentCreationIntent = (
             (msgLower.includes('assignment') || msgLower.includes('program') || msgLower.includes('lab work') || msgLower.includes('task') || msgLower.includes('experiment') || msgLower.includes('homework') || msgLower.includes('practical')) &&
