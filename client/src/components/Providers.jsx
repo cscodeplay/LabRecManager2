@@ -10,6 +10,7 @@ import MeetingNotificationListener from './MeetingNotificationListener';
 import '@/lib/i18n'; // Initialize i18n
 import { ConfirmProvider } from './ConfirmDialog';
 import { GlobalMeetingProvider } from './GlobalMeetingContext';
+import GlobalMeetingRoom from './GlobalMeetingRoom';
 
 function LanguageInitializer() {
     const { language } = useLanguageStore();
@@ -78,6 +79,7 @@ export function Providers({ children }) {
                     <WhiteboardNotificationListener />
                     <TimetableNotificationListener />
                     <MeetingNotificationListener />
+                    <GlobalMeetingRoom />
                 </ConfirmProvider>
             </GlobalMeetingProvider>
         </QueryClientProvider>
