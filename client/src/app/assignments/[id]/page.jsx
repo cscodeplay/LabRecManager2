@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
     ArrowLeft, Calendar, FileText, Clock, CheckCircle,
-    Users, Award, Code, Upload, Eye, Trash2, UsersRound, User, Download, X, Edit2
+    Users, Award, Code, Upload, Eye, Trash2, UsersRound, User, Download, X, Edit2, Maximize, Minimize
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { assignmentsAPI } from '@/lib/api';
@@ -24,6 +24,7 @@ export default function AssignmentDetailPage() {
     const [removeDialog, setRemoveDialog] = useState({ open: false, targetId: null, targetName: '' });
     const [removeLoading, setRemoveLoading] = useState(false);
     const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+    const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -339,33 +340,39 @@ export default function AssignmentDetailPage() {
 
             {/* PDF Preview Modal */}
             {pdfPreviewOpen && assignment.pdfAttachmentUrl && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setPdfPreviewOpen(false)}>
-                    <div className="bg-white rounded-2xl w-full max-w-4xl h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                        <div className="p-3 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
-                            <div className="flex items-center gap-3">
-                                <FileText className="w-5 h-5 text-red-500" />
-                                <h3 className="text-base font-semibold">{assignment.pdfAttachmentName || 'PDF Preview'}</h3>
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-0 sm:p-4">
+                    <div className={`bg-white flex flex-col transition-all ${
+                        isPreviewFullscreen 
+                            ? 'fixed inset-0 w-full h-full rounded-none z-[100]' 
+                            : 'rounded-2xl max-w-4xl w-full max-h-[90vh]'
+                    }`}>
+                        <div className="p-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+                            <div>
+                                <h3 className="text-lg font-semibold">Attachment Preview</h3>
                             </div>
-                            <div className="flex items-center gap-1">
-                                                <a
-                                                    href={assignment.pdfAttachmentUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="p-2 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
-                                                    title="Download"
-                                                >
-                                                    <Download className="w-5 h-5" />
-                                                </a>
-                                                <button
-                                                    onClick={() => setPdfPreviewOpen(false)}
-                                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition"
-                                                    title="Close"
-                                                >
-                                                    <X className="w-5 h-5" />
-                                                </button>
-                                            </div>
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => setIsPreviewFullscreen(!isPreviewFullscreen)} title="Toggle Fullscreen" className="btn btn-secondary text-sm p-2">
+                                    {isPreviewFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+                                </button>
+                                <a
+                                    href={assignment.pdfAttachmentUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="btn btn-secondary text-sm p-2"
+                                    title="Download"
+                                >
+                                    <Download className="w-5 h-5" />
+                                </a>
+                                <button
+                                    onClick={() => { setPdfPreviewOpen(false); setIsPreviewFullscreen(false); }}
+                                    className="text-slate-400 hover:text-slate-600 p-2"
+                                    title="Close"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex-1 overflow-hidden bg-slate-100">
+                        <div className="flex-1 overflow-auto bg-slate-100 p-4">
                             {['mp4', 'mpeg', 'ogg', 'webm', 'avi', 'mov'].includes(assignment.pdfAttachmentUrl.split('.').pop().toLowerCase()) ? (
                                 <div className="flex items-center justify-center h-full min-h-[500px] bg-black">
                                     <video controls src={assignment.pdfAttachmentUrl} className="max-w-full max-h-[500px]" title="Video Preview" />
@@ -379,11 +386,17 @@ export default function AssignmentDetailPage() {
                                     <img src={assignment.pdfAttachmentUrl} alt="Attachment" className="max-w-full max-h-[500px] object-contain" />
                                 </div>
                             ) : ['txt', 'html'].includes(assignment.pdfAttachmentUrl.split('.').pop().toLowerCase()) ? (
-                                <HtmlPreview url={assignment.pdfAttachmentUrl} />
+                                <HtmlPreview url={assignment.pdfAttachmentUrl} className={isPreviewFullscreen ? 'min-h-[80vh] rounded-none border-0' : ''} />
+                            ) : ['ppt', 'pptx'].includes(assignment.pdfAttachmentUrl.split('.').pop().toLowerCase()) ? (
+                                <iframe
+                                    src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(assignment.pdfAttachmentUrl)}`}
+                                    className="w-full h-full min-h-[500px] border-0 rounded-lg bg-white"
+                                    title="Document Preview"
+                                />
                             ) : (
                                 <iframe
-                                    src={`https://docs.google.com/gview?url=${encodeURIComponent(assignment.pdfAttachmentUrl)}&embedded=true`}
-                                    className="w-full h-full min-h-[500px] border-0"
+                                    src={`https://docs.google.com/viewer?url=${encodeURIComponent(assignment.pdfAttachmentUrl)}&embedded=true`}
+                                    className="w-full h-full min-h-[500px] border-0 rounded-lg bg-white"
                                     title="Document Preview"
                                 />
                             )}

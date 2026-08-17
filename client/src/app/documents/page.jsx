@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2 } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { documentsAPI, classesAPI, storageAPI, foldersAPI } from '@/lib/api';
 import api from '@/lib/api';
@@ -102,7 +102,8 @@ export default function DocumentsPage() {
     const [shareMessage, setShareMessage] = useState('');
     const [shareExpiresAt, setShareExpiresAt] = useState('');
     const [sharePermission, setSharePermission] = useState('download');
-    const [shareSearch, setShareSearch] = useState('');
+    const [trashSearch, setTrashSearch] = useState('');
+    const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
     const [availableClasses, setAvailableClasses] = useState([]);
     const [availableGroups, setAvailableGroups] = useState([]);
     const [availableInstructors, setAvailableInstructors] = useState([]);
@@ -1866,18 +1867,25 @@ export default function DocumentsPage() {
             {/* View/Preview Modal */}
             {
                 viewingDoc && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-0 sm:p-4">
+                        <div className={`bg-white flex flex-col transition-all ${
+                            isPreviewFullscreen 
+                                ? 'fixed inset-0 w-full h-full rounded-none z-[100]' 
+                                : 'rounded-2xl max-w-4xl w-full max-h-[90vh]'
+                        }`}>
                             <div className="p-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
                                 <div>
                                     <h3 className="text-lg font-semibold">{viewingDoc.name}</h3>
                                     <p className="text-sm text-slate-500">{viewingDoc.fileType.toUpperCase()} • {viewingDoc.fileSizeFormatted}</p>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <a title="Download" href={viewingDoc.url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary text-sm">
+                                    <button onClick={() => setIsPreviewFullscreen(!isPreviewFullscreen)} title="Toggle Fullscreen" className="btn btn-secondary text-sm p-2">
+                                        {isPreviewFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+                                    </button>
+                                    <a title="Download" href={viewingDoc.url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary text-sm p-2">
                                         <Download className="w-5 h-5" />
                                     </a>
-                                    <button onClick={() => setViewingDoc(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                                    <button onClick={() => { setViewingDoc(null); setIsPreviewFullscreen(false); }} className="text-slate-400 hover:text-slate-600 p-2"><X className="w-5 h-5" /></button>
                                 </div>
                             </div>
                             <div className="flex-1 overflow-auto bg-slate-100 p-4">
@@ -1887,7 +1895,15 @@ export default function DocumentsPage() {
                                     
                                     if (['docx', 'xlsx', 'xls', 'csv'].includes(type)) {
                                         return <FileViewer url={viewingDoc.url} fileType={type} name={viewingDoc.name} />;
-                                    } else if (['pdf', 'doc', 'ppt', 'pptx', 'odp'].includes(type)) {
+                                    } else if (['ppt', 'pptx'].includes(type)) {
+                                        return (
+                                            <iframe
+                                                src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(viewingDoc.url)}`}
+                                                className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
+                                                title="Document Preview"
+                                            />
+                                        );
+                                    } else if (['pdf', 'doc', 'odp'].includes(type)) {
                                         return (
                                             <iframe
                                                 src={`https://docs.google.com/viewer?url=${encodeURIComponent(viewingDoc.url)}&embedded=true`}
@@ -1918,7 +1934,7 @@ export default function DocumentsPage() {
                                             </div>
                                         );
                                     } else if (['txt', 'html'].includes(type)) {
-                                        return <HtmlPreview url={viewingDoc.url} />;
+                                        return <HtmlPreview url={viewingDoc.url} className={isPreviewFullscreen ? 'min-h-[80vh] rounded-none border-0' : ''} />;
                                     } else {
                                         return (
                                             <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-slate-500">
