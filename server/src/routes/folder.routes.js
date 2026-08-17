@@ -593,6 +593,10 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
     }
 
     try {
+        await prisma.folderShare.deleteMany({
+            where: { folderId: folder.id }
+        });
+
         const createdShares = await prisma.folderShare.createMany({ data: shares });
 
         if (notifications.length > 0) {

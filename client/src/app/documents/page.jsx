@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive } from 'lucide-react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import { useAuthStore } from '@/lib/store';
 import { documentsAPI, classesAPI, storageAPI, foldersAPI } from '@/lib/api';
 import api from '@/lib/api';
@@ -266,6 +268,36 @@ export default function DocumentsPage() {
             setTrashDocuments(res.data.data.documents || []);
         } catch (err) {
             console.error('Failed to load trash:', err);
+        }
+    };
+
+    const [isCompressing, setIsCompressing] = useState(false);
+
+    const handleBulkDownload = async () => {
+        if (selectedDocs.size === 0) return;
+        setIsCompressing(true);
+        const toastId = toast.loading('Compressing files...');
+        try {
+            const zip = new JSZip();
+            const docsToDownload = sortedDocuments
+                .map(item => activeTab === 'my' ? item : activeTab === 'shared' ? item.document : item)
+                .filter(d => d && selectedDocs.has(d.id));
+
+            for (const doc of docsToDownload) {
+                const response = await fetch(doc.url);
+                const blob = await response.blob();
+                zip.file(doc.name, blob);
+            }
+            
+            const zipContent = await zip.generateAsync({ type: 'blob' });
+            saveAs(zipContent, `documents-${Date.now()}.zip`);
+            toast.success('Download complete!', { id: toastId });
+            setSelectedDocs(new Set());
+        } catch (err) {
+            console.error(err);
+            toast.error('Failed to compress and download files. Ensure CORS is allowed.', { id: toastId });
+        } finally {
+            setIsCompressing(false);
         }
     };
 
@@ -788,11 +820,11 @@ export default function DocumentsPage() {
 
     const handleSelectAll = (e) => {
         if (e.target.checked) {
-            // Select all documents
-            const allDocIds = sortedDocuments.map(d => activeTab === 'my' ? d.id : d.document?.id).filter(Boolean);
+            const allDocIds = sortedDocuments.map(d => activeTab === 'my' ? d.id : (activeTab === 'shared' ? d.document?.id : d.id)).filter(Boolean);
             setSelectedDocs(new Set(allDocIds));
-            // Select all folders
-            setSelectedFolders(new Set(folders.map(f => f.id)));
+            if (activeTab === 'my') {
+                setSelectedFolders(new Set(folders.map(f => f.id)));
+            }
         } else {
             setSelectedDocs(new Set());
             setSelectedFolders(new Set());
@@ -862,22 +894,32 @@ export default function DocumentsPage() {
     };
 
     const handleBulkDelete = async () => {
+        const isTrash = activeTab === 'trash';
         const ok = await confirm({
-            title: `Delete Selected Items?`,
-            message: `Are you sure you want to delete ${selectedDocs.size} documents and ${selectedFolders.size} folders?`,
-            confirmText: 'Delete All Selected',
+            title: isTrash ? 'Permanently Delete Selected Items?' : `Delete Selected Items?`,
+            message: isTrash 
+                ? `Are you sure you want to permanently delete ${selectedDocs.size} documents? This cannot be undone.` 
+                : `Are you sure you want to delete ${selectedDocs.size} documents and ${selectedFolders.size} folders?`,
+            confirmText: isTrash ? 'Delete Permanently' : 'Delete All Selected',
             cancelText: 'Cancel',
             type: 'danger',
         });
         if (!ok) return;
 
         try {
-            if (selectedDocs.size > 0) {
-                await documentsAPI.bulkDelete(Array.from(selectedDocs));
-            }
-            if (selectedFolders.size > 0) {
-                for (const fid of selectedFolders) {
-                    await foldersAPI.delete(fid);
+            if (isTrash) {
+                // Permanent bulk delete not available via single API, so we loop
+                for (const docId of selectedDocs) {
+                    await documentsAPI.permanentDelete(docId);
+                }
+            } else {
+                if (selectedDocs.size > 0) {
+                    await documentsAPI.bulkDelete(Array.from(selectedDocs));
+                }
+                if (selectedFolders.size > 0) {
+                    for (const fid of selectedFolders) {
+                        await foldersAPI.delete(fid);
+                    }
                 }
             }
             toast.success('Items deleted');
@@ -885,8 +927,32 @@ export default function DocumentsPage() {
             setSelectedFolders(new Set());
             loadDocuments();
             loadFolders();
+            if (isTrash) loadTrash();
         } catch (err) {
             toast.error('Failed to delete items');
+        }
+    };
+
+    const handleBulkRestore = async () => {
+        const ok = await confirm({
+            title: `Restore Selected Items?`,
+            message: `Are you sure you want to restore ${selectedDocs.size} documents?`,
+            confirmText: 'Restore All',
+            cancelText: 'Cancel',
+            type: 'info',
+        });
+        if (!ok) return;
+
+        try {
+            for (const docId of selectedDocs) {
+                await documentsAPI.restore(docId);
+            }
+            toast.success('Items restored');
+            setSelectedDocs(new Set());
+            loadTrash();
+            loadDocuments();
+        } catch (err) {
+            toast.error('Failed to restore items');
         }
     };
     // ---------------------------
@@ -1023,15 +1089,38 @@ export default function DocumentsPage() {
                         {selectedDocs.size + selectedFolders.size} selected
                     </span>
                     <div className="h-6 w-px bg-slate-200" />
-                    <button onClick={() => handleBulkCopy('copy')} title="Copy" className="flex items-center justify-center text-slate-600 hover:text-primary-600 p-2 rounded hover:bg-slate-50 transition-colors">
-                        <ClipboardCopy className="w-5 h-5" />
-                    </button>
-                    <button onClick={() => handleBulkCopy('cut')} title="Cut" className="flex items-center justify-center text-slate-600 hover:text-orange-600 p-2 rounded hover:bg-slate-50 transition-colors">
-                        <Scissors className="w-5 h-5" />
-                    </button>
-                    <button onClick={handleBulkDelete} title="Delete" className="flex items-center justify-center text-slate-600 hover:text-red-600 p-2 rounded hover:bg-slate-50 transition-colors">
-                        <Trash2 className="w-5 h-5" />
-                    </button>
+                    
+                    {activeTab === 'my' && (
+                        <>
+                            <button onClick={() => handleBulkCopy('copy')} title="Copy" className="flex items-center justify-center text-slate-600 hover:text-primary-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                                <ClipboardCopy className="w-5 h-5" />
+                            </button>
+                            <button onClick={() => handleBulkCopy('cut')} title="Cut" className="flex items-center justify-center text-slate-600 hover:text-orange-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                                <Scissors className="w-5 h-5" />
+                            </button>
+                            <button onClick={handleBulkDelete} title="Delete" className="flex items-center justify-center text-slate-600 hover:text-red-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                                <Trash2 className="w-5 h-5" />
+                            </button>
+                        </>
+                    )}
+
+                    {(activeTab === 'my' || activeTab === 'shared') && (
+                        <button onClick={handleBulkDownload} disabled={isCompressing} title="Compress & Download" className="flex items-center justify-center text-slate-600 hover:text-blue-600 p-2 rounded hover:bg-slate-50 transition-colors disabled:opacity-50">
+                            <Archive className="w-5 h-5" />
+                        </button>
+                    )}
+
+                    {activeTab === 'trash' && (
+                        <>
+                            <button onClick={handleBulkRestore} title="Restore" className="flex items-center justify-center text-slate-600 hover:text-emerald-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                                <ArchiveRestore className="w-5 h-5" />
+                            </button>
+                            <button onClick={handleBulkDelete} title="Delete Permanently" className="flex items-center justify-center text-slate-600 hover:text-red-600 p-2 rounded hover:bg-slate-50 transition-colors">
+                                <Trash className="w-5 h-5" />
+                            </button>
+                        </>
+                    )}
+
                     <div className="h-6 w-px bg-slate-200" />
                     <button onClick={() => { setSelectedDocs(new Set()); setSelectedFolders(new Set()); }} className="text-slate-400 hover:text-slate-600">
                         <X className="w-5 h-5" />
@@ -1231,6 +1320,14 @@ export default function DocumentsPage() {
                             <table className="w-full">
                                 <thead className="bg-red-50 border-b border-red-200">
                                     <tr>
+                                        <th className="w-10 p-3">
+                                            <input
+                                                type="checkbox"
+                                                onChange={handleSelectAll}
+                                                checked={isAllSelected()}
+                                                className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                            />
+                                        </th>
                                         <th className="text-left p-3 text-sm font-semibold text-slate-700">Name</th>
                                         <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden md:table-cell">Type</th>
                                         <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden md:table-cell">Size</th>
@@ -1242,16 +1339,14 @@ export default function DocumentsPage() {
                                 <tbody>
                                     {trashDocuments.map(doc => (
                                         <tr key={doc.id} className={`border-b border-slate-100 hover:bg-slate-50 group ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}>
-                                            {activeTab === 'my' && (
-                                                <td className="p-3">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedDocs.has(doc.id)}
-                                                        onChange={() => toggleDocSelection(doc.id)}
-                                                        className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                                                    />
-                                                </td>
-                                            )}
+                                            <td className="p-3">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedDocs.has(doc.id)}
+                                                    onChange={() => toggleDocSelection(doc.id)}
+                                                    className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                                />
+                                            </td>
                                             <td className="p-3">
                                                 <div className="flex items-center gap-3">
                                                     <span className="text-xl opacity-50">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
@@ -1373,14 +1468,12 @@ export default function DocumentsPage() {
                             if (!doc) return null;
                             return (
                                 <div key={doc.id + (shareInfo?.shareId || '')} className={`card p-4 hover:shadow-lg transition-shadow relative ${selectedDocs.has(doc.id) ? 'ring-2 ring-primary-500' : ''}`}>
-                                    {activeTab === 'my' && (
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedDocs.has(doc.id)}
-                                            onChange={() => toggleDocSelection(doc.id)}
-                                            className="absolute top-3 right-3 z-10 w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                                        />
-                                    )}
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedDocs.has(doc.id)}
+                                        onChange={() => toggleDocSelection(doc.id)}
+                                        className="absolute top-3 right-3 z-10 w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                    />
                                     <div className="flex items-start gap-3">
                                         <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-2xl flex-shrink-0">
                                             {FILE_ICONS[doc.fileType] || FILE_ICONS.file}
@@ -1452,9 +1545,6 @@ export default function DocumentsPage() {
                                                 <button onClick={() => handleShare(doc)} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded">
                                                     <Share2 className="w-4 h-4" />
                                                 </button>
-                                                <button onClick={() => handleShare(doc)} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded">
-                                                    <Share2 className="w-4 h-4" />
-                                                </button>
                                                 <button onClick={() => setDeleteDialog({ open: true, doc })} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded">
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
@@ -1484,16 +1574,14 @@ export default function DocumentsPage() {
                         <table className="w-full">
                             <thead className="bg-slate-50 border-b border-slate-200">
                                 <tr>
-                                    {activeTab === 'my' && (
-                                        <th className="w-10 p-3">
-                                            <input
-                                                type="checkbox"
-                                                onChange={handleSelectAll}
-                                                checked={isAllSelected()}
-                                                className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                                            />
-                                        </th>
-                                    )}
+                                    <th className="w-10 p-3">
+                                        <input
+                                            type="checkbox"
+                                            onChange={handleSelectAll}
+                                            checked={isAllSelected()}
+                                            className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                        />
+                                    </th>
                                     <th
                                         onClick={() => handleSort('name')}
                                         className="text-left p-3 text-sm font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 select-none"
@@ -1535,12 +1623,13 @@ export default function DocumentsPage() {
                                     <tr key={folder.id}
                                         className={`border-b border-slate-100 hover:bg-slate-50 cursor-pointer group ${selectedFolders.has(folder.id) ? 'bg-primary-50' : ''}`}
                                     >
-                                        <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                                        <td className="p-3">
                                             <input
                                                 type="checkbox"
                                                 checked={selectedFolders.has(folder.id)}
                                                 onChange={() => toggleFolderSelection(folder.id)}
                                                 className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                                onClick={(e) => e.stopPropagation()}
                                             />
                                         </td>
                                         <td className="p-3" onClick={() => handleFolderClick(folder)}>

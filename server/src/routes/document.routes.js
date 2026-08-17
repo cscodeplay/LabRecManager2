@@ -654,6 +654,11 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
     // Create all shares
     console.log('Creating shares:', JSON.stringify(shares, null, 2));
     try {
+        // Delete existing shares before creating new ones to avoid duplicates
+        await prisma.documentShare.deleteMany({
+            where: { documentId: doc.id }
+        });
+
         const createdShares = await prisma.documentShare.createMany({
             data: shares
         });
