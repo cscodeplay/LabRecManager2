@@ -7,12 +7,15 @@ module.exports = {
 
     upload: {
         dir: process.env.UPLOAD_DIR || './uploads',
-        maxFileSize: parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024, // 50MB
+        maxFileSize: parseInt(process.env.MAX_FILE_SIZE) || 100 * 1024 * 1024, // 100MB
         allowedTypes: {
             document: ['pdf', 'doc', 'docx', 'txt', 'md'],
             code: ['py', 'java', 'cpp', 'c', 'js', 'html', 'css', 'sql', 'json'],
             image: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
-            archive: ['zip', 'rar', '7z']
+            archive: ['zip', 'rar', '7z'],
+            audio: ['mp3', 'wav', 'ogg', 'm4a', 'webm', 'aac'],
+            video: ['mp4', 'mpeg', 'ogg', 'webm', 'avi', 'mov'],
+            presentation: ['ppt', 'pptx', 'odp']
         }
     },
 

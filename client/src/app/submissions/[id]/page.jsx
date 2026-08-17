@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import {
     ArrowLeft, Code, FileText, User, Calendar,
-    CheckCircle, XCircle, Award, Send, MessageSquare, Play, Terminal, Loader2, CheckCircle2, AlertCircle, Edit2
+    CheckCircle, XCircle, Award, Send, MessageSquare, Play, Terminal, Loader2, CheckCircle2, AlertCircle, Edit2, X
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { submissionsAPI, gradesAPI, compilerAPI } from '@/lib/api';

@@ -66,7 +66,10 @@ const fileFilter = (req, file, cb) => {
         ...uploadConfig.allowedTypes.document,
         ...uploadConfig.allowedTypes.code,
         ...uploadConfig.allowedTypes.image,
-        ...uploadConfig.allowedTypes.archive
+        ...uploadConfig.allowedTypes.archive,
+        ...uploadConfig.allowedTypes.audio,
+        ...uploadConfig.allowedTypes.video,
+        ...uploadConfig.allowedTypes.presentation
     ];
 
     if (allAllowed.includes(ext)) {

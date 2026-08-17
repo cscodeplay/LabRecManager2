@@ -8,7 +8,7 @@ const aiService = require('../services/ai.service');
 const notificationService = require('../services/notificationService');
 
 const upload = multer({
-    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+    limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
 });
 
 /**

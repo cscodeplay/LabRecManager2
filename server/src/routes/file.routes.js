@@ -9,16 +9,21 @@ const cloudinary = require('../services/cloudinary');
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB limit
+        fileSize: 100 * 1024 * 1024, // 100MB limit
     },
     fileFilter: (req, file, cb) => {
-        // Allow images, PDFs, and video recordings
+        // Allow images, PDFs, audio and video recordings
         const allowedTypes = [
             'image/jpeg', 'image/png', 'image/gif', 'image/webp',
             'application/pdf',
             'application/msword',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'video/webm', 'video/mp4', 'video/x-matroska', 'video/quicktime'
+            'video/webm', 'video/mp4', 'video/x-matroska',
+            'audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/aac', 'audio/x-m4a',
+            'video/mpeg', 'video/ogg', 'video/x-msvideo', 'video/quicktime',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'application/vnd.oasis.opendocument.presentation'
         ];
         if (allowedTypes.includes(file.mimetype)) {
             cb(null, true);

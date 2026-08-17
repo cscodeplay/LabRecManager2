@@ -14,16 +14,21 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const chatbotService = require('../services/chatbot.service');
 const prisma = require('../config/database');
 
-// File upload config — 10MB limit
+// File upload config — 100MB limit
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 },
+    limits: { fileSize: 100 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const allowedTypes = [
             'text/plain', 'text/csv', 'application/json',
             'application/pdf', 'text/markdown',
             'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/aac', 'audio/x-m4a',
+            'video/mp4', 'video/mpeg', 'video/ogg', 'video/webm', 'video/x-msvideo', 'video/quicktime',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'application/vnd.oasis.opendocument.presentation'
         ];
         if (allowedTypes.includes(file.mimetype) ||
             file.originalname.match(/\.(txt|csv|json|pdf|md|sql|log)$/i)) {

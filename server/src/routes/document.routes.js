@@ -27,12 +27,28 @@ const upload = multer({
             'image/jpeg',
             'image/png',
             'image/gif',
-            'image/webp'
+            'image/webp',
+            'audio/mp4',
+            'audio/mpeg',
+            'audio/wav',
+            'audio/ogg',
+            'audio/webm',
+            'audio/aac',
+            'audio/x-m4a',
+            'video/mp4',
+            'video/mpeg',
+            'video/ogg',
+            'video/webm',
+            'video/x-msvideo',
+            'video/quicktime',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'application/vnd.oasis.opendocument.presentation'
         ];
         if (allowedTypes.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Invalid file type. Allowed: PDF, DOC, DOCX, XLS, XLSX, CSV, TXT, JPG, PNG, GIF, WEBP'));
+            cb(new Error('Invalid file type. Allowed: PDF, DOC, DOCX, XLS, XLSX, CSV, TXT, JPG, PNG, GIF, WEBP, Audio, Video, PPT, PPTX'));
         }
     }
 });

@@ -170,12 +170,12 @@ const DEFAULT_COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '
 
 function ChatChart({ chartData }) {
     const echartsRef = useRef(null);
-    if (!chartData || !chartData.data?.length) return null;
-
-    const { type, title, data, seriesKeys = ['value'], colors = DEFAULT_COLORS } = chartData;
+    const { type, title, data, seriesKeys = ['value'], colors = DEFAULT_COLORS } = chartData || {};
 
     const [activeType, setActiveType] = useState(type || 'bar');
     useEffect(() => { if (type) setActiveType(type); }, [type]);
+
+    if (!chartData || !chartData.data?.length) return null;
 
     const getImgData = () => {
         const inst = echartsRef.current?.getEchartsInstance();
@@ -439,7 +439,6 @@ export default function FloatingChatbot() {
 
     // Only render for admin/principal
     const isAdmin = user?.role === 'admin' || user?.role === 'principal';
-    if (!isAuthenticated || !isAdmin) return null;
 
     useEffect(() => {
         if (isOpen) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -524,6 +523,9 @@ export default function FloatingChatbot() {
     const panelClass = isExpanded
         ? 'fixed inset-4 z-[9999] rounded-2xl'
         : 'fixed bottom-20 right-4 z-[9999] w-[420px] h-[600px] max-h-[80vh] rounded-2xl';
+
+    // Early return if not authorized (must be AFTER all hooks)
+    if (!isAuthenticated || !isAdmin) return null;
 
     return (
         <>

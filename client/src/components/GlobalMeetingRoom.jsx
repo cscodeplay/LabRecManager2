@@ -2101,7 +2101,7 @@ Link: ${getInviteUrl()}`;
                         </button>
                         
                         <button
-                            onClick={handleDisconnect}
+                            onClick={handleInitiateLeave}
                             className="p-1.5 bg-red-600 hover:bg-red-500 text-white rounded-full transition shadow"
                             title="Disconnect Meeting"
                         >
