@@ -64,10 +64,27 @@ function getFileType(mimeType) {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
         'text/csv': 'csv',
         'text/plain': 'txt',
+        'text/html': 'html',
         'image/jpeg': 'jpg',
         'image/png': 'png',
         'image/gif': 'gif',
-        'image/webp': 'webp'
+        'image/webp': 'webp',
+        'audio/mp4': 'm4a',
+        'audio/mpeg': 'mp3',
+        'audio/wav': 'wav',
+        'audio/ogg': 'ogg',
+        'audio/webm': 'webm',
+        'audio/aac': 'aac',
+        'audio/x-m4a': 'm4a',
+        'video/mp4': 'mp4',
+        'video/mpeg': 'mpeg',
+        'video/ogg': 'ogg',
+        'video/webm': 'webm',
+        'video/x-msvideo': 'avi',
+        'video/quicktime': 'mov',
+        'application/vnd.ms-powerpoint': 'ppt',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+        'application/vnd.oasis.opendocument.presentation': 'odp'
     };
     return types[mimeType] || 'file';
 }
