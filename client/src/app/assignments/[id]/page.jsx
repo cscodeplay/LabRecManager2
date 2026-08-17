@@ -365,12 +365,25 @@ export default function AssignmentDetailPage() {
                                             </div>
                         </div>
                         <div className="flex-1 overflow-hidden bg-slate-100">
-                            {/* Use Google Docs viewer for Cloudinary PDFs */}
-                            <iframe
-                                src={`https://docs.google.com/gview?url=${encodeURIComponent(assignment.pdfAttachmentUrl)}&embedded=true`}
-                                className="w-full h-full border-0"
-                                title="PDF Preview"
-                            />
+                            {['mp4', 'mpeg', 'ogg', 'webm', 'avi', 'mov'].includes(assignment.pdfAttachmentUrl.split('.').pop().toLowerCase()) ? (
+                                <div className="flex items-center justify-center h-full min-h-[500px] bg-black">
+                                    <video controls src={assignment.pdfAttachmentUrl} className="max-w-full max-h-[500px]" title="Video Preview" />
+                                </div>
+                            ) : ['mp3', 'wav', 'm4a', 'aac'].includes(assignment.pdfAttachmentUrl.split('.').pop().toLowerCase()) ? (
+                                <div className="flex items-center justify-center h-full min-h-[200px] bg-slate-900">
+                                    <audio controls src={assignment.pdfAttachmentUrl} className="w-3/4 max-w-md" title="Audio Preview" />
+                                </div>
+                            ) : ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(assignment.pdfAttachmentUrl.split('.').pop().toLowerCase()) ? (
+                                <div className="flex items-center justify-center h-full min-h-[400px] bg-white">
+                                    <img src={assignment.pdfAttachmentUrl} alt="Attachment" className="max-w-full max-h-[500px] object-contain" />
+                                </div>
+                            ) : (
+                                <iframe
+                                    src={`https://docs.google.com/gview?url=${encodeURIComponent(assignment.pdfAttachmentUrl)}&embedded=true`}
+                                    className="w-full h-full min-h-[500px] border-0"
+                                    title="Document Preview"
+                                />
+                            )}
                         </div>
                     </div>
                 </div>
