@@ -68,34 +68,49 @@ export default function ViewDocumentPage() {
             {/* Preview */}
             <div className="max-w-4xl mx-auto p-4">
                 <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                    {['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odp'].includes(doc.fileType) ? (
-                        <iframe
-                            src={`https://docs.google.com/viewer?url=${encodeURIComponent(doc.url)}&embedded=true`}
-                            className="w-full h-[80vh] border-0"
-                            title="Document Preview"
-                        />
-                    ) : ['mp4', 'mpeg', 'ogg', 'webm', 'avi', 'mov'].includes(doc.fileType) ? (
-                        <video controls src={doc.url} className="w-full h-[80vh] bg-black" title="Video Preview" />
-                    ) : ['mp3', 'wav', 'm4a', 'aac'].includes(doc.fileType) ? (
-                        <div className="flex items-center justify-center h-[40vh] bg-slate-900 w-full">
-                            <audio controls src={doc.url} className="w-3/4 max-w-md" title="Audio Preview" />
-                        </div>
-                    ) : ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(doc.fileType) ? (
-                        <div className="flex items-center justify-center h-[80vh] bg-slate-50">
-                            <img src={doc.url} alt={doc.name} className="max-w-full max-h-full object-contain" />
-                        </div>
-                    ) : ['txt', 'html'].includes(doc.fileType) ? (
-                        <iframe
-                            src={doc.url}
-                            className="w-full h-[80vh] border-0 bg-white"
-                            title="Text/HTML Preview"
-                        />
-                    ) : (
-                        <div className="flex flex-col items-center justify-center py-20 text-slate-500">
-                            <span className="text-8xl mb-6">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
-                            <p className="text-lg mb-6">Preview not available for {doc.fileType.toUpperCase()} files</p>
-                        </div>
-                    )}
+                    {(() => {
+                        const ext = doc.url.split('.').pop().toLowerCase();
+                        const type = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odp', 'mp4', 'mpeg', 'ogg', 'webm', 'avi', 'mov', 'mp3', 'wav', 'm4a', 'aac', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'html', 'csv'].includes(ext) ? ext : doc.fileType;
+                        
+                        if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odp'].includes(type)) {
+                            return (
+                                <iframe
+                                    src={`https://docs.google.com/viewer?url=${encodeURIComponent(doc.url)}&embedded=true`}
+                                    className="w-full h-[80vh] border-0"
+                                    title="Document Preview"
+                                />
+                            );
+                        } else if (['mp4', 'mpeg', 'ogg', 'webm', 'avi', 'mov'].includes(type)) {
+                            return <video controls src={doc.url} className="w-full h-[80vh] bg-black" title="Video Preview" />;
+                        } else if (['mp3', 'wav', 'm4a', 'aac'].includes(type)) {
+                            return (
+                                <div className="flex items-center justify-center h-[40vh] bg-slate-900 w-full">
+                                    <audio controls src={doc.url} className="w-3/4 max-w-md" title="Audio Preview" />
+                                </div>
+                            );
+                        } else if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(type)) {
+                            return (
+                                <div className="flex items-center justify-center h-[80vh] bg-slate-50">
+                                    <img src={doc.url} alt={doc.name} className="max-w-full max-h-full object-contain" />
+                                </div>
+                            );
+                        } else if (['txt', 'html'].includes(type)) {
+                            return (
+                                <iframe
+                                    src={doc.url}
+                                    className="w-full h-[80vh] border-0 bg-white"
+                                    title="Text/HTML Preview"
+                                />
+                            );
+                        } else {
+                            return (
+                                <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+                                    <span className="text-8xl mb-6">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                    <p className="text-lg mb-6">Preview not available for {doc.fileType.toUpperCase()} files</p>
+                                </div>
+                            );
+                        }
+                    })()}
                 </div>
             </div>
 

@@ -1787,45 +1787,62 @@ export default function DocumentsPage() {
                                 </div>
                             </div>
                             <div className="flex-1 overflow-auto bg-slate-100 p-4">
-                                {['docx', 'xlsx', 'xls', 'csv'].includes(viewingDoc.fileType) ? (
-                                    <FileViewer url={viewingDoc.url} fileType={viewingDoc.fileType} name={viewingDoc.name} />
-                                ) : ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odp'].includes(viewingDoc.fileType) ? (
-                                    <iframe
-                                        src={`https://docs.google.com/viewer?url=${encodeURIComponent(viewingDoc.url)}&embedded=true`}
-                                        className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
-                                        title="Document Preview"
-                                    />
-                                ) : ['mp4', 'mpeg', 'ogg', 'webm', 'avi', 'mov'].includes(viewingDoc.fileType) ? (
-                                    <div className="flex items-center justify-center h-full min-h-[500px] bg-black rounded-lg">
-                                        <video controls src={viewingDoc.url} className="max-w-full max-h-[500px]" title="Video Preview" />
-                                    </div>
-                                ) : ['mp3', 'wav', 'm4a', 'aac'].includes(viewingDoc.fileType) ? (
-                                    <div className="flex items-center justify-center h-full min-h-[200px] bg-slate-900 rounded-lg">
-                                        <audio controls src={viewingDoc.url} className="w-3/4 max-w-md" title="Audio Preview" />
-                                    </div>
-                                ) : ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(viewingDoc.fileType) ? (
-                                    <div className="flex items-center justify-center h-full min-h-[400px] bg-white rounded-lg border border-slate-200">
-                                        <img
-                                            src={viewingDoc.url}
-                                            alt={viewingDoc.name}
-                                            className="max-w-full max-h-[500px] object-contain"
-                                        />
-                                    </div>
-                                ) : ['txt', 'html'].includes(viewingDoc.fileType) ? (
-                                    <iframe
-                                        src={viewingDoc.url}
-                                        className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
-                                        title="Text/HTML Preview"
-                                    />
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-slate-500">
-                                        <span className="text-6xl mb-4">{FILE_ICONS[viewingDoc.fileType] || FILE_ICONS.file}</span>
-                                        <p className="mb-4">Preview not available for {viewingDoc.fileType.toUpperCase()} files</p>
-                                        <a href={viewingDoc.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
-                                            <ExternalLink className="w-4 h-4" /> Open in New Tab
-                                        </a>
-                                    </div>
-                                )}
+                                {(() => {
+                                    const ext = viewingDoc.url.split('.').pop().toLowerCase();
+                                    const type = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odp', 'mp4', 'mpeg', 'ogg', 'webm', 'avi', 'mov', 'mp3', 'wav', 'm4a', 'aac', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'html', 'csv'].includes(ext) ? ext : viewingDoc.fileType;
+                                    
+                                    if (['docx', 'xlsx', 'xls', 'csv'].includes(type)) {
+                                        return <FileViewer url={viewingDoc.url} fileType={type} name={viewingDoc.name} />;
+                                    } else if (['pdf', 'doc', 'ppt', 'pptx', 'odp'].includes(type)) {
+                                        return (
+                                            <iframe
+                                                src={`https://docs.google.com/viewer?url=${encodeURIComponent(viewingDoc.url)}&embedded=true`}
+                                                className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
+                                                title="Document Preview"
+                                            />
+                                        );
+                                    } else if (['mp4', 'mpeg', 'ogg', 'webm', 'avi', 'mov'].includes(type)) {
+                                        return (
+                                            <div className="flex items-center justify-center h-full min-h-[500px] bg-black rounded-lg">
+                                                <video controls src={viewingDoc.url} className="max-w-full max-h-[500px]" title="Video Preview" />
+                                            </div>
+                                        );
+                                    } else if (['mp3', 'wav', 'm4a', 'aac'].includes(type)) {
+                                        return (
+                                            <div className="flex items-center justify-center h-full min-h-[200px] bg-slate-900 rounded-lg">
+                                                <audio controls src={viewingDoc.url} className="w-3/4 max-w-md" title="Audio Preview" />
+                                            </div>
+                                        );
+                                    } else if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(type)) {
+                                        return (
+                                            <div className="flex items-center justify-center h-full min-h-[400px] bg-white rounded-lg border border-slate-200">
+                                                <img
+                                                    src={viewingDoc.url}
+                                                    alt={viewingDoc.name}
+                                                    className="max-w-full max-h-[500px] object-contain"
+                                                />
+                                            </div>
+                                        );
+                                    } else if (['txt', 'html'].includes(type)) {
+                                        return (
+                                            <iframe
+                                                src={viewingDoc.url}
+                                                className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
+                                                title="Text/HTML Preview"
+                                            />
+                                        );
+                                    } else {
+                                        return (
+                                            <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-slate-500">
+                                                <span className="text-6xl mb-4">{FILE_ICONS[viewingDoc.fileType] || FILE_ICONS.file}</span>
+                                                <p className="mb-4">Preview not available for {viewingDoc.fileType.toUpperCase()} files</p>
+                                                <a href={viewingDoc.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
+                                                    <ExternalLink className="w-4 h-4" /> Open in New Tab
+                                                </a>
+                                            </div>
+                                        );
+                                    }
+                                })()}
                             </div>
                             {viewingDoc.description && (
                                 <div className="p-4 border-t border-slate-200 bg-slate-50 flex-shrink-0">
