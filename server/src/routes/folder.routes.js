@@ -110,7 +110,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             } else {
                 return null;
             }
-            return { type, targetId, name, sharedAt: share.sharedAt };
+            return { id: share.id, type, targetId, name, sharedAt: share.sharedAt };
         }).filter(Boolean);
 
         return {
