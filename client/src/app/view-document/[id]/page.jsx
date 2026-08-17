@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { FileText, Download, ExternalLink, Clock } from 'lucide-react';
+import { ExternalLink, FileText, Download } from 'lucide-react';
+import HtmlPreview from '@/components/HtmlPreview';
 import { documentsAPI } from '@/lib/api';
 
 const FILE_ICONS = {
@@ -95,13 +96,7 @@ export default function ViewDocumentPage() {
                                 </div>
                             );
                         } else if (['txt', 'html'].includes(type)) {
-                            return (
-                                <iframe
-                                    src={doc.url}
-                                    className="w-full h-[80vh] border-0 bg-white"
-                                    title="Text/HTML Preview"
-                                />
-                            );
+                            return <HtmlPreview url={doc.url} />;
                         } else {
                             return (
                                 <div className="flex flex-col items-center justify-center py-20 text-slate-500">

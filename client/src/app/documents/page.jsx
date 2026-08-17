@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
 import { formatDateTime } from '@/lib/dateUtils';
 import FileViewer from '@/components/FileViewer';
+import HtmlPreview from '@/components/HtmlPreview';
 import QRCode from 'qrcode';
 
 const CATEGORIES = [
@@ -1917,13 +1918,7 @@ export default function DocumentsPage() {
                                             </div>
                                         );
                                     } else if (['txt', 'html'].includes(type)) {
-                                        return (
-                                            <iframe
-                                                src={viewingDoc.url}
-                                                className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
-                                                title="Text/HTML Preview"
-                                            />
-                                        );
+                                        return <HtmlPreview url={viewingDoc.url} />;
                                     } else {
                                         return (
                                             <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-slate-500">

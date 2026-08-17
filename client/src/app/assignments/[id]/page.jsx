@@ -10,6 +10,7 @@ import {
 import { useAuthStore } from '@/lib/store';
 import { assignmentsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import HtmlPreview from '@/components/HtmlPreview';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 export default function AssignmentDetailPage() {
@@ -378,11 +379,7 @@ export default function AssignmentDetailPage() {
                                     <img src={assignment.pdfAttachmentUrl} alt="Attachment" className="max-w-full max-h-[500px] object-contain" />
                                 </div>
                             ) : ['txt', 'html'].includes(assignment.pdfAttachmentUrl.split('.').pop().toLowerCase()) ? (
-                                <iframe
-                                    src={assignment.pdfAttachmentUrl}
-                                    className="w-full h-full min-h-[500px] border-0 bg-white"
-                                    title="Text/HTML Preview"
-                                />
+                                <HtmlPreview url={assignment.pdfAttachmentUrl} />
                             ) : (
                                 <iframe
                                     src={`https://docs.google.com/gview?url=${encodeURIComponent(assignment.pdfAttachmentUrl)}&embedded=true`}
