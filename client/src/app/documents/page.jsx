@@ -1904,11 +1904,11 @@ export default function DocumentsPage() {
                                             className="max-w-full max-h-[500px] object-contain"
                                         />
                                     </div>
-                                ) : viewingDoc.fileType === 'txt' ? (
+                                ) : ['txt', 'html'].includes(viewingDoc.fileType) ? (
                                     <iframe
                                         src={viewingDoc.url}
                                         className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
-                                        title="Text Preview"
+                                        title="Text/HTML Preview"
                                     />
                                 ) : (
                                     <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-slate-500">

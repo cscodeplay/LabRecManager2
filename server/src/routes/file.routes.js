@@ -23,7 +23,8 @@ const upload = multer({
             'video/mpeg', 'video/ogg', 'video/x-msvideo', 'video/quicktime',
             'application/vnd.ms-powerpoint',
             'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            'application/vnd.oasis.opendocument.presentation'
+            'application/vnd.oasis.opendocument.presentation',
+            'text/html'
         ];
         if (allowedTypes.includes(file.mimetype)) {
             cb(null, true);

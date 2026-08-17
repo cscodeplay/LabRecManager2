@@ -43,7 +43,8 @@ const upload = multer({
             'video/quicktime',
             'application/vnd.ms-powerpoint',
             'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            'application/vnd.oasis.opendocument.presentation'
+            'application/vnd.oasis.opendocument.presentation',
+            'text/html'
         ];
         if (allowedTypes.includes(file.mimetype)) {
             cb(null, true);

@@ -28,7 +28,8 @@ const upload = multer({
             'video/mp4', 'video/mpeg', 'video/ogg', 'video/webm', 'video/x-msvideo', 'video/quicktime',
             'application/vnd.ms-powerpoint',
             'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            'application/vnd.oasis.opendocument.presentation'
+            'application/vnd.oasis.opendocument.presentation',
+            'text/html'
         ];
         if (allowedTypes.includes(file.mimetype) ||
             file.originalname.match(/\.(txt|csv|json|pdf|md|sql|log)$/i)) {

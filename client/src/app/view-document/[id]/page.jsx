@@ -84,6 +84,12 @@ export default function ViewDocumentPage() {
                         <div className="flex items-center justify-center h-[80vh] bg-slate-50">
                             <img src={doc.url} alt={doc.name} className="max-w-full max-h-full object-contain" />
                         </div>
+                    ) : ['txt', 'html'].includes(doc.fileType) ? (
+                        <iframe
+                            src={doc.url}
+                            className="w-full h-[80vh] border-0 bg-white"
+                            title="Text/HTML Preview"
+                        />
                     ) : (
                         <div className="flex flex-col items-center justify-center py-20 text-slate-500">
                             <span className="text-8xl mb-6">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>

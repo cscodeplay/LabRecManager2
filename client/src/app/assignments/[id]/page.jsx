@@ -377,6 +377,12 @@ export default function AssignmentDetailPage() {
                                 <div className="flex items-center justify-center h-full min-h-[400px] bg-white">
                                     <img src={assignment.pdfAttachmentUrl} alt="Attachment" className="max-w-full max-h-[500px] object-contain" />
                                 </div>
+                            ) : ['txt', 'html'].includes(assignment.pdfAttachmentUrl.split('.').pop().toLowerCase()) ? (
+                                <iframe
+                                    src={assignment.pdfAttachmentUrl}
+                                    className="w-full h-full min-h-[500px] border-0 bg-white"
+                                    title="Text/HTML Preview"
+                                />
                             ) : (
                                 <iframe
                                     src={`https://docs.google.com/gview?url=${encodeURIComponent(assignment.pdfAttachmentUrl)}&embedded=true`}
