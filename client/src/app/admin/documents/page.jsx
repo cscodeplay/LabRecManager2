@@ -800,10 +800,18 @@ export default function DocumentsPage() {
     };
 
     const isAllSelected = () => {
-        const totalDocs = activeTab === 'trash' ? trashDocuments.length : sortedDocuments.length;
-        const totalFolders = activeTab === 'trash' || activeTab === 'shared' ? 0 : folders.length;
-        if (totalDocs + totalFolders === 0) return false;
-        return selectedDocs.size === totalDocs && selectedFolders.size === totalFolders;
+        let expectedDocIds;
+        if (activeTab === 'trash') {
+            expectedDocIds = new Set(trashDocuments.map(d => d.id));
+        } else {
+            expectedDocIds = new Set(sortedDocuments.map(d => activeTab === 'my' ? d.id : (activeTab === 'shared' ? d.document?.id : d.id)).filter(Boolean));
+        }
+        
+        const expectedFoldersCount = activeTab === 'trash' || activeTab === 'shared' ? 0 : folders.length;
+        
+        if (expectedDocIds.size === 0 && expectedFoldersCount === 0) return false;
+        
+        return selectedDocs.size === expectedDocIds.size && selectedFolders.size === expectedFoldersCount;
     };
 
     const handleBulkCopy = (mode) => {

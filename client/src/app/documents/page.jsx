@@ -837,10 +837,18 @@ export default function DocumentsPage() {
 
     // Check if all items are selected
     const isAllSelected = () => {
-        const totalDocs = activeTab === 'trash' ? trashDocuments.length : sortedDocuments.length;
-        const totalFolders = activeTab === 'trash' || activeTab === 'shared' ? 0 : folders.length;
-        if (totalDocs + totalFolders === 0) return false;
-        return selectedDocs.size === totalDocs && selectedFolders.size === totalFolders;
+        let expectedDocIds;
+        if (activeTab === 'trash') {
+            expectedDocIds = new Set(trashDocuments.map(d => d.id));
+        } else {
+            expectedDocIds = new Set(sortedDocuments.map(d => activeTab === 'my' ? d.id : (activeTab === 'shared' ? d.document?.id : d.id)).filter(Boolean));
+        }
+        
+        const expectedFoldersCount = activeTab === 'trash' || activeTab === 'shared' ? 0 : folders.length;
+        
+        if (expectedDocIds.size === 0 && expectedFoldersCount === 0) return false;
+        
+        return selectedDocs.size === expectedDocIds.size && selectedFolders.size === expectedFoldersCount;
     };
 
     const handleBulkCopy = (mode) => {
@@ -1710,16 +1718,14 @@ export default function DocumentsPage() {
                                     if (!doc) return null;
                                     return (
                                         <tr key={doc.id + (shareInfo?.shareId || '')} className={`border-b border-slate-100 hover:bg-slate-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}>
-                                            {activeTab === 'my' && (
-                                                <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedDocs.has(doc.id)}
-                                                        onChange={() => toggleDocSelection(doc.id)}
-                                                        className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                                                    />
-                                                </td>
-                                            )}
+                                            <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedDocs.has(doc.id)}
+                                                    onChange={() => toggleDocSelection(doc.id)}
+                                                    className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                                />
+                                            </td>
                                             <td className="p-3">
                                                 <div className="flex items-center gap-3">
                                                     <span className="text-xl">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
