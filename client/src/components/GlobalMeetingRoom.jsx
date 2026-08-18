@@ -1775,9 +1775,9 @@ export default function GlobalMeetingRoom() {
 
     // Terminate meeting if duration is exceeded
     useEffect(() => {
-        if (isInstructor && session?.duration && elapsedTime > session.duration * 60) {
+        if (session?.duration && elapsedTime > session.duration * 60) {
             toast.error(`Meeting duration (${session.duration} minutes) exceeded. Terminating...`);
-            executeLeaveMeeting();
+            executeLeaveMeeting(true);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [elapsedTime, session?.duration, isInstructor]);
@@ -2126,7 +2126,7 @@ Link: ${getInviteUrl()}`;
                 drag
                 dragMomentum={false}
                 className={`fixed z-[100] ${isFloatingVideoMinimized ? 'w-48 h-28' : 'w-72 h-40'} bg-slate-900 rounded-xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col group cursor-move`}
-                style={{ bottom: 24, right: 24 }}
+                style={{ bottom: 24, right: 24, resize: 'both', minWidth: '200px', minHeight: '150px', maxWidth: '35vw', maxHeight: '35vh' }}
             >
                 {pipContent}
             </motion.div>
