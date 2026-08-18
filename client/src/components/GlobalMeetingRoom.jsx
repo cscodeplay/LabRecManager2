@@ -478,6 +478,7 @@ export default function GlobalMeetingRoom() {
 
             if (sessionData.status === 'completed') {
                 toast.error('This meeting session has already ended');
+                setActiveMeeting(null);
                 router.push('/meetings');
                 return;
             }
@@ -496,11 +497,18 @@ export default function GlobalMeetingRoom() {
 
             if (sessionData.status === 'in_progress') {
                 setSessionStatus('active');
-                if (sessionData.actualStartTime) {
-                    const startTime = new Date(sessionData.actualStartTime);
-                    const elapsed = Math.floor((new Date() - startTime) / 1000);
-                    setElapsedTime(elapsed > 0 ? elapsed : 0);
+                let startTime = sessionData.actualStartTime ? new Date(sessionData.actualStartTime) : null;
+                if (!startTime) {
+                    const localStart = sessionStorage.getItem(`meeting_start_${code}`);
+                    if (localStart) {
+                        startTime = new Date(localStart);
+                    } else {
+                        startTime = new Date();
+                        sessionStorage.setItem(`meeting_start_${code}`, startTime.toISOString());
+                    }
                 }
+                const elapsed = Math.floor((new Date() - startTime) / 1000);
+                setElapsedTime(elapsed > 0 ? elapsed : 0);
             } else {
                 setSessionStatus('active');
             }
@@ -1224,6 +1232,7 @@ export default function GlobalMeetingRoom() {
         // Meeting ended
         socket.on('meeting:session-ended', () => {
             toast.success('Meeting has ended');
+            setActiveMeeting(null);
             cleanup();
             router.push('/meetings');
         });
@@ -1769,6 +1778,7 @@ export default function GlobalMeetingRoom() {
         }
 
         cleanup();
+        setActiveMeeting(null);
         toast.success('Left meeting room');
         router.push('/meetings');
     };
