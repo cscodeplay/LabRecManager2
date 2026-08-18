@@ -561,8 +561,8 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
     const { targets, message, expiresAt, permission } = req.body;
     // targets: [{ type: 'class'|'group'|'instructor'|'admin', id: 'uuid' }]
 
-    if (!targets || !Array.isArray(targets) || targets.length === 0) {
-        return res.status(400).json({ success: false, message: 'At least one target is required' });
+    if (!targets || !Array.isArray(targets)) {
+        return res.status(400).json({ success: false, message: 'Targets array is required' });
     }
 
     const doc = await prisma.document.findFirst({

@@ -632,10 +632,6 @@ export default function DocumentsPage() {
     };
 
     const handleShareSubmit = async () => {
-        if (shareTargets.length === 0) {
-            toast.error('Select at least one target');
-            return;
-        }
         setSharingLoading(true);
         try {
             if (sharingDoc) {

@@ -515,11 +515,11 @@ router.post('/bulk-move', authenticate, authorize('admin', 'principal', 'lab_ass
  * @access  Private (admin, principal, lab_assistant, instructor)
  */
 router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
-    const { targets, message } = req.body;
+    const { targets, message, expiresAt, permission } = req.body;
     // targets: [{ type: 'class'|'group'|'instructor'|'admin'|'student', id: 'uuid' }]
 
-    if (!targets || !Array.isArray(targets) || targets.length === 0) {
-        return res.status(400).json({ success: false, message: 'At least one target is required' });
+    if (!targets || !Array.isArray(targets)) {
+        return res.status(400).json({ success: false, message: 'Targets array is required' });
     }
 
     const folder = await prisma.documentFolder.findFirst({
