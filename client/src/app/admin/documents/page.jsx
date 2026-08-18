@@ -2171,6 +2171,330 @@ export default function DocumentsPage() {
                 )
             }
 
+            {/* Share Modal */}
+            {
+                (sharingDoc || sharingFolder) && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col">
+                            <div className="p-6 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+                                <h3 className="text-xl font-semibold">Share {sharingFolder ? 'Folder' : 'Document'}</h3>
+                                <button onClick={() => { setSharingDoc(null); setSharingFolder(null); }} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                            </div>
+
+                            {/* Share Mode Tabs - Only show link tab for documents */}
+                            <div className="flex border-b border-slate-200 px-6">
+                                {sharingDoc && (
+                                    <button
+                                        onClick={() => setShareMode('link')}
+                                        className={`py-3 px-4 text-sm font-medium border-b-2 transition ${shareMode === 'link' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500'}`}
+                                    >
+                                        <QrCode className="w-4 h-4 inline mr-2" />Public Link
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => { setShareMode('target'); setShareTargetType(''); setShareSearch(''); }}
+                                    className={`py-3 px-4 text-sm font-medium border-b-2 transition ${shareMode === 'target' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500'}`}
+                                >
+                                    <Users className="w-4 h-4 inline mr-2" />Share with...
+                                </button>
+                            </div>
+
+                            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                                {shareMode === 'link' && sharingDoc ? (
+                                    <>
+                                        {!sharingDoc?.isPublic ? (
+                                            <div className="text-center py-4 text-amber-600 bg-amber-50 rounded-lg">
+                                                <p className="font-medium">Document is not public</p>
+                                                <p className="text-sm mt-1">Enable "publicly shareable" in edit to share via link</p>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                {qrCodeUrl && (
+                                                    <div className="text-center">
+                                                        <img src={qrCodeUrl} alt="QR Code" className="mx-auto rounded-lg" />
+                                                    </div>
+                                                )}
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        type="text"
+                                                        value={`${window.location.origin}/view-document/${sharingDoc?.id}`}
+                                                        readOnly
+                                                        className="input flex-1 text-sm"
+                                                    />
+                                                    <button title="Direct Download Link" onClick={copyShareLink} className="btn btn-primary">
+                                                        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                                    </button>
+                                                </div>
+                                                <a
+                                                    href={sharingDoc?.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="btn btn-secondary w-full"
+                                                >
+                                                    <Download className="w-5 h-5" />
+                                                </a>
+                                            </>
+                                        )}
+                                    </>
+                                ) : (
+                                    <>
+                                        {/* Step 1: Select Type */}
+                                        {!shareTargetType ? (
+                                            <div className="space-y-3">
+                                                <p className="text-sm text-slate-500">Select who you want to share with:</p>
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                                    <button
+                                                        onClick={() => setShareTargetType('class')}
+                                                        className="p-4 border-2 border-slate-200 rounded-xl hover:border-primary-400 hover:bg-primary-50 transition text-center"
+                                                    >
+                                                        <UsersRound className="w-8 h-8 mx-auto text-primary-600 mb-2" />
+                                                        <span className="text-sm font-medium">Classes</span>
+                                                        <p className="text-xs text-slate-500 mt-1">{availableClasses.length} available</p>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setShareTargetType('group')}
+                                                        className="p-4 border-2 border-slate-200 rounded-xl hover:border-primary-400 hover:bg-primary-50 transition text-center"
+                                                    >
+                                                        <Users className="w-8 h-8 mx-auto text-emerald-600 mb-2" />
+                                                        <span className="text-sm font-medium">Groups</span>
+                                                        <p className="text-xs text-slate-500 mt-1">{availableGroups.length} available</p>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setShareTargetType('student')}
+                                                        className="p-4 border-2 border-slate-200 rounded-xl hover:border-primary-400 hover:bg-primary-50 transition text-center"
+                                                    >
+                                                        <GraduationCap className="w-8 h-8 mx-auto text-blue-600 mb-2" />
+                                                        <span className="text-sm font-medium">Students</span>
+                                                        <p className="text-xs text-slate-500 mt-1">{availableStudents.length} available</p>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setShareTargetType('instructor')}
+                                                        className="p-4 border-2 border-slate-200 rounded-xl hover:border-primary-400 hover:bg-primary-50 transition text-center"
+                                                    >
+                                                        <User className="w-8 h-8 mx-auto text-amber-600 mb-2" />
+                                                        <span className="text-sm font-medium">Instructors</span>
+                                                        <p className="text-xs text-slate-500 mt-1">{availableInstructors.length} available</p>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            /* Step 2: Show list with search */
+                                            <div className="space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <button
+                                                        onClick={() => { setShareTargetType(''); setShareSearch(''); }}
+                                                        className="text-sm text-primary-600 hover:underline flex items-center gap-1"
+                                                    >
+                                                        ← Back
+                                                    </button>
+                                                    <span className="text-sm font-medium capitalize">
+                                                        {shareTargetType === 'class' ? 'Classes' : shareTargetType === 'group' ? 'Groups' : shareTargetType === 'student' ? 'Students' : 'Instructors/Admins'}
+                                                    </span>
+                                                </div>
+
+                                                {/* Search Box */}
+                                                <div className="relative">
+                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                                    <input
+                                                        type="text"
+                                                        value={shareSearch}
+                                                        onChange={(e) => setShareSearch(e.target.value)}
+                                                        placeholder={`Search ${shareTargetType}s...`}
+                                                        className="input pl-9 w-full text-sm"
+                                                    />
+                                                </div>
+
+                                                {/* List based on type */}
+                                                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg">
+                                                    {shareTargetType === 'class' && (
+                                                        availableClasses
+                                                            .filter(cls => {
+                                                                const name = cls.name || `Grade ${cls.gradeLevel}-${cls.section}`;
+                                                                return name.toLowerCase().includes(shareSearch.toLowerCase());
+                                                            })
+                                                            .map(cls => (
+                                                                <label key={cls.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={shareTargets.some(t => t.type === 'class' && t.id === cls.id)}
+                                                                        onChange={() => toggleShareTarget('class', cls.id)}
+                                                                        className="rounded text-primary-600"
+                                                                    />
+                                                                    <span className="text-sm">{cls.name || `Grade ${cls.gradeLevel}-${cls.section}`}</span>
+                                                                </label>
+                                                            ))
+                                                    )}
+                                                    {shareTargetType === 'group' && (
+                                                        availableGroups.length === 0 ? (
+                                                            <div className="p-4 text-center text-slate-500 text-sm">
+                                                                No groups found. Create groups in class settings first.
+                                                            </div>
+                                                        ) : (
+                                                            availableGroups
+                                                                .filter(grp => grp.name.toLowerCase().includes(shareSearch.toLowerCase()))
+                                                                .map(grp => (
+                                                                    <label key={grp.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={shareTargets.some(t => t.type === 'group' && t.id === grp.id)}
+                                                                            onChange={() => toggleShareTarget('group', grp.id)}
+                                                                            className="rounded text-primary-600"
+                                                                        />
+                                                                        <div>
+                                                                            <span className="text-sm">{grp.name}</span>
+                                                                            <span className="text-xs text-slate-400 ml-2">({grp.className})</span>
+                                                                        </div>
+                                                                    </label>
+                                                                ))
+                                                        )
+                                                    )}
+                                                    {shareTargetType === 'instructor' && (
+                                                        availableInstructors
+                                                            .filter(usr => `${usr.firstName} ${usr.lastName}`.toLowerCase().includes(shareSearch.toLowerCase()))
+                                                            .map(usr => (
+                                                                <label key={usr.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={shareTargets.some(t => (t.type === 'instructor' || t.type === 'admin') && t.id === usr.id)}
+                                                                        onChange={() => toggleShareTarget(usr.role === 'admin' || usr.role === 'principal' ? 'admin' : 'instructor', usr.id)}
+                                                                        className="rounded text-primary-600"
+                                                                    />
+                                                                    <span className="text-sm">{usr.firstName} {usr.lastName}</span>
+                                                                    <span className="text-xs text-slate-400 capitalize">({usr.role})</span>
+                                                                </label>
+                                                            ))
+                                                    )}
+                                                    {shareTargetType === 'student' && (
+                                                        availableStudents.length === 0 ? (
+                                                            <div className="p-4 text-center text-slate-500 text-sm">
+                                                                No students found.
+                                                            </div>
+                                                        ) : (
+                                                            availableStudents
+                                                                .filter(stu => `${stu.firstName} ${stu.lastName} ${stu.email || ''} ${stu.studentId || stu.admissionNumber || ''}`.toLowerCase().includes(shareSearch.toLowerCase()))
+                                                                .map(stu => (
+                                                                    <label key={stu.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={shareTargets.some(t => t.type === 'student' && t.id === stu.id)}
+                                                                            onChange={() => toggleShareTarget('student', stu.id)}
+                                                                            className="rounded text-primary-600"
+                                                                        />
+                                                                        <div className="flex-1">
+                                                                            <span className="text-sm">{stu.firstName} {stu.lastName}</span>
+                                                                            {(stu.studentId || stu.admissionNumber) && (
+                                                                                <span className="text-xs text-slate-400 ml-2">({stu.studentId || stu.admissionNumber})</span>
+                                                                            )}
+                                                                        </div>
+                                                                    </label>
+                                                                ))
+                                                        )
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Message */}
+                                        {shareTargetType && (
+                                            <div>
+                                                <label className="label">Message (optional)</label>
+                                                <textarea
+                                                    value={shareMessage}
+                                                    onChange={(e) => setShareMessage(e.target.value)}
+                                                    placeholder="Add a note to recipients..."
+                                                    className="input w-full"
+                                                    rows={2}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* Permission & Expiry */}
+                                        {shareTargetType && (
+                                            <div className="grid grid-cols-2 gap-4 mt-4 mb-4">
+                                                <div>
+                                                    <label className="label">Permission</label>
+                                                    <select
+                                                        value={sharePermission}
+                                                        onChange={(e) => setSharePermission(e.target.value)}
+                                                        className="input w-full"
+                                                    >
+                                                        <option value="view">View Only</option>
+                                                        <option value="download">View & Download</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="label">Expires At (Optional)</label>
+                                                    <input
+                                                        type="datetime-local"
+                                                        value={shareExpiresAt}
+                                                        onChange={(e) => setShareExpiresAt(e.target.value)}
+                                                        className="input w-full"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Selected Count Summary */}
+                                        {shareTargets.length > 0 && (
+                                            <div className="bg-slate-50 rounded-lg p-3">
+                                                <p className="text-sm font-medium text-slate-700 mb-2">Selected Recipients ({shareTargets.length}):</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {/* Count by type */}
+                                                    {['class', 'group', 'student', 'instructor', 'admin'].map(type => {
+                                                        const count = shareTargets.filter(t => t.type === type).length;
+                                                        if (count === 0) return null;
+                                                        const labels = { class: 'Classes', group: 'Groups', student: 'Students', instructor: 'Instructors', admin: 'Admins' };
+                                                        const colors = { class: 'bg-primary-100 text-primary-700', group: 'bg-emerald-100 text-emerald-700', student: 'bg-blue-100 text-blue-700', instructor: 'bg-amber-100 text-amber-700', admin: 'bg-purple-100 text-purple-700' };
+                                                        return (
+                                                            <span key={type} className={`px-2 py-1 text-xs rounded-full font-medium ${colors[type]}`}>
+                                                                {count} {labels[type]}
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </div>
+                                                {/* List selected names */}
+                                                <div className="mt-2 text-xs text-slate-500 max-h-20 overflow-y-auto">
+                                                    {shareTargets.map((t, i) => {
+                                                        let name = '';
+                                                        // First check shareInfo for already-shared items (has the name already)
+                                                        const existingShare = sharingDoc?.shareInfo?.find(s => s.type === t.type && s.targetId === t.id);
+                                                        if (existingShare) {
+                                                            name = existingShare.targetName;
+                                                        } else if (t.type === 'class') {
+                                                            const cls = availableClasses.find(c => c.id === t.id);
+                                                            name = cls ? (cls.name || `Grade ${cls.gradeLevel}-${cls.section}`) : t.id;
+                                                        } else if (t.type === 'group') {
+                                                            const grp = availableGroups.find(g => g.id === t.id);
+                                                            name = grp ? `${grp.name} (${grp.className})` : t.id;
+                                                        } else if (t.type === 'student') {
+                                                            const stu = availableStudents.find(s => s.id === t.id);
+                                                            name = stu ? `${stu.firstName} ${stu.lastName}` : t.id;
+                                                        } else {
+                                                            const usr = availableInstructors.find(u => u.id === t.id);
+                                                            name = usr ? `${usr.firstName} ${usr.lastName}` : t.id;
+                                                        }
+                                                        return <span key={i}>{i > 0 ? ', ' : ''}{name}</span>;
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Share Button */}
+                                        <button
+                                            onClick={handleShareSubmit}
+                                            disabled={shareTargets.length === 0 || sharingLoading}
+                                            className="btn btn-primary w-full"
+                                        >
+                                            {sharingLoading ? 'Sharing...' : `Share with ${shareTargets.length} recipient(s)`}
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
             {/* Create Folder Modal */}
             {
                 showCreateFolder && (
