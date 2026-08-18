@@ -820,10 +820,14 @@ export default function DocumentsPage() {
 
     const handleSelectAll = (e) => {
         if (e.target.checked) {
-            const allDocIds = sortedDocuments.map(d => activeTab === 'my' ? d.id : (activeTab === 'shared' ? d.document?.id : d.id)).filter(Boolean);
-            setSelectedDocs(new Set(allDocIds));
-            if (activeTab === 'my') {
-                setSelectedFolders(new Set(folders.map(f => f.id)));
+            if (activeTab === 'trash') {
+                setSelectedDocs(new Set(trashDocuments.map(d => d.id)));
+            } else {
+                const allDocIds = sortedDocuments.map(d => activeTab === 'my' ? d.id : (activeTab === 'shared' ? d.document?.id : d.id)).filter(Boolean);
+                setSelectedDocs(new Set(allDocIds));
+                if (activeTab === 'my') {
+                    setSelectedFolders(new Set(folders.map(f => f.id)));
+                }
             }
         } else {
             setSelectedDocs(new Set());
@@ -833,8 +837,8 @@ export default function DocumentsPage() {
 
     // Check if all items are selected
     const isAllSelected = () => {
-        const totalDocs = sortedDocuments.length;
-        const totalFolders = folders.length;
+        const totalDocs = activeTab === 'trash' ? trashDocuments.length : sortedDocuments.length;
+        const totalFolders = activeTab === 'trash' || activeTab === 'shared' ? 0 : folders.length;
         if (totalDocs + totalFolders === 0) return false;
         return selectedDocs.size === totalDocs && selectedFolders.size === totalFolders;
     };
