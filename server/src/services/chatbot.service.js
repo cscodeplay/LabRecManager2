@@ -316,7 +316,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             throw new Error('No AI provider configured. Set GEMINI_API_KEY or GROQ_API_KEY.');
         }
 
-        const { conversationHistory = [], documentContext = '', userId } = options;
+        const { conversationHistory = [], documentContext = '', userId, academicYearId } = options;
 
         const msgLower = (message || '').toLowerCase();
 
@@ -462,7 +462,8 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
                 const matchedClassNames = classes.filter(c => resolution.matchedClassIds?.includes(c.id)).map(c => c.name);
                 const matchedGroupNames = groups.filter(g => resolution.matchedGroupIds?.includes(g.id)).map(g => g.name);
-                const targetSummaryStr = [...matchedClassNames, ...matchedGroupNames].join(', ') || 'All Assigned Students';
+                const matchedStudentNames = students.filter(s => resolution.matchedStudentIds?.includes(s.id)).map(s => `${s.firstName} ${s.lastName}`);
+                const targetSummaryStr = [...matchedClassNames, ...matchedGroupNames, ...matchedStudentNames].join(', ') || 'All Assigned Students';
 
                 const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
                 const fallbackUser = await prisma.user.findFirst({ where: { role: { in: ['admin', 'instructor'] } } });
@@ -480,6 +481,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                             schoolId,
                             createdById: creatorId,
                             subjectId: targetSubjectId,
+                            academicYearId,
                             title,
                             description: item.description || title,
                             aim: item.aim || null,
@@ -533,6 +535,29 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                         });
                         await notificationService.notifyGroup({
                             groupId,
+                            title: `New Work Assigned: ${assignment.title}`,
+                            message: `You have been assigned new lab work. Due: ${dueDate.toLocaleDateString('en-IN')}`,
+                            type: 'work_assigned',
+                            referenceType: 'assignment',
+                            referenceId: assignment.id,
+                            actionUrl: '/my-work'
+                        }).catch(() => {});
+                    }
+
+                    // Target Associations (Students)
+                    for (const studentId of (resolution.matchedStudentIds || [])) {
+                        await prisma.assignmentTarget.create({
+                            data: {
+                                assignmentId: assignment.id,
+                                targetType: 'student',
+                                targetStudentId: studentId,
+                                assignedById: creatorId,
+                                dueDate: dueDate,
+                                publishDate: new Date()
+                            }
+                        });
+                        await notificationService.createNotification({
+                            userId: studentId,
                             title: `New Work Assigned: ${assignment.title}`,
                             message: `You have been assigned new lab work. Due: ${dueDate.toLocaleDateString('en-IN')}`,
                             type: 'work_assigned',

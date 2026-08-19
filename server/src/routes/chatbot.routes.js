@@ -56,10 +56,13 @@ router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor',
     }
 
     try {
+        const sessionId = req.headers['x-academic-session'];
+        
         const result = await chatbotService.chat(message.trim(), {
             conversationHistory,
             documentContext,
-            userId: req.user.id
+            userId: req.user.id,
+            academicYearId: sessionId
         });
 
         // Log AI chatbot usage
