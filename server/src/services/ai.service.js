@@ -85,8 +85,8 @@ RULES:
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
             try {
-                console.log('[AIService] Extracting assignments via Gemini (gemini-2.0-flash / gemini-1.5-flash)...');
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+                console.log('[AIService] Extracting assignments via Gemini (gemini-3.6-flash)...');
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
                 const result = await model.generateContent([
                     {
                         inlineData: {
@@ -157,8 +157,8 @@ RULES:
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
             try {
-                console.log('[AIService] Generating assignments from text via Gemini (gemini-2.0-flash)...');
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+                console.log('[AIService] Generating assignments from text via Gemini (gemini-3.6-flash)...');
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
                 const result = await model.generateContent(systemPrompt);
                 const responseText = result.response.text();
                 return this.parseJSONResponse(responseText);
@@ -225,7 +225,7 @@ RULES:
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
             try {
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
                 const result = await model.generateContent(systemPrompt);
                 return this.parseJSONResponse(result.response.text());
             } catch (err) {
@@ -292,7 +292,7 @@ RULES:
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
             try {
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
                 const result = await model.generateContent(systemPrompt);
                 return this.parseJSONResponse(result.response.text());
             } catch (err) {

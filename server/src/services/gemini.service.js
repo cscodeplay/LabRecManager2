@@ -56,7 +56,7 @@ class GeminiService {
         }
         this.genAI = new GoogleGenerativeAI(apiKey);
         // Use the latest flash model
-        this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+        this.model = this.genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
     }
 
     async generateSQL(naturalLanguageQuery) {
