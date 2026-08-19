@@ -84,24 +84,32 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            try {
-                console.log('[AIService] Extracting assignments via Gemini (gemini-3.6-flash)...');
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-                const result = await model.generateContent([
-                    {
-                        inlineData: {
-                            data: base64Data,
-                            mimeType: mimeType
-                        }
-                    },
-                    systemPrompt
-                ]);
-                const responseText = result.response.text();
-                return this.parseJSONResponse(responseText);
-            } catch (err) {
-                console.error('[AIService] Gemini extraction failed:', err);
-                throw new Error(`AI Assignment extraction failed: ${err.message}`);
+            const geminiModels = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+            let lastGeminiError = null;
+            for (const modelName of geminiModels) {
+                try {
+                    console.log(`[AIService] Extracting assignments via Gemini (${modelName})...`);
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent([
+                        {
+                            inlineData: {
+                                data: base64Data,
+                                mimeType: mimeType
+                            }
+                        },
+                        systemPrompt
+                    ]);
+                    return this.parseJSONResponse(result.response.text());
+                } catch (err) {
+                    lastGeminiError = err;
+                    console.error(`[AIService] Gemini ${modelName} extraction failed:`, err.message);
+                    if (err.status === 503 || err.message?.includes('503') || err.message?.includes('429')) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        continue;
+                    }
+                }
             }
+            throw new Error(`AI Assignment extraction failed: ${lastGeminiError?.message}`);
         }
 
         throw new Error('No AI provider configured. Please set GROQ_API_KEY or GEMINI_API_KEY.');
@@ -137,35 +145,44 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            try {
-                console.log('[AIService] Generating assignments from text via Groq (llama-3.3-70b-versatile)...');
-                const completion = await this.groq.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
-                    messages: [
-                        { role: 'user', content: systemPrompt }
-                    ],
-                    temperature: 0.3
-                });
-
-                let responseText = completion.choices[0]?.message?.content || '';
-                return this.parseJSONResponse(responseText);
-            } catch (err) {
-                console.warn(`[AIService] Groq text generation failed (${err.message}). Falling back to Gemini...`);
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+            for (const modelName of groqModels) {
+                try {
+                    console.log(`[AIService] Generating assignments from text via Groq (${modelName})...`);
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [{ role: 'user', content: systemPrompt }],
+                        temperature: 0.3
+                    });
+                    return this.parseJSONResponse(completion.choices[0]?.message?.content || '');
+                } catch (err) {
+                    console.warn(`[AIService] Groq ${modelName} failed (${err.message}). Trying next...`);
+                    // If it's a 429, wait briefly
+                    if (err.status === 429) await new Promise(r => setTimeout(r, 1000));
+                }
             }
         }
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            try {
-                console.log('[AIService] Generating assignments from text via Gemini (gemini-3.6-flash)...');
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-                const result = await model.generateContent(systemPrompt);
-                const responseText = result.response.text();
-                return this.parseJSONResponse(responseText);
-            } catch (err) {
-                console.error('[AIService] Gemini text generation failed:', err);
-                throw new Error(`AI Assignment text generation failed: ${err.message}`);
+            const geminiModels = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+            let lastGeminiError = null;
+            for (const modelName of geminiModels) {
+                try {
+                    console.log(`[AIService] Generating assignments from text via Gemini (${modelName})...`);
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    return this.parseJSONResponse(result.response.text());
+                } catch (err) {
+                    lastGeminiError = err;
+                    console.warn(`[AIService] Gemini ${modelName} failed: ${err.message}`);
+                    if (err.status === 503 || err.message?.includes('503') || err.message?.includes('429')) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        continue;
+                    }
+                }
             }
+            throw new Error(`AI Assignment text generation failed: ${lastGeminiError?.message}`);
         }
 
         throw new Error('No AI provider configured. Please set GROQ_API_KEY or GEMINI_API_KEY.');
@@ -208,28 +225,37 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            try {
-                const completion = await this.groq.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
-                    messages: [
-                        { role: 'user', content: systemPrompt }
-                    ],
-                    temperature: 0.1
-                });
-                return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
-            } catch (err) {
-                console.warn(`[AIService] Groq target parsing failed (${err.message}). Falling back to Gemini...`);
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+            for (const modelName of groqModels) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [{ role: 'user', content: systemPrompt }],
+                        temperature: 0.1
+                    });
+                    return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                } catch (err) {
+                    console.warn(`[AIService] Groq ${modelName} target parsing failed (${err.message}). Trying next...`);
+                    if (err.status === 429) await new Promise(r => setTimeout(r, 1000));
+                }
             }
         }
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            try {
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-                const result = await model.generateContent(systemPrompt);
-                return this.parseJSONResponse(result.response.text());
-            } catch (err) {
-                console.error('[AIService] Gemini target parsing failed:', err);
+            const geminiModels = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    return this.parseJSONResponse(result.response.text());
+                } catch (err) {
+                    console.warn(`[AIService] Gemini ${modelName} target parsing failed:`, err.message);
+                    if (err.status === 503 || err.message?.includes('503') || err.message?.includes('429')) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        continue;
+                    }
+                }
             }
         }
 
@@ -275,28 +301,37 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            try {
-                const completion = await this.groq.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
-                    messages: [
-                        { role: 'user', content: systemPrompt }
-                    ],
-                    temperature: 0.1
-                });
-                return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
-            } catch (err) {
-                console.warn(`[AIService] Groq document target parsing failed (${err.message}). Falling back to Gemini...`);
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+            for (const modelName of groqModels) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [{ role: 'user', content: systemPrompt }],
+                        temperature: 0.1
+                    });
+                    return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                } catch (err) {
+                    console.warn(`[AIService] Groq ${modelName} document target parsing failed (${err.message}). Trying next...`);
+                    if (err.status === 429) await new Promise(r => setTimeout(r, 1000));
+                }
             }
         }
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            try {
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-                const result = await model.generateContent(systemPrompt);
-                return this.parseJSONResponse(result.response.text());
-            } catch (err) {
-                console.error('[AIService] Gemini document target parsing failed:', err);
+            const geminiModels = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    return this.parseJSONResponse(result.response.text());
+                } catch (err) {
+                    console.warn(`[AIService] Gemini ${modelName} document target parsing failed:`, err.message);
+                    if (err.status === 503 || err.message?.includes('503') || err.message?.includes('429')) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        continue;
+                    }
+                }
             }
         }
 

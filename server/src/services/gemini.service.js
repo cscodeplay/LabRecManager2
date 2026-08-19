@@ -60,7 +60,7 @@ class GeminiService {
     }
 
     async generateSQL(naturalLanguageQuery) {
-        if (!this.model) {
+        if (!this.genAI) {
             throw new Error('Gemini API not configured. Please set GEMINI_API_KEY in environment variables.');
         }
 
@@ -70,31 +70,43 @@ USER REQUEST: ${naturalLanguageQuery}
 
 Generate a PostgreSQL query for the above request. Return ONLY the SQL query, nothing else.`;
 
-        try {
-            const result = await this.model.generateContent(prompt);
-            const response = await result.response;
-            let sql = response.text().trim();
+        const geminiModels = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+        let lastError = null;
 
-            // Clean up the response - remove markdown code blocks if present
-            sql = sql.replace(/```sql\n?/gi, '').replace(/```\n?/gi, '').trim();
+        for (const modelName of geminiModels) {
+            try {
+                const model = this.genAI.getGenerativeModel({ model: modelName });
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                let sql = response.text().trim();
 
-            // Basic validation
-            if (!sql.toLowerCase().startsWith('select') &&
-                !sql.toLowerCase().startsWith('insert') &&
-                !sql.toLowerCase().startsWith('update') &&
-                !sql.toLowerCase().startsWith('delete') &&
-                !sql.toLowerCase().startsWith('with')) {
-                throw new Error('Generated query does not appear to be valid SQL');
+                // Clean up the response - remove markdown code blocks if present
+                sql = sql.replace(/```sql\n?/gi, '').replace(/```\n?/gi, '').trim();
+
+                // Basic validation
+                if (!sql.toLowerCase().startsWith('select') &&
+                    !sql.toLowerCase().startsWith('insert') &&
+                    !sql.toLowerCase().startsWith('update') &&
+                    !sql.toLowerCase().startsWith('delete') &&
+                    !sql.toLowerCase().startsWith('with')) {
+                    throw new Error('Generated query does not appear to be valid SQL');
+                }
+
+                return sql;
+            } catch (error) {
+                lastError = error;
+                console.error(`Gemini ${modelName} API Error:`, error.message);
+                if (error.status === 503 || error.message?.includes('503') || error.message?.includes('429')) {
+                    await new Promise(r => setTimeout(r, 1000));
+                    continue;
+                }
+                break;
             }
-
-            return sql;
-        } catch (error) {
-            console.error('Gemini API Error:', error);
-            throw new Error(`Failed to generate SQL: ${error.message}`);
         }
+        throw new Error(`Failed to generate SQL: ${lastError?.message}`);
     }
     async extractInventoryFromDocument(mimeType, base64Data) {
-        if (!this.model) {
+        if (!this.genAI) {
             throw new Error('Gemini API not configured. Please set GEMINI_API_KEY in environment variables.');
         }
 
@@ -118,28 +130,40 @@ Return ONLY valid JSON in the format below, without any markdown formatting or c
 ]
 If no inventory items are found, return an empty array [].`;
 
-        try {
-            const result = await this.model.generateContent([
-                {
-                    inlineData: {
-                        data: base64Data,
-                        mimeType: mimeType
-                    }
-                },
-                prompt
-            ]);
-            
-            const response = await result.response;
-            let text = response.text().trim();
-            
-            // Clean up the response - remove markdown code blocks if present
-            text = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
-            
-            return JSON.parse(text);
-        } catch (error) {
-            console.error('Gemini API Error (extractInventoryFromDocument):', error);
-            throw new Error(`Failed to extract inventory: ${error.message}`);
+        const geminiModels = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+        let lastError = null;
+
+        for (const modelName of geminiModels) {
+            try {
+                const model = this.genAI.getGenerativeModel({ model: modelName });
+                const result = await model.generateContent([
+                    {
+                        inlineData: {
+                            data: base64Data,
+                            mimeType: mimeType
+                        }
+                    },
+                    prompt
+                ]);
+                
+                const response = await result.response;
+                let text = response.text().trim();
+                
+                // Clean up the response - remove markdown code blocks if present
+                text = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
+                
+                return JSON.parse(text);
+            } catch (error) {
+                lastError = error;
+                console.error(`Gemini ${modelName} extraction Error:`, error.message);
+                if (error.status === 503 || error.message?.includes('503') || error.message?.includes('429')) {
+                    await new Promise(r => setTimeout(r, 1000));
+                    continue;
+                }
+                break;
+            }
         }
+        throw new Error(`Failed to extract inventory from document: ${lastError?.message}`);
     }
 }
 
