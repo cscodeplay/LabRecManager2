@@ -314,7 +314,7 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
  * @desc    Update document metadata
  * @access  Private (Admin/Principal)
  */
-router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
+router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), upload.single('file'), asyncHandler(async (req, res) => {
     const { name, description, category, isPublic } = req.body;
 
     const doc = await prisma.document.findFirst({
@@ -329,14 +329,37 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
         return res.status(403).json({ success: false, message: 'Not authorized to modify this document' });
     }
 
+    let updateData = {
+        name: name !== undefined ? name : doc.name,
+        description: description !== undefined ? description : doc.description,
+        category: category !== undefined ? category : doc.category,
+        isPublic: isPublic !== undefined ? (isPublic === 'true' || isPublic === true) : doc.isPublic
+    };
+
+    if (req.file) {
+        try {
+            await cloudinary.deleteFile(doc.cloudinaryId, 'raw');
+        } catch (err) {
+            console.error('Failed to delete old file from Cloudinary:', err);
+        }
+
+        const result = await cloudinary.uploadFile(
+            req.file.buffer,
+            req.file.originalname,
+            req.file.mimetype
+        );
+
+        updateData.fileName = req.file.originalname;
+        updateData.fileType = getFileType(req.file.mimetype);
+        updateData.mimeType = req.file.mimetype;
+        updateData.fileSize = req.file.size;
+        updateData.cloudinaryId = result.publicId;
+        updateData.url = result.secureUrl;
+    }
+
     const updated = await prisma.document.update({
         where: { id: req.params.id },
-        data: {
-            name: name !== undefined ? name : doc.name,
-            description: description !== undefined ? description : doc.description,
-            category: category !== undefined ? category : doc.category,
-            isPublic: isPublic !== undefined ? (isPublic === 'true' || isPublic === true) : doc.isPublic
-        },
+        data: updateData,
         include: {
             uploadedBy: { select: { id: true, firstName: true, lastName: true } }
         }

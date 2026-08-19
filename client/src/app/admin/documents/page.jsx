@@ -520,8 +520,7 @@ export default function DocumentsPage() {
                 formData.append('category', editData.category);
                 formData.append('isPublic', editData.isPublic);
 
-                await documentsAPI.delete(editingDoc.id);
-                await documentsAPI.upload(formData);
+                await documentsAPI.update(editingDoc.id, formData);
                 toast.success('Document replaced successfully');
             } else {
                 await documentsAPI.update(editingDoc.id, editData);
