@@ -30,7 +30,7 @@ router.post('/parse-assignments', authenticate, authorize('instructor', 'lab_ass
 
     // Fetch school context (Classes, Groups, Students, Subjects)
     const [classes, groups, students, subjects] = await Promise.all([
-        prisma.studentClass.findMany({
+        prisma.class.findMany({
             where: schoolId ? { schoolId } : {},
             select: { id: true, name: true, gradeLevel: true, section: true }
         }),

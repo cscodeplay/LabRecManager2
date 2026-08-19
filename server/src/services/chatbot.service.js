@@ -331,7 +331,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
                 const [documents, classes, groups, students] = await Promise.all([
                     prisma.document.findMany({ select: { id: true, name: true } }),
-                    prisma.studentClass.findMany({ select: { id: true, name: true, gradeLevel: true, section: true } }),
+                    prisma.class.findMany({ select: { id: true, name: true, gradeLevel: true, section: true } }),
                     prisma.studentGroup.findMany({ select: { id: true, name: true, class: { select: { name: true } } } }),
                     prisma.user.findMany({ where: { role: 'student' }, select: { id: true, firstName: true, lastName: true, admissionNumber: true } })
                 ]);
@@ -437,7 +437,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 console.log('[ChatBot] Assignment creation intent detected in chatbot prompt:', message);
 
                 const [classes, groups, students, subjects] = await Promise.all([
-                    prisma.studentClass.findMany({ select: { id: true, name: true, gradeLevel: true, section: true } }),
+                    prisma.class.findMany({ select: { id: true, name: true, gradeLevel: true, section: true } }),
                     prisma.studentGroup.findMany({ select: { id: true, name: true, class: { select: { name: true } } } }),
                     prisma.user.findMany({ where: { role: 'student' }, select: { id: true, firstName: true, lastName: true, admissionNumber: true } }),
                     prisma.subject.findMany({ select: { id: true, name: true, code: true } })

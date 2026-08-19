@@ -518,7 +518,7 @@ export default function Whiteboard({
                         token = authStore?.state?.accessToken;
                     } catch (e) {}
 
-                    if (token) {
+                    if (token && !isMeetingMode) {
                         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files/${whiteboardId}`, {
                             headers: { 'Authorization': `Bearer ${token}` }
                         });
@@ -642,7 +642,8 @@ export default function Whiteboard({
                             thumbnailUrl = tempCanvas.toDataURL('image/jpeg', 0.5);
                         }
 
-                        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files/${whiteboardId}/save`, {
+                        if (!isMeetingMode) {
+                            fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files/${whiteboardId}/save`, {
                             method: 'PUT',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -654,6 +655,7 @@ export default function Whiteboard({
                                 thumbnailUrl: thumbnailUrl
                             })
                         }).catch(e => console.error('Failed to sync whiteboard to DB:', e));
+                        }
                     }
                 } else if (whiteboardId === 'admin-standalone') {
                     let token = null;

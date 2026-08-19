@@ -184,6 +184,13 @@ export default function GlobalMeetingRoom() {
 
     // Floating Draggable Video PIP Overlay States
     const [isFloatingVideoMinimized, setIsFloatingVideoMinimized] = useState(false);
+
+    // Auto-minimize floating video for participants when in whiteboard or screen share
+    useEffect(() => {
+        if (!isInstructor && (activeSpace === 'whiteboard' || activeSpace === 'screen_share')) {
+            setIsFloatingVideoMinimized(true);
+        }
+    }, [activeSpace, isInstructor]);
     const [floatingVideoPos, setFloatingVideoPos] = useState({ x: 0, y: 0 });
     const [isDraggingFloatingVideo, setIsDraggingFloatingVideo] = useState(false);
     const floatingDragRef = useRef({ startX: 0, startY: 0, posX: 0, posY: 0 });
@@ -938,24 +945,32 @@ export default function GlobalMeetingRoom() {
         };
 
         pc.ontrack = (event) => {
-            const remoteStream = event.streams[0] || new MediaStream([event.track]);
             setRemoteParticipants(prev => {
                 const next = new Map(prev);
-                if (next.has(targetSocketId)) {
-                    const current = next.get(targetSocketId);
-                    next.set(targetSocketId, { ...current, stream: remoteStream });
+                const current = next.get(targetSocketId) || {
+                    socketId: targetSocketId,
+                    stream: new MediaStream(),
+                    name: 'Participant',
+                    role: 'student',
+                    isCameraOn: true,
+                    isMicOn: true,
+                    isScreenSharing: false,
+                    canDraw: false
+                };
+
+                // Add the new track to the existing stream
+                if (event.streams && event.streams[0]) {
+                    current.stream = event.streams[0];
                 } else {
-                    next.set(targetSocketId, {
-                        socketId: targetSocketId,
-                        stream: remoteStream,
-                        name: 'Participant',
-                        role: 'student',
-                        isCameraOn: true,
-                        isMicOn: true,
-                        isScreenSharing: false,
-                        canDraw: false
-                    });
+                    // Create a new stream reference so React re-renders VideoTile
+                    const newStream = new MediaStream(current.stream ? current.stream.getTracks() : []);
+                    if (!newStream.getTracks().find(t => t.id === event.track.id)) {
+                        newStream.addTrack(event.track);
+                    }
+                    current.stream = newStream;
                 }
+
+                next.set(targetSocketId, { ...current });
                 return next;
             });
         };
@@ -1730,7 +1745,19 @@ export default function GlobalMeetingRoom() {
     };
 
     const handleInitiateLeave = () => {
+        setLeaveCountdown(5);
         setShowLeaveConfirmModal(true);
+        if (leaveIntervalRef.current) clearInterval(leaveIntervalRef.current);
+        leaveIntervalRef.current = setInterval(() => {
+            setLeaveCountdown(prev => {
+                if (prev <= 1) {
+                    clearInterval(leaveIntervalRef.current);
+                    executeLeaveMeeting();
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
     };
 
     const handleCancelLeave = () => {
@@ -3233,7 +3260,7 @@ Link: ${getInviteUrl()}`;
                                 className="w-full py-2 px-4 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2 shadow-lg shadow-red-600/30"
                             >
                                 <Phone className="w-3.5 h-3.5 rotate-[135deg]" />
-                                Leave Now
+                                {isInstructor ? 'End Meeting' : 'Leave Now'}
                             </button>
                         </div>
                     </div>
