@@ -597,6 +597,17 @@ export default function DocumentsPage() {
         } catch { }
     };
 
+    const handleMakePublic = async (isPublic) => {
+        try {
+            await documentsAPI.update(sharingDoc.id, { isPublic });
+            setSharingDoc({ ...sharingDoc, isPublic });
+            loadDocuments();
+            toast.success(isPublic ? 'Document is now public' : 'Document is now private');
+        } catch (err) {
+            toast.error('Failed to update document privacy');
+        }
+    };
+
     // Share folder handler
     const handleShareFolder = async (folder) => {
         setSharingFolder(folder);
@@ -2153,15 +2164,24 @@ export default function DocumentsPage() {
                                 {shareMode === 'link' && sharingDoc ? (
                                     <>
                                         {!sharingDoc?.isPublic ? (
-                                            <div className="text-center py-4 text-amber-600 bg-amber-50 rounded-lg">
-                                                <p className="font-medium">Document is not public</p>
-                                                <p className="text-sm mt-1">Enable "publicly shareable" in edit to share via link</p>
+                                            <div className="text-center py-6 text-slate-600 bg-slate-50 rounded-lg">
+                                                <div className="mb-3">
+                                                    <QrCode className="w-10 h-10 mx-auto text-slate-400" />
+                                                </div>
+                                                <p className="font-medium text-slate-800">Restricted Access</p>
+                                                <p className="text-sm mt-1 mb-4">This document is not accessible via a public link.</p>
+                                                <button 
+                                                    onClick={() => handleMakePublic(true)}
+                                                    className="btn btn-primary"
+                                                >
+                                                    <Check className="w-4 h-4 inline mr-2" /> Anyone with link
+                                                </button>
                                             </div>
                                         ) : (
                                             <>
                                                 {qrCodeUrl && (
-                                                    <div className="text-center">
-                                                        <img src={qrCodeUrl} alt="QR Code" className="mx-auto rounded-lg" />
+                                                    <div className="text-center mb-4">
+                                                        <img src={qrCodeUrl} alt="QR Code" className="mx-auto rounded-lg shadow-sm border border-slate-100" />
                                                     </div>
                                                 )}
                                                 <div className="flex gap-2">
@@ -2181,8 +2201,17 @@ export default function DocumentsPage() {
                                                     rel="noopener noreferrer"
                                                     className="btn btn-secondary w-full"
                                                 >
-                                                    <Download className="w-5 h-5" />
+                                                    <Download className="w-5 h-5 mr-2" /> Download Document
                                                 </a>
+                                                <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
+                                                    <span className="text-sm text-slate-500">Public access is turned on</span>
+                                                    <button 
+                                                        onClick={() => handleMakePublic(false)}
+                                                        className="text-sm text-red-600 hover:text-red-700 font-medium"
+                                                    >
+                                                        Remove public access
+                                                    </button>
+                                                </div>
                                             </>
                                         )}
                                     </>
