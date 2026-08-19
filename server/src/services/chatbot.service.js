@@ -625,11 +625,29 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
             { role: 'user', content: message }
         ];
 
-        // Try providers in order
+        // Try providers based on requested provider
         let aiResult = null;
-        const providers = this.geminiModels.length
-            ? [() => this.callGemini(geminiContents), () => this.callGroq(groqMessages)]
-            : [() => this.callGroq(groqMessages)];
+        const { provider = 'auto' } = options;
+        
+        let providers = [];
+        
+        const tryGemini = () => this.callGemini(geminiContents);
+        const tryGroq = () => this.callGroq(groqMessages);
+
+        if (provider === 'gemini' && this.geminiModels.length) {
+            providers = [tryGemini, tryGroq];
+        } else if (provider === 'groq' && this.groqClient) {
+            providers = [tryGroq, tryGemini];
+        } else {
+            // Auto order: Groq first (faster/cheaper), then Gemini
+            if (this.groqClient && this.geminiModels.length) {
+                providers = [tryGroq, tryGemini];
+            } else if (this.geminiModels.length) {
+                providers = [tryGemini];
+            } else if (this.groqClient) {
+                providers = [tryGroq];
+            }
+        }
 
         let lastError = null;
         for (const tryProvider of providers) {

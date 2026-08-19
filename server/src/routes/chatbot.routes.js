@@ -46,7 +46,7 @@ const upload = multer({
  * @access  Private (Admin only)
  */
 router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
-    const { message, conversationHistory = [], documentContext = '' } = req.body;
+    const { message, conversationHistory = [], documentContext = '', provider = 'auto' } = req.body;
 
     if (!message || typeof message !== 'string' || message.trim().length < 1) {
         return res.status(400).json({
@@ -62,7 +62,8 @@ router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor',
             conversationHistory,
             documentContext,
             userId: req.user.id,
-            academicYearId: sessionId
+            academicYearId: sessionId,
+            provider
         });
 
         // Log AI chatbot usage

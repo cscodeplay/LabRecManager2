@@ -433,6 +433,7 @@ export default function FloatingChatbot() {
     const [uploadedDocs, setUploadedDocs] = useState([]);
     const [isUploading, setIsUploading] = useState(false);
     const [unread, setUnread] = useState(0);
+    const [preferredModel, setPreferredModel] = useState('auto');
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
     const inputRef = useRef(null);
@@ -459,15 +460,21 @@ export default function FloatingChatbot() {
             const history = messages.slice(-10).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', content: m.content }));
             const docCtx = uploadedDocs.map(d => `--- ${d.fileName} ---\n${d.extractedText}`).join('\n\n');
 
-            const res = await api.post('/admin/chatbot/chat', { message: msg, conversationHistory: history, documentContext: docCtx });
+            const res = await api.post('/admin/chatbot/chat', { 
+                message: msg, 
+                conversationHistory: history, 
+                documentContext: docCtx,
+                provider: preferredModel
+            });
             if (res.data.success) {
                 const d = res.data.data;
                 setMessages(prev => [...prev, { role: 'assistant', content: d.message || d.text || '', sql: d.sql, queryResult: d.queryResult, chartData: d.chartData, reportAction: d.reportAction, model: d.model, provider: d.provider, timestamp: d.timestamp }]);
                 if (!isOpen) setUnread(u => u + 1);
             }
         } catch (err) {
+            const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message;
             setMessages(prev => [...prev, {
-                role: 'assistant', content: `❌ ${err.response?.data?.message || err.message}`, timestamp: new Date().toISOString(), isError: true
+                role: 'assistant', content: `❌ **Error:** ${errorMsg}`, timestamp: new Date().toISOString(), isError: true
             }]);
         } finally {
             setIsLoading(false);
@@ -560,7 +567,18 @@ export default function FloatingChatbot() {
                                 <Bot className="w-4.5 h-4.5" />
                             </div>
                             <div>
-                                <h3 className="font-semibold text-sm leading-none">AI Assistant</h3>
+                                <h3 className="font-semibold text-sm leading-none flex items-center gap-2">
+                                    AI Assistant
+                                    <select 
+                                        value={preferredModel}
+                                        onChange={(e) => setPreferredModel(e.target.value)}
+                                        className="bg-white/10 border border-white/20 text-white text-[10px] rounded px-1 py-0.5 outline-none focus:bg-white/20 ml-2"
+                                    >
+                                        <option value="auto" className="text-black">Auto (Fastest)</option>
+                                        <option value="groq" className="text-black">Llama 3.3 (Groq)</option>
+                                        <option value="gemini" className="text-black">Gemini 3.6 (Google)</option>
+                                    </select>
+                                </h3>
                                 <p className="text-[10px] text-white/70 mt-0.5">Database-aware • Schema-synced</p>
                             </div>
                         </div>
