@@ -508,7 +508,15 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                     prisma.subject.findMany({ select: { id: true, name: true, code: true } })
                 ]);
                 
-                const resolution = await aiService.parseAssignmentTargets(message, { classes, groups, students, subjects }, 'groq');
+                // Pre-filter students to save context window tokens
+                const msgLowerCased = message.toLowerCase();
+                const filteredStudents = students.filter(s => {
+                    const fn = (s.firstName || '').toLowerCase();
+                    const ln = (s.lastName || '').toLowerCase();
+                    return (fn && msgLowerCased.includes(fn)) || (ln && msgLowerCased.includes(ln));
+                });
+                
+                const resolution = await aiService.parseAssignmentTargets(message, { classes, groups, students: filteredStudents, subjects }, 'groq');
                 
                 const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
                 const fallbackUser = await prisma.user.findFirst({ where: { role: { in: ['admin', 'instructor'] } } });
@@ -625,8 +633,16 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 // 1. AI Task extraction
                 const extractedAssignments = await aiService.extractAssignmentsFromText(message, 'groq');
 
+                // Pre-filter students to save context window tokens
+                const msgLowerCased = message.toLowerCase();
+                const filteredStudents = students.filter(s => {
+                    const fn = (s.firstName || '').toLowerCase();
+                    const ln = (s.lastName || '').toLowerCase();
+                    return (fn && msgLowerCased.includes(fn)) || (ln && msgLowerCased.includes(ln));
+                });
+
                 // 2. AI Target resolution
-                const resolution = await aiService.parseAssignmentTargets(message, { classes, groups, students, subjects }, 'groq');
+                const resolution = await aiService.parseAssignmentTargets(message, { classes, groups, students: filteredStudents, subjects }, 'groq');
 
                 let targetSubjectId = resolution.selectedSubjectId;
                 if (!targetSubjectId) {
@@ -665,6 +681,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                             schoolId,
                             createdById: creatorId,
                             subjectId: targetSubjectId,
+                            academicYearId,
                             title,
                             description: item.description || title,
                             aim: item.aim || null,
