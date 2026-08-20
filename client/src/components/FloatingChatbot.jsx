@@ -5,7 +5,7 @@ import {
     Bot, Send, Upload, Database, ChevronDown, ChevronRight, Trash2,
     Sparkles, FileText, AlertTriangle, Copy, Check, RefreshCw, X,
     Loader2, Minimize2, Maximize2, Download, Image as ImageIcon, User, BarChart2, Expand, Shrink, File,
-    HelpCircle, History, FilePlus
+    HelpCircle, History, FilePlus, Maximize, Minimize
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
