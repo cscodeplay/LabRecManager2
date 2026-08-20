@@ -954,8 +954,6 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
         const tryGroq = () => this.callGroq(groqMessages);
         const trySambaNova = () => this.callSambaNova(groqMessages);
         const tryGitHub = () => this.callGitHub(groqMessages);
-
-        let providers = [];
         if (provider === 'gemini' && this.geminiModels.length) {
             providers = [tryGemini, tryGroq, trySambaNova, tryGitHub];
         } else if (provider === 'groq' && this.groqClient) {
