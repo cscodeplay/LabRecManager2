@@ -9,6 +9,7 @@
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Groq = require('groq-sdk');
+const axios = require('axios');
 const prisma = require('../config/database');
 const aiService = require('./ai.service');
 const notificationService = require('./notificationService');
@@ -48,6 +49,16 @@ class ChatbotService {
         } else {
             console.warn('[ChatBot] GROQ_API_KEY not set.');
         }
+
+        // Initialize SambaNova
+        this.sambaNovaKey = process.env.SAMBANOVA_API_KEY;
+        if (this.sambaNovaKey) console.log('[ChatBot] SambaNova initialized');
+        else console.warn('[ChatBot] SAMBANOVA_API_KEY not set.');
+
+        // Initialize GitHub
+        this.githubToken = process.env.GITHUB_TOKEN;
+        if (this.githubToken) console.log('[ChatBot] GitHub Models initialized');
+        else console.warn('[ChatBot] GITHUB_TOKEN not set.');
 
         if (!geminiKey && !groqKey) {
             console.error('[ChatBot] No AI provider configured!');
@@ -308,6 +319,52 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             }
         }
         throw lastError || new Error('All Groq models failed');
+    }
+
+    // ═══ SAMBANOVA CALL ═══
+    async callSambaNova(messages) {
+        if (!this.sambaNovaKey) throw new Error('SambaNova not configured');
+        console.log('[ChatBot] SambaNova → Meta-Llama-3.1-70B-Instruct');
+        try {
+            const response = await axios.post('https://api.sambanova.ai/v1/chat/completions', {
+                model: 'Meta-Llama-3.1-70B-Instruct',
+                messages,
+                temperature: 0.1,
+                max_tokens: 1500
+            }, {
+                headers: { 'Authorization': `Bearer ${this.sambaNovaKey}`, 'Content-Type': 'application/json' }
+            });
+            return {
+                text: response.data.choices[0]?.message?.content || '',
+                model: 'Meta-Llama-3.1-70B-Instruct', provider: 'sambanova'
+            };
+        } catch (err) {
+            console.error('[ChatBot] SambaNova Error:', err.response?.data || err.message);
+            throw new Error('SambaNova API error');
+        }
+    }
+
+    // ═══ GITHUB MODELS CALL ═══
+    async callGitHub(messages) {
+        if (!this.githubToken) throw new Error('GitHub Models not configured');
+        console.log('[ChatBot] GitHub Models → gpt-4o');
+        try {
+            const response = await axios.post('https://models.inference.ai.azure.com/chat/completions', {
+                model: 'gpt-4o',
+                messages,
+                temperature: 0.1,
+                max_tokens: 1500
+            }, {
+                headers: { 'Authorization': `Bearer ${this.githubToken}`, 'Content-Type': 'application/json' }
+            });
+            return {
+                text: response.data.choices[0]?.message?.content || '',
+                model: 'gpt-4o', provider: 'github'
+            };
+        } catch (err) {
+            console.error('[ChatBot] GitHub Models Error:', err.response?.data || err.message);
+            throw new Error('GitHub Models API error');
+        }
     }
 
     // ═══ MAIN CHAT ═══
@@ -895,20 +952,30 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
         
         const tryGemini = () => this.callGemini(geminiContents);
         const tryGroq = () => this.callGroq(groqMessages);
+        const trySambaNova = () => this.callSambaNova(groqMessages);
+        const tryGitHub = () => this.callGitHub(groqMessages);
 
+        let providers = [];
         if (provider === 'gemini' && this.geminiModels.length) {
-            providers = [tryGemini, tryGroq];
+            providers = [tryGemini, tryGroq, trySambaNova, tryGitHub];
         } else if (provider === 'groq' && this.groqClient) {
-            providers = [tryGroq, tryGemini];
+            providers = [tryGroq, tryGemini, trySambaNova, tryGitHub];
+        } else if (provider === 'sambanova' && this.sambaNovaKey) {
+            providers = [trySambaNova, tryGroq, tryGemini, tryGitHub];
+        } else if (provider === 'github' && this.githubToken) {
+            providers = [tryGitHub, tryGemini, tryGroq, trySambaNova];
         } else {
-            // Auto order: Groq first (faster/cheaper), then Gemini
-            if (this.groqClient && this.geminiModels.length) {
-                providers = [tryGroq, tryGemini];
-            } else if (this.geminiModels.length) {
-                providers = [tryGemini];
-            } else if (this.groqClient) {
-                providers = [tryGroq];
-            }
+            // Auto order based on what is available
+            const available = [];
+            if (this.groqClient) available.push(tryGroq);
+            if (this.geminiModels.length) available.push(tryGemini);
+            if (this.sambaNovaKey) available.push(trySambaNova);
+            if (this.githubToken) available.push(tryGitHub);
+            providers = available;
+        }
+
+        if (providers.length === 0) {
+            throw new Error('No AI provider configured. Set GEMINI_API_KEY, GROQ_API_KEY, SAMBANOVA_API_KEY, or GITHUB_TOKEN in your .env');
         }
 
         let lastError = null;

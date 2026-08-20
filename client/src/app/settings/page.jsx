@@ -397,7 +397,8 @@ export default function SettingsPage() {
         ...(isAdmin ? [
             { id: 'sessions', icon: Calendar, label: 'Sessions' },
             { id: 'grading', icon: GraduationCap, label: 'Grading' },
-            { id: 'database', icon: SettingsIcon, label: 'SQL Console' }
+            { id: 'database', icon: SettingsIcon, label: 'SQL Console' },
+            { id: 'ai', icon: Bell, label: 'AI & API Keys' } // Reusing Bell icon to avoid importing Bot if not present
         ] : [])
     ];
 
@@ -1348,6 +1349,61 @@ export default function SettingsPage() {
                                     <SettingsIcon className="w-4 h-4" />
                                     Open SQL Console
                                 </a>
+                            </div>
+                        )}
+
+                        {activeTab === 'ai' && isAdmin && (
+                            <div className="card p-6 space-y-6">
+                                <div>
+                                    <h2 className="text-lg font-semibold text-slate-900 mb-2">AI Models & API Keys Setup</h2>
+                                    <p className="text-sm text-slate-600 mb-4">
+                                        Configure AI providers like SambaNova, Groq, Gemini, and GitHub Models to power LIA. Since this app runs on Render.com, you must set these keys as Environment Variables.
+                                    </p>
+                                </div>
+                                
+                                <div className="space-y-4">
+                                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                                        <h3 className="font-semibold text-slate-800 mb-2">How to add API Keys on Render.com</h3>
+                                        <ol className="list-decimal list-inside text-sm text-slate-600 space-y-2">
+                                            <li>Log into your Render dashboard and select your Web Service.</li>
+                                            <li>Go to the <strong>Environment</strong> tab on the left menu.</li>
+                                            <li>Click <strong>Add Environment Variable</strong>.</li>
+                                            <li>Add the variables (e.g. <code>SAMBANOVA_API_KEY</code>, <code>GROQ_API_KEY</code>).</li>
+                                            <li>Save the changes. Render will automatically redeploy the backend!</li>
+                                        </ol>
+                                    </div>
+
+                                    <div className="grid gap-3">
+                                        <div className="p-3 border border-slate-200 rounded-lg flex items-center justify-between">
+                                            <div>
+                                                <div className="font-medium text-slate-800">SambaNova API (Llama 3.2 Vision)</div>
+                                                <div className="text-xs text-slate-500 font-mono mt-0.5">SAMBANOVA_API_KEY</div>
+                                            </div>
+                                            <a href="https://cloud.sambanova.ai/" target="_blank" rel="noreferrer" className="text-primary-600 text-sm hover:underline">Get Key</a>
+                                        </div>
+                                        <div className="p-3 border border-slate-200 rounded-lg flex items-center justify-between">
+                                            <div>
+                                                <div className="font-medium text-slate-800">GitHub Models API (GPT-4o)</div>
+                                                <div className="text-xs text-slate-500 font-mono mt-0.5">GITHUB_TOKEN</div>
+                                            </div>
+                                            <a href="https://github.com/marketplace/models" target="_blank" rel="noreferrer" className="text-primary-600 text-sm hover:underline">Get Token</a>
+                                        </div>
+                                        <div className="p-3 border border-slate-200 rounded-lg flex items-center justify-between">
+                                            <div>
+                                                <div className="font-medium text-slate-800">Groq API (Llama 3.3)</div>
+                                                <div className="text-xs text-slate-500 font-mono mt-0.5">GROQ_API_KEY</div>
+                                            </div>
+                                            <a href="https://console.groq.com/" target="_blank" rel="noreferrer" className="text-primary-600 text-sm hover:underline">Get Key</a>
+                                        </div>
+                                        <div className="p-3 border border-slate-200 rounded-lg flex items-center justify-between">
+                                            <div>
+                                                <div className="font-medium text-slate-800">Google Gemini API</div>
+                                                <div className="text-xs text-slate-500 font-mono mt-0.5">GEMINI_API_KEY</div>
+                                            </div>
+                                            <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="text-primary-600 text-sm hover:underline">Get Key</a>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>

@@ -630,6 +630,8 @@ export default function FloatingChatbot() {
                                         <option value="auto" className="text-black">Auto (Fastest)</option>
                                         <option value="groq" className="text-black">Llama 3.3 (Groq)</option>
                                         <option value="gemini" className="text-black">Gemini 3.6 (Google)</option>
+                                        <option value="sambanova" className="text-black">Llama 3.2 Vision (SambaNova)</option>
+                                        <option value="github" className="text-black">GPT-4o (GitHub)</option>
                                     </select>
                                 </h3>
                             </div>
