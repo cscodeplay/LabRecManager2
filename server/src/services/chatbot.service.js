@@ -32,7 +32,7 @@ class ChatbotService {
         const geminiKey = process.env.GEMINI_API_KEY;
         if (geminiKey) {
             const genAI = new GoogleGenerativeAI(geminiKey);
-            const geminiModelNames = ['gemini-3.6-flash', 'gemini-1.5-flash'];
+            const geminiModelNames = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
             this.geminiModels = geminiModelNames.map(name => ({
                 name, instance: genAI.getGenerativeModel({ model: name })
             }));
@@ -291,7 +291,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     // ═══ GROQ CALL ═══
     async callGroq(messages) {
         if (!this.groqClient) throw new Error('Groq not configured');
-        const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+        const groqModels = ['qwen/qwen3.6-27b', 'groq/compound'];
         let lastError = null;
 
         for (const model of groqModels) {

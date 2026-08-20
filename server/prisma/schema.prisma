@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model School {
@@ -226,6 +226,7 @@ model User {
   whiteboardFiles                                WhiteboardFile[]           @relation("WhiteboardFileOwner")
   adminNotes                                     AdminNote[]                @relation("AdminNotesAuthor")
   DocumentViewLog                                DocumentViewLog[]
+  ChatSession                                    ChatSession[]
 
   @@unique([schoolId, studentId], map: "unique_student_id_per_school")
   @@index([email], map: "idx_users_email")
@@ -2399,4 +2400,29 @@ model AdminNote {
   @@index([category])
   @@index([isPinned])
   @@map("admin_notes")
+}
+
+model ChatSession {
+  id        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String        @map("user_id") @db.Uuid
+  title     String        @db.VarChar(255)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String      @map("session_id") @db.Uuid
+  role      String      @db.VarChar(50)
+  content   String      @db.Text
+  sql       String?     @db.Text
+  provider  String?     @db.VarChar(50)
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamp(6)
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("chat_messages")
 }

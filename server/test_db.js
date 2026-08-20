@@ -1,19 +1,20 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-async function main() {
-    try {
-        await prisma.documentShare.findFirst({
-            where: { id: '00000000-0000-0000-0000-000000000000' },
-            include: { document: { select: { schoolId: true } } }
-        });
-        console.log("findFirst OK");
-    } catch(e) { console.error("Error 1:", e.message); }
 
-    try {
-        await prisma.document.findUnique({
-            where: { id: '00000000-0000-0000-0000-000000000000', schoolId: '00000000-0000-0000-0000-000000000000' }
-        });
-        console.log("findUnique OK");
-    } catch(e) { console.error("Error 2:", e.message); }
+async function main() {
+    const docs = await prisma.document.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: { id: true, name: true, folderId: true, uploadedById: true, schoolId: true, deletedAt: true }
+    });
+    console.log("Recent Documents:", docs);
+    
+    const folders = await prisma.documentFolder.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: { id: true, name: true, createdById: true, schoolId: true, deletedAt: true }
+    });
+    console.log("Recent Folders:", folders);
 }
-main().finally(() => prisma.$disconnect());
+
+main().catch(console.error).finally(() => prisma.$disconnect());

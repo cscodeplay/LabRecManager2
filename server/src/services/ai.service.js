@@ -85,7 +85,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+            const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
             let lastGeminiError = null;
             for (const modelName of geminiModels) {
                 try {
@@ -147,7 +147,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+            const groqModels = ['qwen/qwen3.6-27b', 'groq/compound'];
             for (const modelName of groqModels) {
                 try {
                     console.log(`[AIService] Generating assignments from text via Groq (${modelName})...`);
@@ -167,7 +167,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+            const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
             let lastGeminiError = null;
             for (const modelName of geminiModels) {
                 try {
@@ -231,7 +231,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+            const groqModels = ['qwen/qwen3.6-27b', 'groq/compound'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -249,7 +249,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+            const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -307,7 +307,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+            const groqModels = ['qwen/qwen3.6-27b', 'groq/compound'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -325,7 +325,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+            const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
