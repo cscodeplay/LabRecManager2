@@ -549,6 +549,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                             experimentNumber: item.experimentNumber || `${i + 1}`,
                             assignmentType: item.assignmentType || 'program',
                             programmingLanguage: item.programmingLanguage || 'python',
+                            referenceCode: item.referenceCode || null,
                             maxMarks: 100,
                             practicalMarks: 60,
                             vivaMarks: 20,

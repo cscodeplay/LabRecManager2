@@ -4,7 +4,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
     Bot, Send, Upload, Database, ChevronDown, ChevronRight, Trash2,
     Sparkles, FileText, AlertTriangle, Copy, Check, RefreshCw, X,
-    Loader2, Minimize2, Maximize2, Download, Image as ImageIcon, User, BarChart2, Expand, Shrink, File
+    Loader2, Minimize2, Maximize2, Download, Image as ImageIcon, User, BarChart2, Expand, Shrink, File,
+    HelpCircle, History, FilePlus
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
@@ -435,12 +436,52 @@ export default function FloatingChatbot() {
     const [isUploading, setIsUploading] = useState(false);
     const [unread, setUnread] = useState(0);
     const [preferredModel, setPreferredModel] = useState('auto');
+    const [sessions, setSessions] = useState([]);
+    const [currentSessionId, setCurrentSessionId] = useState(null);
+    const [showHistory, setShowHistory] = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
     const inputRef = useRef(null);
 
     // Only render for admin/principal
-    const isAdmin = user?.role === 'admin' || user?.role === 'principal';
+    const isAdmin = user?.role === 'admin' || user?.role === 'principal' || user?.role === 'instructor';
+
+    const loadSessions = async () => {
+        try {
+            const res = await api.get('/admin/chatbot/sessions');
+            if (res.data.success) {
+                setSessions(res.data.data);
+            }
+        } catch (err) {
+            console.error('Failed to load sessions', err);
+        }
+    };
+
+    useEffect(() => {
+        if (isOpen && isAdmin) {
+            loadSessions();
+        }
+    }, [isOpen, isAdmin]);
+
+    const saveSession = async (msgs, title = null) => {
+        if (!isAdmin) return null;
+        try {
+            const res = await api.post('/admin/chatbot/sessions', {
+                sessionId: currentSessionId,
+                title,
+                messages: msgs
+            });
+            if (res.data.success) {
+                setCurrentSessionId(res.data.data.id);
+                loadSessions();
+                return res.data.data.id;
+            }
+        } catch (err) {
+            console.error('Failed to save session', err);
+        }
+        return currentSessionId;
+    };
 
     useEffect(() => {
         if (isOpen) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -469,8 +510,16 @@ export default function FloatingChatbot() {
             });
             if (res.data.success) {
                 const d = res.data.data;
-                setMessages(prev => [...prev, { role: 'assistant', content: d.message || d.text || '', sql: d.sql, queryResult: d.queryResult, chartData: d.chartData, reportAction: d.reportAction, model: d.model, provider: d.provider, timestamp: d.timestamp }]);
+                const newMsgs = [...prev, { role: 'assistant', content: d.message || d.text || '', sql: d.sql, queryResult: d.queryResult, chartData: d.chartData, reportAction: d.reportAction, model: d.model, provider: d.provider, timestamp: d.timestamp }];
+                setMessages(newMsgs);
                 if (!isOpen) setUnread(u => u + 1);
+
+                // Save to DB
+                let title = null;
+                if (messages.length === 0) {
+                    title = msg.length > 30 ? msg.substring(0, 30) + '...' : msg;
+                }
+                saveSession(newMsgs, title);
             }
         } catch (err) {
             const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message;
@@ -516,8 +565,10 @@ export default function FloatingChatbot() {
     };
 
     const clearChat = () => {
+        setCurrentSessionId(null);
         setMessages([{ role: 'assistant', content: '🗑️ Chat cleared. How can I help?', timestamp: new Date().toISOString() }]);
         setUploadedDocs([]);
+        setShowHistory(false);
     };
 
     const suggestions = [
@@ -583,30 +634,98 @@ export default function FloatingChatbot() {
                                 <p className="text-[10px] text-white/70 mt-0.5">Database-aware • Schema-synced</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <button onClick={clearChat} className="p-1.5 hover:bg-white/20 rounded-lg transition" title="Clear chat">
-                                <Trash2 className="w-3.5 h-3.5" />
+                        <div className="flex items-center gap-1.5">
+                            <button onClick={() => setShowHelp(true)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title="Prompt Guide">
+                                <HelpCircle className="w-4 h-4" />
                             </button>
-                            <button onClick={() => setIsExpanded(!isExpanded)} className="p-1.5 hover:bg-white/20 rounded-lg transition" title={isExpanded ? 'Minimize' : 'Expand'}>
-                                {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                            <button onClick={() => setShowHistory(!showHistory)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title="Chat History">
+                                <History className="w-4 h-4" />
                             </button>
-                            <button onClick={() => { setIsOpen(false); setIsExpanded(false); }} className="p-1.5 hover:bg-white/20 rounded-lg transition" title="Close">
-                                <X className="w-4 h-4" />
+                            <button onClick={clearChat} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title="New Chat">
+                                <FilePlus className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setIsExpanded(!isExpanded)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90 hidden sm:flex">
+                                {isExpanded ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+                            </button>
+                            <button onClick={() => setIsOpen(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90">
+                                <X className="w-5 h-5" />
                             </button>
                         </div>
                     </div>
 
-                    {/* Document badges */}
-                    {uploadedDocs.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 px-3 py-2 bg-slate-50 border-b border-slate-200">
-                            {uploadedDocs.map((doc, i) => (
-                                <DocBadge key={i} doc={doc} onRemove={() => setUploadedDocs(p => p.filter((_, j) => j !== i))} />
-                            ))}
+                    {/* Help Modal */}
+                    {showHelp && (
+                        <div className="absolute inset-0 top-[52px] bg-white z-50 flex flex-col">
+                            <div className="p-3 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                                <h3 className="font-semibold text-slate-800 flex items-center gap-2"><HelpCircle className="w-4 h-4 text-indigo-600"/> Prompt Guide</h3>
+                                <button onClick={() => setShowHelp(false)} className="p-1 hover:bg-slate-200 rounded"><X className="w-4 h-4"/></button>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                <div>
+                                    <h4 className="font-medium text-slate-900 mb-1">Create Assignments</h4>
+                                    <p className="text-xs text-slate-600 mb-2">Generate and assign tasks automatically.</p>
+                                    <div className="bg-indigo-50 p-2 rounded text-xs text-indigo-800 font-mono">"Create assignment to write a Python program for factorial and assign it to 10th A"</div>
+                                    <div className="bg-indigo-50 p-2 rounded text-xs text-indigo-800 font-mono mt-1">"Create a lab task for Java Inheritance and set due date to 5th Oct"</div>
+                                </div>
+                                <div>
+                                    <h4 className="font-medium text-slate-900 mb-1">Schedule Meetings</h4>
+                                    <p className="text-xs text-slate-600 mb-2">Quickly create instant or scheduled meetings.</p>
+                                    <div className="bg-emerald-50 p-2 rounded text-xs text-emerald-800 font-mono">"Create an instant meeting for Lab 1"</div>
+                                    <div className="bg-emerald-50 p-2 rounded text-xs text-emerald-800 font-mono mt-1">"Schedule a meeting for tomorrow at 10 AM"</div>
+                                </div>
+                                <div>
+                                    <h4 className="font-medium text-slate-900 mb-1">Search Documents</h4>
+                                    <p className="text-xs text-slate-600 mb-2">Find your uploaded documents.</p>
+                                    <div className="bg-amber-50 p-2 rounded text-xs text-amber-800 font-mono">"Find documents related to Physics syllabus"</div>
+                                </div>
+                                <div>
+                                    <h4 className="font-medium text-slate-900 mb-1">Database Queries (SQL)</h4>
+                                    <p className="text-xs text-slate-600 mb-2">Ask questions about your data.</p>
+                                    <div className="bg-slate-100 p-2 rounded text-xs text-slate-700 font-mono">"Show me the top 5 students by submissions"</div>
+                                    <div className="bg-slate-100 p-2 rounded text-xs text-slate-700 font-mono mt-1">"How many active instructors are there?"</div>
+                                </div>
+                            </div>
                         </div>
                     )}
 
-                    {/* Messages area */}
-                    <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 bg-slate-50/50">
+                    {/* History View */}
+                    {showHistory ? (
+                        <div className="flex-1 overflow-y-auto bg-slate-50 p-4 relative z-40">
+                            <h3 className="font-semibold text-slate-700 mb-3 flex items-center gap-2"><History className="w-4 h-4"/> Chat History</h3>
+                            {sessions.length === 0 ? (
+                                <p className="text-sm text-slate-500 text-center mt-10">No chat history found.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {sessions.map(s => (
+                                        <button 
+                                            key={s.id}
+                                            onClick={() => {
+                                                setCurrentSessionId(s.id);
+                                                setMessages(s.metadata?.messages || []);
+                                                setShowHistory(false);
+                                            }}
+                                            className="w-full text-left p-3 bg-white border border-slate-200 rounded-lg hover:border-indigo-300 hover:shadow-sm transition group"
+                                        >
+                                            <div className="font-medium text-slate-800 text-sm truncate">{s.description || 'Chat Session'}</div>
+                                            <div className="text-[10px] text-slate-400 mt-1">{new Date(s.createdAt).toLocaleString()}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <>
+                            {/* Document badges */}
+                            {uploadedDocs.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 px-3 py-2 bg-slate-50 border-b border-slate-200 relative z-30">
+                                    {uploadedDocs.map((doc, i) => (
+                                        <DocBadge key={i} doc={doc} onRemove={() => setUploadedDocs(p => p.filter((_, j) => j !== i))} />
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Messages area */}
+                            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 bg-slate-50/50">
                         {messages.length === 0 && (
                             <div className="py-2 px-1">
                                 <div className="text-center mb-3">
@@ -701,6 +820,8 @@ export default function FloatingChatbot() {
                             </div>
                         )}
                     </div>
+                    </>
+                    )}
 
                     {/* Input bar */}
                     <div className="flex items-end gap-2 px-3 py-2.5 bg-white border-t border-slate-200 flex-shrink-0">

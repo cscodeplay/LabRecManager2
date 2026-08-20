@@ -45,7 +45,8 @@ Return ONLY a valid JSON array of assignments with the following schema:
     "programmingLanguage": "python" | "cpp" | "c" | "java" | "html" | "sql" | "other",
     "assignmentType": "program" | "experiment" | "project" | "observation",
     "experimentNumber": "1",
-    "suggestedSubject": "Computer Science" or detected subject name
+    "suggestedSubject": "Computer Science" or detected subject name,
+    "referenceCode": "Provide a complete, correct, and well-commented sample solution/code for this assignment here."
   }
 ]
 
@@ -131,7 +132,8 @@ Return ONLY a valid JSON array of assignments with the following schema:
     "programmingLanguage": "python" | "cpp" | "c" | "java" | "html" | "sql" | "other",
     "assignmentType": "program" | "experiment" | "project" | "observation",
     "experimentNumber": "1",
-    "suggestedSubject": "Computer Science"
+    "suggestedSubject": "Computer Science",
+    "referenceCode": "Provide a complete, correct, and well-commented sample solution/code for this assignment here."
   }
 ]
 

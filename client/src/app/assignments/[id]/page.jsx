@@ -25,6 +25,25 @@ export default function AssignmentDetailPage() {
     const [removeLoading, setRemoveLoading] = useState(false);
     const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
     const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
+    
+    // Sample solution (reference code) editing
+    const [isEditingRefCode, setIsEditingRefCode] = useState(false);
+    const [editedRefCode, setEditedRefCode] = useState('');
+    const [savingRefCode, setSavingRefCode] = useState(false);
+
+    const handleSaveRefCode = async () => {
+        setSavingRefCode(true);
+        try {
+            await assignmentsAPI.update(assignment.id, { referenceCode: editedRefCode });
+            setAssignment({ ...assignment, referenceCode: editedRefCode });
+            setIsEditingRefCode(false);
+            toast.success('Sample solution updated successfully');
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to update sample solution');
+        } finally {
+            setSavingRefCode(false);
+        }
+    };
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -185,10 +204,51 @@ export default function AssignmentDetailPage() {
                         )}
 
                         {/* Reference Code */}
-                        {assignment.referenceCode && (
+                        {(assignment.referenceCode || user?.role === 'admin' || user?.role === 'instructor') && (
                             <div className="card p-6">
-                                <h3 className="font-semibold text-slate-900 mb-3">Reference Code</h3>
-                                <pre className="code-block">{assignment.referenceCode}</pre>
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="font-semibold text-slate-900">Sample Solution / Reference Code</h3>
+                                    {(user?.role === 'admin' || user?.role === 'instructor') && (
+                                        <button 
+                                            onClick={() => {
+                                                if (isEditingRefCode) {
+                                                    setIsEditingRefCode(false);
+                                                } else {
+                                                    setEditedRefCode(assignment.referenceCode || '');
+                                                    setIsEditingRefCode(true);
+                                                }
+                                            }}
+                                            className="text-primary-600 hover:text-primary-700 text-sm font-medium flex items-center gap-1"
+                                        >
+                                            {isEditingRefCode ? <><X className="w-4 h-4" /> Cancel</> : <><Edit2 className="w-4 h-4" /> Edit</>}
+                                        </button>
+                                    )}
+                                </div>
+                                {isEditingRefCode ? (
+                                    <div className="space-y-3">
+                                        <textarea
+                                            value={editedRefCode}
+                                            onChange={(e) => setEditedRefCode(e.target.value)}
+                                            className="w-full h-64 p-3 bg-slate-900 text-green-400 font-mono text-sm rounded-lg border border-slate-700 focus:outline-none focus:border-primary-500"
+                                            placeholder="Write sample code here..."
+                                        />
+                                        <div className="flex justify-end">
+                                            <button 
+                                                onClick={handleSaveRefCode}
+                                                disabled={savingRefCode}
+                                                className="btn btn-primary btn-sm"
+                                            >
+                                                {savingRefCode ? 'Saving...' : 'Save Solution'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    assignment.referenceCode ? (
+                                        <pre className="code-block">{assignment.referenceCode}</pre>
+                                    ) : (
+                                        <p className="text-sm text-slate-400 italic">No sample solution provided.</p>
+                                    )
+                                )}
                             </div>
                         )}
 

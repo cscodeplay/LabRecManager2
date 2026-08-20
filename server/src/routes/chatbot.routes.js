@@ -207,4 +207,77 @@ router.post('/execute', authenticate, authorize('admin'), asyncHandler(async (re
     }
 }));
 
+
+/**
+ * @route   GET /api/admin/chatbot/sessions
+ * @desc    Get all chat sessions for the user
+ * @access  Private
+ */
+router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
+    const sessions = await prisma.activityLog.findMany({
+        where: {
+            userId: req.user.id,
+            action_type: 'ai_chat_session'
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+            id: true,
+            description: true,
+            createdAt: true,
+            metadata: true
+        }
+    });
+    res.json({ success: true, data: sessions });
+}));
+
+/**
+ * @route   POST /api/admin/chatbot/sessions
+ * @desc    Save or update a chat session
+ * @access  Private
+ */
+router.post('/sessions', authenticate, asyncHandler(async (req, res) => {
+    const { sessionId, title, messages } = req.body;
+    
+    if (sessionId) {
+        // Try to update existing
+        const existing = await prisma.activityLog.findFirst({ where: { id: sessionId, userId: req.user.id } });
+        if (existing) {
+            const updated = await prisma.activityLog.update({
+                where: { id: sessionId },
+                data: {
+                    description: title || existing.description,
+                    metadata: { messages }
+                }
+            });
+            return res.json({ success: true, data: updated });
+        }
+    }
+    
+    // Create new
+    const created = await prisma.activityLog.create({
+        data: {
+            userId: req.user.id,
+            schoolId: req.user.schoolId,
+            actionType: 'other',
+            action_type: 'ai_chat_session',
+            description: title || 'New Chat',
+            metadata: { messages }
+        }
+    });
+    
+    res.json({ success: true, data: created });
+}));
+
+/**
+ * @route   DELETE /api/admin/chatbot/sessions/:id
+ * @desc    Delete a chat session
+ * @access  Private
+ */
+router.delete('/sessions/:id', authenticate, asyncHandler(async (req, res) => {
+    await prisma.activityLog.deleteMany({
+        where: { id: req.params.id, userId: req.user.id }
+    });
+    res.json({ success: true });
+}));
+
 module.exports = router;
