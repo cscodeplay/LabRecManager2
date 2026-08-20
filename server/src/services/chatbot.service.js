@@ -458,12 +458,13 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
                 const dueDate = new Date();
                 dueDate.setHours(dueDate.getHours() + (resolution.dueDateHoursFromNow || 24));
-                const status = 'published';
+                const status = resolution.publishImmediately ? 'published' : 'draft';
 
                 const matchedClassNames = classes.filter(c => resolution.matchedClassIds?.includes(c.id)).map(c => c.name);
                 const matchedGroupNames = groups.filter(g => resolution.matchedGroupIds?.includes(g.id)).map(g => g.name);
                 const matchedStudentNames = students.filter(s => resolution.matchedStudentIds?.includes(s.id)).map(s => `${s.firstName} ${s.lastName}`);
-                const targetSummaryStr = [...matchedClassNames, ...matchedGroupNames, ...matchedStudentNames].join(', ') || 'All Assigned Students';
+                const hasTargets = matchedClassNames.length > 0 || matchedGroupNames.length > 0 || matchedStudentNames.length > 0;
+                const targetSummaryStr = hasTargets ? [...matchedClassNames, ...matchedGroupNames, ...matchedStudentNames].join(', ') : 'None (Draft only)';
 
                 const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
                 const fallbackUser = await prisma.user.findFirst({ where: { role: { in: ['admin', 'instructor'] } } });
@@ -570,16 +571,16 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                     createdList.push(assignment);
                 }
 
-                const replyText = `✨ **AI Assignment Created & Assigned Successfully!**
+                const replyText = `✨ **AI Assignment Generation Complete!**
 
-I have generated and assigned the following task(s) based on your request:
+I have generated the following task(s) based on your request:
 
 ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
    - **Aim**: ${a.aim || a.description}
    - **Subject**: ${subjectObj ? subjectObj.name : 'Computer Science'}
    - **Target Audience**: ${targetSummaryStr}
    - **Due Date**: ${dueDate.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-   - **Status**: Published 🚀`).join('\n\n')}`;
+   - **Status**: ${status === 'published' ? 'Published 🚀' : 'Draft 📝'}`).join('\n\n')}`;
 
                 return {
                     message: replyText,
@@ -599,6 +600,141 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
                     reportAction: null,
                     provider: 'groq'
                 };
+            }
+        }
+
+        // Intent: Meeting Creation
+        const isMeetingCreationIntent = (
+            (msgLower.includes('create') || msgLower.includes('schedule') || msgLower.includes('start') || msgLower.includes('new')) &&
+            (msgLower.includes('meeting') || msgLower.includes('session') || msgLower.includes('video call') || msgLower.includes('conference'))
+        );
+        if (isMeetingCreationIntent) {
+            try {
+                console.log('[ChatBot] Meeting creation intent detected');
+                const meetingLink = Math.random().toString(36).substring(2, 10);
+                const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
+                const fallbackUser = await prisma.user.findFirst({ where: { role: { in: ['admin', 'instructor'] } } });
+                const hostId = currentUser?.id || fallbackUser?.id;
+                const schoolId = currentUser?.schoolId || (await prisma.school.findFirst()).id;
+                
+                const type = (msgLower.includes('schedule') || msgLower.includes('later') || msgLower.includes('tomorrow')) ? 'scheduled' : 'instant';
+                const scheduledAt = type === 'scheduled' ? new Date(Date.now() + 24 * 60 * 60 * 1000) : new Date();
+
+                const meeting = await prisma.meeting.create({
+                    data: {
+                        title: `AI ${type === 'scheduled' ? 'Scheduled' : 'Instant'} Meeting`,
+                        type,
+                        meetingLink,
+                        hostId,
+                        schoolId,
+                        scheduledAt,
+                        status: type === 'scheduled' ? 'scheduled' : 'in_progress',
+                        actualStartTime: type === 'instant' ? new Date() : null
+                    }
+                });
+
+                return {
+                    message: `✨ **Meeting Created Successfully!**\n\nYour ${type} meeting is ready.\n\n🔗 **[Join Meeting](/meeting/${meetingLink})**\n\n*(Share this link: /meeting/${meetingLink})*`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    provider: 'groq'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Meeting creation failed:', err.message);
+            }
+        }
+
+        // Intent: Note Creation
+        const isNoteCreationIntent = (
+            (msgLower.includes('create note') || msgLower.includes('save note') || msgLower.includes('new note') || msgLower.includes('save this as note') || msgLower.includes('save as note') || msgLower.includes('create a note'))
+        );
+        if (isNoteCreationIntent) {
+            try {
+                console.log('[ChatBot] Note creation intent detected');
+                const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
+                const authorId = currentUser?.id || (await prisma.user.findFirst({ where: { role: 'admin' } })).id;
+                
+                let noteContent = documentContext || message.replace(/create note|save note|new note|save this as note|save as note|create a note/gi, '').trim();
+                if (!noteContent) noteContent = 'Empty AI Note';
+                
+                const titleMatch = noteContent.split('\n')[0];
+                const title = (titleMatch.length > 50 ? titleMatch.substring(0, 47) + '...' : titleMatch) || 'AI Generated Note';
+                
+                await prisma.adminNote.create({
+                    data: {
+                        title,
+                        content: noteContent,
+                        category: 'general',
+                        authorId
+                    }
+                });
+
+                return {
+                    message: `✨ **Note Created!**\n\nI have saved your text/image content as an Admin Note.\n\n📝 **[View Notes](/admin/notes)**`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    provider: 'groq'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Note creation failed:', err.message);
+            }
+        }
+
+        // Intent: Document Search
+        const isDocumentSearchIntent = (
+            (msgLower.includes('search document') || msgLower.includes('find document') || msgLower.includes('search file') || msgLower.includes('find file') || msgLower.includes('search for document') || msgLower.includes('find a document')) &&
+            !isDocumentShareIntent
+        );
+        if (isDocumentSearchIntent) {
+            try {
+                console.log('[ChatBot] Document search intent detected');
+                let query = message.replace(/search document|find document|search file|find file|search for document|find a document/gi, '').trim();
+                query = query.replace(/^for /i, '').replace(/^named /i, '').trim();
+
+                let docs = [];
+                if (query) {
+                    docs = await prisma.document.findMany({
+                        where: {
+                            OR: [
+                                { name: { contains: query, mode: 'insensitive' } },
+                                { description: { contains: query, mode: 'insensitive' } }
+                            ]
+                        },
+                        take: 10
+                    });
+                } else {
+                    docs = await prisma.document.findMany({
+                        orderBy: { createdAt: 'desc' },
+                        take: 5
+                    });
+                }
+
+                if (docs.length > 0) {
+                    const links = docs.map(d => `- 📄 **[${d.name}](${d.url})** (${(d.fileSize / 1024).toFixed(1)} KB) - *${d.createdAt.toLocaleDateString()}*`);
+                    return {
+                        message: `✨ **Found ${docs.length} Document(s):**\n\n${links.join('\n')}\n\n*Click a link to view or download the document.*`,
+                        sql: null,
+                        executionResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        provider: 'groq'
+                    };
+                } else {
+                    return {
+                        message: `⚠️ **No Documents Found**\n\nI couldn't find any documents matching "${query}". Try uploading them first via the Documents page.`,
+                        sql: null,
+                        executionResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        provider: 'groq'
+                    };
+                }
+            } catch (err) {
+                console.error('[ChatBot] Document search failed:', err.message);
             }
         }
 

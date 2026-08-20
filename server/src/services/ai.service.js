@@ -218,10 +218,11 @@ Return ONLY valid JSON matching this schema:
 
 RULES:
 1. Match Class names liberally e.g. "XII COM-A", "12 COM A", "12A" should match matching grade/section/name in Classes list.
-2. If "publish now" or "publish immediately" is present in request, set publishImmediately to true. Otherwise false.
-3. Default selectedSubjectId to the Computer Science subject ID if found in Subjects list, unless request specifies another subject.
-4. Default dueDateHoursFromNow to 24 unless specified in request.
-5. Output MUST be valid JSON only.`;
+2. ONLY set publishImmediately to true if the prompt EXPLICITLY asks to "publish" or "assign". Otherwise, default to false.
+3. ONLY populate matchedClassIds, matchedGroupIds, or matchedStudentIds if the prompt EXPLICITLY mentions them (e.g. "assign to Class X", "assign to student Y", or "assign to all students"). If no assignment target is mentioned, leave all arrays empty []. If "all students" is mentioned, include the IDs of all students or the appropriate global class.
+4. Default selectedSubjectId to the Computer Science subject ID if found in Subjects list, unless request specifies another subject.
+5. Default dueDateHoursFromNow to 24 unless specified in request.
+6. Output MUST be valid JSON only.`;
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
