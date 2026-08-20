@@ -426,11 +426,67 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             }
         }
 
+        // Intent detection: AI Assignment Updating
+        const isAssignmentUpdateIntent = (
+            (msgLower.includes('assignment') || msgLower.includes('due date') || msgLower.includes('task')) &&
+            (/\b(change|update|edit|modify|extend|postpone|shift)\b/i.test(msgLower))
+        );
+
         // Intent detection: AI Assignment Creation & Targeting directly via Global Chatbot
         const isAssignmentCreationIntent = (
             (msgLower.includes('assignment') || msgLower.includes('program') || msgLower.includes('lab work') || msgLower.includes('task') || msgLower.includes('experiment') || msgLower.includes('homework') || msgLower.includes('practical')) &&
-            (msgLower.includes('create') || msgLower.includes('assign') || msgLower.includes('give') || msgLower.includes('generate') || msgLower.includes('make') || msgLower.includes('add') || msgLower.includes('new') || msgLower.includes('set'))
+            (/\b(create|assign|give|generate|make|add|new|set)\b/i.test(msgLower)) &&
+            !isAssignmentUpdateIntent
         );
+
+        if (isAssignmentUpdateIntent) {
+            try {
+                console.log('[ChatBot] Assignment update intent detected in chatbot prompt:', message);
+                const resolution = await aiService.parseAssignmentTargets(message, { classes: [], groups: [], students: [], subjects: [] }, 'groq');
+                
+                const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
+                const fallbackUser = await prisma.user.findFirst({ where: { role: { in: ['admin', 'instructor'] } } });
+                const creatorId = currentUser?.id || fallbackUser?.id;
+
+                const lastAssignment = await prisma.assignment.findFirst({
+                    where: { createdById: creatorId },
+                    orderBy: { createdAt: 'desc' }
+                });
+
+                if (!lastAssignment) {
+                    return { message: "⚠️ **No Recent Assignment Found**\n\nI couldn't find any recent assignment created by you to update.", sql: null, executionResult: null, chartData: null, reportAction: null, provider: 'groq' };
+                }
+
+                let newDueDate = new Date();
+                if (resolution.dueDateISO) {
+                    newDueDate = new Date(resolution.dueDateISO);
+                } else {
+                    newDueDate.setHours(newDueDate.getHours() + (resolution.dueDateHoursFromNow || 24));
+                }
+
+                await prisma.assignment.update({
+                    where: { id: lastAssignment.id },
+                    data: { due_date: newDueDate }
+                });
+
+                await prisma.assignmentTarget.updateMany({
+                    where: { assignmentId: lastAssignment.id },
+                    data: { dueDate: newDueDate }
+                });
+
+                return {
+                    message: `✨ **Assignment Updated Successfully!**\n\nThe due date for your assignment **"${lastAssignment.title}"** has been changed to ${newDueDate.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}.`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    provider: 'groq'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Assignment update failed:', err.message);
+                return { message: `⚠️ **Unable to Update Assignment**\n\nReason: ${err.message}`, sql: null, executionResult: null, chartData: null, reportAction: null, provider: 'groq' };
+            }
+        }
 
         if (isAssignmentCreationIntent) {
             try {
@@ -456,8 +512,12 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 }
                 const subjectObj = subjects.find(s => s.id === targetSubjectId);
 
-                const dueDate = new Date();
-                dueDate.setHours(dueDate.getHours() + (resolution.dueDateHoursFromNow || 24));
+                let dueDate = new Date();
+                if (resolution.dueDateISO) {
+                    dueDate = new Date(resolution.dueDateISO);
+                } else {
+                    dueDate.setHours(dueDate.getHours() + (resolution.dueDateHoursFromNow || 24));
+                }
                 const status = resolution.publishImmediately ? 'published' : 'draft';
 
                 const matchedClassNames = classes.filter(c => resolution.matchedClassIds?.includes(c.id)).map(c => c.name);

@@ -200,6 +200,8 @@ Analyze the user's natural language request and match it against the provided da
 
 USER REQUEST: "${prompt}"
 
+CURRENT DATE: ${new Date().toISOString()}
+
 AVAILABLE DATABASE CONTEXT:
 Classes: ${JSON.stringify(classes.map(c => ({ id: c.id, name: c.name, gradeLevel: c.gradeLevel, section: c.section })))}
 Groups: ${JSON.stringify(groups.map(g => ({ id: g.id, name: g.name, className: g.class?.name })))}
@@ -213,15 +215,16 @@ Return ONLY valid JSON matching this schema:
   "matchedStudentIds": ["student_uuid1"],
   "selectedSubjectId": "subject_uuid_or_null",
   "publishImmediately": true | false,
-  "dueDateHoursFromNow": 24 (default 24 unless prompt specifies custom timeframe e.g. "due in 3 days" = 72)
+  "dueDateISO": "YYYY-MM-DDTHH:mm:ss.sssZ",
+  "dueDateHoursFromNow": 24 (default 24 unless prompt specifies custom timeframe)
 }
 
 RULES:
 1. Match Class names liberally e.g. "XII COM-A", "12 COM A", "12A" should match matching grade/section/name in Classes list.
 2. ONLY set publishImmediately to true if the prompt EXPLICITLY asks to "publish" or "assign". Otherwise, default to false.
-3. ONLY populate matchedClassIds, matchedGroupIds, or matchedStudentIds if the prompt EXPLICITLY mentions them (e.g. "assign to Class X", "assign to student Y", or "assign to all students"). If no assignment target is mentioned, leave all arrays empty []. If "all students" is mentioned, include the IDs of all students or the appropriate global class.
+3. ONLY populate matchedClassIds, matchedGroupIds, or matchedStudentIds if the prompt EXPLICITLY mentions them. If "all students" is mentioned, include the IDs of all students or the appropriate global class.
 4. Default selectedSubjectId to the Computer Science subject ID if found in Subjects list, unless request specifies another subject.
-5. Default dueDateHoursFromNow to 24 unless specified in request.
+5. If the prompt specifies an absolute date (e.g. "1st sep 2026"), calculate and set dueDateISO based on the CURRENT DATE. If relative (e.g. "in 3 days"), set dueDateHoursFromNow. Default to 24 hours if neither.
 6. Output MUST be valid JSON only.`;
 
         // 1. Try Groq (Primary)
