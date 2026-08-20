@@ -349,6 +349,71 @@ RULES:
         };
     }
 
+    /**
+     * Parse natural language instructions to search for documents based on keywords and dates.
+     */
+    async parseDocumentSearchQuery(prompt, preferredProvider = 'groq') {
+        const systemPrompt = `You are an AI document search assistant.
+Analyze the user's natural language request to search for documents and extract the search parameters.
+
+USER REQUEST: "${prompt}"
+CURRENT DATE: ${new Date().toISOString()}
+
+Return ONLY valid JSON matching this schema:
+{
+  "keywords": ["word1", "word2"],
+  "startDate": "YYYY-MM-DDTHH:mm:ss.sssZ",
+  "endDate": "YYYY-MM-DDTHH:mm:ss.sssZ"
+}
+
+RULES:
+1. Extract meaningful keywords for the search query (e.g. "physics", "lab", "assignment").
+2. Do not include words like "document", "file", "search", "find", "about", "from", "between" in keywords.
+3. If a date or date range is mentioned, calculate the absolute ISO date strings based on the CURRENT DATE.
+4. If "on [date]" is mentioned, set startDate to the start of that day (00:00:00) and endDate to the end of that day (23:59:59).
+5. If no date is mentioned, startDate and endDate MUST be null.
+6. Output MUST be valid JSON only.
+`;
+
+        // 1. Try Groq (Primary)
+        if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
+            const groqModels = ['qwen/qwen3.6-27b', 'groq/compound'];
+            for (const modelName of groqModels) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [{ role: 'user', content: systemPrompt }],
+                        temperature: 0.1
+                    });
+                    return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                } catch (err) {
+                    console.warn(`[AIService] Groq ${modelName} doc search parsing failed:`, err.message);
+                    if (err.status === 429) await new Promise(r => setTimeout(r, 1000));
+                }
+            }
+        }
+
+        // 2. Try Gemini (Fallback)
+        if (this.genAI) {
+            const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    return this.parseJSONResponse(result.response.text());
+                } catch (err) {
+                    console.warn(`[AIService] Gemini ${modelName} doc search parsing failed:`, err.message);
+                    if (err.status === 503 || err.message?.includes('503') || err.message?.includes('429')) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        continue;
+                    }
+                }
+            }
+        }
+
+        return { keywords: [], startDate: null, endDate: null };
+    }
+
     parseJSONResponse(text) {
         let cleanText = text.trim();
         cleanText = cleanText.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();

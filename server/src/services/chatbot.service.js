@@ -892,18 +892,34 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
         if (isDocumentSearchIntent) {
             try {
                 console.log('[ChatBot] Document search intent detected');
-                let query = message.replace(/search document|find document|search file|find file|search for document|find a document/gi, '').trim();
-                query = query.replace(/^for /i, '').replace(/^named /i, '').trim();
-
+                
+                const searchParams = await aiService.parseDocumentSearchQuery(message, options.provider);
                 let docs = [];
-                if (query) {
+                
+                let whereClause = {};
+                
+                // Add keywords search if present
+                if (searchParams.keywords && searchParams.keywords.length > 0) {
+                    whereClause.AND = searchParams.keywords.map(kw => ({
+                        OR: [
+                            { name: { contains: kw, mode: 'insensitive' } },
+                            { description: { contains: kw, mode: 'insensitive' } }
+                        ]
+                    }));
+                }
+                
+                // Add date range search if present
+                if (searchParams.startDate || searchParams.endDate) {
+                    whereClause.createdAt = {};
+                    if (searchParams.startDate) whereClause.createdAt.gte = new Date(searchParams.startDate);
+                    if (searchParams.endDate) whereClause.createdAt.lte = new Date(searchParams.endDate);
+                }
+                
+                // Fetch documents
+                if (Object.keys(whereClause).length > 0) {
                     docs = await prisma.document.findMany({
-                        where: {
-                            OR: [
-                                { name: { contains: query, mode: 'insensitive' } },
-                                { description: { contains: query, mode: 'insensitive' } }
-                            ]
-                        },
+                        where: whereClause,
+                        orderBy: { createdAt: 'desc' },
                         take: 10
                     });
                 } else {
