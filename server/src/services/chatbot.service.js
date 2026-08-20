@@ -542,7 +542,6 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                             schoolId,
                             createdById: creatorId,
                             subjectId: targetSubjectId,
-                            academicYearId,
                             title,
                             description: item.description || title,
                             aim: item.aim || null,

@@ -510,16 +510,17 @@ export default function FloatingChatbot() {
             });
             if (res.data.success) {
                 const d = res.data.data;
-                const newMsgs = [...prev, { role: 'assistant', content: d.message || d.text || '', sql: d.sql, queryResult: d.queryResult, chartData: d.chartData, reportAction: d.reportAction, model: d.model, provider: d.provider, timestamp: d.timestamp }];
-                setMessages(newMsgs);
-                if (!isOpen) setUnread(u => u + 1);
-
-                // Save to DB
                 let title = null;
                 if (messages.length === 0) {
                     title = msg.length > 30 ? msg.substring(0, 30) + '...' : msg;
                 }
-                saveSession(newMsgs, title);
+                
+                setMessages(prev => {
+                    const newMsgs = [...prev, { role: 'assistant', content: d.message || d.text || '', sql: d.sql, queryResult: d.queryResult, chartData: d.chartData, reportAction: d.reportAction, model: d.model, provider: d.provider, timestamp: d.timestamp }];
+                    saveSession(newMsgs, title);
+                    return newMsgs;
+                });
+                if (!isOpen) setUnread(u => u + 1);
             }
         } catch (err) {
             const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message;
@@ -593,7 +594,7 @@ export default function FloatingChatbot() {
                 <button
                     onClick={() => setIsOpen(true)}
                     className="fixed bottom-6 right-6 z-[9999] w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 text-white shadow-2xl shadow-violet-500/40 flex items-center justify-center hover:scale-110 hover:shadow-violet-500/60 transition-all duration-300 group"
-                    title="AI Assistant"
+                    title="LIA"
                 >
                     <Bot className="w-6 h-6 group-hover:scale-110 transition-transform" />
                     {/* Pulse ring */}
@@ -620,7 +621,7 @@ export default function FloatingChatbot() {
                             </div>
                             <div>
                                 <h3 className="font-semibold text-sm leading-none flex items-center gap-2">
-                                    AI Assistant
+                                    LIA
                                     <select 
                                         value={preferredModel}
                                         onChange={(e) => setPreferredModel(e.target.value)}
@@ -631,7 +632,6 @@ export default function FloatingChatbot() {
                                         <option value="gemini" className="text-black">Gemini 3.6 (Google)</option>
                                     </select>
                                 </h3>
-                                <p className="text-[10px] text-white/70 mt-0.5">Database-aware • Schema-synced</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-1.5">
