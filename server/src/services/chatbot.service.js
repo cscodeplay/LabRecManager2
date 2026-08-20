@@ -428,9 +428,10 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
         // Intent detection: AI Assignment Updating
         const isAssignmentUpdateIntent = (
-            (msgLower.includes('assignment') || msgLower.includes('due date') || msgLower.includes('task')) &&
-            (/\b(change|update|edit|modify|extend|postpone|shift)\b/i.test(msgLower))
-        );
+            (/\b(change|update|edit|modify|extend|postpone|shift)\b/i.test(msgLower)) ||
+            (msgLower.includes('assign to') && !msgLower.includes('create') && !msgLower.includes('generate')) ||
+            (msgLower.includes('due date') && !msgLower.includes('create') && !msgLower.includes('generate'))
+        ) && (msgLower.includes('assignment') || msgLower.includes('due date') || msgLower.includes('task') || msgLower.includes('assign to'));
 
         // Intent detection: AI Assignment Creation & Targeting directly via Global Chatbot
         const isAssignmentCreationIntent = (
@@ -442,7 +443,15 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
         if (isAssignmentUpdateIntent) {
             try {
                 console.log('[ChatBot] Assignment update intent detected in chatbot prompt:', message);
-                const resolution = await aiService.parseAssignmentTargets(message, { classes: [], groups: [], students: [], subjects: [] }, 'groq');
+                
+                const [classes, groups, students, subjects] = await Promise.all([
+                    prisma.class.findMany({ select: { id: true, name: true, gradeLevel: true, section: true } }),
+                    prisma.studentGroup.findMany({ select: { id: true, name: true, class: { select: { name: true } } } }),
+                    prisma.user.findMany({ where: { role: 'student' }, select: { id: true, firstName: true, lastName: true, admissionNumber: true } }),
+                    prisma.subject.findMany({ select: { id: true, name: true, code: true } })
+                ]);
+                
+                const resolution = await aiService.parseAssignmentTargets(message, { classes, groups, students, subjects }, 'groq');
                 
                 const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
                 const fallbackUser = await prisma.user.findFirst({ where: { role: { in: ['admin', 'instructor'] } } });
@@ -458,24 +467,81 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 }
 
                 let newDueDate = new Date();
-                if (resolution.dueDateISO) {
-                    newDueDate = new Date(resolution.dueDateISO);
+                let dateUpdated = false;
+                if (resolution.dueDateISO || resolution.dueDateHoursFromNow) {
+                    if (resolution.dueDateISO) {
+                        newDueDate = new Date(resolution.dueDateISO);
+                    } else {
+                        newDueDate.setHours(newDueDate.getHours() + (resolution.dueDateHoursFromNow || 24));
+                    }
+                    dateUpdated = true;
+                    
+                    await prisma.assignment.update({
+                        where: { id: lastAssignment.id },
+                        data: { due_date: newDueDate }
+                    });
+
+                    await prisma.assignmentTarget.updateMany({
+                        where: { assignmentId: lastAssignment.id },
+                        data: { dueDate: newDueDate }
+                    });
                 } else {
-                    newDueDate.setHours(newDueDate.getHours() + (resolution.dueDateHoursFromNow || 24));
+                    newDueDate = lastAssignment.due_date || newDueDate;
                 }
 
-                await prisma.assignment.update({
-                    where: { id: lastAssignment.id },
-                    data: { due_date: newDueDate }
-                });
+                let targetsAdded = 0;
+                
+                // Add class targets
+                for (const classId of (resolution.matchedClassIds || [])) {
+                    const exists = await prisma.assignmentTarget.findFirst({ where: { assignmentId: lastAssignment.id, targetClassId: classId }});
+                    if (!exists) {
+                        await prisma.assignmentTarget.create({
+                            data: { assignmentId: lastAssignment.id, targetType: 'class', targetClassId: classId, assignedById: creatorId, dueDate: newDueDate, publishDate: new Date() }
+                        });
+                        targetsAdded++;
+                    }
+                }
+                
+                // Add group targets
+                for (const groupId of (resolution.matchedGroupIds || [])) {
+                    const exists = await prisma.assignmentTarget.findFirst({ where: { assignmentId: lastAssignment.id, targetGroupId: groupId }});
+                    if (!exists) {
+                        await prisma.assignmentTarget.create({
+                            data: { assignmentId: lastAssignment.id, targetType: 'group', targetGroupId: groupId, assignedById: creatorId, dueDate: newDueDate, publishDate: new Date() }
+                        });
+                        targetsAdded++;
+                    }
+                }
+                
+                // Add student targets
+                for (const studentId of (resolution.matchedStudentIds || [])) {
+                    const exists = await prisma.assignmentTarget.findFirst({ where: { assignmentId: lastAssignment.id, targetStudentId: studentId }});
+                    if (!exists) {
+                        await prisma.assignmentTarget.create({
+                            data: { assignmentId: lastAssignment.id, targetType: 'student', targetStudentId: studentId, assignedById: creatorId, dueDate: newDueDate, publishDate: new Date() }
+                        });
+                        targetsAdded++;
+                    }
+                }
 
-                await prisma.assignmentTarget.updateMany({
-                    where: { assignmentId: lastAssignment.id },
-                    data: { dueDate: newDueDate }
-                });
+                let msgParts = [];
+                if (dateUpdated) {
+                    msgParts.push(`The due date has been changed to **${newDueDate.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}**.`);
+                }
+                if (targetsAdded > 0) {
+                    msgParts.push(`Assigned to **${targetsAdded}** new target(s).`);
+                    await prisma.assignment.update({
+                        where: { id: lastAssignment.id },
+                        data: { status: 'published' }
+                    });
+                }
+                
+                if (msgParts.length === 0) {
+                    msgParts.push(`No changes were made. Could not detect a new due date or targets.`);
+                }
 
                 return {
-                    message: `✨ **Assignment Updated Successfully!**\n\nThe due date for your assignment **"${lastAssignment.title}"** has been changed to ${newDueDate.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}.`,
+                    message: `✨ **Assignment Updated Successfully!**\n\nUpdates for **"${lastAssignment.title}"**:\n- ${msgParts.join('\n- ')}`,
                     sql: null,
                     executionResult: null,
                     chartData: null,
@@ -483,8 +549,8 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                     provider: 'groq'
                 };
             } catch (err) {
-                console.error('[ChatBot] Assignment update failed:', err.message);
-                return { message: `⚠️ **Unable to Update Assignment**\n\nReason: ${err.message}`, sql: null, executionResult: null, chartData: null, reportAction: null, provider: 'groq' };
+                console.error('[ChatBot] Error updating assignment:', err);
+                return { message: `❌ **Update Failed:** ${err.message}`, sql: null, executionResult: null, chartData: null, reportAction: null, provider: 'groq' };
             }
         }
 
