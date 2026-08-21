@@ -202,7 +202,7 @@ class ChatbotService {
     }
 
     // ═══ SYSTEM PROMPT ═══
-    buildSystemPrompt(schema, documentContext) {
+    buildSystemPrompt(schema, documentContext, userRole) {
         return `You are an intelligent AI assistant for the "Lab Record Management System" — a school management platform.
 
 YOUR CAPABILITIES:
@@ -215,9 +215,9 @@ DATABASE SCHEMA:
 ${schema}
 
 RESPONSE FORMAT RULES:
-1. When the user asks for data/stats, generate ONLY SELECT SQL queries in a \`\`\`sql block.
-2. DO NOT generate INSERT, UPDATE, or DELETE SQL queries under any circumstances.
-3. Add <!--EXEC_SQL:your_query_here:END_SQL--> at the end for auto-execution (SELECT/WITH only).
+1. When the user asks for data/stats, generate SQL queries in a \`\`\`sql block.
+\${userRole === 'admin' ? '2. You are allowed to generate INSERT, UPDATE, or DELETE queries to import or modify data. If a user uploads a CSV and asks to import it, parse the CSV from the document context, map the columns to the schema, and generate a single bulk INSERT statement.' : '2. DO NOT generate INSERT, UPDATE, or DELETE SQL queries under any circumstances.'}
+3. Add <!--EXEC_SQL:your_query_here:END_SQL--> at the end for auto-execution.
 4. DO NOT write "Result:" or try to summarize the output. The system will automatically execute the SQL and display the results to the user.
 
 SQL BEST PRACTICES:
@@ -373,7 +373,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             throw new Error('No AI provider configured. Set GEMINI_API_KEY or GROQ_API_KEY.');
         }
 
-        const { conversationHistory = [], documentContext = '', userId, academicYearId } = options;
+        const { conversationHistory = [], documentContext = '', userId, userRole, academicYearId } = options;
 
         const msgLower = (message || '').toLowerCase();
 
@@ -955,7 +955,7 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
         }
 
         const schema = await this.getSchema();
-        const systemPrompt = this.buildSystemPrompt(schema, documentContext);
+        const systemPrompt = this.buildSystemPrompt(schema, documentContext, userRole);
 
         // Build Gemini-format contents (full schema)
         const geminiContents = [
@@ -969,7 +969,7 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
 
         // Build Groq-format messages (compact schema, limited history)
         const compactSchema = await this.getCompactSchema();
-        const groqSystemPrompt = this.buildSystemPrompt(compactSchema, documentContext ? documentContext.substring(0, 2000) : '');
+        const groqSystemPrompt = this.buildSystemPrompt(compactSchema, documentContext ? documentContext.substring(0, 2000) : '', userRole);
         const groqHistory = conversationHistory.slice(-4); // only last 4 msgs to save tokens
         const groqMessages = [
             { role: 'system', content: groqSystemPrompt },
@@ -1098,10 +1098,19 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
         if (sqlMatch) {
             executedSQL = sqlMatch[1].trim();
             const norm = executedSQL.toLowerCase().trim();
-            if (norm.startsWith('select') || norm.startsWith('with')) {
+            
+            const isReadQuery = norm.startsWith('select') || norm.startsWith('with');
+            const isWriteQuery = norm.startsWith('insert') || norm.startsWith('update') || norm.startsWith('delete');
+            const canExecute = isReadQuery || (isWriteQuery && userRole === 'admin');
+
+            if (canExecute) {
                 try {
                     queryResult = await this.executeSQL(executedSQL);
                     
+                    if (isWriteQuery && queryResult.success) {
+                        queryResult.message = `Successfully executed write operation affecting ${queryResult.rowCount} rows.`;
+                    }
+
                     // Automatic self-correction retry on SQL schema error (e.g. Code 42703 column does not exist)
                     if (!queryResult.success && queryResult.error && !options._isRetry) {
                         console.warn('[ChatBot] SQL execution failed. Attempting self-correction retry...', queryResult.error);

@@ -62,6 +62,7 @@ router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor',
             conversationHistory,
             documentContext,
             userId: req.user.id,
+            userRole: req.user.role,
             academicYearId: sessionId,
             provider
         });
@@ -70,6 +71,7 @@ router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor',
         prisma.activityLog.create({
             data: {
                 userId: req.user.id,
+            userRole: req.user.role,
                 schoolId: req.user.schoolId,
                 actionType: 'other',
                 action_type: 'ai_chatbot',
@@ -186,6 +188,7 @@ router.post('/execute', authenticate, authorize('admin'), asyncHandler(async (re
     prisma.activityLog.create({
         data: {
             userId: req.user.id,
+            userRole: req.user.role,
             schoolId: req.user.schoolId,
             actionType: 'other',
             action_type: 'ai_chatbot_sql',
@@ -217,6 +220,7 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
     const sessions = await prisma.activityLog.findMany({
         where: {
             userId: req.user.id,
+            userRole: req.user.role,
             action_type: 'ai_chat_session'
         },
         orderBy: { createdAt: 'desc' },
@@ -257,6 +261,7 @@ router.post('/sessions', authenticate, asyncHandler(async (req, res) => {
     const created = await prisma.activityLog.create({
         data: {
             userId: req.user.id,
+            userRole: req.user.role,
             schoolId: req.user.schoolId,
             actionType: 'other',
             action_type: 'ai_chat_session',
