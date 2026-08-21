@@ -16,14 +16,32 @@ import * as XLSX from 'xlsx';
 /* ─── Markdown-ish renderer ─── */
 function RenderMessage({ content }) {
     if (!content) return null;
-    const parts = content.split(/(```[\s\S]*?```)/g);
+    const parts = content.split(/(~~~`[\s\S]*?~~~|~~~[\s\S]*?~~~|<think>[\s\S]*?<\/think>)/g.source.replace(/~~~/g, '```'));
+    
     return (
         <div className="ai-prose text-[13px] leading-relaxed">
             {parts.map((part, i) => {
+                if (!part) return null;
                 if (part.startsWith('```')) {
                     const m = part.match(/```(\w+)?\n?([\s\S]*?)```/);
                     if (m) return <CodeBlock key={i} code={m[2].trim()} language={m[1] || ''} />;
                 }
+                
+                if (part.startsWith('<think>')) {
+                    const thinkContent = part.replace(/<\/?think>/g, '').trim();
+                    return (
+                        <details key={i} className="mb-3 group border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
+                            <summary className="px-3 py-2 text-[11px] font-medium text-slate-500 cursor-pointer hover:bg-slate-100 flex items-center gap-1.5 select-none list-none [&::-webkit-details-marker]:hidden">
+                                <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />
+                                Thought Process
+                            </summary>
+                            <div className="px-3 pb-3 text-[11px] text-slate-500 whitespace-pre-wrap border-t border-slate-200 pt-2 bg-slate-50/50">
+                                {thinkContent}
+                            </div>
+                        </details>
+                    );
+                }
+
                 const html = part
                     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                     .replace(/\*(.*?)\*/g, '<em>$1</em>')
