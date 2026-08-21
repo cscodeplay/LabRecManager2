@@ -220,6 +220,7 @@ RESPONSE FORMAT RULES:
 3. Add <!--EXEC_SQL:your_query_here:END_SQL--> at the end for auto-execution.
 4. DO NOT write "Result:" or try to summarize the output. The system will automatically execute the SQL and display the results to the user.
 5. If the user asks for a CSV template, output raw comma-separated values inside a \`\`\`csv code block containing the headers and one row of example data. DO NOT output a Markdown table.
+6. ALL of your internal reasoning, thinking, and planning MUST be wrapped entirely inside <think> and </think> tags. Do not output raw thought process text outside of these tags. The final visible response should be placed AFTER the </think> tag.
 
 SQL BEST PRACTICES:
 - ALL id columns are UUIDs. NEVER use integers for IDs (e.g. lab_id = 1 is WRONG). Always JOIN to the related table and filter by name instead.
