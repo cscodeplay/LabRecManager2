@@ -176,8 +176,8 @@ async function main() {
             practicalMarks: 60,
             outputMarks: 20,
             status: 'published',
-            publishDate: new Date(),
-            dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            publish_date: new Date(),
+            due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
         }
     });
 
