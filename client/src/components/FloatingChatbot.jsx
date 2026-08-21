@@ -43,14 +43,34 @@ function RenderMessage({ content }) {
 
 function CodeBlock({ code, language }) {
     const [copied, setCopied] = useState(false);
+    
+    const handleDownload = () => {
+        const ext = language ? language.toLowerCase() : 'txt';
+        const filename = \`\${ext === 'csv' ? 'template' : 'code'}.\${ext}\`;
+        const blob = new Blob([code], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast.success(\`Downloaded \${filename}\`);
+    };
+
     return (
         <div className="my-2 rounded-lg overflow-hidden border border-slate-700 bg-slate-900 text-[11px]">
             <div className="flex items-center justify-between px-3 py-1.5 bg-slate-800">
                 <span className="text-slate-400 font-mono uppercase text-[10px]">{language || 'code'}</span>
-                <button onClick={() => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-                    className="text-slate-400 hover:text-white flex items-center gap-1 text-[10px]">
-                    {copied ? <><Check className="w-3 h-3 text-emerald-400" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
-                </button>
+                <div className="flex items-center gap-3">
+                    <button onClick={handleDownload}
+                        className="text-slate-400 hover:text-white flex items-center gap-1 text-[10px]">
+                        <Download className="w-3 h-3" /> Download
+                    </button>
+                    <button onClick={() => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+                        className="text-slate-400 hover:text-white flex items-center gap-1 text-[10px]">
+                        {copied ? <><Check className="w-3 h-3 text-emerald-400" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+                    </button>
+                </div>
             </div>
             <pre className="p-3 overflow-x-auto text-slate-100 font-mono leading-relaxed"><code>{code}</code></pre>
         </div>
