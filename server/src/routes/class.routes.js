@@ -163,7 +163,7 @@ router.post('/', authenticate, authorize('admin', 'principal'), [
             section,
             stream,
             academicYearId,
-            classTeacherId,
+            classTeacherId: classTeacherId || null,
             maxStudents: maxStudents || 60
         },
         include: {
