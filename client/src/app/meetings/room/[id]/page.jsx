@@ -142,9 +142,9 @@ export default function MeetingRoomDetailPage() {
                     }
 
                     // Auto-end when time expires
-                    if (timeRemaining <= 0 && isInstructor) {
-                        toast.error('Session time expired. Please complete the evaluation.');
-                        // Don't auto-end, just warn - let instructor complete grading
+                    if (timeRemaining <= 0) {
+                        toast.error('Session time expired. Meeting ended.');
+                        handleEndSession();
                     }
 
                     return newElapsed;

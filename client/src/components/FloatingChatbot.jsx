@@ -16,7 +16,7 @@ import * as XLSX from 'xlsx';
 /* ─── Markdown-ish renderer ─── */
 function RenderMessage({ content }) {
     if (!content) return null;
-    const parts = content.split(/(~~~`[\s\S]*?~~~|~~~[\s\S]*?~~~|<think>[\s\S]*?<\/think>)/g.source.replace(/~~~/g, '```'));
+    const parts = content.split(new RegExp('(`{3}[\\s\\S]*?`{3}|<think>[\\s\\S]*?<\\/think>)', 'g'));
     
     return (
         <div className="ai-prose text-[13px] leading-relaxed">
