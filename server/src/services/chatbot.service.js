@@ -1042,13 +1042,15 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
         }
 
         // If user prompt mentions report/pdf/excel/csv but model didn't emit tag, auto-build report action
-        if (!reportAction && (msgLower.includes('report') || msgLower.includes('pdf') || msgLower.includes('excel') || msgLower.includes('csv'))) {
+        const isTemplateOrImport = msgLower.includes('template') || msgLower.includes('import') || msgLower.includes('upload');
+        
+        if (!reportAction && !isTemplateOrImport && (msgLower.includes('report') || msgLower.includes('pdf') || msgLower.includes('excel') || msgLower.includes('csv'))) {
             const entities = [];
             if (msgLower.includes('student') || msgLower.includes('girl') || msgLower.includes('boy')) entities.push('students');
             if (msgLower.includes('group')) entities.push('groups');
             if (msgLower.includes('class')) entities.push('classes');
             if (msgLower.includes('assignment') || msgLower.includes('score') || msgLower.includes('marks')) entities.push('assignments');
-            if (msgLower.includes('pc') || msgLower.includes('lab') || msgLower.includes('computer')) entities.push('lab_pcs');
+            if (msgLower.includes('pc') || msgLower.includes('lab') || msgLower.includes('computer') || msgLower.includes('inventory') || msgLower.includes('equipment') || msgLower.includes('item')) entities.push('lab_pcs');
 
             if (entities.length === 0) entities.push('students');
 
