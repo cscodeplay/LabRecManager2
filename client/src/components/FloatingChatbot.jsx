@@ -46,7 +46,7 @@ function CodeBlock({ code, language }) {
     
     const handleDownload = () => {
         const ext = language ? language.toLowerCase() : 'txt';
-        const filename = \`\${ext === 'csv' ? 'template' : 'code'}.\${ext}\`;
+        const filename = `${ext === 'csv' ? 'template' : 'code'}.${ext}`;
         const blob = new Blob([code], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -54,7 +54,7 @@ function CodeBlock({ code, language }) {
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
-        toast.success(\`Downloaded \${filename}\`);
+        toast.success(`Downloaded ${filename}`);
     };
 
     return (
@@ -135,7 +135,20 @@ function SQLResult({ sql, result, onRerun }) {
             )}
 
             {/* Result */}
-            {!result.success ? (
+            {result.requiresConfirmation ? (
+                <div className="px-3 py-3 bg-amber-50 border-b border-amber-100 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                        <p className="text-amber-800 text-[11px] font-medium mb-1">Execution requires confirmation</p>
+                        <p className="text-amber-700 text-[10px] mb-2">Please review the SQL query above. This operation will modify data in your database.</p>
+                        {onRerun && (
+                            <button onClick={onRerun} className="bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-medium px-2.5 py-1.5 rounded-md flex items-center gap-1.5 transition">
+                                <Check className="w-3 h-3" /> Confirm & Execute
+                            </button>
+                        )}
+                    </div>
+                </div>
+            ) : !result.success ? (
                 <div className="px-3 py-2 bg-red-50 text-red-700 text-[11px]">
                     <AlertTriangle className="w-3 h-3 inline mr-1" /> {result.error}
                 </div>
