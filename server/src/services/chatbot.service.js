@@ -1107,29 +1107,34 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
             const canExecute = isReadQuery || (isWriteQuery && userRole === 'admin');
 
             if (canExecute) {
-                try {
-                    queryResult = await this.executeSQL(executedSQL);
-                    
-                    if (isWriteQuery && queryResult.success) {
-                        queryResult.message = `Successfully executed write operation affecting ${queryResult.rowCount} rows.`;
+                if (isWriteQuery) {
+                    queryResult = {
+                        success: true,
+                        requiresConfirmation: true,
+                        rows: []
+                    };
+                } else {
+                    try {
+                        queryResult = await this.executeSQL(executedSQL);
+                        
+                        if (!queryResult.success && queryResult.error && !options._isRetry) {
+                            console.warn('[ChatBot] SQL execution failed. Attempting self-correction retry...', queryResult.error);
+                            const retryPrompt = `The SQL query you generated failed with PostgreSQL error:\
+${queryResult.error}\n\nFailed Query:\
+\`\`\`sql\n${executedSQL}\n\`\`\`\n\nPlease check the DATABASE SCHEMA carefully, fix column/table names (e.g. use assignment_targets for class assignments or class_enrollments for student classes), and output ONLY the corrected SQL in a \`\`\`sql block with <!--EXEC_SQL:...:END_SQL-->.`;
+                            return await this.chat(retryPrompt, {
+                                ...options,
+                                _isRetry: true,
+                                conversationHistory: [
+                                    ...conversationHistory,
+                                    { role: 'user', content: message },
+                                    { role: 'assistant', content: aiText }
+                                ]
+                            });
+                        }
+                    } catch (e) {
+                        queryResult = { success: false, error: e.message };
                     }
-
-                    // Automatic self-correction retry on SQL schema error (e.g. Code 42703 column does not exist)
-                    if (!queryResult.success && queryResult.error && !options._isRetry) {
-                        console.warn('[ChatBot] SQL execution failed. Attempting self-correction retry...', queryResult.error);
-                        const retryPrompt = `The SQL query you generated failed with PostgreSQL error:\n"${queryResult.error}"\n\nFailed Query:\n\`\`\`sql\n${executedSQL}\n\`\`\`\n\nPlease check the DATABASE SCHEMA carefully, fix column/table names (e.g. use assignment_targets for class assignments or class_enrollments for student classes), and output ONLY the corrected SQL in a \`\`\`sql block with <!--EXEC_SQL:...:END_SQL-->.`;
-                        return await this.chat(retryPrompt, {
-                            ...options,
-                            _isRetry: true,
-                            conversationHistory: [
-                                ...conversationHistory,
-                                { role: 'user', content: message },
-                                { role: 'assistant', content: aiText }
-                            ]
-                        });
-                    }
-                } catch (e) {
-                    queryResult = { success: false, error: e.message };
                 }
             }
             aiText = aiText.replace(/<!--EXEC_SQL:[\s\S]*?:END_SQL-->/g, '').trim();
