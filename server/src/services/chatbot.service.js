@@ -630,9 +630,6 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                     prisma.subject.findMany({ select: { id: true, name: true, code: true } })
                 ]);
 
-                // 1. AI Task extraction
-                const extractedAssignments = await aiService.extractAssignmentsFromText(message, 'groq');
-
                 // Pre-filter students to save context window tokens
                 const msgLowerCased = message.toLowerCase();
                 const filteredStudents = students.filter(s => {
@@ -641,8 +638,11 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                     return (fn && msgLowerCased.includes(fn)) || (ln && msgLowerCased.includes(ln));
                 });
 
-                // 2. AI Target resolution
-                const resolution = await aiService.parseAssignmentTargets(message, { classes, groups, students: filteredStudents, subjects }, 'groq');
+                // Run AI Task extraction and Target resolution in parallel to prevent HTTP 500 timeout
+                const [extractedAssignments, resolution] = await Promise.all([
+                    aiService.extractAssignmentsFromText(message, 'groq'),
+                    aiService.parseAssignmentTargets(message, { classes, groups, students: filteredStudents, subjects }, 'groq')
+                ]);
 
                 let targetSubjectId = resolution.selectedSubjectId;
                 if (!targetSubjectId) {
