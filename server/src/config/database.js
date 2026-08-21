@@ -1,7 +1,22 @@
 const { PrismaClient } = require('@prisma/client');
 
+let dbUrl = process.env.DATABASE_URL;
+
+if (process.env.ACTIVE_DB === 'old' && process.env.DATABASE_URL_OLD) {
+    dbUrl = process.env.DATABASE_URL_OLD;
+    console.log('[DB Config] Using DATABASE_URL_OLD');
+} else if (process.env.ACTIVE_DB === 'new' && process.env.DATABASE_URL_NEW) {
+    dbUrl = process.env.DATABASE_URL_NEW;
+    console.log('[DB Config] Using DATABASE_URL_NEW');
+} else {
+    console.log('[DB Config] Using default DATABASE_URL');
+}
+
 // Create a single instance of Prisma Client with query logging
 const prisma = new PrismaClient({
+    datasources: dbUrl ? {
+        db: { url: dbUrl }
+    } : undefined,
     log: [
         { emit: 'event', level: 'query' },
         { emit: 'stdout', level: 'error' },
