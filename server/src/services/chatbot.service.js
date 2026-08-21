@@ -807,7 +807,7 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
         // Intent: Meeting Creation
         const isMeetingCreationIntent = (
             (msgLower.includes('create') || msgLower.includes('schedule') || msgLower.includes('start') || msgLower.includes('new')) &&
-            (msgLower.includes('meeting') || msgLower.includes('session') || msgLower.includes('video call') || msgLower.includes('conference'))
+            (msgLower.includes('meeting') || msgLower.includes('video call') || msgLower.includes('conference') || msgLower.includes('video session'))
         );
         if (isMeetingCreationIntent) {
             try {
