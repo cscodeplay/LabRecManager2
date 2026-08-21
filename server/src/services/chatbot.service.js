@@ -248,15 +248,14 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
 - When user asks to find/list documents (by date, size, category, etc.), generate a SQL query on the 'documents' table returning the 'name' and 'url' columns, so they appear as clickable links in the UI. For size, filter by 'file_size' (in bytes). For dates, use 'created_at'.
 - Use COUNT(DISTINCT ...) when counting unique entities.
 - Always handle case-insensitivity with ILIKE or LOWER().
-4. For destructive operations, warn and ask for confirmation. Never auto-execute INSERT/UPDATE/DELETE.
-5. **CHART DATA**: When the user explicitly asks for a chart (e.g. pie chart), include this block:
+7. **CHART DATA**: When the user explicitly asks for a chart (e.g. pie chart), include this block:
    \`\`\`chart
    {"type":"composed","title":"Chart Title","data":[]}
    \`\`\`
    - Keep "data" as an empty array []. The system will automatically inject the SQL results into it.
    - Supported chart types: "pie", "doughnut", "bar", "line", "area", "composed".
    - For "composed" charts, the first metric will be rendered as a Bar, and the rest as Lines. Use this for complex multi-metric comparisons.
-7. **REPORT GENERATION**: When the user asks to generate, export, or download a report (e.g. "generate PDF report for XII NM-A girls", "export Excel report of student groups"), include this tag:
+8. **REPORT GENERATION**: When the user asks to generate, export, or download a report (e.g. "generate PDF report for XII NM-A girls", "export Excel report of student groups"), include this tag:
    <!--REPORT_ACTION:{"entities":["students","groups"],"filters":{"gender":"female","classId":""},"format":"pdf"}:END_REPORT-->
    Supported entities: "students", "classes", "groups", "assignments", "lab_pcs". Supported formats: "pdf", "xlsx", "csv".
 8. Be extremely concise. No unnecessary explanations. Results speak for themselves.
