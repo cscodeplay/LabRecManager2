@@ -1,10 +1,12 @@
 import './globals.css';
 import { Inter } from 'next/font/google';
+
 import { Toaster } from 'react-hot-toast';
 import { Providers } from '@/components/Providers';
 import FloatingWhiteboardIcon from '@/components/FloatingWhiteboardIcon';
 
 const inter = Inter({ subsets: ['latin'] });
+
 
 export const metadata = {
     title: 'ULRMS | यूनिफाइड लैब रिकॉर्ड प्रबंधन प्रणाली',

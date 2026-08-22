@@ -14,50 +14,6 @@ import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
 /* ─── Markdown-ish renderer ─── */
-function RenderMessage({ content }) {
-    if (!content) return null;
-    const parts = content.split(new RegExp('(`{3}[\\s\\S]*?`{3}|<think>[\\s\\S]*?<\\/think>)', 'g'));
-    
-    return (
-        <div className="ai-prose text-[13px] leading-relaxed">
-            {parts.map((part, i) => {
-                if (!part) return null;
-                if (part.startsWith('```')) {
-                    const m = part.match(/```(\w+)?\n?([\s\S]*?)```/);
-                    if (m) return <CodeBlock key={i} code={m[2].trim()} language={m[1] || ''} />;
-                }
-                
-                if (part.startsWith('<think>')) {
-                    const thinkContent = part.replace(/<\/?think>/g, '').trim();
-                    return (
-                        <details key={i} className="mb-3 group border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
-                            <summary className="px-3 py-2 text-[11px] font-medium text-slate-500 cursor-pointer hover:bg-slate-100 flex items-center gap-1.5 select-none list-none [&::-webkit-details-marker]:hidden">
-                                <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />
-                                Thought Process
-                            </summary>
-                            <div className="px-3 pb-3 text-[11px] text-slate-500 whitespace-pre-wrap border-t border-slate-200 pt-2 bg-slate-50/50">
-                                {thinkContent}
-                            </div>
-                        </details>
-                    );
-                }
-
-                const html = part
-                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-indigo-600 underline font-semibold hover:text-indigo-800">$1</a>')
-                    .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 bg-slate-100 rounded text-[11px] font-mono text-pink-600">$1</code>')
-                    .replace(/^### (.+)$/gm, '<h4 class="font-semibold mt-2 mb-0.5 text-[13px]">$1</h4>')
-                    .replace(/^## (.+)$/gm, '<h3 class="font-semibold mt-3 mb-1 text-sm">$1</h3>')
-                    .replace(/^- (.+)$/gm, '<li class="ml-3 list-disc text-[13px]">$1</li>')
-                    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-3 list-decimal text-[13px]">$2</li>')
-                    .replace(/\n{2,}/g, '</p><p class="mb-1.5">')
-                    .replace(/\n/g, '<br/>');
-                return <div key={i} dangerouslySetInnerHTML={{ __html: `<p class="mb-1.5">${html}</p>` }} />;
-            })}
-        </div>
-    );
-}
 
 function CodeBlock({ code, language }) {
     const [copied, setCopied] = useState(false);
@@ -227,6 +183,51 @@ function SQLResult({ sql, result, onRerun }) {
 
 /* ─── Chart component with copy/download ─── */
 const DEFAULT_COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#06b6d4'];
+
+function RenderMessage({ content }) {
+    if (!content) return null;
+    const parts = content.split(new RegExp('(`{3}[\\s\\S]*?`{3}|<think>[\\s\\S]*?<\\/think>)', 'g'));
+    
+    return (
+        <div className="ai-prose text-[13px] leading-relaxed">
+            {parts.map((part, i) => {
+                if (!part) return null;
+                if (part.startsWith('```')) {
+                    const m = part.match(/```(\w+)?\n?([\s\S]*?)```/);
+                    if (m) return <CodeBlock key={i} code={m[2].trim()} language={m[1] || ''} />;
+                }
+                
+                if (part.startsWith('<think>')) {
+                    const thinkContent = part.replace(/<\/?think>/g, '').trim();
+                    return (
+                        <details key={i} className="mb-3 group border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
+                            <summary className="px-3 py-2 text-[11px] font-medium text-slate-500 cursor-pointer hover:bg-slate-100 flex items-center gap-1.5 select-none list-none [&::-webkit-details-marker]:hidden">
+                                <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />
+                                Thought Process
+                            </summary>
+                            <div className="px-3 pb-3 text-[11px] text-slate-500 whitespace-pre-wrap border-t border-slate-200 pt-2 bg-slate-50/50">
+                                {thinkContent}
+                            </div>
+                        </details>
+                    );
+                }
+
+                const html = part
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-indigo-600 underline font-semibold hover:text-indigo-800">$1</a>')
+                    .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 bg-slate-100 rounded text-[11px] font-mono text-pink-600">$1</code>')
+                    .replace(/^### (.+)$/gm, '<h4 class="font-semibold mt-2 mb-0.5 text-[13px]">$1</h4>')
+                    .replace(/^## (.+)$/gm, '<h3 class="font-semibold mt-3 mb-1 text-sm">$1</h3>')
+                    .replace(/^- (.+)$/gm, '<li class="ml-3 list-disc text-[13px]">$1</li>')
+                    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-3 list-decimal text-[13px]">$2</li>')
+                    .replace(/\n{2,}/g, '</p><p class="mb-1.5">')
+                    .replace(/\n/g, '<br/>');
+                return <div key={i} dangerouslySetInnerHTML={{ __html: `<p class="mb-1.5">${html}</p>` }} />;
+            })}
+        </div>
+    );
+}
 
 function ChatChart({ chartData }) {
     const echartsRef = useRef(null);
