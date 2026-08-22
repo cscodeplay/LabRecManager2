@@ -303,7 +303,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                     model,
                     messages,
                     temperature: 0.2,
-                    max_tokens: 1500
+                    max_tokens: 4000
                 });
                 return {
                     text: completion.choices[0]?.message?.content || '',
@@ -332,7 +332,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 model: 'Meta-Llama-3.1-70B-Instruct',
                 messages,
                 temperature: 0.1,
-                max_tokens: 1500
+                max_tokens: 4000
             }, {
                 headers: { 'Authorization': `Bearer ${this.sambaNovaKey}`, 'Content-Type': 'application/json' }
             });
@@ -342,7 +342,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             };
         } catch (err) {
             console.error('[ChatBot] SambaNova Error:', err.response?.data || err.message);
-            throw new Error('SambaNova API error');
+            throw new Error(`SambaNova API error: ${err.response?.data?.error?.message || err.message}`);
         }
     }
 
@@ -355,7 +355,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 model: 'gpt-4o',
                 messages,
                 temperature: 0.1,
-                max_tokens: 1500
+                max_tokens: 4000
             }, {
                 headers: { 'Authorization': `Bearer ${this.githubToken}`, 'Content-Type': 'application/json' }
             });
@@ -365,7 +365,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             };
         } catch (err) {
             console.error('[ChatBot] GitHub Models Error:', err.response?.data || err.message);
-            throw new Error('GitHub Models API error');
+            throw new Error(`GitHub Models API error: ${err.response?.data?.error?.message || err.message}`);
         }
     }
 
