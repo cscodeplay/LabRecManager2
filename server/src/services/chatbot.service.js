@@ -1097,10 +1097,23 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
         }
 
         // Extract auto-exec SQL
-        const sqlMatch = aiText.match(/<!--EXEC_SQL:([\s\S]*?):END_SQL-->/);
+        let sqlMatch = aiText.match(/<!--EXEC_SQL:([\s\S]*?):END_SQL-->/);
         let queryResult = null, executedSQL = null;
-        if (sqlMatch) {
+        
+        if (!sqlMatch) {
+            // Fallback: Check if the AI just outputted a ```sql block without the wrapper
+            // But only if there is exactly one sql block to avoid ambiguity
+            const sqlBlocks = [...aiText.matchAll(/```sql\n([\s\S]*?)\n```/g)];
+            if (sqlBlocks.length === 1) {
+                executedSQL = sqlBlocks[0][1].trim();
+                // Clean up the text so the code block doesn't double-render
+                aiText = aiText.replace(/```sql\n[\s\S]*?\n```/g, '').trim();
+            }
+        } else {
             executedSQL = sqlMatch[1].trim();
+        }
+
+        if (executedSQL) {
             const norm = executedSQL.toLowerCase().trim();
             
             const isReadQuery = norm.startsWith('select') || norm.startsWith('with');
