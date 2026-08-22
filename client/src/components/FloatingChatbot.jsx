@@ -184,6 +184,13 @@ function SQLResult({ sql, result, onRerun }) {
                             </button>
                         )}
                     </div>
+                    {/* Success message for write operations */}
+                    {result.rows?.length === 0 && (
+                        <div className="px-3 py-3 bg-emerald-50 text-emerald-700 text-[11px] font-medium flex items-center gap-2 border-b border-emerald-100">
+                            <Check className="w-4 h-4" /> 
+                            Operation executed successfully. 
+                        </div>
+                    )}
                     {/* Data table — shown by default */}
                     {tableOpen && result.rows?.length > 0 && (
                         <div className="overflow-x-auto max-h-52">
