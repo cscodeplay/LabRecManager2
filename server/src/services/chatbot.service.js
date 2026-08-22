@@ -216,8 +216,9 @@ ${schema}
 
 RESPONSE FORMAT RULES:
 1. When the user asks for data/stats, generate SQL queries in a \`\`\`sql block.
-\${userRole === 'admin' ? '2. You are allowed to generate INSERT, UPDATE, or DELETE queries to import or modify data. If a user uploads a CSV and asks to import it, parse the CSV from the document context, map the columns to the schema, and generate a single bulk INSERT statement.' : '2. DO NOT generate INSERT, UPDATE, or DELETE SQL queries under any circumstances.'}
-3. Add <!--EXEC_SQL:your_query_here:END_SQL--> at the end for auto-execution.
+\${userRole === 'admin' ? '2. You are allowed to generate INSERT, UPDATE, or DELETE queries to import or modify data. You MUST wrap them in <!--EXEC_SQL:...:END_SQL--> just like SELECT queries.' : '2. DO NOT generate INSERT, UPDATE, or DELETE SQL queries under any circumstances.'}
+3. Add <!--EXEC_SQL:your_query_here:END_SQL--> at the end of ANY generated SQL (both SELECT and INSERT/UPDATE) for auto-execution.
+3b. When inserting a new Class, construct the \`name\` column exactly in the order of "Grade Stream Section" (e.g., "12 Non-Medical C").
 4. DO NOT write "Result:" or try to summarize the output. The system will automatically execute the SQL and display the results to the user.
 5. If the user asks for a CSV template, output raw comma-separated values inside a \`\`\`csv code block containing the headers and one row of example data. DO NOT output a Markdown table.
 6. ALL of your internal reasoning, thinking, and planning MUST be wrapped entirely inside <think> and </think> tags. Do not output raw thought process text outside of these tags. The final visible response should be placed AFTER the </think> tag.

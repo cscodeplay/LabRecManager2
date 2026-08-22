@@ -115,11 +115,11 @@ export default function CreateClassPage() {
         const section = formData.section;
         const stream = formData.stream;
 
-        let name = `Class ${grade}`;
-        if (section) name += `-${section}`;
-        if (stream) name += ` (${stream})`;
+        let parts = [grade.toString()];
+        if (stream) parts.push(stream);
+        if (section) parts.push(section);
 
-        return name;
+        return parts.join(' ');
     };
 
     useEffect(() => {
