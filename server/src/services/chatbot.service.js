@@ -819,8 +819,18 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
                 const hostId = currentUser?.id || fallbackUser?.id;
                 const schoolId = currentUser?.schoolId || (await prisma.school.findFirst()).id;
                 
-                const type = (msgLower.includes('schedule') || msgLower.includes('later') || msgLower.includes('tomorrow')) ? 'scheduled' : 'instant';
-                const scheduledAt = type === 'scheduled' ? new Date(Date.now() + 24 * 60 * 60 * 1000) : new Date();
+                const type = (msgLower.includes('schedule') || msgLower.includes('later') || msgLower.includes('tomorrow') || msgLower.includes('for ') || msgLower.includes('at ') || msgLower.includes('on ')) ? 'scheduled' : 'instant';
+                let scheduledAt = type === 'scheduled' ? new Date(Date.now() + 24 * 60 * 60 * 1000) : new Date();
+
+                if (type === 'scheduled') {
+                    const match = message.match(/(?:for|at|on|scheduled for|scheduled)\s+([0-9a-zA-Z\-\s,\/:]+(?:am|pm)?)/i);
+                    if (match) {
+                        const parsed = new Date(match[1].trim());
+                        if (!isNaN(parsed.getTime())) {
+                            scheduledAt = parsed;
+                        }
+                    }
+                }
 
                 const meeting = await prisma.meeting.create({
                     data: {
