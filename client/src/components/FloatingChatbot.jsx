@@ -495,7 +495,12 @@ export default function FloatingChatbot() {
     const [unread, setUnread] = useState(0);
     const [preferredModel, setPreferredModel] = useState('auto');
     const [sessions, setSessions] = useState([]);
-    const [currentSessionId, setCurrentSessionId] = useState(null);
+    const [currentSessionId, setCurrentSessionId] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('ulrms_chatbot_session_id') || null;
+        }
+        return null;
+    });
     const [showHistory, setShowHistory] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
     const messagesEndRef = useRef(null);
@@ -505,11 +510,30 @@ export default function FloatingChatbot() {
     // Only render for admin/principal
     const isAdmin = user?.role === 'admin' || user?.role === 'principal' || user?.role === 'instructor';
 
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            if (currentSessionId) {
+                localStorage.setItem('ulrms_chatbot_session_id', currentSessionId);
+            } else {
+                localStorage.removeItem('ulrms_chatbot_session_id');
+            }
+        }
+    }, [currentSessionId]);
+
     const loadSessions = async () => {
         try {
             const res = await api.get('/admin/chatbot/sessions');
             if (res.data.success) {
-                setSessions(res.data.data);
+                const loadedSessions = res.data.data;
+                setSessions(loadedSessions);
+                
+                // If we have a saved session ID, restore its messages
+                if (currentSessionId && messages.length === 1) {
+                    const activeSession = loadedSessions.find(s => s.id === currentSessionId);
+                    if (activeSession && activeSession.metadata?.messages) {
+                        setMessages(activeSession.metadata.messages);
+                    }
+                }
             }
         } catch (err) {
             console.error('Failed to load sessions', err);
