@@ -346,7 +346,110 @@ const initCronJobs = () => {
         }
     });
 
-    logger.info('Cron jobs initialized (with DB keep-alive + timetable notifications)');
+    // ===========================================
+    // MEETING LIFECYCLE: Auto-end & Auto-start cron
+    // Runs every 20 seconds to auto-complete meetings when duration is over
+    // and auto-start / expire scheduled meetings
+    // ===========================================
+    checkAndManageMeetings(); // Run immediately on startup
+    setInterval(checkAndManageMeetings, 20000);
+
+    logger.info('Cron jobs initialized (with DB keep-alive + timetable notifications + meeting auto-end)');
 };
 
-module.exports = { initCronJobs, setSocketIO, ensureCurrentSession };
+const checkAndManageMeetings = async () => {
+    try {
+        const now = new Date();
+
+        // 1. Auto-complete in_progress meetings whose duration has elapsed
+        const activeMeetings = await prisma.meeting.findMany({
+            where: { status: 'in_progress' }
+        });
+
+        for (const meeting of activeMeetings) {
+            const start = new Date(meeting.actualStartTime || meeting.scheduledAt || meeting.createdAt);
+            const duration = meeting.durationMinutes || 15;
+            const end = new Date(start.getTime() + duration * 60 * 1000);
+
+            if (now >= end) {
+                await prisma.meeting.update({
+                    where: { id: meeting.id },
+                    data: {
+                        status: 'completed',
+                        actualEndTime: now,
+                        examinerRemarks: meeting.examinerRemarks || 'Meeting duration completed'
+                    }
+                }).catch(() => {});
+
+                logger.info(`[Meeting Cron] Auto-completed meeting "${meeting.title}" (${meeting.id}) because duration of ${duration}m elapsed.`);
+
+                if (ioInstance) {
+                    ioInstance.to(`meeting-${meeting.id}`).emit('meeting:session-ended', {
+                        sessionId: meeting.id,
+                        reason: 'duration_completed'
+                    });
+                    if (meeting.meetingLink) {
+                        ioInstance.to(`meeting-${meeting.meetingLink}`).emit('meeting:session-ended', {
+                            sessionId: meeting.id,
+                            reason: 'duration_completed'
+                        });
+                    }
+                    ioInstance.emit('meetings:updated');
+                }
+            }
+        }
+
+        // 2. Auto-start scheduled meetings that are due and marked with autoStart
+        const dueMeetings = await prisma.meeting.findMany({
+            where: {
+                status: 'scheduled',
+                scheduledAt: { lte: now }
+            }
+        });
+
+        for (const meeting of dueMeetings) {
+            const start = new Date(meeting.scheduledAt);
+            const duration = meeting.durationMinutes || 15;
+            const end = new Date(start.getTime() + duration * 60 * 1000);
+
+            if (now < end && meeting.autoStart !== false) {
+                // Within duration window -> Auto-start
+                await prisma.meeting.update({
+                    where: { id: meeting.id },
+                    data: {
+                        status: 'in_progress',
+                        actualStartTime: start > now ? start : now
+                    }
+                }).catch(() => {});
+
+                logger.info(`[Meeting Cron] Auto-started scheduled meeting "${meeting.title}" (${meeting.id}).`);
+
+                if (ioInstance) {
+                    ioInstance.emit('meetings:updated');
+                }
+            } else if (now >= end) {
+                // Past duration window -> Auto-expire / cancel
+                await prisma.meeting.update({
+                    where: { id: meeting.id },
+                    data: {
+                        status: 'cancelled',
+                        examinerRemarks: 'Session expired without being conducted'
+                    }
+                }).catch(() => {});
+
+                logger.info(`[Meeting Cron] Auto-cancelled expired scheduled meeting "${meeting.title}" (${meeting.id}).`);
+
+                if (ioInstance) {
+                    ioInstance.emit('meetings:updated');
+                }
+            }
+        }
+    } catch (error) {
+        logger.error('[Meeting Cron] Error managing meetings:', error.message);
+    }
+};
+
+const getSocketIO = () => ioInstance;
+
+module.exports = { initCronJobs, setSocketIO, getSocketIO, ensureCurrentSession, checkAndManageMeetings };
+

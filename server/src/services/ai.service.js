@@ -147,7 +147,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['qwen/qwen3.6-27b', 'groq/compound'];
+            const groqModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
             for (const modelName of groqModels) {
                 try {
                     console.log(`[AIService] Generating assignments from text via Groq (${modelName})...`);
@@ -231,7 +231,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['qwen/qwen3.6-27b', 'groq/compound'];
+            const groqModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -307,7 +307,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['qwen/qwen3.6-27b', 'groq/compound'];
+            const groqModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -377,7 +377,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['qwen/qwen3.6-27b', 'groq/compound'];
+            const groqModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({

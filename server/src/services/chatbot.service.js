@@ -13,6 +13,7 @@ const axios = require('axios');
 const prisma = require('../config/database');
 const aiService = require('./ai.service');
 const notificationService = require('./notificationService');
+const cronService = require('./cron.service');
 
 class ChatbotService {
     constructor() {
@@ -293,7 +294,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     // ═══ GROQ CALL ═══
     async callGroq(messages) {
         if (!this.groqClient) throw new Error('Groq not configured');
-        const groqModels = ['qwen/qwen3.6-27b', 'groq/compound'];
+        const groqModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
         let lastError = null;
 
         for (const model of groqModels) {
@@ -832,6 +833,16 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
                     }
                 }
 
+                // Extract custom duration if present in prompt
+                let durationMinutes = 15;
+                const durationMatch = message.match(/(\d+)\s*(?:minutes?|mins?|m\b)/i);
+                if (durationMatch) {
+                    durationMinutes = parseInt(durationMatch[1], 10);
+                } else if (/1\s*hour|one\s*hour/i.test(message)) {
+                    durationMinutes = 60;
+                } else if (/2\s*hours|two\s*hours/i.test(message)) {
+                    durationMinutes = 120;
+                }
 
                 const [classes, groups, students] = await Promise.all([
                     prisma.class.findMany({ select: { id: true, name: true, gradeLevel: true, section: true } }),
@@ -840,25 +851,87 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
                 ]);
                 const resolution = await aiService.parseDocumentShareTargets(message, { documents: [], classes, groups, students }, options.provider || 'auto');
 
+                const targetClassId = resolution.matchedClassIds?.[0] || null;
+                const targetGroupId = resolution.matchedGroupIds?.[0] || null;
+                const targetStudentId = resolution.matchedStudentIds?.[0] || null;
+
+                const matchedClass = targetClassId ? classes.find(c => c.id === targetClassId) : null;
+                const matchedGroup = targetGroupId ? groups.find(g => g.id === targetGroupId) : null;
+                const matchedStudent = targetStudentId ? students.find(s => s.id === targetStudentId) : null;
+
+                let targetDesc = 'All invited participants';
+                if (matchedClass) targetDesc = `Class: **${matchedClass.name}**`;
+                else if (matchedGroup) targetDesc = `Group: **${matchedGroup.name}**`;
+                else if (matchedStudent) targetDesc = `Student: **${matchedStudent.firstName} ${matchedStudent.lastName}** (${matchedStudent.admissionNumber})`;
+
+                const sessionTitle = `AI ${type === 'scheduled' ? 'Scheduled' : 'Instant'} Meeting${matchedClass ? ` (${matchedClass.name})` : ''}`;
+
                 const meeting = await prisma.meeting.create({
                     data: {
-                        title: `AI ${type === 'scheduled' ? 'Scheduled' : 'Instant'} Meeting`,
+                        title: sessionTitle,
                         type,
                         meetingLink,
                         hostId,
                         schoolId,
                         scheduledAt,
+                        durationMinutes,
                         status: type === 'scheduled' ? 'scheduled' : 'in_progress',
                         actualStartTime: type === 'instant' ? new Date() : null,
-                        targetClassId: resolution.matchedClassIds?.[0] || null,
-                        targetGroupId: resolution.matchedGroupIds?.[0] || null,
-                        targetStudentId: resolution.matchedStudentIds?.[0] || null
+                        autoStart: true,
+                        targetClassId,
+                        targetGroupId,
+                        targetStudentId,
+                        questionsAsked: {
+                            roomCode: meetingLink,
+                            passcode: 'k8m2px9a',
+                            sessionTitle,
+                            autoAdmit: true
+                        }
                     }
                 });
 
+                // Auto-create notifications for participants
+                if (targetClassId) {
+                    const enrollments = await prisma.classEnrollment.findMany({
+                        where: { classId: targetClassId, status: 'active' },
+                        select: { studentId: true }
+                    });
+                    for (const e of enrollments) {
+                        await prisma.notification.create({
+                            data: {
+                                userId: e.studentId,
+                                title: 'New Meeting Scheduled',
+                                message: `Meeting "${sessionTitle}" is scheduled for ${scheduledAt.toLocaleString()}.`,
+                                type: 'meeting_invite',
+                                action_url: `/meeting/${meetingLink}`
+                            }
+                        }).catch(() => {});
+                    }
+                } else if (targetStudentId) {
+                    await prisma.notification.create({
+                        data: {
+                            userId: targetStudentId,
+                            title: 'New Meeting Scheduled',
+                            message: `Meeting "${sessionTitle}" is scheduled for ${scheduledAt.toLocaleString()}.`,
+                            type: 'meeting_invite',
+                            action_url: `/meeting/${meetingLink}`
+                        }
+                    }).catch(() => {});
+                }
+
+                // Broadcast socket update to all connected clients & meeting page
+                try {
+                    const io = cronService.getSocketIO();
+                    if (io) {
+                        io.emit('meetings:updated');
+                        io.emit('meeting:created', { meetingId: meeting.id, roomCode: meetingLink });
+                    }
+                } catch (socketErr) {
+                    console.warn('[ChatBot] Socket broadcast error:', socketErr.message);
+                }
 
                 return {
-                    message: `✨ **Meeting Created Successfully!**\n\nYour ${type} meeting is ready.\n\n🔗 **[Join Meeting](/meeting/${meetingLink})**\n\n*(Share this link: /meeting/${meetingLink})*`,
+                    message: `✨ **Meeting Created Successfully!**\n\n- **Meeting Title:** ${sessionTitle}\n- **Type:** ${type.toUpperCase()}\n- **Audience:** ${targetDesc}\n- **Duration:** ${durationMinutes} minutes *(auto-ends when time expires)*\n- **Scheduled Time:** ${scheduledAt.toLocaleString()}\n- **Meeting ID:** \`${meetingLink}\`\n\n🔗 **[Join Meeting Directly](/meeting/${meetingLink})** | 📋 **[View in Meetings Dashboard](/meetings)**`,
                     sql: null,
                     executionResult: null,
                     chartData: null,

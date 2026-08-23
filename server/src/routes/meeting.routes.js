@@ -250,7 +250,33 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
         ];
     }
 
+    // On-the-fly lifecycle check: auto-complete active sessions whose duration has elapsed
+    const now = new Date();
+    try {
+        const activeSessions = await prisma.meeting.findMany({
+            where: { status: 'in_progress' }
+        });
+        for (const s of activeSessions) {
+            const start = new Date(s.actualStartTime || s.scheduledAt || s.createdAt);
+            const duration = s.durationMinutes || 15;
+            const end = new Date(start.getTime() + duration * 60 * 1000);
+            if (now >= end) {
+                await prisma.meeting.update({
+                    where: { id: s.id },
+                    data: {
+                        status: 'completed',
+                        actualEndTime: now,
+                        examinerRemarks: s.examinerRemarks || 'Meeting duration completed'
+                    }
+                }).catch(() => {});
+            }
+        }
+    } catch (e) {
+        // Non-fatal
+    }
+
     const [sessions, total] = await Promise.all([
+
         prisma.meeting.findMany({
             where,
             skip,
@@ -687,11 +713,14 @@ router.put('/sessions/:id/complete', authenticate, authorize('instructor', 'lab_
                     where: { id: session.submissionId },
                     data: { status: 'viva_completed' }
                 });
-                console.log('Submission status updated');
-            } catch (submissionError) {
-                console.warn('Failed to update submission status:', submissionError.message);
-                // Don't fail the entire request for this
+        // Emit socket events to close room and notify all clients
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`meeting-${session.id}`).emit('meeting:session-ended', { sessionId: session.id });
+            if (session.meetingLink) {
+                io.to(`meeting-${session.meetingLink}`).emit('meeting:session-ended', { sessionId: session.id });
             }
+            io.emit('meetings:updated');
         }
 
         res.json({

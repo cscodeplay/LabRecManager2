@@ -1812,12 +1812,13 @@ export default function GlobalMeetingRoom() {
 
     // Terminate meeting if duration is exceeded
     useEffect(() => {
-        if (session?.duration && elapsedTime > session.duration * 60) {
-            toast.error(`Meeting duration (${session.duration} minutes) exceeded. Terminating...`);
+        const dur = session?.durationMinutes || session?.duration || 15;
+        if (dur && elapsedTime > dur * 60) {
+            toast.error(`Meeting duration (${dur} minutes) exceeded. Auto-ending meeting...`, { icon: '⏰', duration: 4000 });
             executeLeaveMeeting(true);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [elapsedTime, session?.duration, isInstructor]);
+    }, [elapsedTime, session?.durationMinutes, session?.duration, isInstructor]);
 
     // =========================================================================
     // 7. UI EVENT HANDLERS & HELPERS

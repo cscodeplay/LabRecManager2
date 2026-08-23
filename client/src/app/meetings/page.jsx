@@ -707,23 +707,47 @@ export default function MeetingPage() {
 
     // Helper to check if session time has expired
     const isSessionExpired = (session) => {
-        if (!session.scheduledAt) return false;
-        const startTime = new Date(session.scheduledAt);
-        const endTime = new Date(startTime.getTime() + (session.durationMinutes || 15) * 60 * 1000);
-        return new Date() > endTime;
+        if (!session) return false;
+        if (session.status === 'completed' || session.status === 'cancelled') return true;
+        const dur = session.durationMinutes || session.duration || 15;
+        const now = new Date();
+
+        if (session.status === 'in_progress') {
+            const start = new Date(session.actualStartTime || session.scheduledAt || session.createdAt);
+            const end = new Date(start.getTime() + dur * 60 * 1000);
+            return now > end;
+        }
+
+        if (session.scheduledAt) {
+            const startTime = new Date(session.scheduledAt);
+            const endTime = new Date(startTime.getTime() + dur * 60 * 1000);
+            return now > endTime;
+        }
+
+        return false;
     };
 
     // Helper to check if session should be live
     const isSessionLive = (session) => {
-        if (session.status === 'in_progress') return true;
-        if (session.status !== 'scheduled') return false;
+        if (!session) return false;
+        if (session.status === 'completed' || session.status === 'cancelled') return false;
 
         const now = new Date();
-        const startTime = new Date(session.scheduledAt);
-        const endTime = new Date(startTime.getTime() + (session.durationMinutes || 15) * 60 * 1000);
+        const dur = session.durationMinutes || session.duration || 15;
 
-        // Live if: scheduled time passed but end time not passed
-        return now >= startTime && now <= endTime;
+        if (session.status === 'in_progress') {
+            const start = new Date(session.actualStartTime || session.scheduledAt || session.createdAt);
+            const end = new Date(start.getTime() + dur * 60 * 1000);
+            return now <= end;
+        }
+
+        if (session.status === 'scheduled') {
+            const startTime = new Date(session.scheduledAt);
+            const endTime = new Date(startTime.getTime() + dur * 60 * 1000);
+            return now >= startTime && now <= endTime;
+        }
+
+        return false;
     };
 
     // Categorize sessions
@@ -733,8 +757,8 @@ export default function MeetingPage() {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const liveSessions = sessions.filter(s => isSessionLive(s));
-    const allScheduledSessions = sessions.filter(s => s.status === 'scheduled' && !isSessionLive(s));
-    const pastSessions = sessions.filter(s => s.status === 'completed' || s.status === 'cancelled');
+    const allScheduledSessions = sessions.filter(s => s.status === 'scheduled' && !isSessionLive(s) && !isSessionExpired(s));
+    const pastSessions = sessions.filter(s => s.status === 'completed' || s.status === 'cancelled' || isSessionExpired(s));
 
     if (loading) {
         return (

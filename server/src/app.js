@@ -408,12 +408,33 @@ io.on('connection', (socket) => {
   });
 
   // End meeting for everyone
-  socket.on('meeting:end-session', (data) => {
+  socket.on('meeting:end-session', async (data) => {
     const { roomId } = data || {};
     if (roomId) {
       io.to(`meeting-${roomId}`).emit('meeting:session-ended');
       activeMeetingRooms.delete(roomId);
       waitingRooms.delete(roomId);
+
+      try {
+        const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const isUUID = typeof roomId === 'string' && UUID_REGEX.test(roomId.trim());
+        const whereClause = isUUID ? { id: roomId } : { meetingLink: { contains: roomId.toString().trim() } };
+
+        const targetMeeting = await prisma.meeting.findFirst({ where: whereClause });
+        if (targetMeeting) {
+          await prisma.meeting.update({
+            where: { id: targetMeeting.id },
+            data: {
+              status: 'completed',
+              actualEndTime: new Date(),
+              examinerRemarks: targetMeeting.examinerRemarks || 'Meeting ended by host'
+            }
+          });
+          io.emit('meetings:updated');
+        }
+      } catch (err) {
+        console.warn('meeting:end-session DB update error:', err.message);
+      }
     }
   });
 
