@@ -184,13 +184,6 @@ export default function GlobalMeetingRoom() {
 
     // Floating Draggable Video PIP Overlay States
     const [isFloatingVideoMinimized, setIsFloatingVideoMinimized] = useState(false);
-
-    // Auto-minimize floating video for participants when in whiteboard or screen share
-    useEffect(() => {
-        if (!isInstructor && (activeSpace === 'whiteboard' || activeSpace === 'screen_share')) {
-            setIsFloatingVideoMinimized(true);
-        }
-    }, [activeSpace, isInstructor]);
     const [floatingVideoPos, setFloatingVideoPos] = useState({ x: 0, y: 0 });
     const [isDraggingFloatingVideo, setIsDraggingFloatingVideo] = useState(false);
     const floatingDragRef = useRef({ startX: 0, startY: 0, posX: 0, posY: 0 });
@@ -333,6 +326,13 @@ export default function GlobalMeetingRoom() {
             setCanDrawOnWhiteboard(true);
         }
     }, [isInstructor]);
+
+    // Auto-minimize floating video for participants when in whiteboard or screen share
+    useEffect(() => {
+        if (!isInstructor && (activeSpace === 'whiteboard' || activeSpace === 'screen_share')) {
+            setIsFloatingVideoMinimized(true);
+        }
+    }, [activeSpace, isInstructor]);
 
     // Fullscreen listeners
     useEffect(() => {
