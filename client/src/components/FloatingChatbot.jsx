@@ -6,7 +6,8 @@ import {
     Sparkles, FileText, AlertTriangle, Copy, Check, RefreshCw, X,
     Loader2, Minimize2, Maximize2, Download, Image as ImageIcon, User, BarChart2, Expand, Shrink, File,
     HelpCircle, History, FilePlus, Maximize, Minimize, Plus,
-    Calendar, Clock, Video, Users, CheckCircle, ExternalLink, Edit3, Save, Link2
+    Calendar, Clock, Video, Users, CheckCircle, ExternalLink, Edit3, Save, Link2,
+    XCircle, CalendarPlus, Undo2
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
@@ -934,13 +935,15 @@ function MeetingActionCard({ action, onConfirmed }) {
     );
 }
 
-/* ─── CALENDAR ACTION CARD ─── */
+/* ─── CALENDAR ACTION CARD (DRAFT MODE, CONFIRM & CANCEL SUPPORT) ─── */
 function CalendarActionCard({ action }) {
     const [events, setEvents] = useState(Array.isArray(action?.events) ? action.events : []);
     const [isEditing, setIsEditing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
     const academicYearId = action?.academicYearId || '';
+    const isSingleEvent = action?.isSingleEvent || events.length === 1;
 
     const handleUpdateRow = (index, field, value) => {
         setEvents(prev => {
@@ -971,7 +974,7 @@ function CalendarActionCard({ action }) {
 
     const handleConfirm = async () => {
         if (events.length === 0) {
-            toast.error('No holidays to add');
+            toast.error('No events or holidays to add');
             return;
         }
 
@@ -982,13 +985,13 @@ function CalendarActionCard({ action }) {
                     date: e.date,
                     title: e.title,
                     titleHindi: e.titleHindi || null,
-                    type: e.type || 'gazetted_holiday',
-                    isHoliday: e.isHoliday !== undefined ? e.isHoliday : true
+                    type: e.type || (e.isHoliday ? 'gazetted_holiday' : 'event'),
+                    isHoliday: e.isHoliday !== undefined ? e.isHoliday : false
                 })),
                 academicYearId: academicYearId || undefined
             });
 
-            toast.success(res.data?.message || `Successfully added ${events.length} holidays to School Calendar!`);
+            toast.success(res.data?.message || (isSingleEvent ? `Event "${events[0]?.title}" added to School Calendar!` : `Successfully added ${events.length} holidays to School Calendar!`));
             setIsConfirmed(true);
             setIsEditing(false);
         } catch (err) {
@@ -998,25 +1001,281 @@ function CalendarActionCard({ action }) {
         }
     };
 
-    const getTypeBadge = (type) => {
+    const handleCancel = () => {
+        setIsCancelled(true);
+        setIsEditing(false);
+        toast('Event draft cancelled', { icon: '🚫' });
+    };
+
+    const getTypeBadge = (type, isHoliday) => {
         switch (type) {
             case 'gazetted_holiday':
-                return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">Gazetted</span>;
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">Gazetted Holiday</span>;
             case 'restricted_holiday':
-                return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-yellow-100 text-yellow-800">Restricted</span>;
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Restricted Holiday</span>;
             case 'summer_vacation':
-                return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800">Summer Vacation</span>;
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">Summer Vacation</span>;
             case 'winter_vacation':
-                return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800">Winter Vacation</span>;
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-200">Winter Vacation</span>;
             case 'exam_day':
-                return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-700">Exam Day</span>;
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">Exam Day</span>;
             default:
-                return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">Event</span>;
+                return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${isHoliday ? 'bg-red-100 text-red-700 border-red-200' : 'bg-indigo-100 text-indigo-700 border-indigo-200'}`}>{isHoliday ? 'Holiday' : 'School Event'}</span>;
         }
     };
 
+    // Formatted date string for single event display
+    const singleEvent = events[0] || {};
+    const formattedDate = singleEvent.date ? (() => {
+        try {
+            const d = new Date(singleEvent.date);
+            return isNaN(d.getTime()) ? singleEvent.date : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        } catch {
+            return singleEvent.date;
+        }
+    })() : '';
+
+    /* ─── State: Cancelled ─── */
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Event Draft Cancelled</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(false)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                    >
+                        <Undo2 className="w-3 h-3" /> Restore Draft
+                    </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                    {isSingleEvent
+                        ? `The draft event "${singleEvent?.title || 'Event'}" was cancelled and not added to the calendar.`
+                        : `The draft calendar update (${events.length} items) was cancelled.`}
+                </p>
+            </div>
+        );
+    }
+
+    /* ─── State: Single Event Draft View ─── */
+    if (isSingleEvent) {
+        return (
+            <div className={`mt-2.5 rounded-2xl border shadow-sm overflow-hidden text-[12px] transition-all animate-in fade-in ${
+                isConfirmed
+                    ? 'border-emerald-200 bg-gradient-to-b from-emerald-50/90 via-white to-teal-50/50'
+                    : 'border-indigo-200 bg-gradient-to-b from-indigo-50/90 via-white to-violet-50/50'
+            }`}>
+                {/* Header */}
+                <div className={`px-3.5 py-2.5 text-white flex items-center justify-between ${
+                    isConfirmed 
+                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600' 
+                        : 'bg-gradient-to-r from-indigo-600 to-violet-600'
+                }`}>
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
+                            {isConfirmed ? <Check className="w-3.5 h-3.5" /> : <CalendarPlus className="w-3.5 h-3.5" />}
+                        </div>
+                        <span className="font-semibold text-[13px] tracking-tight">
+                            {isConfirmed ? 'Event Added to Calendar' : 'Event Draft (Pending Confirmation)'}
+                        </span>
+                    </div>
+                    {isConfirmed ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Confirmed
+                        </span>
+                    ) : (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-300 text-amber-950 flex items-center gap-1 shadow-xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-800 animate-ping" />
+                            Draft Mode
+                        </span>
+                    )}
+                </div>
+
+                <div className="p-3.5 space-y-3">
+                    {/* Information / Edit Header */}
+                    {!isConfirmed && (
+                        <div className="text-[11px] text-slate-600 flex items-center justify-between">
+                            <span>Review event details before confirming:</span>
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(!isEditing)}
+                                className={`px-2 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition ${
+                                    isEditing
+                                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700 shadow-xs'
+                                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                }`}
+                            >
+                                <Edit3 className="w-3.5 h-3.5" /> {isEditing ? 'Done Editing' : 'Edit Details'}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Single Event Body */}
+                    {isEditing && !isConfirmed ? (
+                        <div className="p-3 bg-white rounded-xl border border-indigo-100 shadow-2xs space-y-2.5">
+                            <div>
+                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Event Title (English)</label>
+                                <input
+                                    type="text"
+                                    value={singleEvent.title || ''}
+                                    onChange={(e) => handleUpdateRow(0, 'title', e.target.value)}
+                                    placeholder="Event Name"
+                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Regional Name (ਪੰਜਾਬੀ / हिंदी)</label>
+                                    <input
+                                        type="text"
+                                        value={singleEvent.titleHindi || ''}
+                                        onChange={(e) => handleUpdateRow(0, 'titleHindi', e.target.value)}
+                                        placeholder="ਈਵੈਂਟ / इवेंट"
+                                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Time (Optional)</label>
+                                    <input
+                                        type="text"
+                                        value={singleEvent.time || ''}
+                                        onChange={(e) => handleUpdateRow(0, 'time', e.target.value)}
+                                        placeholder="e.g. 09:30 AM"
+                                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Event Date</label>
+                                    <input
+                                        type="date"
+                                        value={singleEvent.date || ''}
+                                        onChange={(e) => handleUpdateRow(0, 'date', e.target.value)}
+                                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Event Type</label>
+                                    <select
+                                        value={singleEvent.type || 'event'}
+                                        onChange={(e) => handleUpdateRow(0, 'type', e.target.value)}
+                                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                    >
+                                        <option value="event">School Event</option>
+                                        <option value="exam_day">Exam Day</option>
+                                        <option value="gazetted_holiday">Gazetted Holiday</option>
+                                        <option value="restricted_holiday">Restricted Holiday</option>
+                                        <option value="summer_vacation">Summer Vacation</option>
+                                        <option value="winter_vacation">Winter Vacation</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 pt-1">
+                                <input
+                                    type="checkbox"
+                                    id="isHolidayCheck"
+                                    checked={!!singleEvent.isHoliday}
+                                    onChange={(e) => handleUpdateRow(0, 'isHoliday', e.target.checked)}
+                                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <label htmlFor="isHolidayCheck" className="text-xs text-slate-700 font-medium cursor-pointer">
+                                    Mark as School Holiday (Campus Closed)
+                                </label>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
+                            <div className="flex items-start justify-between gap-2">
+                                <div>
+                                    <h4 className="font-bold text-slate-900 text-sm leading-snug">
+                                        {singleEvent.title || 'Untitled Event'}
+                                    </h4>
+                                    {singleEvent.titleHindi && (
+                                        <p className="text-xs text-slate-600 font-medium mt-0.5">
+                                            {singleEvent.titleHindi}
+                                        </p>
+                                    )}
+                                </div>
+                                <div className="shrink-0">
+                                    {getTypeBadge(singleEvent.type, singleEvent.isHoliday)}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1 text-xs border-t border-slate-100">
+                                <div className="flex items-center gap-1.5 text-slate-700">
+                                    <Calendar className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                    <span className="font-medium">{formattedDate || singleEvent.date}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-slate-700">
+                                    <Clock className="w-3.5 h-3.5 text-violet-500 shrink-0" />
+                                    <span className="font-medium">{singleEvent.time || 'All Day'}</span>
+                                </div>
+                            </div>
+
+                            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 pt-0.5">
+                                <span className={`w-2 h-2 rounded-full ${singleEvent.isHoliday ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                                <span>{singleEvent.isHoliday ? 'School Closed (Holiday)' : 'Normal School Day (Open)'}</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Action Buttons */}
+                    {!isConfirmed ? (
+                        <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                            <button
+                                type="button"
+                                onClick={handleCancel}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-red-600 hover:bg-red-50 text-[11px] font-semibold flex items-center gap-1.5 transition"
+                            >
+                                <X className="w-3.5 h-3.5" /> Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirm}
+                                disabled={isSaving || !singleEvent.title || !singleEvent.date}
+                                className="px-4 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white disabled:opacity-50"
+                            >
+                                {isSaving ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                )}
+                                Confirm & Add to Calendar
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Added to School Calendar</span>
+                            </div>
+                            <a
+                                href="/admin/calendar"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm"
+                            >
+                                <Calendar className="w-3.5 h-3.5" /> View Calendar
+                            </a>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    /* ─── State: Multi-Event / Holiday Table Mode ─── */
     return (
-        <div className="mt-2.5 rounded-xl border border-emerald-200 bg-gradient-to-b from-emerald-50/90 via-white to-teal-50/50 shadow-sm overflow-hidden text-[12px]">
+        <div className="mt-2.5 rounded-xl border border-emerald-200 bg-gradient-to-b from-emerald-50/90 via-white to-teal-50/50 shadow-sm overflow-hidden text-[12px] animate-in fade-in">
             {/* Header */}
             <div className="px-3.5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1144,7 +1403,7 @@ function CalendarActionCard({ action }) {
                                             {ev.titleHindi || '-'}
                                         </td>
                                         <td className="px-2.5 py-1.5 text-right whitespace-nowrap">
-                                            {getTypeBadge(ev.type)}
+                                            {getTypeBadge(ev.type, ev.isHoliday)}
                                         </td>
                                     </tr>
                                 ))}
@@ -1156,22 +1415,31 @@ function CalendarActionCard({ action }) {
                 {/* Footer Controls */}
                 {!isConfirmed ? (
                     <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-slate-500">
-                            {events.length} holiday(s) to add
-                        </span>
                         <button
                             type="button"
-                            onClick={handleConfirm}
-                            disabled={isSaving || events.length === 0}
-                            className="px-3.5 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white ml-auto"
+                            onClick={handleCancel}
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-red-600 hover:bg-red-50 text-[11px] font-semibold flex items-center gap-1.5 transition"
                         >
-                            {isSaving ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                                <CheckCircle className="w-3.5 h-3.5" />
-                            )}
-                            Confirm & Add to Calendar
+                            <X className="w-3.5 h-3.5" /> Cancel
                         </button>
+                        <div className="flex items-center gap-2 ml-auto">
+                            <span className="text-[11px] text-slate-500">
+                                {events.length} holiday(s)
+                            </span>
+                            <button
+                                type="button"
+                                onClick={handleConfirm}
+                                disabled={isSaving || events.length === 0}
+                                className="px-3.5 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+                            >
+                                {isSaving ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                )}
+                                Confirm & Add to Calendar
+                            </button>
+                        </div>
                     </div>
                 ) : (
                     <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">

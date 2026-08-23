@@ -1407,48 +1407,34 @@ User Request: ${message}
 
                     if (eventData && eventData.date && eventData.title) {
                         const finalTitle = eventData.title + (eventData.time ? ` (${eventData.time})` : '');
-                        const createdEvent = await prisma.schoolCalendar.upsert({
-                            where: {
-                                unique_calendar_date_per_school: {
-                                    schoolId,
-                                    date: new Date(eventData.date)
-                                }
-                            },
-                            create: {
-                                schoolId,
-                                academicYearId: targetAcademicYearId,
-                                date: new Date(eventData.date),
-                                title: finalTitle,
-                                titleHindi: eventData.titleHindi || '',
-                                type: eventData.type || 'event',
-                                isHoliday: eventData.isHoliday !== undefined ? eventData.isHoliday : false,
-                                source: 'admin_custom',
-                                createdById: userId
-                            },
-                            update: {
-                                title: finalTitle,
-                                titleHindi: eventData.titleHindi || '',
-                                type: eventData.type || 'event',
-                                isHoliday: eventData.isHoliday !== undefined ? eventData.isHoliday : false
-                            }
-                        });
-
-                        // Broadcast calendar update via Socket.io
-                        try {
-                            const io = cronService.getSocketIO();
-                            if (io) io.emit('calendar:updated');
-                        } catch (e) {}
-
                         const dayName = new Date(eventData.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
+                        const calendarAction = {
+                            isSingleEvent: true,
+                            academicYearId: targetAcademicYearId,
+                            isConfirmed: false,
+                            events: [
+                                {
+                                    id: `draft-event-${Date.now()}`,
+                                    title: finalTitle,
+                                    rawTitle: eventData.title,
+                                    titleHindi: eventData.titleHindi || '',
+                                    date: eventData.date,
+                                    time: eventData.time || '',
+                                    type: eventData.type || 'event',
+                                    isHoliday: eventData.isHoliday !== undefined ? eventData.isHoliday : false
+                                }
+                            ]
+                        };
+
                         return {
-                            message: `✅ **Calendar Event Scheduled Successfully!**\n\n- 📌 **Event Title:** ${createdEvent.title}\n${createdEvent.titleHindi ? `- 🌐 **Regional Name:** ${createdEvent.titleHindi}\n` : ''}- 🗓️ **Date:** ${eventData.date} (${dayName})\n${eventData.time ? `- ⏰ **Time:** ${eventData.time}\n` : ''}- 🏷️ **Type:** \`${createdEvent.type.replace('_', ' ').toUpperCase()}\`\n- 🏖️ **Is Holiday:** ${createdEvent.isHoliday ? 'Yes (School Closed)' : 'No (School Open)'}\n\n✨ [View in School Calendar](/admin/calendar)`,
+                            message: `🗓️ **Event Draft Created! (Pending Confirmation)**\n\nI have prepared the draft event for **${finalTitle}** on **${eventData.date} (${dayName})**.\n\nPlease review or customize the details in the confirmation card below and click **Confirm & Add to Calendar** to save it, or click **Cancel** to discard:`,
                             sql: null,
                             executionResult: null,
                             chartData: null,
                             reportAction: null,
                             meetingAction: null,
-                            calendarAction: null,
+                            calendarAction,
                             provider: 'groq'
                         };
                     }
