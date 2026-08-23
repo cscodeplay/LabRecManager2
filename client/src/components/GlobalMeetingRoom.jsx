@@ -13,7 +13,8 @@ import {
     GripVertical, Move, Search, ShieldCheck, ShieldAlert,
     MoreVertical, UserCheck, UserX, PenTool, Coffee, Loader2,
     Info, Copy, Check, Share2, Key, LayoutGrid, ScreenShare,
-    AlertTriangle, Shield, UserPlus, Link2, ExternalLink
+    AlertTriangle, Shield, UserPlus, Link2, ExternalLink,
+    Smile, HelpCircle, Award, Zap
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useGlobalMeeting } from '@/components/GlobalMeetingContext';
@@ -22,6 +23,8 @@ import toast from 'react-hot-toast';
 import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
 import VideoTile from '@/components/VideoTile';
+import LiveMeetingQuiz from '@/components/LiveMeetingQuiz';
+import FloatingEmojiReactions from '@/components/FloatingEmojiReactions';
 import { formatTime } from '@/lib/dateUtils';
 
 function formatRoomCode(code) {
@@ -199,9 +202,17 @@ export default function GlobalMeetingRoom() {
 
     // Layout & Overlay Controls (Zoom-style floating panels)
     const [showChat, setShowChat] = useState(false);
-    const [activeSidePanelTab, setActiveSidePanelTab] = useState('chat'); // 'chat' | 'participants' | 'invite'
+    const [activeSidePanelTab, setActiveSidePanelTab] = useState('chat'); // 'chat' | 'participants' | 'quiz' | 'invite'
     const [chatRecipient, setChatRecipient] = useState({ id: 'everyone', name: 'Everyone (in Meeting)' });
     const [participantSearchQuery, setParticipantSearchQuery] = useState('');
+
+    // Live Quiz / Question State (PhysicsWallah-style)
+    const [activeQuiz, setActiveQuiz] = useState(null);
+    const [quizResponses, setQuizResponses] = useState({});
+
+    // Floating Emoji Reactions State
+    const [floatingReactions, setFloatingReactions] = useState([]);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
     // In-Meeting Global Search & Invite State
     const [inviteSearchQuery, setInviteSearchQuery] = useState('');
@@ -1242,6 +1253,53 @@ export default function GlobalMeetingRoom() {
                     chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
                 }
             }, 100);
+        });
+
+        // Floating Emoji Reactions
+        socket.on('meeting:reaction', (reaction) => {
+            const count = 6;
+            const newParticles = [];
+            const baseLeft = Math.floor(Math.random() * 60) + 20;
+
+            for (let i = 0; i < count; i++) {
+                newParticles.push({
+                    id: `${reaction.id || Date.now()}-p-${i}-${Math.random()}`,
+                    emoji: reaction.emoji,
+                    userName: i === 0 ? reaction.userName : null,
+                    left: baseLeft + (Math.random() * 14 - 7),
+                    driftX: (Math.random() * 80 - 40),
+                    scale: 0.9 + Math.random() * 0.8,
+                    duration: 2.0 + Math.random() * 0.8,
+                    delay: i * 0.08
+                });
+            }
+
+            setFloatingReactions(prev => [...prev.slice(-30), ...newParticles]);
+        });
+
+        // Live Quiz / Questions (PhysicsWallah-style)
+        socket.on('meeting:quiz-start', (quiz) => {
+            setActiveQuiz(quiz);
+            setQuizResponses(prev => ({ ...prev, [quiz.id]: [] }));
+            setActiveSidePanelTab('quiz');
+            setShowChat(true);
+            toast(`🚀 Live Question: ${quiz.question}`, { icon: '❓', duration: 4000 });
+        });
+
+        socket.on('meeting:quiz-answer', (answer) => {
+            setQuizResponses(prev => {
+                const list = prev[answer.quizId] || [];
+                if (list.some(r => r.userId === answer.userId)) return prev;
+                return {
+                    ...prev,
+                    [answer.quizId]: [...list, answer]
+                };
+            });
+        });
+
+        socket.on('meeting:quiz-end', ({ quizId, summary }) => {
+            setActiveQuiz(prev => (prev?.id === quizId ? { ...prev, isEnded: true } : prev));
+            toast('Live question closed. Reviewing class leaderboard!', { icon: '🏆' });
         });
 
         // Meeting ended
@@ -2563,6 +2621,23 @@ Link: ${getInviteUrl()}`;
                                 </button>
                                 <button
                                     onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={() => setActiveSidePanelTab('quiz')}
+                                    className={`px-3 py-1 rounded-md text-xs font-medium transition flex items-center gap-1.5 ${
+                                        activeSidePanelTab === 'quiz'
+                                            ? 'bg-primary-600 text-white shadow'
+                                            : 'text-slate-400 hover:text-slate-200'
+                                    }`}
+                                >
+                                    <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+                                    <span>Quiz</span>
+                                    {activeQuiz && !activeQuiz.isEnded && (
+                                        <span className="bg-amber-400 text-slate-950 text-[9px] px-1.5 py-0.2 rounded-full font-bold animate-pulse">
+                                            Live
+                                        </span>
+                                    )}
+                                </button>
+                                <button
+                                    onPointerDown={(e) => e.stopPropagation()}
                                     onClick={() => setActiveSidePanelTab('invite')}
                                     className={`px-3 py-1 rounded-md text-xs font-medium transition flex items-center gap-1.5 ${
                                         activeSidePanelTab === 'invite'
@@ -3160,6 +3235,20 @@ Link: ${getInviteUrl()}`;
                             </div>
                         </div>
                     )}
+
+                    {/* TAB 4: LIVE QUIZ & FASTEST-FINGER QUESTIONS (PHYSICSWALLAH-STYLE) */}
+                    {activeSidePanelTab === 'quiz' && (
+                        <LiveMeetingQuiz
+                            socket={socketRef.current}
+                            roomId={activeRoomIdRef.current || code}
+                            user={user}
+                            isHost={isInstructor}
+                            activeQuiz={activeQuiz}
+                            setActiveQuiz={setActiveQuiz}
+                            quizResponses={quizResponses}
+                            setQuizResponses={setQuizResponses}
+                        />
+                    )}
                 </div>
             )}
 
@@ -3565,6 +3654,17 @@ Link: ${getInviteUrl()}`;
                             )}
                         </button>
 
+                        {/* Floating Emoji Reactions Trigger */}
+                        <button
+                            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                            className={`p-1.5 rounded-full transition flex items-center justify-center relative ${
+                                showEmojiPicker ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                            }`}
+                            title="Floating Emoji Reactions (Clap, Heart, Fire, etc.)"
+                        >
+                            <Smile className="w-4 h-4" />
+                        </button>
+
                         {/* Fullscreen Toggle Button */}
                         <button
                             onClick={toggleFullscreen}
@@ -3612,6 +3712,17 @@ Link: ${getInviteUrl()}`;
                     {isControlsHidden ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 </button>
             </div>
+
+            {/* Floating Animated Emoji Reactions Layer & Popup */}
+            <FloatingEmojiReactions
+                socket={socketRef.current}
+                roomId={activeRoomIdRef.current || code}
+                user={user}
+                floatingReactions={floatingReactions}
+                setFloatingReactions={setFloatingReactions}
+                showPicker={showEmojiPicker}
+                setShowPicker={setShowEmojiPicker}
+            />
         </div>
     );
 }

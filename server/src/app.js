@@ -443,6 +443,36 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Floating Emoji Reactions
+  socket.on('meeting:reaction', (data) => {
+    const { roomId, reaction } = data || {};
+    if (roomId && reaction) {
+      io.to(`meeting-${roomId}`).emit('meeting:reaction', reaction);
+    }
+  });
+
+  // Live Quiz / Questions in Meeting (PhysicsWallah-style)
+  socket.on('meeting:quiz-start', (data) => {
+    const { roomId, quiz } = data || {};
+    if (roomId && quiz) {
+      io.to(`meeting-${roomId}`).emit('meeting:quiz-start', quiz);
+    }
+  });
+
+  socket.on('meeting:quiz-answer', (data) => {
+    const { roomId, answer } = data || {};
+    if (roomId && answer) {
+      io.to(`meeting-${roomId}`).emit('meeting:quiz-answer', answer);
+    }
+  });
+
+  socket.on('meeting:quiz-end', (data) => {
+    const { roomId, quizId, summary } = data || {};
+    if (roomId) {
+      io.to(`meeting-${roomId}`).emit('meeting:quiz-end', { quizId, summary });
+    }
+  });
+
   // End meeting for everyone
   socket.on('meeting:end-session', async (data) => {
     const { roomId } = data || {};
