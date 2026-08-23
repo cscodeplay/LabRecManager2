@@ -597,13 +597,15 @@ function MeetingActionCard({ action, onConfirmed }) {
                     <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
                         <Video className="w-3.5 h-3.5" />
                     </div>
-                    <span className="font-semibold text-[13px] tracking-tight">Meeting Details & Confirmation</span>
+                    <span className="font-semibold text-[13px] tracking-tight">
+                        {isConfirmed ? 'Meeting Confirmed' : 'Confirm Meeting'}
+                    </span>
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                    isConfirmed ? 'bg-emerald-400 text-emerald-950' : 'bg-amber-300 text-amber-950'
-                }`}>
-                    {isConfirmed ? 'Finalized' : 'Draft / Editable'}
-                </span>
+                {isConfirmed && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-400 text-emerald-950 flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Confirmed
+                    </span>
+                )}
             </div>
 
             <div className="p-3.5 space-y-3">
@@ -612,7 +614,7 @@ function MeetingActionCard({ action, onConfirmed }) {
                     {/* Meeting Title */}
                     <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Meeting Title</label>
-                        {isEditing ? (
+                        {isEditing && !isConfirmed ? (
                             <input
                                 type="text"
                                 value={title}
@@ -625,36 +627,38 @@ function MeetingActionCard({ action, onConfirmed }) {
                         )}
                     </div>
 
-                    {/* Direct Meeting Link & Code */}
-                    <div className="bg-slate-50 rounded-lg p-2 border border-slate-200 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <Link2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                            <div>
-                                <span className="text-[10px] text-slate-400 block">Meeting ID / Room</span>
-                                <code className="text-[11px] font-mono font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
-                                    {action.meetingLink}
-                                </code>
+                    {/* Direct Meeting Link & Code - ONLY shown when confirmed */}
+                    {isConfirmed && (
+                        <div className="bg-indigo-50/80 rounded-xl p-2.5 border border-indigo-200 flex items-center justify-between animate-in fade-in">
+                            <div className="flex items-center gap-2">
+                                <Link2 className="w-4 h-4 text-indigo-600 shrink-0" />
+                                <div>
+                                    <span className="text-[10px] font-medium text-slate-500 block">Meeting ID / Room</span>
+                                    <code className="text-[12px] font-mono font-bold text-indigo-700 bg-white px-1.5 py-0.5 rounded border border-indigo-100">
+                                        {action.meetingLink}
+                                    </code>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    onClick={handleCopyInvite}
+                                    className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition shadow-xs"
+                                    title="Copy invitation"
+                                >
+                                    {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                    {copied ? 'Copied' : 'Copy'}
+                                </button>
+                                <a
+                                    href={`/meeting/${action.meetingLink}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-semibold flex items-center gap-1 transition shadow-xs"
+                                >
+                                    <ExternalLink className="w-3 h-3" /> Join
+                                </a>
                             </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <button
-                                onClick={handleCopyInvite}
-                                className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[10px] font-medium flex items-center gap-1 transition shadow-2xs"
-                                title="Copy invitation"
-                            >
-                                {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                                {copied ? 'Copied' : 'Copy'}
-                            </button>
-                            <a
-                                href={`/meeting/${action.meetingLink}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-medium flex items-center gap-1 transition shadow-2xs"
-                            >
-                                <ExternalLink className="w-3 h-3" /> Join
-                            </a>
-                        </div>
-                    </div>
+                    )}
 
                     {/* Grid of Datetime & Duration */}
                     <div className="grid grid-cols-2 gap-2">
@@ -663,7 +667,7 @@ function MeetingActionCard({ action, onConfirmed }) {
                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
                                 <Calendar className="w-3 h-3 inline mr-1 text-slate-400" /> Date & Time
                             </label>
-                            {isEditing ? (
+                            {isEditing && !isConfirmed ? (
                                 <input
                                     type="datetime-local"
                                     value={datetimeVal}
@@ -682,7 +686,7 @@ function MeetingActionCard({ action, onConfirmed }) {
                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
                                 <Clock className="w-3 h-3 inline mr-1 text-slate-400" /> Duration
                             </label>
-                            {isEditing ? (
+                            {isEditing && !isConfirmed ? (
                                 <select
                                     value={duration}
                                     onChange={(e) => setDuration(e.target.value)}
@@ -710,7 +714,7 @@ function MeetingActionCard({ action, onConfirmed }) {
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
                             <Users className="w-3 h-3 inline mr-1 text-slate-400" /> Participants / Target Audience
                         </label>
-                        {isEditing ? (
+                        {isEditing && !isConfirmed ? (
                             <div className="grid grid-cols-3 gap-1.5">
                                 <select
                                     value={targetType}
@@ -793,34 +797,51 @@ function MeetingActionCard({ action, onConfirmed }) {
                 </div>
 
                 {/* Bottom Action Controls */}
-                <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
-                    <button
-                        type="button"
-                        onClick={() => setIsEditing(!isEditing)}
-                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition"
-                    >
-                        <Edit3 className="w-3 h-3 text-slate-500" />
-                        {isEditing ? 'Cancel Edit' : 'Edit Boxes'}
-                    </button>
+                {!isConfirmed ? (
+                    <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setIsEditing(!isEditing)}
+                            className={`p-1.5 rounded-lg border transition ${
+                                isEditing
+                                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700 hover:bg-indigo-100'
+                                    : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
+                            }`}
+                            title={isEditing ? 'Cancel Edit' : 'Edit Details'}
+                        >
+                            <Edit3 className="w-4 h-4" />
+                        </button>
 
-                    <button
-                        type="button"
-                        onClick={handleSaveAndConfirm}
-                        disabled={isSaving}
-                        className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm ${
-                            isConfirmed && !isEditing
-                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white'
-                        }`}
-                    >
-                        {isSaving ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                            <CheckCircle className="w-3.5 h-3.5" />
-                        )}
-                        {isConfirmed && !isEditing ? 'Meeting Finalized' : 'Confirm & Finalize'}
-                    </button>
-                </div>
+                        <button
+                            type="button"
+                            onClick={handleSaveAndConfirm}
+                            disabled={isSaving}
+                            className="px-3.5 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white ml-auto"
+                        >
+                            {isSaving ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                                <CheckCircle className="w-3.5 h-3.5" />
+                            )}
+                            Confirm & Finalize
+                        </button>
+                    </div>
+                ) : (
+                    <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Meeting Scheduled</span>
+                        </div>
+                        <a
+                            href={`/meeting/${action.meetingLink}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm"
+                        >
+                            <Video className="w-3.5 h-3.5" /> Open Room
+                        </a>
+                    </div>
+                )}
             </div>
         </div>
     );
