@@ -697,116 +697,46 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 const fallbackSchool = await prisma.school.findFirst({ select: { id: true } });
                 const schoolId = currentUser?.schoolId || fallbackSchool?.id;
 
-                const createdList = [];
-                for (let i = 0; i < extractedAssignments.length; i++) {
-                    const item = extractedAssignments[i];
-                    const title = item.title || `Lab Task #${i + 1}`;
+                const assignmentsDraftList = extractedAssignments.map((item, idx) => ({
+                    id: `draft-asg-${Date.now()}-${idx}`,
+                    title: item.title || `Lab Task #${idx + 1}`,
+                    description: item.description || item.title || `Lab Task #${idx + 1}`,
+                    aim: item.aim || item.description || item.title || `Lab Task #${idx + 1}`,
+                    experimentNumber: item.experimentNumber || `${idx + 1}`,
+                    assignmentType: item.assignmentType || 'program',
+                    programmingLanguage: item.programmingLanguage || 'python',
+                    subjectId: targetSubjectId,
+                    subjectName: subjectObj ? subjectObj.name : 'Computer Science',
+                    maxMarks: 100,
+                    passingMarks: 35,
+                    practicalMarks: 60,
+                    vivaMarks: 20,
+                    outputMarks: 20,
+                    dueDate: dueDate.toISOString(),
+                    matchedClassIds: resolution.matchedClassIds || [],
+                    matchedGroupIds: resolution.matchedGroupIds || [],
+                    matchedStudentIds: resolution.matchedStudentIds || [],
+                    targetClassNames: matchedClassNames,
+                    targetGroupNames: matchedGroupNames,
+                    targetStudentNames: matchedStudentNames,
+                    targetSummaryStr: targetSummaryStr,
+                    status: status
+                }));
 
-                    const assignment = await prisma.assignment.create({
-                        data: {
-                            schoolId,
-                            createdById: creatorId,
-                            subjectId: targetSubjectId,
-                            academicYearId,
-                            title,
-                            description: item.description || title,
-                            aim: item.aim || null,
-                            experimentNumber: item.experimentNumber || `${i + 1}`,
-                            assignmentType: item.assignmentType || 'program',
-                            programmingLanguage: item.programmingLanguage || 'python',
-                            referenceCode: item.referenceCode || null,
-                            maxMarks: 100,
-                            practicalMarks: 60,
-                            vivaMarks: 20,
-                            outputMarks: 20,
-                            status,
-                            publish_date: new Date(),
-                            due_date: dueDate
-                        }
-                    });
+                const assignmentAction = {
+                    isDraft: true,
+                    isConfirmed: false,
+                    isCancelled: false,
+                    academicYearId,
+                    assignments: assignmentsDraftList
+                };
 
-                    // Target Associations (Classes)
-                    for (const classId of (resolution.matchedClassIds || [])) {
-                        await prisma.assignmentTarget.create({
-                            data: {
-                                assignmentId: assignment.id,
-                                targetType: 'class',
-                                targetClassId: classId,
-                                assignedById: creatorId,
-                                dueDate: dueDate,
-                                publishDate: new Date()
-                            }
-                        });
-                        await notificationService.notifyClass({
-                            classId,
-                            title: `New Work Assigned: ${assignment.title}`,
-                            message: `You have been assigned new lab work. Due: ${dueDate.toLocaleDateString('en-IN')}`,
-                            type: 'work_assigned',
-                            referenceType: 'assignment',
-                            referenceId: assignment.id,
-                            actionUrl: '/my-work'
-                        }).catch(() => {});
-                    }
+                const firstAsg = assignmentsDraftList[0];
+                const totalAsgs = assignmentsDraftList.length;
 
-                    // Target Associations (Groups)
-                    for (const groupId of (resolution.matchedGroupIds || [])) {
-                        await prisma.assignmentTarget.create({
-                            data: {
-                                assignmentId: assignment.id,
-                                targetType: 'group',
-                                targetGroupId: groupId,
-                                assignedById: creatorId,
-                                dueDate: dueDate,
-                                publishDate: new Date()
-                            }
-                        });
-                        await notificationService.notifyGroup({
-                            groupId,
-                            title: `New Work Assigned: ${assignment.title}`,
-                            message: `You have been assigned new lab work. Due: ${dueDate.toLocaleDateString('en-IN')}`,
-                            type: 'work_assigned',
-                            referenceType: 'assignment',
-                            referenceId: assignment.id,
-                            actionUrl: '/my-work'
-                        }).catch(() => {});
-                    }
-
-                    // Target Associations (Students)
-                    for (const studentId of (resolution.matchedStudentIds || [])) {
-                        await prisma.assignmentTarget.create({
-                            data: {
-                                assignmentId: assignment.id,
-                                targetType: 'student',
-                                targetStudentId: studentId,
-                                assignedById: creatorId,
-                                dueDate: dueDate,
-                                publishDate: new Date()
-                            }
-                        });
-                        await notificationService.createNotification({
-                            userId: studentId,
-                            title: `New Work Assigned: ${assignment.title}`,
-                            message: `You have been assigned new lab work. Due: ${dueDate.toLocaleDateString('en-IN')}`,
-                            type: 'work_assigned',
-                            referenceType: 'assignment',
-                            referenceId: assignment.id,
-                            actionUrl: '/my-work'
-                        }).catch(() => {});
-                    }
-
-                    createdList.push(assignment);
-                }
-
-                const replyText = `✨ **AI Assignment Generation Complete!**
-
-I have generated the following task(s) based on your request:
-
-${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
-   - **Aim**: ${a.aim || a.description}
-   - **Subject**: ${subjectObj ? subjectObj.name : 'Computer Science'}
-   - **Target Audience**: ${targetSummaryStr}
-   - **Due Date**: ${dueDate.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-   - **Status**: ${status === 'published' ? 'Published 🚀' : 'Draft 📝'}`).join('\n\n')}`;
+                const replyText = totalAsgs === 1
+                    ? `📝 **Assignment Draft Prepared! (Pending Confirmation)**\n\nI have generated the draft for **"${firstAsg.title}"**.\n\n- 📚 **Subject:** ${firstAsg.subjectName}\n- 🎯 **Target:** ${firstAsg.targetSummaryStr}\n- 🗓️ **Due Date:** ${dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}\n- 🏷️ **Type:** \`${firstAsg.assignmentType.toUpperCase()}\`\n\nPlease review or customize the details in the confirmation card below and click **Confirm & Create Assignment** or **Cancel**:`
+                    : `📝 **${totalAsgs} Assignment Drafts Prepared! (Pending Confirmation)**\n\nI have prepared the draft assignments based on your request. Please review the details below and click **Confirm & Create Assignments** or **Cancel**:`;
 
                 return {
                     message: replyText,
@@ -814,16 +744,24 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
                     executionResult: null,
                     chartData: null,
                     reportAction: null,
+                    meetingAction: null,
+                    calendarAction: null,
+                    assignmentAction,
+                    noteAction: null,
                     provider: 'groq'
                 };
             } catch (err) {
-                console.error('[ChatBot] Direct AI assignment creation failed:', err.message);
+                console.error('[ChatBot] Direct AI assignment draft creation failed:', err.message);
                 return {
-                    message: `⚠️ **Unable to Auto-Create Assignment**\n\nReason: ${err.message}\n\nPlease try again or use the **✨ AI Auto-Generate** button on the Assignments page.`,
+                    message: `⚠️ **Unable to Generate Assignment Draft**\n\nReason: ${err.message}\n\nPlease try again or use the **✨ AI Auto-Generate** button on the Assignments page.`,
                     sql: null,
                     executionResult: null,
                     chartData: null,
                     reportAction: null,
+                    meetingAction: null,
+                    calendarAction: null,
+                    assignmentAction: null,
+                    noteAction: null,
                     provider: 'groq'
                 };
             }
@@ -977,27 +915,41 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
                 if (!noteContent) noteContent = 'Empty AI Note';
                 
                 const titleMatch = noteContent.split('\n')[0];
-                const title = (titleMatch.length > 50 ? titleMatch.substring(0, 47) + '...' : titleMatch) || 'AI Generated Note';
-                
-                await prisma.adminNote.create({
-                    data: {
-                        title,
-                        content: noteContent,
-                        category: 'general',
-                        authorId
-                    }
-                });
+                const noteAction = {
+                    isDraft: true,
+                    isConfirmed: false,
+                    isCancelled: false,
+                    title,
+                    content: noteContent,
+                    category: 'general'
+                };
 
                 return {
-                    message: `✨ **Note Created!**\n\nI have saved your text/image content as an Admin Note.\n\n📝 **[View Notes](/admin/notes)**`,
+                    message: `📌 **Note Draft Created! (Pending Confirmation)**\n\nI have prepared the draft note **"${title}"**.\n\nPlease review or edit the note content below and click **Confirm & Save Note** or **Cancel**:`,
                     sql: null,
                     executionResult: null,
                     chartData: null,
                     reportAction: null,
+                    meetingAction: null,
+                    calendarAction: null,
+                    assignmentAction: null,
+                    noteAction,
                     provider: 'groq'
                 };
             } catch (err) {
                 console.error('[ChatBot] Note creation failed:', err.message);
+                return {
+                    message: `⚠️ **Unable to Generate Note Draft**\n\nReason: ${err.message}`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    meetingAction: null,
+                    calendarAction: null,
+                    assignmentAction: null,
+                    noteAction: null,
+                    provider: 'groq'
+                };
             }
         }
 

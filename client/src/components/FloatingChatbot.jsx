@@ -7,11 +7,11 @@ import {
     Loader2, Minimize2, Maximize2, Download, Image as ImageIcon, User, BarChart2, Expand, Shrink, File,
     HelpCircle, History, FilePlus, Maximize, Minimize, Plus,
     Calendar, Clock, Video, Users, CheckCircle, ExternalLink, Edit3, Save, Link2,
-    XCircle, CalendarPlus, Undo2
+    XCircle, CalendarPlus, Undo2, BookOpen, StickyNote, GraduationCap, CheckSquare
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
-import api, { reportsAPI, meetingAPI, calendarAPI } from '@/lib/api';
+import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
@@ -935,6 +935,603 @@ function MeetingActionCard({ action, onConfirmed }) {
     );
 }
 
+/* ─── NOTE ACTION CARD (DRAFT MODE, CONFIRM & CANCEL SUPPORT) ─── */
+function NoteActionCard({ action }) {
+    const [title, setTitle] = useState(action?.title || 'New Admin Note');
+    const [content, setContent] = useState(action?.content || '');
+    const [category, setCategory] = useState(action?.category || 'general');
+    const [isEditing, setIsEditing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
+
+    const handleConfirm = async () => {
+        if (!title.trim() || !content.trim()) {
+            toast.error('Title and content are required for note');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const res = await api.post('/admin-notes', {
+                title: title.trim(),
+                content: content.trim(),
+                category: category || 'general'
+            });
+
+            toast.success(res.data?.message || `Note "${title}" saved successfully!`);
+            setIsConfirmed(true);
+            setIsEditing(false);
+        } catch (err) {
+            toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to save note');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleCancel = () => {
+        setIsCancelled(true);
+        setIsEditing(false);
+        toast('Note draft cancelled', { icon: '🚫' });
+    };
+
+    const getCategoryBadge = (cat) => {
+        switch (cat) {
+            case 'academic':
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Academic</span>;
+            case 'admin':
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Admin</span>;
+            case 'lab':
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">Lab</span>;
+            case 'reminder':
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Reminder</span>;
+            case 'important':
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">Important</span>;
+            default:
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">General</span>;
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Note Draft Cancelled</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(false)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                    >
+                        <Undo2 className="w-3 h-3" /> Restore Draft
+                    </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                    The draft note "{title}" was cancelled and not saved.
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <div className={`mt-2.5 rounded-2xl border shadow-sm overflow-hidden text-[12px] transition-all animate-in fade-in ${
+            isConfirmed
+                ? 'border-emerald-200 bg-gradient-to-b from-emerald-50/90 via-white to-teal-50/50'
+                : 'border-amber-200 bg-gradient-to-b from-amber-50/90 via-white to-orange-50/50'
+        }`}>
+            {/* Header */}
+            <div className={`px-3.5 py-2.5 text-white flex items-center justify-between ${
+                isConfirmed
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600'
+                    : 'bg-gradient-to-r from-amber-600 to-orange-600'
+            }`}>
+                <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
+                        {isConfirmed ? <Check className="w-3.5 h-3.5" /> : <StickyNote className="w-3.5 h-3.5" />}
+                    </div>
+                    <span className="font-semibold text-[13px] tracking-tight">
+                        {isConfirmed ? 'Note Saved' : 'Note Draft (Pending Confirmation)'}
+                    </span>
+                </div>
+                {isConfirmed ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Saved
+                    </span>
+                ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-950 flex items-center gap-1 shadow-xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-800 animate-ping" />
+                        Draft Mode
+                    </span>
+                )}
+            </div>
+
+            <div className="p-3.5 space-y-3">
+                {!isConfirmed && (
+                    <div className="text-[11px] text-slate-600 flex items-center justify-between">
+                        <span>Review or customize note before saving:</span>
+                        <button
+                            type="button"
+                            onClick={() => setIsEditing(!isEditing)}
+                            className={`px-2 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition ${
+                                isEditing
+                                    ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-xs'
+                                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                        >
+                            <Edit3 className="w-3.5 h-3.5" /> {isEditing ? 'Done Editing' : 'Edit Note'}
+                        </button>
+                    </div>
+                )}
+
+                {isEditing && !isConfirmed ? (
+                    <div className="p-3 bg-white rounded-xl border border-amber-100 shadow-2xs space-y-2.5">
+                        <div className="grid grid-cols-3 gap-2">
+                            <div className="col-span-2">
+                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Note Title</label>
+                                <input
+                                    type="text"
+                                    value={title}
+                                    onChange={(e) => setTitle(e.target.value)}
+                                    placeholder="Note Title"
+                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Category</label>
+                                <select
+                                    value={category}
+                                    onChange={(e) => setCategory(e.target.value)}
+                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                >
+                                    <option value="general">General</option>
+                                    <option value="academic">Academic</option>
+                                    <option value="admin">Admin</option>
+                                    <option value="lab">Lab</option>
+                                    <option value="reminder">Reminder</option>
+                                    <option value="important">Important</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Note Content</label>
+                            <textarea
+                                rows={4}
+                                value={content}
+                                onChange={(e) => setContent(e.target.value)}
+                                placeholder="Note details..."
+                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 resize-y"
+                            />
+                        </div>
+                    </div>
+                ) : (
+                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                            <h4 className="font-bold text-slate-900 text-sm leading-snug">
+                                {title}
+                            </h4>
+                            {getCategoryBadge(category)}
+                        </div>
+                        <div className="text-xs text-slate-700 whitespace-pre-wrap bg-slate-50/80 p-2.5 rounded-lg border border-slate-100 max-h-48 overflow-y-auto leading-relaxed">
+                            {content || 'No content'}
+                        </div>
+                    </div>
+                )}
+
+                {/* Actions */}
+                {!isConfirmed ? (
+                    <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                        <button
+                            type="button"
+                            onClick={handleCancel}
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-red-600 hover:bg-red-50 text-[11px] font-semibold flex items-center gap-1.5 transition"
+                        >
+                            <X className="w-3.5 h-3.5" /> Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            disabled={isSaving || !title.trim() || !content.trim()}
+                            className="px-4 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white disabled:opacity-50"
+                        >
+                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                            Confirm & Save Note
+                        </button>
+                    </div>
+                ) : (
+                    <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Saved to Admin Notes</span>
+                        </div>
+                        <a
+                            href="/admin/notes"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm"
+                        >
+                            <StickyNote className="w-3.5 h-3.5" /> View Notes
+                        </a>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/* ─── ASSIGNMENT ACTION CARD (DRAFT MODE, CONFIRM & CANCEL SUPPORT) ─── */
+function AssignmentActionCard({ action }) {
+    const rawAssignments = Array.isArray(action?.assignments) 
+        ? action.assignments 
+        : action ? [action] : [];
+    
+    const [assignments, setAssignments] = useState(rawAssignments);
+    const [isEditing, setIsEditing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
+    const [targetOptions, setTargetOptions] = useState({ classes: [], groups: [], students: [], subjects: [] });
+
+    // Load available classes, groups, students, subjects for targeting
+    useEffect(() => {
+        let isMounted = true;
+        const loadMetadata = async () => {
+            try {
+                const [targetRes, subjectRes] = await Promise.all([
+                    meetingAPI.searchTargets({ type: 'all' }).catch(() => ({ data: { data: {} } })),
+                    api.get('/subjects').catch(() => ({ data: { data: [] } }))
+                ]);
+                if (isMounted) {
+                    const tData = targetRes.data?.data || {};
+                    const sData = subjectRes.data?.data || [];
+                    setTargetOptions({
+                        classes: Array.isArray(tData.classes) ? tData.classes : [],
+                        groups: Array.isArray(tData.groups) ? tData.groups : [],
+                        students: Array.isArray(tData.students) ? tData.students : [],
+                        subjects: Array.isArray(sData) ? sData : (Array.isArray(sData.subjects) ? sData.subjects : [])
+                    });
+                }
+            } catch (err) {
+                console.warn('Failed to load target options for assignment card:', err);
+            }
+        };
+        loadMetadata();
+        return () => { isMounted = false; };
+    }, []);
+
+    const handleUpdateAssignment = (idx, field, value) => {
+        setAssignments(prev => {
+            const copy = [...prev];
+            copy[idx] = { ...copy[idx], [field]: value };
+            return copy;
+        });
+    };
+
+    const handleConfirm = async () => {
+        if (assignments.length === 0) {
+            toast.error('No assignments to create');
+            return;
+        }
+
+        setIsSaving(true);
+        let successCount = 0;
+        try {
+            for (const asg of assignments) {
+                const payload = {
+                    title: asg.title,
+                    description: asg.description || asg.aim || asg.title,
+                    aim: asg.aim || asg.description || asg.title,
+                    subjectId: asg.subjectId || targetOptions.subjects[0]?.id,
+                    assignmentType: asg.assignmentType || 'program',
+                    programmingLanguage: asg.programmingLanguage || 'python',
+                    experimentNumber: asg.experimentNumber || '1',
+                    maxMarks: Number(asg.maxMarks) || 100,
+                    passingMarks: Number(asg.passingMarks) || 35,
+                    practicalMarks: Number(asg.practicalMarks) || 60,
+                    vivaMarks: Number(asg.vivaMarks) || 20,
+                    outputMarks: Number(asg.outputMarks) || 20,
+                    academicYearId: action?.academicYearId || undefined,
+                    status: 'published'
+                };
+
+                const res = await assignmentsAPI.create(payload);
+                const created = res.data?.data;
+
+                if (created?.id) {
+                    successCount++;
+                    const dueDateObj = asg.dueDate ? new Date(asg.dueDate) : undefined;
+                    // Target classes
+                    for (const cid of (asg.matchedClassIds || [])) {
+                        await assignmentsAPI.addTarget(created.id, { targetType: 'class', targetId: cid, dueDate: dueDateObj }).catch(() => {});
+                    }
+                    // Target groups
+                    for (const gid of (asg.matchedGroupIds || [])) {
+                        await assignmentsAPI.addTarget(created.id, { targetType: 'group', targetId: gid, dueDate: dueDateObj }).catch(() => {});
+                    }
+                    // Target students
+                    for (const sid of (asg.matchedStudentIds || [])) {
+                        await assignmentsAPI.addTarget(created.id, { targetType: 'student', targetId: sid, dueDate: dueDateObj }).catch(() => {});
+                    }
+                }
+            }
+
+            toast.success(`Successfully created ${successCount} assignment(s)!`);
+            setIsConfirmed(true);
+            setIsEditing(false);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to create assignment');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleCancel = () => {
+        setIsCancelled(true);
+        setIsEditing(false);
+        toast('Assignment draft cancelled', { icon: '🚫' });
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Assignment Draft Cancelled</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(false)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                    >
+                        <Undo2 className="w-3 h-3" /> Restore Draft
+                    </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                    The assignment draft "{assignments[0]?.title || 'Assignment'}" was cancelled and not created.
+                </p>
+            </div>
+        );
+    }
+
+    const firstAsg = assignments[0] || {};
+    const formatDue = (isoStr) => {
+        if (!isoStr) return 'No deadline';
+        try {
+            const d = new Date(isoStr);
+            return isNaN(d.getTime()) ? isoStr : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        } catch {
+            return isoStr;
+        }
+    };
+
+    return (
+        <div className={`mt-2.5 rounded-2xl border shadow-sm overflow-hidden text-[12px] transition-all animate-in fade-in ${
+            isConfirmed
+                ? 'border-emerald-200 bg-gradient-to-b from-emerald-50/90 via-white to-teal-50/50'
+                : 'border-blue-200 bg-gradient-to-b from-blue-50/90 via-white to-indigo-50/50'
+        }`}>
+            {/* Header */}
+            <div className={`px-3.5 py-2.5 text-white flex items-center justify-between ${
+                isConfirmed
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600'
+                    : 'bg-gradient-to-r from-blue-600 to-indigo-600'
+            }`}>
+                <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
+                        {isConfirmed ? <Check className="w-3.5 h-3.5" /> : <BookOpen className="w-3.5 h-3.5" />}
+                    </div>
+                    <span className="font-semibold text-[13px] tracking-tight">
+                        {isConfirmed ? 'Assignment Created & Published' : 'Assignment Draft (Pending Confirmation)'}
+                    </span>
+                </div>
+                {isConfirmed ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Published
+                    </span>
+                ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-300 text-amber-950 flex items-center gap-1 shadow-xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-800 animate-ping" />
+                        Draft Mode
+                    </span>
+                )}
+            </div>
+
+            <div className="p-3.5 space-y-3">
+                {!isConfirmed && (
+                    <div className="text-[11px] text-slate-600 flex items-center justify-between">
+                        <span>Review task details and targets before creating:</span>
+                        <button
+                            type="button"
+                            onClick={() => setIsEditing(!isEditing)}
+                            className={`px-2 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition ${
+                                isEditing
+                                    ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-xs'
+                                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                        >
+                            <Edit3 className="w-3.5 h-3.5" /> {isEditing ? 'Done Editing' : 'Edit Details'}
+                        </button>
+                    </div>
+                )}
+
+                {/* Assignment Details */}
+                {isEditing && !isConfirmed ? (
+                    <div className="p-3 bg-white rounded-xl border border-blue-100 shadow-2xs space-y-2.5">
+                        <div>
+                            <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Assignment Title</label>
+                            <input
+                                type="text"
+                                value={firstAsg.title || ''}
+                                onChange={(e) => handleUpdateAssignment(0, 'title', e.target.value)}
+                                placeholder="Assignment Title"
+                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Aim / Instructions</label>
+                            <textarea
+                                rows={3}
+                                value={firstAsg.aim || firstAsg.description || ''}
+                                onChange={(e) => {
+                                    handleUpdateAssignment(0, 'aim', e.target.value);
+                                    handleUpdateAssignment(0, 'description', e.target.value);
+                                }}
+                                placeholder="Describe the task or experiment aim..."
+                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Subject</label>
+                                <select
+                                    value={firstAsg.subjectId || ''}
+                                    onChange={(e) => {
+                                        const sel = targetOptions.subjects.find(s => s.id === e.target.value);
+                                        handleUpdateAssignment(0, 'subjectId', e.target.value);
+                                        if (sel) handleUpdateAssignment(0, 'subjectName', sel.name);
+                                    }}
+                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                >
+                                    {targetOptions.subjects.map(s => (
+                                        <option key={s.id} value={s.id}>{s.name} ({s.code || 'Sub'})</option>
+                                    ))}
+                                    {targetOptions.subjects.length === 0 && (
+                                        <option value="">{firstAsg.subjectName || 'Computer Science'}</option>
+                                    )}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Type</label>
+                                <select
+                                    value={firstAsg.assignmentType || 'program'}
+                                    onChange={(e) => handleUpdateAssignment(0, 'assignmentType', e.target.value)}
+                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                >
+                                    <option value="program">Programming / Coding</option>
+                                    <option value="experiment">Lab Experiment</option>
+                                    <option value="project">Project Work</option>
+                                    <option value="observation">Observation Sheet</option>
+                                    <option value="viva_only">Viva Voce Only</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Due Date</label>
+                                <input
+                                    type="datetime-local"
+                                    value={firstAsg.dueDate ? firstAsg.dueDate.substring(0, 16) : ''}
+                                    onChange={(e) => handleUpdateAssignment(0, 'dueDate', e.target.value)}
+                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Max Marks</label>
+                                <input
+                                    type="number"
+                                    value={firstAsg.maxMarks || 100}
+                                    onChange={(e) => handleUpdateAssignment(0, 'maxMarks', e.target.value)}
+                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                            <div>
+                                <h4 className="font-bold text-slate-900 text-sm leading-snug">
+                                    {firstAsg.title || 'Untitled Assignment'}
+                                </h4>
+                                <p className="text-xs text-slate-600 line-clamp-2 mt-0.5">
+                                    {firstAsg.aim || firstAsg.description}
+                                </p>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 shrink-0 capitalize">
+                                {firstAsg.assignmentType || 'Program'}
+                            </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1 text-xs border-t border-slate-100">
+                            <div className="flex items-center gap-1.5 text-slate-700">
+                                <GraduationCap className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                <span className="font-medium truncate">{firstAsg.subjectName || 'Computer Science'}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-slate-700">
+                                <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                <span className="font-medium truncate">{firstAsg.targetSummaryStr || 'All Students'}</span>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-0.5 text-xs">
+                            <div className="flex items-center gap-1.5 text-slate-700">
+                                <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                <span className="font-medium text-[11px]">{formatDue(firstAsg.dueDate)}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-slate-700">
+                                <CheckSquare className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                <span className="font-medium text-[11px]">Max Marks: {firstAsg.maxMarks || 100}</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Actions */}
+                {!isConfirmed ? (
+                    <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                        <button
+                            type="button"
+                            onClick={handleCancel}
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-red-600 hover:bg-red-50 text-[11px] font-semibold flex items-center gap-1.5 transition"
+                        >
+                            <X className="w-3.5 h-3.5" /> Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            disabled={isSaving || !firstAsg.title}
+                            className="px-4 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white disabled:opacity-50"
+                        >
+                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                            Confirm & Create Assignment
+                        </button>
+                    </div>
+                ) : (
+                    <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Assignment Created & Assigned</span>
+                        </div>
+                        <div className="flex gap-1.5">
+                            <a
+                                href="/assignments"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm"
+                            >
+                                <BookOpen className="w-3.5 h-3.5" /> Assignments
+                            </a>
+                            <a
+                                href="/assigned-work"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm"
+                            >
+                                <Users className="w-3.5 h-3.5" /> Assigned Work
+                            </a>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 /* ─── CALENDAR ACTION CARD (DRAFT MODE, CONFIRM & CANCEL SUPPORT) ─── */
 function CalendarActionCard({ action }) {
     const [events, setEvents] = useState(Array.isArray(action?.events) ? action.events : []);
@@ -1589,6 +2186,8 @@ export default function FloatingChatbot() {
                         reportAction: d.reportAction, 
                         meetingAction: d.meetingAction,
                         calendarAction: d.calendarAction,
+                        assignmentAction: d.assignmentAction,
+                        noteAction: d.noteAction,
                         model: d.model, 
                         provider: d.provider, 
                         timestamp: d.timestamp 
@@ -1865,6 +2464,8 @@ export default function FloatingChatbot() {
                                     {msg.reportAction && <ReportActionCard action={msg.reportAction} />}
                                     {msg.meetingAction && <MeetingActionCard action={msg.meetingAction} />}
                                     {msg.calendarAction && <CalendarActionCard action={msg.calendarAction} />}
+                                    {msg.assignmentAction && <AssignmentActionCard action={msg.assignmentAction} />}
+                                    {msg.noteAction && <NoteActionCard action={msg.noteAction} />}
                                     {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
                                 </div>
                             </div>
