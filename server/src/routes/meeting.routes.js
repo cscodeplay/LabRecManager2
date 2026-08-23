@@ -713,6 +713,11 @@ router.put('/sessions/:id/complete', authenticate, authorize('instructor', 'lab_
                     where: { id: session.submissionId },
                     data: { status: 'viva_completed' }
                 });
+            } catch (subErr) {
+                console.warn('Failed to update submission status:', subErr.message);
+            }
+        }
+
         // Emit socket events to close room and notify all clients
         const io = req.app.get('io');
         if (io) {
