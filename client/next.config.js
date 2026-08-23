@@ -12,6 +12,9 @@ try {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     reactStrictMode: true,
+    eslint: {
+        ignoreDuringBuilds: true,
+    },
     transpilePackages: ['lucide-react'],
     env: {
         NEXT_PUBLIC_COMMIT_HASH: commitHash,

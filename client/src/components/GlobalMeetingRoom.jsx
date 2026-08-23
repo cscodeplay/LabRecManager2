@@ -209,6 +209,7 @@ export default function GlobalMeetingRoom() {
     // Live Quiz / Question State (PhysicsWallah-style)
     const [activeQuiz, setActiveQuiz] = useState(null);
     const [quizResponses, setQuizResponses] = useState({});
+    const [quizDrafts, setQuizDrafts] = useState([]);
 
     // Floating Emoji Reactions State
     const [floatingReactions, setFloatingReactions] = useState([]);
@@ -2581,98 +2582,107 @@ Link: ${getInviteUrl()}`;
                             className="flex items-center gap-2 cursor-grab active:cursor-grabbing touch-none flex-1 py-1"
                         >
                             <GripVertical className="w-4 h-4 text-slate-400" />
-                            <div className="flex items-center bg-slate-950/60 p-0.5 rounded-lg border border-slate-700/60">
+                            <div className="flex items-center bg-slate-950/60 p-0.5 rounded-lg border border-slate-700/60 gap-1">
+                                {/* Tab 1: Chat Icon */}
                                 <button
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onClick={() => {
                                         setActiveSidePanelTab('chat');
                                         setUnreadChatCount(0);
                                     }}
-                                    className={`px-3 py-1 rounded-md text-xs font-medium transition flex items-center gap-1.5 ${
+                                    className={`p-1.5 rounded-md transition relative flex items-center justify-center ${
                                         activeSidePanelTab === 'chat'
                                             ? 'bg-primary-600 text-white shadow'
-                                            : 'text-slate-400 hover:text-slate-200'
+                                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                                     }`}
+                                    title="Chat"
                                 >
-                                    <MessageSquare className="w-3.5 h-3.5" />
-                                    <span>Chat</span>
+                                    <MessageSquare className="w-4 h-4" />
                                     {unreadChatCount > 0 && activeSidePanelTab !== 'chat' && (
-                                        <span className="bg-red-500 text-white text-[9px] px-1 rounded-full font-bold">
+                                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold">
                                             {unreadChatCount}
                                         </span>
                                     )}
                                 </button>
+
+                                {/* Tab 2: Participants Icon */}
                                 <button
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onClick={() => setActiveSidePanelTab('participants')}
-                                    className={`px-3 py-1 rounded-md text-xs font-medium transition flex items-center gap-1.5 ${
+                                    className={`p-1.5 rounded-md transition relative flex items-center justify-center ${
                                         activeSidePanelTab === 'participants'
                                             ? 'bg-primary-600 text-white shadow'
-                                            : 'text-slate-400 hover:text-slate-200'
+                                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                                     }`}
+                                    title={`Participants (${totalParticipants})`}
                                 >
-                                    <Users className="w-3.5 h-3.5" />
-                                    <span>Participants ({totalParticipants})</span>
-                                    {waitingParticipants.length > 0 && (
-                                        <span className="bg-amber-500 text-slate-950 text-[9px] px-1.5 py-0.2 rounded-full font-bold animate-pulse">
+                                    <Users className="w-4 h-4" />
+                                    {waitingParticipants.length > 0 ? (
+                                        <span className="absolute -top-1 -right-1 bg-amber-500 text-slate-950 text-[9px] w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold animate-pulse">
                                             {waitingParticipants.length}
+                                        </span>
+                                    ) : (
+                                        <span className="absolute -bottom-1 -right-1 bg-slate-800 text-slate-300 text-[8px] px-1 rounded-full border border-slate-700 font-mono">
+                                            {totalParticipants}
                                         </span>
                                     )}
                                 </button>
+
+                                {/* Tab 3: Quiz Icon */}
                                 <button
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onClick={() => setActiveSidePanelTab('quiz')}
-                                    className={`px-3 py-1 rounded-md text-xs font-medium transition flex items-center gap-1.5 ${
+                                    className={`p-1.5 rounded-md transition relative flex items-center justify-center ${
                                         activeSidePanelTab === 'quiz'
                                             ? 'bg-primary-600 text-white shadow'
-                                            : 'text-slate-400 hover:text-slate-200'
+                                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                                     }`}
+                                    title="Live Quiz & Questions Bank"
                                 >
-                                    <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
-                                    <span>Quiz</span>
+                                    <HelpCircle className="w-4 h-4 text-amber-400" />
                                     {activeQuiz && !activeQuiz.isEnded && (
-                                        <span className="bg-amber-400 text-slate-950 text-[9px] px-1.5 py-0.2 rounded-full font-bold animate-pulse">
-                                            Live
-                                        </span>
+                                        <span className="absolute -top-1 -right-1 bg-amber-400 w-2 h-2 rounded-full animate-ping" />
                                     )}
                                 </button>
+
+                                {/* Tab 4: Invite Icon */}
                                 <button
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onClick={() => setActiveSidePanelTab('invite')}
-                                    className={`px-3 py-1 rounded-md text-xs font-medium transition flex items-center gap-1.5 ${
+                                    className={`p-1.5 rounded-md transition relative flex items-center justify-center ${
                                         activeSidePanelTab === 'invite'
                                             ? 'bg-primary-600 text-white shadow'
-                                            : 'text-slate-400 hover:text-slate-200'
+                                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                                     }`}
+                                    title="Invite Participants"
                                 >
-                                    <UserPlus className="w-3.5 h-3.5" />
-                                    <span>Invite</span>
+                                    <UserPlus className="w-4 h-4" />
                                 </button>
                             </div>
                         </div>
 
+                        {/* Close Button */}
                         <button
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setShowChat(false);
                             }}
-                            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-700 transition"
-                            title="Close Window"
+                            className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition flex items-center justify-center"
+                            title="Close"
                         >
-                            <XCircle className="w-5 h-5" />
+                            <X className="w-4 h-4" />
                         </button>
                     </div>
 
                     {/* TAB 1: CHAT */}
-                    {activeSidePanelTab === 'chat' && (
-                        <div className="flex-1 flex flex-col overflow-hidden">
-                            {/* In-Chat Quick Action Banner */}
-                            <div className="px-3 py-1.5 bg-slate-800/60 border-b border-slate-700/60 flex items-center justify-between text-xs">
-                                <button
-                                    onClick={() => setActiveSidePanelTab('invite')}
-                                    className="text-primary-400 hover:text-primary-300 font-semibold flex items-center gap-1 transition"
-                                >
+                    <div className={activeSidePanelTab === 'chat' ? 'flex-1 flex flex-col overflow-hidden' : 'hidden'}>
+                        {/* In-Chat Quick Action Banner */}
+                        <div className="px-3 py-1.5 bg-slate-800/60 border-b border-slate-700/60 flex items-center justify-between text-xs">
+                            <button
+                                onClick={() => setActiveSidePanelTab('invite')}
+                                className="text-primary-400 hover:text-primary-300 font-semibold flex items-center gap-1 transition"
+                            >
                                     <UserPlus className="w-3.5 h-3.5" />
                                     <span>+ Invite Participants</span>
                                 </button>
@@ -2772,12 +2782,10 @@ Link: ${getInviteUrl()}`;
                                 </button>
                             </form>
                         </div>
-                    )}
 
                     {/* TAB 2: PARTICIPANTS (IN MEETING, WAITING ROOM, OFFLINE) */}
-                    {activeSidePanelTab === 'participants' && (
-                        <div className="flex-1 flex flex-col overflow-hidden">
-                            <div className="p-2.5 border-b border-slate-800 bg-slate-800/40">
+                    <div className={activeSidePanelTab === 'participants' ? 'flex-1 flex flex-col overflow-hidden' : 'hidden'}>
+                        <div className="p-2.5 border-b border-slate-800 bg-slate-800/40">
                                 <div className="relative">
                                     <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                                     <input
@@ -2991,23 +2999,21 @@ Link: ${getInviteUrl()}`;
                                     </button>
                                 </div>
                             )}
-                        </div>
-                    )}
+                    </div>
 
                     {/* TAB 3: GLOBAL SEARCH & INVITE PARTICIPANTS */}
-                    {activeSidePanelTab === 'invite' && (
-                        <div className="flex-1 flex flex-col overflow-hidden bg-slate-900">
-                            {/* Search Header */}
-                            <div className="p-3 border-b border-slate-800 bg-slate-800/50 space-y-2">
-                                <div className="relative">
-                                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                                    <input
-                                        type="text"
-                                        value={inviteSearchQuery}
-                                        onChange={(e) => setInviteSearchQuery(e.target.value)}
-                                        placeholder="Search student, class, or group..."
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                                    />
+                    <div className={activeSidePanelTab === 'invite' ? 'flex-1 flex flex-col overflow-hidden bg-slate-900' : 'hidden'}>
+                        {/* Search Header */}
+                        <div className="p-3 border-b border-slate-800 bg-slate-800/50 space-y-2">
+                            <div className="relative">
+                                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={inviteSearchQuery}
+                                    onChange={(e) => setInviteSearchQuery(e.target.value)}
+                                    placeholder="Search student, class, or group..."
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                />
                                     {inviteSearchQuery && (
                                         <button
                                             onClick={() => setInviteSearchQuery('')}
@@ -3147,7 +3153,7 @@ Link: ${getInviteUrl()}`;
                                                                 <p className="text-xs font-semibold text-white leading-tight">
                                                                     Class: {c.name}
                                                                 </p>
-                                                                <p className="text-[10px] text-slate-400">
+                                            <p className="text-[10px] text-slate-400">
                                                                     {c.section ? `Section: ${c.section}` : 'Entire Class'}
                                                                 </p>
                                                             </div>
@@ -3234,10 +3240,9 @@ Link: ${getInviteUrl()}`;
                                 )}
                             </div>
                         </div>
-                    )}
 
                     {/* TAB 4: LIVE QUIZ & FASTEST-FINGER QUESTIONS (PHYSICSWALLAH-STYLE) */}
-                    {activeSidePanelTab === 'quiz' && (
+                    <div className={activeSidePanelTab === 'quiz' ? 'flex-1 flex flex-col overflow-hidden bg-slate-900' : 'hidden'}>
                         <LiveMeetingQuiz
                             socket={socketRef.current}
                             roomId={activeRoomIdRef.current || code}
@@ -3247,11 +3252,12 @@ Link: ${getInviteUrl()}`;
                             setActiveQuiz={setActiveQuiz}
                             quizResponses={quizResponses}
                             setQuizResponses={setQuizResponses}
+                            quizDrafts={quizDrafts}
+                            setQuizDrafts={setQuizDrafts}
                         />
-                    )}
+                    </div>
                 </div>
             )}
-
             {/* ========================================================================= */}
             {/* LAYER 2 (FLOATING OVERLAY): MEETING DETAILS & INVITATION MODAL            */}
             {/* ========================================================================= */}

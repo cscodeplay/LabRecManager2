@@ -3,9 +3,31 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     HelpCircle, CheckCircle2, XCircle, Clock, Zap, Award, 
-    Play, RotateCcw, BarChart3, Users, ChevronRight, Sparkles, Check, X
+    Play, RotateCcw, BarChart3, Users, ChevronRight, Sparkles, 
+    Check, X, Plus, Trash2, ArrowRight, History, Layers
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+const DEFAULT_OPTIONS = [
+    { key: 'A', text: '' },
+    { key: 'B', text: '' },
+    { key: 'C', text: '' },
+    { key: 'D', text: '' }
+];
+
+const createEmptyQuestion = (index) => ({
+    id: `q-${Date.now()}-${index}`,
+    question: '',
+    options: [
+        { key: 'A', text: '' },
+        { key: 'B', text: '' },
+        { key: 'C', text: '' },
+        { key: 'D', text: '' }
+    ],
+    correctOption: 'A',
+    timeLimit: 30,
+    isEnded: false
+});
 
 export default function LiveMeetingQuiz({
     socket,
@@ -15,28 +37,39 @@ export default function LiveMeetingQuiz({
     activeQuiz,
     setActiveQuiz,
     quizResponses,
-    setQuizResponses
+    setQuizResponses,
+    quizDrafts,
+    setQuizDrafts
 }) {
-    // Host Question Form State
-    const [question, setQuestion] = useState('');
-    const [options, setOptions] = useState([
-        { key: 'A', text: '' },
-        { key: 'B', text: '' },
-        { key: 'C', text: '' },
-        { key: 'D', text: '' }
-    ]);
-    const [correctOption, setCorrectOption] = useState('A');
-    const [timeLimit, setTimeLimit] = useState(30); // in seconds
-    const [timeLeft, setTimeLeft] = useState(0);
+    // Multi-Question State for Host (persisted in quizDrafts or fallback)
+    const [questions, setQuestions] = useState(() => {
+        if (quizDrafts && quizDrafts.length > 0) return quizDrafts;
+        return [createEmptyQuestion(1)];
+    });
+    const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
 
-    // Student Selection State
+    // Sync draft updates to parent state
+    useEffect(() => {
+        if (setQuizDrafts) {
+            setQuizDrafts(questions);
+        }
+    }, [questions, setQuizDrafts]);
+
+    // Student Selection & Timer State
+    const [timeLeft, setTimeLeft] = useState(0);
     const [selectedOption, setSelectedOption] = useState(null);
     const [hasSubmitted, setHasSubmitted] = useState(false);
     const [myResponseTime, setMyResponseTime] = useState(null);
 
+    // Question History Mode (to review past questions in session)
+    const [viewingHistoryQuizId, setViewingHistoryQuizId] = useState(null);
+
+    // Current editing question for host
+    const currentEditQ = questions[activeQuestionIndex] || questions[0] || createEmptyQuestion(1);
+
     // Sync countdown timer with active quiz
     useEffect(() => {
-        if (!activeQuiz || !activeQuiz.startedAt) {
+        if (!activeQuiz || !activeQuiz.startedAt || activeQuiz.isEnded) {
             setTimeLeft(0);
             return;
         }
@@ -60,7 +93,7 @@ export default function LiveMeetingQuiz({
         return () => clearInterval(timer);
     }, [activeQuiz]);
 
-    // Reset local selection when a new quiz starts
+    // Reset local student selection when activeQuiz changes
     useEffect(() => {
         if (activeQuiz?.id) {
             const existing = (quizResponses[activeQuiz.id] || []).find(r => r.userId === user?.id);
@@ -76,23 +109,57 @@ export default function LiveMeetingQuiz({
         }
     }, [activeQuiz?.id, quizResponses, user?.id]);
 
-    // Host: Launch Question
-    const handleLaunchQuestion = () => {
-        if (!question.trim()) {
-            toast.error('Please enter the question text');
+    // Multi-Question Host Actions
+    const handleAddQuestion = () => {
+        const newQ = createEmptyQuestion(questions.length + 1);
+        setQuestions(prev => [...prev, newQ]);
+        setActiveQuestionIndex(questions.length);
+        toast.success(`Question ${questions.length + 1} added to draft`);
+    };
+
+    const handleDeleteQuestion = (idxToDelete) => {
+        if (questions.length <= 1) {
+            toast.error('At least one question is required');
             return;
         }
-        if (options.some(opt => !opt.text.trim())) {
+        setQuestions(prev => prev.filter((_, i) => i !== idxToDelete));
+        setActiveQuestionIndex(prev => (prev >= idxToDelete ? Math.max(0, prev - 1) : prev));
+        toast('Question removed from draft');
+    };
+
+    const handleUpdateCurrentQuestion = (updates) => {
+        setQuestions(prev => {
+            const next = [...prev];
+            next[activeQuestionIndex] = { ...next[activeQuestionIndex], ...updates };
+            return next;
+        });
+    };
+
+    const handleUpdateOptionText = (optKey, text) => {
+        const currOpts = currentEditQ.options || DEFAULT_OPTIONS;
+        const newOpts = currOpts.map(o => o.key === optKey ? { ...o, text } : o);
+        handleUpdateCurrentQuestion({ options: newOpts });
+    };
+
+    // Host: Launch Selected Question
+    const handleLaunchQuestion = (targetQ = currentEditQ) => {
+        if (!targetQ.question.trim()) {
+            toast.error('Please enter the question statement');
+            return;
+        }
+        if (targetQ.options.some(opt => !opt.text.trim())) {
             toast.error('Please fill out all 4 options (A, B, C, D)');
             return;
         }
 
         const newQuiz = {
-            id: `quiz-${Date.now()}`,
-            question: question.trim(),
-            options: options.map(o => ({ key: o.key, text: o.text.trim() })),
-            correctOption,
-            timeLimit: parseInt(timeLimit, 10),
+            id: targetQ.id || `quiz-${Date.now()}`,
+            questionIndex: activeQuestionIndex + 1,
+            totalQuestions: questions.length,
+            question: targetQ.question.trim(),
+            options: targetQ.options.map(o => ({ key: o.key, text: o.text.trim() })),
+            correctOption: targetQ.correctOption || 'A',
+            timeLimit: parseInt(targetQ.timeLimit || 30, 10),
             startedAt: new Date().toISOString(),
             hostName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Instructor',
             isEnded: false
@@ -107,7 +174,8 @@ export default function LiveMeetingQuiz({
 
         setActiveQuiz(newQuiz);
         setQuizResponses(prev => ({ ...prev, [newQuiz.id]: [] }));
-        toast.success('Live question launched to all participants!');
+        setViewingHistoryQuizId(null);
+        toast.success(`🚀 Launched Q${activeQuestionIndex + 1} (${activeQuestionIndex + 1}/${questions.length}) to class!`);
     };
 
     // Host: End Question
@@ -168,19 +236,18 @@ export default function LiveMeetingQuiz({
         toast.success(`Answer [${optKey}] submitted in ${timeInSec}s!`);
     };
 
-    // Current Quiz Responses
+    // Active Quiz or Selected History Quiz
+    const displayQuiz = activeQuiz;
     const currentResponses = useMemo(() => {
-        if (!activeQuiz?.id) return [];
-        return quizResponses[activeQuiz.id] || [];
-    }, [activeQuiz?.id, quizResponses]);
+        if (!displayQuiz?.id) return [];
+        return quizResponses[displayQuiz.id] || [];
+    }, [displayQuiz?.id, quizResponses]);
 
-    // Leaderboard sorted by response time from MIN to MAX (Fastest first)
+    // Leaderboard sorted by response time from MIN to MAX (Fastest finger first)
     const sortedResponses = useMemo(() => {
         return [...currentResponses].sort((a, b) => {
-            // Correct answers first
             if (a.isCorrect && !b.isCorrect) return -1;
             if (!a.isCorrect && b.isCorrect) return 1;
-            // Then by fastest time (min to max)
             return (a.responseTimeSec || 999) - (b.responseTimeSec || 999);
         });
     }, [currentResponses]);
@@ -201,12 +268,12 @@ export default function LiveMeetingQuiz({
         }));
     }, [currentResponses]);
 
-    const isQuizOver = activeQuiz && (timeLeft <= 0 || activeQuiz.isEnded);
+    const isQuizOver = displayQuiz && (timeLeft <= 0 || displayQuiz.isEnded);
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden bg-slate-900 text-slate-100 text-xs select-none">
-            {/* Active Quiz Running or Review Mode */}
-            {activeQuiz ? (
+            {/* Active Quiz Running Mode */}
+            {displayQuiz && (!displayQuiz.isEnded || !isHost) ? (
                 <div className="flex-1 flex flex-col overflow-y-auto p-3.5 space-y-3.5">
                     {/* Quiz Top Status Card */}
                     <div className="p-3 bg-gradient-to-r from-indigo-900/80 via-slate-800 to-violet-900/80 rounded-xl border border-indigo-500/30 shadow-md flex items-center justify-between">
@@ -219,6 +286,7 @@ export default function LiveMeetingQuiz({
                                     {isQuizOver ? 'Question Ended' : 'Live Question Active'}
                                 </span>
                                 <span className="text-[11px] text-slate-300 font-medium">
+                                    {displayQuiz.questionIndex ? `Q${displayQuiz.questionIndex} of ${displayQuiz.totalQuestions || questions.length} • ` : ''}
                                     {currentResponses.length} answered
                                 </span>
                             </div>
@@ -243,16 +311,16 @@ export default function LiveMeetingQuiz({
                             <HelpCircle className="w-3 h-3" /> Question
                         </div>
                         <h4 className="text-sm font-semibold text-white leading-relaxed">
-                            {activeQuiz.question}
+                            {displayQuiz.question}
                         </h4>
                     </div>
 
                     {/* Options List */}
                     <div className="space-y-2">
-                        {activeQuiz.options.map((opt) => {
+                        {displayQuiz.options.map((opt) => {
                             const isSelected = selectedOption === opt.key;
-                            const isCorrect = opt.key === activeQuiz.correctOption;
-                            const showSolution = isQuizOver || (isHost && isQuizOver);
+                            const isCorrect = opt.key === displayQuiz.correctOption;
+                            const showSolution = isQuizOver;
                             const stat = optionStats.find(s => s.key === opt.key);
 
                             let borderBg = 'bg-slate-800/80 border-slate-700 hover:border-indigo-500/60 text-slate-200';
@@ -348,9 +416,7 @@ export default function LiveMeetingQuiz({
                         </div>
                     )}
 
-                    {/* ========================================================================= */}
-                    {/* PHYSICSWALLAH STYLE RESPONSE LEADERBOARD (SORTED MIN TO MAX RESPONSE TIME) */}
-                    {/* ========================================================================= */}
+                    {/* Leaderboard Table (Sorted Min to Max) */}
                     <div className="pt-2 border-t border-slate-800 space-y-2.5">
                         <div className="flex items-center justify-between">
                             <h5 className="font-bold text-[11px] uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -367,7 +433,7 @@ export default function LiveMeetingQuiz({
                                 No student answers submitted yet.
                             </div>
                         ) : (
-                            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                            <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                                 {sortedResponses.map((resp, idx) => {
                                     const isCorrect = resp.isCorrect;
                                     return (
@@ -380,7 +446,6 @@ export default function LiveMeetingQuiz({
                                             }`}
                                         >
                                             <div className="flex items-center gap-2.5 min-w-0">
-                                                {/* Rank Badge */}
                                                 <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0 ${
                                                     idx === 0 && isCorrect
                                                         ? 'bg-amber-400 text-slate-950 shadow-sm shadow-amber-400/40'
@@ -391,14 +456,12 @@ export default function LiveMeetingQuiz({
                                                     #{idx + 1}
                                                 </span>
 
-                                                {/* Student Name */}
                                                 <span className="font-medium text-slate-200 truncate max-w-[140px]">
                                                     {resp.userName}
                                                 </span>
                                             </div>
 
                                             <div className="flex items-center gap-2 shrink-0">
-                                                {/* Option Chosen Pill */}
                                                 <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] flex items-center gap-1 ${
                                                     isCorrect
                                                         ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/50'
@@ -408,7 +471,6 @@ export default function LiveMeetingQuiz({
                                                     Opt [{resp.selectedOption}]
                                                 </span>
 
-                                                {/* Time Taken (e.g. 1.8s) */}
                                                 <span className="text-[10px] font-mono text-slate-300 font-semibold bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700 flex items-center gap-0.5">
                                                     <Zap className="w-2.5 h-2.5 text-amber-400" />
                                                     {resp.responseTime}
@@ -421,7 +483,7 @@ export default function LiveMeetingQuiz({
                         )}
                     </div>
 
-                    {/* Host Action Controls */}
+                    {/* Host Actions for Live Question */}
                     {isHost && (
                         <div className="pt-2 border-t border-slate-800 flex gap-2">
                             {!isQuizOver ? (
@@ -432,42 +494,106 @@ export default function LiveMeetingQuiz({
                                     End Question Now
                                 </button>
                             ) : (
-                                <button
-                                    onClick={() => setActiveQuiz(null)}
-                                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition shadow-sm"
-                                >
-                                    <RotateCcw className="w-3.5 h-3.5" />
-                                    Launch Another Question
-                                </button>
+                                <div className="flex-1 flex gap-2">
+                                    <button
+                                        onClick={() => {
+                                            setActiveQuiz(null);
+                                            if (activeQuestionIndex < questions.length - 1) {
+                                                setActiveQuestionIndex(prev => prev + 1);
+                                            }
+                                        }}
+                                        className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition shadow-sm"
+                                    >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                        {activeQuestionIndex < questions.length - 1 ? `Next Question (Q${activeQuestionIndex + 2})` : 'Create / Edit Questions'}
+                                    </button>
+                                </div>
                             )}
                         </div>
                     )}
                 </div>
             ) : isHost ? (
                 /* ========================================================================= */
-                /* INSTRUCTOR / HOST FORM: CREATE & LAUNCH PHYSICSWALLAH-STYLE QUESTION      */
+                /* INSTRUCTOR / HOST FORM: MULTI-QUESTION CREATION & DRAFT MANAGER           */
                 /* ========================================================================= */
                 <div className="flex-1 flex flex-col overflow-y-auto p-3.5 space-y-3.5">
-                    <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-                        <div className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
-                            <Sparkles className="w-4 h-4" />
+                    {/* Header Banner */}
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
+                                <Layers className="w-4 h-4" />
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-white text-xs">Live Quiz & Questions Bank</h4>
+                                <p className="text-[10px] text-slate-400">Create multiple MCQs & launch during class</p>
+                            </div>
                         </div>
-                        <div>
-                            <h4 className="font-bold text-white text-xs">Live Question & Fastest-Finger Quiz</h4>
-                            <p className="text-[10px] text-slate-400">Launch MCQ to students with live leaderboard & color coding</p>
+                        <span className="text-[10px] bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                            Draft Saved
+                        </span>
+                    </div>
+
+                    {/* Question Tab Navigator */}
+                    <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                Question {activeQuestionIndex + 1} of {questions.length}
+                            </label>
+                            <button
+                                type="button"
+                                onClick={handleAddQuestion}
+                                className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 bg-indigo-950/60 hover:bg-indigo-900/80 px-2 py-0.5 rounded-lg border border-indigo-500/30 transition"
+                            >
+                                <Plus className="w-3 h-3" /> Add Question
+                            </button>
+                        </div>
+
+                        {/* Question Pills List */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                            {questions.map((q, idx) => (
+                                <button
+                                    key={q.id || idx}
+                                    type="button"
+                                    onClick={() => setActiveQuestionIndex(idx)}
+                                    className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 border ${
+                                        activeQuestionIndex === idx
+                                            ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm shadow-indigo-600/30'
+                                            : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-600'
+                                    }`}
+                                >
+                                    <span>Q{idx + 1}</span>
+                                    {q.question.trim() ? (
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                    ) : (
+                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                    )}
+                                </button>
+                            ))}
                         </div>
                     </div>
 
-                    {/* Question Input */}
-                    <div>
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                            Question Statement
-                        </label>
+                    {/* Question Input Card */}
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                Question Statement
+                            </label>
+                            {questions.length > 1 && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleDeleteQuestion(activeQuestionIndex)}
+                                    className="text-[10px] text-rose-400 hover:text-rose-300 flex items-center gap-1 transition"
+                                >
+                                    <Trash2 className="w-3 h-3" /> Delete Q{activeQuestionIndex + 1}
+                                </button>
+                            )}
+                        </div>
                         <textarea
                             rows={3}
-                            value={question}
-                            onChange={(e) => setQuestion(e.target.value)}
-                            placeholder="Type question here (e.g. What is the SI unit of Electric Current?)..."
+                            value={currentEditQ.question}
+                            onChange={(e) => handleUpdateCurrentQuestion({ question: e.target.value })}
+                            placeholder={`Type Question ${activeQuestionIndex + 1} here (e.g. What is the SI unit of Electric Current?)...`}
                             className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 transition resize-none"
                         />
                     </div>
@@ -477,13 +603,13 @@ export default function LiveMeetingQuiz({
                         <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                             Options & Correct Answer
                         </label>
-                        {options.map((opt, i) => (
+                        {(currentEditQ.options || DEFAULT_OPTIONS).map((opt) => (
                             <div key={opt.key} className="flex items-center gap-2">
                                 <button
                                     type="button"
-                                    onClick={() => setCorrectOption(opt.key)}
+                                    onClick={() => handleUpdateCurrentQuestion({ correctOption: opt.key })}
                                     className={`w-7 h-7 rounded-lg font-bold text-xs flex items-center justify-center shrink-0 border transition ${
-                                        correctOption === opt.key
+                                        currentEditQ.correctOption === opt.key
                                             ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm shadow-emerald-500/30'
                                             : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-600'
                                     }`}
@@ -494,11 +620,7 @@ export default function LiveMeetingQuiz({
                                 <input
                                     type="text"
                                     value={opt.text}
-                                    onChange={(e) => {
-                                        const newOpts = [...options];
-                                        newOpts[i].text = e.target.value;
-                                        setOptions(newOpts);
-                                    }}
+                                    onChange={(e) => handleUpdateOptionText(opt.key, e.target.value)}
                                     placeholder={`Option ${opt.key} text...`}
                                     className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 transition"
                                 />
@@ -519,9 +641,9 @@ export default function LiveMeetingQuiz({
                                 <button
                                     key={t}
                                     type="button"
-                                    onClick={() => setTimeLimit(t)}
+                                    onClick={() => handleUpdateCurrentQuestion({ timeLimit: t })}
                                     className={`py-1.5 rounded-lg font-bold text-xs border transition ${
-                                        timeLimit === t
+                                        (currentEditQ.timeLimit || 30) === t
                                             ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
                                             : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-600'
                                     }`}
@@ -532,15 +654,37 @@ export default function LiveMeetingQuiz({
                         </div>
                     </div>
 
-                    {/* Launch Button */}
-                    <div className="pt-2">
+                    {/* Action Controls */}
+                    <div className="pt-2 space-y-2">
                         <button
-                            onClick={handleLaunchQuestion}
+                            onClick={() => handleLaunchQuestion(currentEditQ)}
                             className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition shadow-lg shadow-emerald-500/20 hover:scale-[1.01]"
                         >
                             <Play className="w-4 h-4 fill-slate-950" />
-                            Launch Live Question to Class
+                            Launch Q{activeQuestionIndex + 1} to Class
                         </button>
+
+                        <div className="flex gap-2">
+                            {activeQuestionIndex < questions.length - 1 ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveQuestionIndex(prev => prev + 1)}
+                                    className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 border border-slate-700 transition"
+                                >
+                                    <span>Edit Next (Q{activeQuestionIndex + 2})</span>
+                                    <ChevronRight className="w-3.5 h-3.5" />
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={handleAddQuestion}
+                                    className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 border border-slate-700 transition"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Add Another Question (Q{questions.length + 1})</span>
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             ) : (
