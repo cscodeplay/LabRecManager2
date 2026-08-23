@@ -512,37 +512,24 @@ export default function Whiteboard({
                 
                 // If it's a valid whiteboard UUID format, load from files API
                 if (whiteboardId && whiteboardId !== 'admin-standalone' && !whiteboardId.startsWith('standalone_')) {
-                    let token = null;
-                    try {
-                        const authStore = JSON.parse(localStorage.getItem('auth-storage'));
-                        token = authStore?.state?.accessToken;
-                    } catch (e) {}
-
-                    if (token && !isMeetingMode) {
-                        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files/${whiteboardId}`, {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        });
-                        const data = await res.json();
-                        if (data.success && data.data?.canvasData) {
-                            saved = data.data.canvasData;
+                    if (!isMeetingMode) {
+                        try {
+                            const res = await api.get(`/whiteboard/files/${whiteboardId}`);
+                            if (res.data?.success && res.data.data?.canvasData) {
+                                saved = res.data.data.canvasData;
+                            }
+                        } catch (e) {
+                            console.warn('Failed to load whiteboard file:', e?.message);
                         }
                     }
                 } else if (whiteboardId === 'admin-standalone') {
-                    // Legacy code path - leaving intact just in case
-                    let token = null;
                     try {
-                        const authStore = JSON.parse(localStorage.getItem('auth-storage'));
-                        token = authStore?.state?.accessToken;
-                    } catch (e) {}
-
-                    if (token) {
-                        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/personal`, {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        });
-                        const data = await res.json();
-                        if (data.success && data.data?.canvasData) {
-                            saved = data.data.canvasData;
+                        const res = await api.get('/whiteboard/personal');
+                        if (res.data?.success && res.data.data?.canvasData) {
+                            saved = res.data.data.canvasData;
                         }
+                    } catch (e) {
+                        console.warn('Failed to load personal whiteboard:', e?.message);
                     }
                 } else {
                     saved = localStorage.getItem(STORAGE_KEY);
@@ -577,7 +564,7 @@ export default function Whiteboard({
                         img.src = state.pages[state.currentPage || 0];
                     }
                 }
-                console.log('✅ Whiteboard state restored from localStorage');
+                console.log('✅ Whiteboard state restored from storage');
             }
         } catch (e) {
             console.error('Error loading whiteboard state:', e);
@@ -623,57 +610,28 @@ export default function Whiteboard({
                 const stateStr = JSON.stringify(state);
                 
                 if (whiteboardId && whiteboardId !== 'admin-standalone' && !whiteboardId.startsWith('standalone_')) {
-                    let token = null;
-                    try {
-                        const authStore = JSON.parse(localStorage.getItem('auth-storage'));
-                        token = authStore?.state?.accessToken;
-                    } catch (e) {}
+                    // Generate thumbnail from current page
+                    let thumbnailUrl = null;
+                    if (canvas) {
+                        // Scale down canvas for thumbnail
+                        const tempCanvas = document.createElement('canvas');
+                        const tempCtx = tempCanvas.getContext('2d');
+                        tempCanvas.width = 300;
+                        tempCanvas.height = 300 * (canvas.height / canvas.width);
+                        tempCtx.drawImage(canvas, 0, 0, tempCanvas.width, tempCanvas.height);
+                        thumbnailUrl = tempCanvas.toDataURL('image/jpeg', 0.5);
+                    }
 
-                    if (token) {
-                        // Generate thumbnail from current page
-                        let thumbnailUrl = null;
-                        if (canvas) {
-                            // Scale down canvas for thumbnail
-                            const tempCanvas = document.createElement('canvas');
-                            const tempCtx = tempCanvas.getContext('2d');
-                            tempCanvas.width = 300;
-                            tempCanvas.height = 300 * (canvas.height / canvas.width);
-                            tempCtx.drawImage(canvas, 0, 0, tempCanvas.width, tempCanvas.height);
-                            thumbnailUrl = tempCanvas.toDataURL('image/jpeg', 0.5);
-                        }
-
-                        if (!isMeetingMode) {
-                            fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/files/${whiteboardId}/save`, {
-                            method: 'PUT',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${token}`
-                            },
-                            body: JSON.stringify({ 
-                                canvasData: stateStr,
-                                pageCount: totalPages,
-                                thumbnailUrl: thumbnailUrl
-                            })
-                        }).catch(e => console.error('Failed to sync whiteboard to DB:', e));
-                        }
+                    if (!isMeetingMode) {
+                        api.put(`/whiteboard/files/${whiteboardId}/save`, { 
+                            canvasData: stateStr,
+                            pageCount: totalPages,
+                            thumbnailUrl: thumbnailUrl
+                        }).catch(e => console.warn('Whiteboard auto-save deferred:', e?.message));
                     }
                 } else if (whiteboardId === 'admin-standalone') {
-                    let token = null;
-                    try {
-                        const authStore = JSON.parse(localStorage.getItem('auth-storage'));
-                        token = authStore?.state?.accessToken;
-                    } catch (e) {}
-
-                    if (token) {
-                        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/whiteboard/personal`, {
-                            method: 'PUT',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${token}`
-                            },
-                            body: JSON.stringify({ canvasData: stateStr })
-                        }).catch(e => console.error('Failed to sync whiteboard to DB:', e));
-                    }
+                    api.put('/whiteboard/personal', { canvasData: stateStr })
+                        .catch(e => console.warn('Whiteboard personal auto-save deferred:', e?.message));
                 } else {
                     localStorage.setItem(STORAGE_KEY, stateStr);
                 }

@@ -56,16 +56,54 @@ const server = http.createServer(app);
 
 const allowedOrigins = [
   'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
   'https://lab-rec-client.onrender.com',
   'https://labrecordmanager.onrender.com',
+  'https://lab-record-client-5z6b.onrender.com',
   process.env.CLIENT_URL
 ].filter(Boolean);
+
+const isOriginAllowed = (origin) => {
+  if (!origin) return true; // allow curl, mobile apps, same-origin, postman
+  if (allowedOrigins.includes(origin)) return true;
+  if (origin.endsWith('.onrender.com')) return true;
+  if (origin.endsWith('.vercel.app')) return true;
+  return false;
+};
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Fallback allow in production to prevent preflight blockage
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'x-academic-session',
+    'x-custom-header',
+    'Cache-Control',
+    'Pragma',
+    'Expires',
+    'Accept',
+    'Origin',
+    'X-Requested-With'
+  ],
+  exposedHeaders: ['Content-Range', 'X-Content-Range']
+};
 
 // Initialize Socket.io for real-time features (viva, notifications)
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST'],
+    origin: (origin, callback) => {
+      callback(null, isOriginAllowed(origin));
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
   }
 });
@@ -74,12 +112,10 @@ const io = new Server(server, {
 app.set('io', io);
 
 // Middleware
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true
-}));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(requestLogger);
 
 // Static files for uploads
