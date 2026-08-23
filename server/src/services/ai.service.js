@@ -414,6 +414,224 @@ RULES:
         return { keywords: [], startDate: null, endDate: null };
     }
 
+    /**
+     * Parse natural language instructions to schedule or create meetings with exact date, time, duration, and audience targets.
+     */
+    async parseMeetingDetails(prompt, availableContext = {}, preferredProvider = 'groq') {
+        const { classes = [], groups = [], students = [] } = availableContext;
+        const now = new Date();
+        // Local reference in IST (UTC+05:30)
+        const istOffset = 5.5 * 60 * 60 * 1000;
+        const istNow = new Date(now.getTime() + istOffset);
+        const currentDateStr = istNow.toISOString().slice(0, 10);
+        const currentTimeStr = istNow.toISOString().slice(11, 16);
+
+        const systemPrompt = `You are an AI meeting scheduler assistant for an educational management app.
+Analyze the user's meeting creation request and extract the exact parameters.
+
+CURRENT LOCAL REFERENCE DATETIME: ${currentDateStr} ${currentTimeStr} (Timezone: IST / UTC+05:30)
+USER REQUEST: "${prompt}"
+
+AVAILABLE DATABASE CONTEXT:
+Classes: ${JSON.stringify(classes.map(c => ({ id: c.id, name: c.name, gradeLevel: c.gradeLevel, section: c.section })))}
+Groups: ${JSON.stringify(groups.map(g => ({ id: g.id, name: g.name, className: g.class?.name })))}
+Students: ${JSON.stringify(students.map(s => ({ id: s.id, name: `${s.firstName} ${s.lastName}`, admissionNumber: s.admissionNumber })))}
+
+Return ONLY valid JSON matching this schema:
+{
+  "title": "Short title describing the meeting",
+  "type": "scheduled" or "instant",
+  "scheduledDate": "YYYY-MM-DD",
+  "scheduledTime": "HH:MM",
+  "isoDateTime": "YYYY-MM-DDTHH:MM:00+05:30",
+  "durationMinutes": 15,
+  "matchedClassIds": ["class_uuid1"],
+  "matchedGroupIds": ["group_uuid1"],
+  "matchedStudentIds": ["student_uuid1"],
+  "targetName": "Extracted target class/group/student name or null"
+}
+
+RULES:
+1. "28-Sept-2026 10:30 AM" -> scheduledDate: "2026-09-28", scheduledTime: "10:30", isoDateTime: "2026-09-28T10:30:00+05:30".
+2. "28-Sept-2026 10:30 PM" -> scheduledDate: "2026-09-28", scheduledTime: "22:30", isoDateTime: "2026-09-28T22:30:00+05:30".
+3. "tomorrow at 10 AM" -> calculate tomorrow's date relative to ${currentDateStr}, scheduledTime: "10:00", isoDateTime: "YYYY-MM-DDT10:00:00+05:30".
+4. If "instant" meeting is requested (e.g., "create instant meeting", "start meeting now"), set type: "instant", isoDateTime: "${currentDateStr}T${currentTimeStr}:00+05:30".
+5. durationMinutes: extract number of minutes (default 15 if not specified, 60 if 1 hour).
+6. Match classes, groups, and students from the provided database context.
+7. Output MUST be ONLY valid JSON.`;
+
+        // 1. Try Groq (Primary)
+        if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
+            const groqModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
+            for (const modelName of groqModels) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [{ role: 'user', content: systemPrompt }],
+                        temperature: 0.1
+                    });
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                    if (parsed && (parsed.isoDateTime || parsed.scheduledDate)) {
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn(`[AIService] Groq ${modelName} meeting parsing failed (${err.message}). Trying next...`);
+                    if (err.status === 429) await new Promise(r => setTimeout(r, 1000));
+                }
+            }
+        }
+
+        // 2. Try Gemini (Fallback)
+        if (this.genAI) {
+            const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && (parsed.isoDateTime || parsed.scheduledDate)) {
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn(`[AIService] Gemini ${modelName} meeting parsing failed:`, err.message);
+                    if (err.status === 503 || err.message?.includes('503') || err.message?.includes('429')) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback Parser (Robust Regex & Date Math)
+        return this.fallbackParseMeetingDetails(prompt, availableContext, currentDateStr);
+    }
+
+    fallbackParseMeetingDetails(prompt, availableContext = {}, currentDateStr) {
+        const { classes = [], groups = [], students = [] } = availableContext;
+        const msgLower = prompt.toLowerCase();
+        const isInstant = msgLower.includes('instant') || msgLower.includes('start now') || msgLower.includes('right now');
+        const type = isInstant ? 'instant' : 'scheduled';
+
+        // Duration parsing
+        let durationMinutes = 15;
+        const durMatch = prompt.match(/(\d+)\s*(?:minutes?|mins?|m\b)/i);
+        if (durMatch) durationMinutes = parseInt(durMatch[1], 10);
+        else if (/1\s*hour|one\s*hour/i.test(prompt)) durationMinutes = 60;
+        else if (/2\s*hours|two\s*hours/i.test(prompt)) durationMinutes = 120;
+
+        // Date & Time extraction
+        let targetYear = parseInt(currentDateStr.split('-')[0], 10);
+        let targetMonth = parseInt(currentDateStr.split('-')[1], 10);
+        let targetDay = parseInt(currentDateStr.split('-')[2], 10);
+        let targetHour = 10;
+        let targetMinute = 30;
+
+        const monthsMap = {
+            jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+            apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
+            aug: 8, august: 8, sep: 9, sept: 9, september: 9,
+            oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12
+        };
+
+        // Check for "tomorrow"
+        if (msgLower.includes('tomorrow')) {
+            const d = new Date(targetYear, targetMonth - 1, targetDay + 1);
+            targetYear = d.getFullYear();
+            targetMonth = d.getMonth() + 1;
+            targetDay = d.getDate();
+        }
+
+        // Match pattern: 28-Sept-2026 or 28 September 2026 or 28th Sep 2026
+        const dateMatch = prompt.match(/(\d{1,2})(?:st|nd|rd|th)?[\s\-_/]+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:[\s\-_/]+(\d{4}))?/i);
+        if (dateMatch) {
+            targetDay = parseInt(dateMatch[1], 10);
+            const mStr = dateMatch[2].toLowerCase();
+            if (monthsMap[mStr]) targetMonth = monthsMap[mStr];
+            if (dateMatch[3]) targetYear = parseInt(dateMatch[3], 10);
+        }
+
+        // Match numeric date: 2026-09-28 or 28/09/2026
+        const numDateMatch = prompt.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/) || prompt.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+        if (numDateMatch) {
+            if (numDateMatch[1].length === 4) {
+                targetYear = parseInt(numDateMatch[1], 10);
+                targetMonth = parseInt(numDateMatch[2], 10);
+                targetDay = parseInt(numDateMatch[3], 10);
+            } else {
+                targetDay = parseInt(numDateMatch[1], 10);
+                targetMonth = parseInt(numDateMatch[2], 10);
+                targetYear = parseInt(numDateMatch[3], 10);
+            }
+        }
+
+        // Match time: 10:30 AM, 10:30 PM, 7:00 AM, 11 AM, 19:30
+        const timeMatch = prompt.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i) || prompt.match(/(?:at|on|time:?)\s*(\d{1,2}):(\d{2})/i);
+        if (timeMatch) {
+            let h = parseInt(timeMatch[1], 10);
+            let m = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+            const ampm = timeMatch[3]?.toLowerCase();
+            if (ampm === 'pm' && h < 12) h += 12;
+            if (ampm === 'am' && h === 12) h = 0;
+            targetHour = h;
+            targetMinute = m;
+        }
+
+        const pad = (n) => String(n).padStart(2, '0');
+        const scheduledDate = `${targetYear}-${pad(targetMonth)}-${pad(targetDay)}`;
+        const scheduledTime = `${pad(targetHour)}:${pad(targetMinute)}`;
+        const isoDateTime = `${scheduledDate}T${scheduledTime}:00+05:30`;
+
+        // Match targets from database
+        let matchedClassIds = [];
+        let matchedGroupIds = [];
+        let matchedStudentIds = [];
+        let targetName = null;
+
+        for (const c of classes) {
+            if (c.name && msgLower.includes(c.name.toLowerCase())) {
+                matchedClassIds.push(c.id);
+                targetName = c.name;
+                break;
+            }
+        }
+
+        if (!targetName) {
+            for (const g of groups) {
+                if (g.name && msgLower.includes(g.name.toLowerCase())) {
+                    matchedGroupIds.push(g.id);
+                    targetName = g.name;
+                    break;
+                }
+            }
+        }
+
+        if (!targetName) {
+            for (const s of students) {
+                const fullName = `${s.firstName} ${s.lastName}`.toLowerCase();
+                if (msgLower.includes(fullName) || (s.admissionNumber && msgLower.includes(s.admissionNumber.toLowerCase()))) {
+                    matchedStudentIds.push(s.id);
+                    targetName = `${s.firstName} ${s.lastName}`;
+                    break;
+                }
+            }
+        }
+
+        const title = `AI ${type === 'scheduled' ? 'Scheduled' : 'Instant'} Meeting${targetName ? ` (${targetName})` : ''}`;
+
+        return {
+            title,
+            type,
+            scheduledDate,
+            scheduledTime,
+            isoDateTime,
+            durationMinutes,
+            matchedClassIds,
+            matchedGroupIds,
+            matchedStudentIds,
+            targetName
+        };
+    }
+
     parseJSONResponse(text) {
         let cleanText = text.trim();
         cleanText = cleanText.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
@@ -435,3 +653,4 @@ RULES:
 }
 
 module.exports = new AIService();
+
