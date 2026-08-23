@@ -1190,7 +1190,7 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
             }
         }
 
-        // Intent: School Calendar & Holiday Import / Update (Multilingual: Punjabi Gurmukhi, Hindi, English)
+        // Intent: Query / Search Holidays in coming month, this month, or between two dates
         const docLower = (documentContext || '').toLowerCase();
         const hasHolidayDoc = documentContext && documentContext.length > 20 && (
             docLower.includes('holiday') || docLower.includes('vacation') || docLower.includes('gazette') ||
@@ -1202,6 +1202,263 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
             docLower.includes('independence day') || docLower.includes('holi') || docLower.includes('dusshra')
         );
 
+        const isHolidayQueryIntent = (
+            msgLower.includes('check holiday') || msgLower.includes('check holidays') ||
+            msgLower.includes('what are the holidays') || msgLower.includes('what holidays') ||
+            msgLower.includes('list holidays') || msgLower.includes('show holidays') ||
+            msgLower.includes('holidays in') || msgLower.includes('holiday in') ||
+            msgLower.includes('holidays next month') || msgLower.includes('holidays coming month') ||
+            msgLower.includes('holidays between') || msgLower.includes('upcoming holidays') ||
+            msgLower.includes('how many holidays') || msgLower.includes('any holidays') ||
+            msgLower.includes('is there any holiday') || msgLower.includes('ਛੁੱਟੀਆਂ ਚੈੱਕ') ||
+            msgLower.includes('ਛੁੱਟੀਆਂ ਦੱਸੋ') || msgLower.includes('ਕਿਹੜੀਆਂ ਛੁੱਟੀਆਂ') ||
+            msgLower.includes('ਛੁੱਟੀਆਂ ਦੀ ਸੂਚੀ') || msgLower.includes('ਅਗਲੇ ਮਹੀਨੇ ਦੀਆਂ ਛੁੱਟੀਆਂ') ||
+            msgLower.includes('छुट्टियां बताओ') || msgLower.includes('छुट्टी कब है') ||
+            msgLower.includes('छुट्टियों की सूची') || msgLower.includes('अगले महीने की छुट्टियां')
+        ) && !hasHolidayDoc && !msgLower.includes('create') && !msgLower.includes('add') && !msgLower.includes('import') && !msgLower.includes('mark') && !msgLower.includes('seed');
+
+        if (isHolidayQueryIntent) {
+            try {
+                const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
+                const schoolId = currentUser?.schoolId;
+
+                if (schoolId) {
+                    const now = new Date();
+                    let startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    let endDate = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59);
+                    let periodLabel = 'Upcoming Months';
+
+                    const months = [
+                        { name: 'january', idx: 0 }, { name: 'february', idx: 1 }, { name: 'march', idx: 2 },
+                        { name: 'april', idx: 3 }, { name: 'may', idx: 4 }, { name: 'june', idx: 5 },
+                        { name: 'july', idx: 6 }, { name: 'august', idx: 7 }, { name: 'september', idx: 8 },
+                        { name: 'october', idx: 9 }, { name: 'november', idx: 10 }, { name: 'december', idx: 11 }
+                    ];
+
+                    if (msgLower.includes('next month') || msgLower.includes('coming month') || msgLower.includes('ਅਗਲੇ ਮਹੀਨੇ') || msgLower.includes('अगले महीने')) {
+                        const targetMonth = now.getMonth() + 1;
+                        startDate = new Date(now.getFullYear(), targetMonth, 1);
+                        endDate = new Date(now.getFullYear(), targetMonth + 1, 0, 23, 59, 59);
+                        periodLabel = startDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+                    } else if (msgLower.includes('this month') || msgLower.includes('ਇਸ ਮਹੀਨੇ') || msgLower.includes('इस महीने')) {
+                        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+                        periodLabel = startDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+                    } else {
+                        const matchedMonth = months.find(m => msgLower.includes(m.name));
+                        if (matchedMonth) {
+                            let targetYear = now.getFullYear();
+                            if (matchedMonth.idx < now.getMonth()) targetYear += 1;
+                            startDate = new Date(targetYear, matchedMonth.idx, 1);
+                            endDate = new Date(targetYear, matchedMonth.idx + 1, 0, 23, 59, 59);
+                            periodLabel = startDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+                        } else {
+                            // Check for between dates (e.g. between 2026-08-01 and 2026-10-31 or 1 Aug to 30 Sep)
+                            const dateMatch = message.match(/(?:between|from)\s+([0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{1,2}\s+[A-Za-z]+|[0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})\s+(?:and|to)\s+([0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{1,2}\s+[A-Za-z]+|[0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})/i);
+                            if (dateMatch) {
+                                const d1 = new Date(dateMatch[1]);
+                                const d2 = new Date(dateMatch[2]);
+                                if (!isNaN(d1.getTime()) && !isNaN(d2.getTime())) {
+                                    startDate = d1;
+                                    endDate = new Date(d2.setHours(23, 59, 59));
+                                    periodLabel = `${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`;
+                                }
+                            }
+                        }
+                    }
+
+                    const holidays = await prisma.schoolCalendar.findMany({
+                        where: {
+                            schoolId,
+                            date: {
+                                gte: startDate,
+                                lte: endDate
+                            },
+                            isHoliday: true
+                        },
+                        orderBy: { date: 'asc' }
+                    });
+
+                    const formatTypeBadge = (type) => {
+                        switch (type) {
+                            case 'gazetted_holiday': return '🔴 Gazetted Holiday';
+                            case 'restricted_holiday': return '🟡 Restricted Holiday';
+                            case 'summer_vacation': return '🏖️ Summer Vacation';
+                            case 'winter_vacation': return '❄️ Winter Vacation';
+                            case 'exam_day': return '🟣 Exam Day';
+                            case 'event': return '🔵 School Event';
+                            default: return '⚪ Holiday';
+                        }
+                    };
+
+                    if (holidays.length > 0) {
+                        const tableRows = holidays.map(h => {
+                            const d = new Date(h.date);
+                            const dateStr = d.toISOString().split('T')[0];
+                            const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+                            const regionalName = h.titleHindi ? h.titleHindi : '-';
+                            const badge = formatTypeBadge(h.type);
+                            return `| \`${dateStr}\` | **${dayName}** | ${h.title} | ${regionalName} | ${badge} |`;
+                        }).join('\n');
+
+                        return {
+                            message: `🗓️ **Holidays in ${periodLabel}**\n\nFound **${holidays.length} holiday(s)** in the school calendar:\n\n| Date | Day | Holiday (English) | Regional Name (ਪੰਜਾਬੀ / हिंदी) | Type |\n| :--- | :--- | :--- | :--- | :--- |\n${tableRows}\n\n✨ [Open School Calendar](/admin/calendar)`,
+                            sql: null,
+                            executionResult: null,
+                            chartData: null,
+                            reportAction: null,
+                            meetingAction: null,
+                            calendarAction: null,
+                            provider: 'groq'
+                        };
+                    } else {
+                        return {
+                            message: `🗓️ **No holidays found in ${periodLabel}** (${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}).\n\nWould you like me to add an event or seed holidays for this period? ✨ [Open School Calendar](/admin/calendar)`,
+                            sql: null,
+                            executionResult: null,
+                            chartData: null,
+                            reportAction: null,
+                            meetingAction: null,
+                            calendarAction: null,
+                            provider: 'groq'
+                        };
+                    }
+                }
+            } catch (err) {
+                console.error('[ChatBot] Holiday query handler failed:', err.message);
+            }
+        }
+
+        // Intent: Create Single Event / Exam Day with Datetime via Prompt
+        const isSingleEventCreationIntent = (
+            userRole === 'admin' || userRole === 'principal'
+        ) && (
+            msgLower.includes('create event') || msgLower.includes('add event') ||
+            msgLower.includes('schedule event') || msgLower.includes('schedule exam') ||
+            msgLower.includes('create exam') || msgLower.includes('add exam') ||
+            msgLower.includes('create holiday') || msgLower.includes('add holiday') ||
+            msgLower.includes('ਈਵੈਂਟ ਸ਼ਾਮਲ') || msgLower.includes('ਈਵੈਂਟ ਬਣਾਓ') ||
+            msgLower.includes('ਇਵੈਂਟ ਬਣਾਓ') || msgLower.includes('ਇਮਤਿਹਾਨ ਸ਼ਾਮਲ') ||
+            msgLower.includes('इवेंट जोड़ें') || msgLower.includes('परीक्षा जोड़ें')
+        ) && !hasHolidayDoc;
+
+        if (isSingleEventCreationIntent) {
+            try {
+                console.log('[ChatBot] Single event creation intent detected:', message);
+                const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
+                const schoolId = currentUser?.schoolId;
+
+                let targetAcademicYearId = academicYearId;
+                if (!targetAcademicYearId && schoolId) {
+                    const currYear = await prisma.academicYear.findFirst({
+                        where: { schoolId, isCurrent: true }
+                    });
+                    targetAcademicYearId = currYear?.id;
+                }
+
+                if (schoolId && targetAcademicYearId) {
+                    const eventExtractPrompt = `You are a school calendar event scheduler.
+Parse the user request to extract a single calendar event or exam with date and time.
+Current Reference Date: ${new Date().toISOString().split('T')[0]} (Year: ${new Date().getFullYear()})
+
+Return ONLY a valid JSON object in this exact structure:
+{
+  "title": "Clean English title of event",
+  "titleHindi": "Regional language name (Punjabi/Hindi) if applicable or empty string",
+  "date": "YYYY-MM-DD",
+  "time": "HH:MM AM/PM or empty string",
+  "type": "event",
+  "isHoliday": false
+}
+
+Allowed types: "event", "exam_day", "gazetted_holiday", "restricted_holiday", "summer_vacation", "winter_vacation", "custom".
+Default isHoliday to false for events and exam_day, true for holidays/vacations.
+
+User Request: ${message}
+`;
+                    let eventData = null;
+                    if (this.groqClient) {
+                        try {
+                            const res = await this.groqClient.chat.completions.create({
+                                model: 'llama-3.3-70b-versatile',
+                                messages: [{ role: 'user', content: eventExtractPrompt }],
+                                temperature: 0.1
+                            });
+                            const raw = res.choices[0]?.message?.content || '';
+                            const match = raw.match(/\{[\s\S]*\}/);
+                            if (match) eventData = JSON.parse(match[0]);
+                        } catch (e) {
+                            console.warn('[ChatBot] Groq event parsing failed:', e.message);
+                        }
+                    }
+
+                    if (!eventData && this.geminiModels && this.geminiModels.length > 0) {
+                        try {
+                            const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+                            const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+                            const res = await model.generateContent(eventExtractPrompt);
+                            const raw = res.response.text();
+                            const match = raw.match(/\{[\s\S]*\}/);
+                            if (match) eventData = JSON.parse(match[0]);
+                        } catch (e) {
+                            console.warn('[ChatBot] Gemini event parsing failed:', e.message);
+                        }
+                    }
+
+                    if (eventData && eventData.date && eventData.title) {
+                        const finalTitle = eventData.title + (eventData.time ? ` (${eventData.time})` : '');
+                        const createdEvent = await prisma.schoolCalendar.upsert({
+                            where: {
+                                unique_calendar_date_per_school: {
+                                    schoolId,
+                                    date: new Date(eventData.date)
+                                }
+                            },
+                            create: {
+                                schoolId,
+                                academicYearId: targetAcademicYearId,
+                                date: new Date(eventData.date),
+                                title: finalTitle,
+                                titleHindi: eventData.titleHindi || '',
+                                type: eventData.type || 'event',
+                                isHoliday: eventData.isHoliday !== undefined ? eventData.isHoliday : false,
+                                source: 'admin_custom',
+                                createdById: userId
+                            },
+                            update: {
+                                title: finalTitle,
+                                titleHindi: eventData.titleHindi || '',
+                                type: eventData.type || 'event',
+                                isHoliday: eventData.isHoliday !== undefined ? eventData.isHoliday : false
+                            }
+                        });
+
+                        // Broadcast calendar update via Socket.io
+                        try {
+                            const io = cronService.getSocketIO();
+                            if (io) io.emit('calendar:updated');
+                        } catch (e) {}
+
+                        const dayName = new Date(eventData.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+                        return {
+                            message: `✅ **Calendar Event Scheduled Successfully!**\n\n- 📌 **Event Title:** ${createdEvent.title}\n${createdEvent.titleHindi ? `- 🌐 **Regional Name:** ${createdEvent.titleHindi}\n` : ''}- 🗓️ **Date:** ${eventData.date} (${dayName})\n${eventData.time ? `- ⏰ **Time:** ${eventData.time}\n` : ''}- 🏷️ **Type:** \`${createdEvent.type.replace('_', ' ').toUpperCase()}\`\n- 🏖️ **Is Holiday:** ${createdEvent.isHoliday ? 'Yes (School Closed)' : 'No (School Open)'}\n\n✨ [View in School Calendar](/admin/calendar)`,
+                            sql: null,
+                            executionResult: null,
+                            chartData: null,
+                            reportAction: null,
+                            meetingAction: null,
+                            calendarAction: null,
+                            provider: 'groq'
+                        };
+                    }
+                }
+            } catch (err) {
+                console.error('[ChatBot] Single event creation failed:', err.message);
+            }
+        }
+
+        // Intent: School Calendar & Holiday Import / Update (Multilingual: Punjabi Gurmukhi, Hindi, English)
         const isCalendarHolidayIntent = (
             userRole === 'admin' || userRole === 'principal'
         ) && (

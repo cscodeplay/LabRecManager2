@@ -511,6 +511,11 @@ function MeetingActionCard({ action, onConfirmed }) {
     const [targetType, setTargetType] = useState(action.targetType || 'all');
     const [targetId, setTargetId] = useState(action.targetId || '');
     const [targetName, setTargetName] = useState(action.targetName || 'All Participants');
+    const [selectedStudents, setSelectedStudents] = useState(
+        action.targetType === 'student' && action.targetId
+            ? [{ id: action.targetId, name: action.targetName || 'Student' }]
+            : []
+    );
     
     // Target lists loaded from API
     const [targetOptions, setTargetOptions] = useState({ classes: [], groups: [], students: [] });
@@ -549,8 +554,45 @@ function MeetingActionCard({ action, onConfirmed }) {
         toast.success('Invitation copied to clipboard!');
     };
 
+    const handleAddStudent = (studentId) => {
+        if (!studentId) return;
+        const list = Array.isArray(targetOptions.students) ? targetOptions.students : [];
+        const sel = list.find(s => s.id === studentId);
+        if (!sel) return;
+
+        if (selectedStudents.some(s => s.id === studentId)) {
+            toast.error('Student already added to meeting');
+            return;
+        }
+
+        const fullName = `${sel.firstName} ${sel.lastName}`.trim();
+        const updated = [...selectedStudents, { id: sel.id, name: fullName, admissionNumber: sel.admissionNumber }];
+        setSelectedStudents(updated);
+        setTargetId(updated[0].id);
+        const displayLabel = updated.length === 1 ? updated[0].name : `${updated.length} Students (${updated.map(s => s.name).slice(0, 2).join(', ')}${updated.length > 2 ? '...' : ''})`;
+        setTargetName(displayLabel);
+    };
+
+    const handleRemoveStudent = (studentId) => {
+        const updated = selectedStudents.filter(s => s.id !== studentId);
+        setSelectedStudents(updated);
+        if (updated.length > 0) {
+            setTargetId(updated[0].id);
+            const displayLabel = updated.length === 1 ? updated[0].name : `${updated.length} Students (${updated.map(s => s.name).slice(0, 2).join(', ')}${updated.length > 2 ? '...' : ''})`;
+            setTargetName(displayLabel);
+        } else {
+            setTargetId('');
+            setTargetName('Select Students');
+        }
+    };
+
     const handleSaveAndConfirm = async () => {
-        if (targetType !== 'all' && !targetId) {
+        if (targetType === 'student' && selectedStudents.length === 0) {
+            toast.error('Please select at least one student from the dropdown.');
+            return;
+        }
+
+        if (targetType !== 'all' && targetType !== 'student' && !targetId) {
             toast.error(`Please select a ${targetType} from the dropdown before confirming.`);
             return;
         }
@@ -558,12 +600,17 @@ function MeetingActionCard({ action, onConfirmed }) {
         setIsSaving(true);
         try {
             const scheduledAtISO = datetimeVal ? new Date(datetimeVal).toISOString() : action.scheduledAt;
+            const targetList = targetType === 'student'
+                ? selectedStudents.map(s => ({ type: 'student', id: s.id, name: s.name }))
+                : (targetType !== 'all' && targetId ? [{ type: targetType, id: targetId, name: targetName }] : []);
+
             const updatePayload = {
                 title: title.trim(),
                 scheduledAt: scheduledAtISO,
                 durationMinutes: parseInt(duration, 10),
                 targetType: targetType,
-                targetId: targetType === 'all' ? undefined : targetId,
+                targetId: targetType === 'all' ? undefined : (targetType === 'student' ? selectedStudents[0]?.id : targetId),
+                targets: targetList,
                 autoAdmit: true
             };
 
@@ -721,77 +768,111 @@ function MeetingActionCard({ action, onConfirmed }) {
                             <Users className="w-3 h-3 inline mr-1 text-slate-400" /> Participants / Target Audience
                         </label>
                         {isEditing && !isConfirmed ? (
-                            <div className="grid grid-cols-3 gap-1.5">
-                                <select
-                                    value={targetType}
-                                    onChange={(e) => {
-                                        setTargetType(e.target.value);
-                                        setTargetId('');
-                                        setTargetName(e.target.value === 'all' ? 'All Participants' : '');
-                                    }}
-                                    className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                                >
-                                    <option value="all">All</option>
-                                    <option value="class">Class</option>
-                                    <option value="group">Group</option>
-                                    <option value="student">Student</option>
-                                </select>
-                                <div className="col-span-2">
-                                    {targetType === 'class' && (
-                                        <select
-                                            value={targetId}
-                                            onChange={(e) => {
-                                                setTargetId(e.target.value);
-                                                const list = Array.isArray(targetOptions.classes) ? targetOptions.classes : [];
-                                                const sel = list.find(c => c.id === e.target.value);
-                                                if (sel) setTargetName(`Class: ${sel.name}`);
-                                            }}
-                                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                                        >
-                                            <option value="">-- Select Class --</option>
-                                            {(Array.isArray(targetOptions.classes) ? targetOptions.classes : []).map(c => (
-                                                <option key={c.id} value={c.id}>{c.name}</option>
-                                            ))}
-                                        </select>
-                                    )}
-                                    {targetType === 'group' && (
-                                        <select
-                                            value={targetId}
-                                            onChange={(e) => {
-                                                setTargetId(e.target.value);
-                                                const list = Array.isArray(targetOptions.groups) ? targetOptions.groups : [];
-                                                const sel = list.find(g => g.id === e.target.value);
-                                                if (sel) setTargetName(`Group: ${sel.name}`);
-                                            }}
-                                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                                        >
-                                            <option value="">-- Select Group --</option>
-                                            {(Array.isArray(targetOptions.groups) ? targetOptions.groups : []).map(g => (
-                                                <option key={g.id} value={g.id}>{g.name}</option>
-                                            ))}
-                                        </select>
-                                    )}
-                                    {targetType === 'student' && (
-                                        <select
-                                            value={targetId}
-                                            onChange={(e) => {
-                                                setTargetId(e.target.value);
-                                                const list = Array.isArray(targetOptions.students) ? targetOptions.students : [];
-                                                const sel = list.find(s => s.id === e.target.value);
-                                                if (sel) setTargetName(`Student: ${sel.firstName} ${sel.lastName}`);
-                                            }}
-                                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                                        >
-                                            <option value="">-- Select Student --</option>
-                                            {(Array.isArray(targetOptions.students) ? targetOptions.students : []).map(s => (
-                                                <option key={s.id} value={s.id}>{s.firstName} {s.lastName} ({s.admissionNumber || s.email})</option>
-                                            ))}
-                                        </select>
-                                    )}
-                                    {targetType === 'all' && (
-                                        <div className="text-[11px] text-slate-500 py-1 italic">Invites all school participants</div>
-                                    )}
+                            <div className="space-y-2">
+                                <div className="grid grid-cols-3 gap-1.5">
+                                    <select
+                                        value={targetType}
+                                        onChange={(e) => {
+                                            const newType = e.target.value;
+                                            setTargetType(newType);
+                                            setTargetId('');
+                                            setSelectedStudents([]);
+                                            setTargetName(newType === 'all' ? 'All Participants' : '');
+                                        }}
+                                        className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                    >
+                                        <option value="all">All</option>
+                                        <option value="class">Class</option>
+                                        <option value="group">Group</option>
+                                        <option value="student">Student(s)</option>
+                                    </select>
+                                    <div className="col-span-2">
+                                        {targetType === 'class' && (
+                                            <select
+                                                value={targetId}
+                                                onChange={(e) => {
+                                                    setTargetId(e.target.value);
+                                                    const list = Array.isArray(targetOptions.classes) ? targetOptions.classes : [];
+                                                    const sel = list.find(c => c.id === e.target.value);
+                                                    if (sel) setTargetName(`Class: ${sel.name}`);
+                                                }}
+                                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                            >
+                                                <option value="">-- Select Class --</option>
+                                                {(Array.isArray(targetOptions.classes) ? targetOptions.classes : []).map(c => (
+                                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                                ))}
+                                            </select>
+                                        )}
+                                        {targetType === 'group' && (
+                                            <select
+                                                value={targetId}
+                                                onChange={(e) => {
+                                                    setTargetId(e.target.value);
+                                                    const list = Array.isArray(targetOptions.groups) ? targetOptions.groups : [];
+                                                    const sel = list.find(g => g.id === e.target.value);
+                                                    if (sel) setTargetName(`Group: ${sel.name}`);
+                                                }}
+                                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                            >
+                                                <option value="">-- Select Group --</option>
+                                                {(Array.isArray(targetOptions.groups) ? targetOptions.groups : []).map(g => (
+                                                    <option key={g.id} value={g.id}>{g.name}</option>
+                                                ))}
+                                            </select>
+                                        )}
+                                        {targetType === 'student' && (
+                                            <select
+                                                value=""
+                                                onChange={(e) => handleAddStudent(e.target.value)}
+                                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                            >
+                                                <option value="">+ Add Student to Meeting...</option>
+                                                {(Array.isArray(targetOptions.students) ? targetOptions.students : [])
+                                                    .filter(s => !selectedStudents.some(sel => sel.id === s.id))
+                                                    .map(s => (
+                                                        <option key={s.id} value={s.id}>
+                                                            {s.firstName} {s.lastName} ({s.admissionNumber || s.email})
+                                                        </option>
+                                                    ))}
+                                            </select>
+                                        )}
+                                        {targetType === 'all' && (
+                                            <div className="text-[11px] text-slate-500 py-1 italic">Invites all school participants</div>
+                                        )}
+                                    </div>
                                 </div>
+
+                                {/* Multi-Student Chip Badges */}
+                                {targetType === 'student' && (
+                                    <div>
+                                        {selectedStudents.length > 0 ? (
+                                            <div className="flex flex-wrap gap-1 mt-1 max-h-24 overflow-y-auto p-1.5 bg-slate-50 rounded-lg border border-slate-200">
+                                                {selectedStudents.map((st) => (
+                                                    <span
+                                                        key={st.id}
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-800 text-[10px] font-medium"
+                                                    >
+                                                        <User className="w-2.5 h-2.5 text-indigo-500" />
+                                                        {st.name}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveStudent(st.id)}
+                                                            className="text-slate-400 hover:text-red-500 ml-0.5 p-0.5 rounded"
+                                                            title="Remove student"
+                                                        >
+                                                            <X className="w-2.5 h-2.5" />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                                                No students added yet. Select one or more students from the dropdown above.
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div className="text-[11px] font-medium text-slate-700 bg-white px-2 py-1 rounded border border-slate-200 flex items-center justify-between">

@@ -1179,51 +1179,57 @@ router.put('/sessions/:id', authenticate, authorize('instructor', 'lab_assistant
 
     const { title, targetType, targetId, targets, scheduledAt, durationMinutes, autoAdmit, description } = req.body;
 
+    const isUUID = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
+
     const updateData = {};
     if (title) updateData.title = title.trim();
-    if (scheduledAt) updateData.scheduledAt = new Date(scheduledAt);
-    if (durationMinutes) updateData.durationMinutes = parseInt(durationMinutes);
-    if (typeof autoAdmit === 'boolean') updateData.autoAdmit = autoAdmit;
+    if (scheduledAt) {
+        const parsedDate = new Date(scheduledAt);
+        if (!isNaN(parsedDate.getTime())) updateData.scheduledAt = parsedDate;
+    }
+    if (durationMinutes) updateData.durationMinutes = parseInt(durationMinutes, 10);
+    if (typeof autoAdmit === 'boolean') updateData.autoStart = autoAdmit;
 
     // Handle composite targets if provided
     let targetList = [];
     if (Array.isArray(targets) && targets.length > 0) {
-        targetList = targets;
-    } else if (targetType && targetType !== 'all' && targetId) {
+        targetList = targets.filter(t => t && t.id && t.type);
+    } else if (targetType && targetType !== 'all' && targetId && isUUID(targetId)) {
         targetList.push({ type: targetType, id: targetId });
+    }
+
+    const currentMeta = (session.questionsAsked && typeof session.questionsAsked === 'object' && !Array.isArray(session.questionsAsked))
+        ? { ...session.questionsAsked }
+        : {};
+
+    if (typeof autoAdmit === 'boolean') {
+        currentMeta.autoAdmit = autoAdmit;
     }
 
     if (targetType === 'all') {
         updateData.targetStudentId = null;
         updateData.targetGroupId = null;
         updateData.targetClassId = null;
-        updateData.questionsAsked = {
-            ...(session.questionsAsked || {}),
-            assignedTargets: []
-        };
+        currentMeta.assignedTargets = [];
+        updateData.questionsAsked = currentMeta;
     } else if (targetList.length > 0) {
         updateData.targetStudentId = null;
         updateData.targetGroupId = null;
         updateData.targetClassId = null;
         
-        const primaryTarget = targetList[0];
-        if (primaryTarget.type === 'student') updateData.targetStudentId = primaryTarget.id;
-        if (primaryTarget.type === 'group') updateData.targetGroupId = primaryTarget.id;
-        if (primaryTarget.type === 'class') updateData.targetClassId = primaryTarget.id;
+        for (const t of targetList) {
+            if (t.type === 'student' && isUUID(t.id) && !updateData.targetStudentId) updateData.targetStudentId = t.id;
+            if (t.type === 'group' && isUUID(t.id) && !updateData.targetGroupId) updateData.targetGroupId = t.id;
+            if (t.type === 'class' && isUUID(t.id) && !updateData.targetClassId) updateData.targetClassId = t.id;
+        }
 
-        // Update the JSON field with the new composite targets
-        updateData.questionsAsked = {
-            ...(session.questionsAsked || {}),
-            assignedTargets: targetList
-        };
+        currentMeta.assignedTargets = targetList;
+        updateData.questionsAsked = currentMeta;
     }
 
     if (description !== undefined) {
-        updateData.questionsAsked = {
-            ...(updateData.questionsAsked || session.questionsAsked || {}),
-            description
-
-        };
+        currentMeta.description = description;
+        updateData.questionsAsked = currentMeta;
     }
 
     const updatedSession = await prisma.meeting.update({
