@@ -1071,6 +1071,125 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
             }
         }
 
+        // Intent: Mark All 2nd Saturdays and All Sundays as Holidays
+        const isWeekendHolidayIntent = (
+            userRole === 'admin' || userRole === 'principal'
+        ) && (
+            (msgLower.includes('second sat') || msgLower.includes('2nd sat') || msgLower.includes('sunday') || msgLower.includes('sundays') || msgLower.includes('weekend') || msgLower.includes('ਐਤਵਾਰ') || msgLower.includes('ਦੂਜਾ ਸ਼ਨੀਵਾਰ') || msgLower.includes('दूसरा शनिवार') || msgLower.includes('रविवार')) &&
+            (msgLower.includes('holiday') || msgLower.includes('holidays') || msgLower.includes('mark') || msgLower.includes('set') || msgLower.includes('seed') || msgLower.includes('add') || msgLower.includes('ਛੁੱਟੀ') || msgLower.includes('ਛੁੱਟੀਆਂ') || msgLower.includes('ਮਾਰਕ'))
+        );
+
+        if (isWeekendHolidayIntent) {
+            try {
+                console.log('[ChatBot] Weekend holiday intent detected:', message);
+                const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
+                const schoolId = currentUser?.schoolId;
+
+                let targetAcademicYearId = academicYearId;
+                let startDate, endDate;
+
+                if (targetAcademicYearId) {
+                    const ay = await prisma.academicYear.findUnique({ where: { id: targetAcademicYearId } });
+                    if (ay) {
+                        startDate = new Date(ay.startDate);
+                        endDate = new Date(ay.endDate);
+                    }
+                }
+
+                if (!targetAcademicYearId || !startDate || !endDate) {
+                    const currYear = await prisma.academicYear.findFirst({
+                        where: { schoolId, isCurrent: true }
+                    });
+                    if (currYear) {
+                        targetAcademicYearId = currYear.id;
+                        startDate = new Date(currYear.startDate);
+                        endDate = new Date(currYear.endDate);
+                    } else {
+                        const baseYear = new Date().getFullYear();
+                        startDate = new Date(baseYear, 0, 1);
+                        endDate = new Date(baseYear, 11, 31);
+                    }
+                }
+
+                if (!targetAcademicYearId) {
+                    const anyYear = await prisma.academicYear.findFirst({ where: { schoolId } });
+                    targetAcademicYearId = anyYear?.id;
+                }
+
+                if (schoolId && targetAcademicYearId) {
+                    let sundaysCount = 0;
+                    let secondSaturdaysCount = 0;
+                    let totalCount = 0;
+
+                    const current = new Date(startDate);
+                    while (current <= endDate) {
+                        const dayOfWeek = current.getDay(); // 0 = Sun, 6 = Sat
+                        const dayOfMonth = current.getDate();
+
+                        const isSunday = dayOfWeek === 0;
+                        const isSecondSaturday = dayOfWeek === 6 && (dayOfMonth >= 8 && dayOfMonth <= 14);
+
+                        if (isSunday || isSecondSaturday) {
+                            const dateStr = current.toISOString().split('T')[0];
+                            const title = isSunday ? 'Sunday' : 'Second Saturday';
+                            const titleHindi = isSunday ? 'ਐਤਵਾਰ / रविवार' : 'ਦੂਜਾ ਸ਼ਨੀਵਾਰ / दूसरा शनिवार';
+
+                            try {
+                                await prisma.schoolCalendar.upsert({
+                                    where: {
+                                        unique_calendar_date_per_school: {
+                                            schoolId,
+                                            date: new Date(dateStr)
+                                        }
+                                    },
+                                    create: {
+                                        schoolId,
+                                        academicYearId: targetAcademicYearId,
+                                        date: new Date(dateStr),
+                                        title,
+                                        titleHindi,
+                                        type: 'gazetted_holiday',
+                                        isHoliday: true,
+                                        source: 'admin_custom',
+                                        createdById: userId
+                                    },
+                                    update: {
+                                        isHoliday: true,
+                                        type: 'gazetted_holiday'
+                                    }
+                                });
+
+                                if (isSunday) sundaysCount++;
+                                if (isSecondSaturday) secondSaturdaysCount++;
+                                totalCount++;
+                            } catch (err) {
+                                console.warn(`[ChatBot] Failed to mark ${dateStr} as weekend holiday:`, err.message);
+                            }
+                        }
+
+                        current.setDate(current.getDate() + 1);
+                    }
+
+                    // Broadcast update via Socket.io
+                    try {
+                        const io = cronService.getSocketIO();
+                        if (io) io.emit('calendar:updated');
+                    } catch (e) {}
+
+                    return {
+                        message: `🗓️ **Weekends Marked as Holidays Successfully!**\n\nAll **Sundays** and **Second Saturdays** have been marked as holidays in the school calendar:\n\n- 🔴 **Total Weekend Holidays:** ${totalCount}\n- ☀️ **Sundays:** ${sundaysCount}\n- 📅 **Second Saturdays:** ${secondSaturdaysCount}\n\n✨ [Click here to view School Calendar](/admin/calendar)`,
+                        sql: null,
+                        executionResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        provider: 'groq'
+                    };
+                }
+            } catch (err) {
+                console.error('[ChatBot] Weekend holiday handler failed:', err.message);
+            }
+        }
+
         // Intent: School Calendar & Holiday Import / Update (Multilingual: Punjabi Gurmukhi, Hindi, English)
         const isCalendarHolidayIntent = (
             userRole === 'admin' || userRole === 'principal'

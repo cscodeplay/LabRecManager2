@@ -675,4 +675,109 @@ router.post('/calendar/bulk', authenticate, authorize('admin', 'principal'), asy
     });
 }));
 
+/**
+ * @route   POST /api/calendar/seed-weekends
+ * @desc    Mark all 2nd Saturdays and all Sundays as holidays for an academic year
+ * @access  Private (Admin, Principal)
+ */
+router.post('/calendar/seed-weekends', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { academicYearId, year, includeAllSundays = true, includeSecondSaturdays = true } = req.body;
+    const schoolId = req.user.schoolId;
+
+    let targetYearId = academicYearId;
+    let startDate, endDate;
+
+    if (targetYearId) {
+        const ay = await prisma.academicYear.findUnique({ where: { id: targetYearId } });
+        if (ay) {
+            startDate = new Date(ay.startDate);
+            endDate = new Date(ay.endDate);
+        }
+    }
+
+    if (!targetYearId || !startDate || !endDate) {
+        const currentYear = await prisma.academicYear.findFirst({
+            where: { schoolId, isCurrent: true }
+        });
+        if (currentYear) {
+            targetYearId = currentYear.id;
+            startDate = new Date(currentYear.startDate);
+            endDate = new Date(currentYear.endDate);
+        } else {
+            const baseYear = parseInt(year) || new Date().getFullYear();
+            startDate = new Date(baseYear, 0, 1);
+            endDate = new Date(baseYear, 11, 31);
+        }
+    }
+
+    if (!targetYearId) {
+        const anyYear = await prisma.academicYear.findFirst({ where: { schoolId } });
+        targetYearId = anyYear?.id;
+    }
+
+    if (!targetYearId) {
+        return res.status(400).json({ success: false, message: 'No academic year found' });
+    }
+
+    let sundaysCount = 0;
+    let secondSaturdaysCount = 0;
+    let totalCount = 0;
+
+    const current = new Date(startDate);
+    while (current <= endDate) {
+        const dayOfWeek = current.getDay(); // 0 = Sun, 6 = Sat
+        const dayOfMonth = current.getDate();
+
+        const isSunday = includeAllSundays && dayOfWeek === 0;
+        const isSecondSaturday = includeSecondSaturdays && dayOfWeek === 6 && (dayOfMonth >= 8 && dayOfMonth <= 14);
+
+        if (isSunday || isSecondSaturday) {
+            const dateStr = current.toISOString().split('T')[0];
+            const title = isSunday ? 'Sunday' : 'Second Saturday';
+            const titleHindi = isSunday ? 'ਐਤਵਾਰ / रविवार' : 'ਦੂਜਾ ਸ਼ਨੀਵਾਰ / दूसरा शनिवार';
+
+            try {
+                await prisma.schoolCalendar.upsert({
+                    where: {
+                        unique_calendar_date_per_school: {
+                            schoolId,
+                            date: new Date(dateStr)
+                        }
+                    },
+                    create: {
+                        schoolId,
+                        academicYearId: targetYearId,
+                        date: new Date(dateStr),
+                        title,
+                        titleHindi,
+                        type: 'gazetted_holiday',
+                        isHoliday: true,
+                        source: 'admin_custom',
+                        createdById: req.user.id
+                    },
+                    update: {
+                        isHoliday: true,
+                        type: 'gazetted_holiday'
+                    }
+                });
+
+                if (isSunday) sundaysCount++;
+                if (isSecondSaturday) secondSaturdaysCount++;
+                totalCount++;
+            } catch (err) {
+                console.warn(`[Calendar] Failed to mark ${dateStr} as weekend holiday:`, err.message);
+            }
+        }
+
+        current.setDate(current.getDate() + 1);
+    }
+
+    res.json({
+        success: true,
+        message: `Successfully marked ${totalCount} weekend holidays (${sundaysCount} Sundays and ${secondSaturdaysCount} Second Saturdays)`,
+        messageHindi: `ਸਫਲਤਾਪੂਰਵਕ ${totalCount} ਛੁੱਟੀਆਂ ਮਾਰਕ ਕੀਤੀਆਂ ਗਈਆਂ (${sundaysCount} ਐਤਵਾਰ ਅਤੇ ${secondSaturdaysCount} ਦੂਜੇ ਸ਼ਨੀਵਾਰ)`,
+        data: { totalCount, sundaysCount, secondSaturdaysCount, academicYearId: targetYearId }
+    });
+}));
+
 module.exports = router;

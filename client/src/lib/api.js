@@ -604,6 +604,7 @@ export const calendarAPI = {
      updateEvent: (id, data) => api.put(`/timetable/calendar/${id}`, data),
      deleteEvent: (id) => api.delete(`/timetable/calendar/${id}`),
      seedPunjabHolidays: (data) => api.post('/timetable/calendar/seed-punjab', data),
+     seedWeekendHolidays: (data) => api.post('/timetable/calendar/seed-weekends', data),
      bulkImportEvents: (data) => api.post('/timetable/calendar/bulk', data),
 };
 

@@ -167,6 +167,31 @@ export default function AdminCalendarPage() {
         }
     };
 
+    const handleSeedWeekends = async () => {
+        const ok = await confirm({
+            title: 'Mark 2nd Saturdays & Sundays as Holidays?',
+            message: `This will mark all Sundays and 2nd Saturdays across the academic year (${currentYear}) as school holidays.`,
+            confirmText: 'Mark Holidays',
+            cancelText: 'Cancel',
+            type: 'primary',
+        });
+        if (!ok) return;
+
+        setSeeding(true);
+        try {
+            const res = await calendarAPI.seedWeekendHolidays({
+                academicYearId: selectedSessionId,
+                year: currentYear
+            });
+            toast.success(res.data.message);
+            loadEvents();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to mark weekend holidays');
+        } finally {
+            setSeeding(false);
+        }
+    };
+
     // Calendar grid generation
     const generateCalendarDays = () => {
         const firstDay = new Date(currentYear, currentMonth - 1, 1);
@@ -206,6 +231,9 @@ export default function AdminCalendarPage() {
             <PageHeader title="School Calendar" titleHindi="विद्यालय कैलेंडर">
                 <button onClick={handleAddEvent} className="btn btn-primary">
                     <Plus className="w-4 h-4" /> Add Event
+                </button>
+                <button onClick={handleSeedWeekends} disabled={seeding} className="btn btn-secondary">
+                    <Calendar className="w-4 h-4 text-orange-500" /> Mark 2nd Sat & Sun
                 </button>
                 <button onClick={() => setShowSeedModal(true)} className="btn btn-secondary">
                     <Download className="w-4 h-4" /> Punjab Holidays
