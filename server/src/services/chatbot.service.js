@@ -832,6 +832,14 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
                     }
                 }
 
+
+                const [classes, groups, students] = await Promise.all([
+                    prisma.class.findMany({ select: { id: true, name: true, gradeLevel: true, section: true } }),
+                    prisma.studentGroup.findMany({ select: { id: true, name: true, class: { select: { name: true } } } }),
+                    prisma.user.findMany({ where: { role: 'student' }, select: { id: true, firstName: true, lastName: true, admissionNumber: true } })
+                ]);
+                const resolution = await aiService.parseDocumentShareTargets(message, { documents: [], classes, groups, students }, options.provider || 'auto');
+
                 const meeting = await prisma.meeting.create({
                     data: {
                         title: `AI ${type === 'scheduled' ? 'Scheduled' : 'Instant'} Meeting`,
@@ -841,9 +849,13 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
                         schoolId,
                         scheduledAt,
                         status: type === 'scheduled' ? 'scheduled' : 'in_progress',
-                        actualStartTime: type === 'instant' ? new Date() : null
+                        actualStartTime: type === 'instant' ? new Date() : null,
+                        targetClassId: resolution.matchedClassIds?.[0] || null,
+                        targetGroupId: resolution.matchedGroupIds?.[0] || null,
+                        targetStudentId: resolution.matchedStudentIds?.[0] || null
                     }
                 });
+
 
                 return {
                     message: `✨ **Meeting Created Successfully!**\n\nYour ${type} meeting is ready.\n\n🔗 **[Join Meeting](/meeting/${meetingLink})**\n\n*(Share this link: /meeting/${meetingLink})*`,
