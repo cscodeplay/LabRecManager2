@@ -519,20 +519,20 @@ function MeetingActionCard({ action, onConfirmed }) {
         let isMounted = true;
         const loadTargets = async () => {
             try {
-                const [classesRes, groupsRes, studentsRes] = await Promise.all([
-                    api.get('/classes').catch(() => ({ data: { data: [] } })),
-                    api.get('/classes/groups/all').catch(() => ({ data: { data: [] } })),
-                    api.get('/users?role=student').catch(() => ({ data: { data: [] } }))
-                ]);
-                if (isMounted) {
+                const res = await meetingAPI.searchTargets({ type: 'all' });
+                if (res.data?.success && isMounted) {
+                    const data = res.data.data || {};
                     setTargetOptions({
-                        classes: classesRes.data?.data || [],
-                        groups: groupsRes.data?.data || [],
-                        students: studentsRes.data?.data || []
+                        classes: Array.isArray(data.classes) ? data.classes : [],
+                        groups: Array.isArray(data.groups) ? data.groups : [],
+                        students: Array.isArray(data.students) ? data.students : []
                     });
                 }
             } catch (err) {
                 console.warn('Failed to load meeting targets:', err);
+                if (isMounted) {
+                    setTargetOptions({ classes: [], groups: [], students: [] });
+                }
             }
         };
         loadTargets();
@@ -732,13 +732,14 @@ function MeetingActionCard({ action, onConfirmed }) {
                                             value={targetId}
                                             onChange={(e) => {
                                                 setTargetId(e.target.value);
-                                                const sel = targetOptions.classes.find(c => c.id === e.target.value);
+                                                const list = Array.isArray(targetOptions.classes) ? targetOptions.classes : [];
+                                                const sel = list.find(c => c.id === e.target.value);
                                                 if (sel) setTargetName(`Class: ${sel.name}`);
                                             }}
                                             className="w-full px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                                         >
                                             <option value="">-- Select Class --</option>
-                                            {targetOptions.classes.map(c => (
+                                            {(Array.isArray(targetOptions.classes) ? targetOptions.classes : []).map(c => (
                                                 <option key={c.id} value={c.id}>{c.name}</option>
                                             ))}
                                         </select>
@@ -748,13 +749,14 @@ function MeetingActionCard({ action, onConfirmed }) {
                                             value={targetId}
                                             onChange={(e) => {
                                                 setTargetId(e.target.value);
-                                                const sel = targetOptions.groups.find(g => g.id === e.target.value);
+                                                const list = Array.isArray(targetOptions.groups) ? targetOptions.groups : [];
+                                                const sel = list.find(g => g.id === e.target.value);
                                                 if (sel) setTargetName(`Group: ${sel.name}`);
                                             }}
                                             className="w-full px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                                         >
                                             <option value="">-- Select Group --</option>
-                                            {targetOptions.groups.map(g => (
+                                            {(Array.isArray(targetOptions.groups) ? targetOptions.groups : []).map(g => (
                                                 <option key={g.id} value={g.id}>{g.name}</option>
                                             ))}
                                         </select>
@@ -764,14 +766,15 @@ function MeetingActionCard({ action, onConfirmed }) {
                                             value={targetId}
                                             onChange={(e) => {
                                                 setTargetId(e.target.value);
-                                                const sel = targetOptions.students.find(s => s.id === e.target.value);
+                                                const list = Array.isArray(targetOptions.students) ? targetOptions.students : [];
+                                                const sel = list.find(s => s.id === e.target.value);
                                                 if (sel) setTargetName(`Student: ${sel.firstName} ${sel.lastName}`);
                                             }}
                                             className="w-full px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                                         >
                                             <option value="">-- Select Student --</option>
-                                            {targetOptions.students.map(s => (
-                                                <option key={s.id} value={s.id}>{s.firstName} {s.lastName} ({s.admissionNumber})</option>
+                                            {(Array.isArray(targetOptions.students) ? targetOptions.students : []).map(s => (
+                                                <option key={s.id} value={s.id}>{s.firstName} {s.lastName} ({s.admissionNumber || s.email})</option>
                                             ))}
                                         </select>
                                     )}

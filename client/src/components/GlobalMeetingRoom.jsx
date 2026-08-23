@@ -2117,15 +2117,28 @@ Link: ${getInviteUrl()}`;
                     )}
 
                     {/* Overlaid Controls (Show on Hover) */}
-                    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-2 z-20">
+                    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/75 backdrop-blur-sm rounded-full px-2.5 py-1 flex items-center gap-2 z-20 shadow-lg border border-white/10">
                         <button
                             onClick={toggleAudio}
-                            className={`p-1.5 rounded-full text-xs font-semibold flex items-center justify-center transition ${
-                                isAudioEnabled ? 'text-white hover:bg-white/20' : 'bg-red-500 text-white'
+                            className={`p-1.5 rounded-full text-xs font-semibold flex items-center justify-center transition relative overflow-hidden ${
+                                isAudioEnabled ? 'text-emerald-400 hover:bg-emerald-500/20' : 'bg-red-500 text-white hover:bg-red-600'
                             }`}
-                            title={isAudioEnabled ? 'Mute Mic' : 'Unmute Mic'}
+                            title={isAudioEnabled ? `Mute Mic (Level: ${micLevel}%)` : 'Unmute Mic'}
                         >
-                            {isAudioEnabled ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+                            {isAudioEnabled ? (
+                                <span className="flex items-center gap-1">
+                                    <Mic className={`w-3.5 h-3.5 ${micLevel > 20 ? 'text-emerald-300' : 'text-emerald-400'}`} />
+                                    {/* Mini PiP Volume Bar */}
+                                    <span className="w-1 h-3 bg-slate-700 rounded-full flex items-end overflow-hidden">
+                                        <span
+                                            className="w-full bg-emerald-400 transition-all duration-75 rounded-full"
+                                            style={{ height: `${Math.max(2, Math.min(12, (micLevel / 100) * 12))}px` }}
+                                        />
+                                    </span>
+                                </span>
+                            ) : (
+                                <MicOff className="w-3.5 h-3.5" />
+                            )}
                         </button>
 
                         <button
@@ -2146,6 +2159,35 @@ Link: ${getInviteUrl()}`;
                             <Phone className="w-3 h-3 rotate-[135deg]" />
                         </button>
                     </div>
+
+                    {/* In-PiP Leave Confirmation Countdown Overlay */}
+                    {showLeaveConfirmModal && (
+                        <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md z-40 flex flex-col items-center justify-center p-3 text-center space-y-1.5 animate-in fade-in">
+                            <div className="w-7 h-7 rounded-full bg-red-600/30 border border-red-500/50 flex items-center justify-center text-red-400">
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                            </div>
+                            <p className="text-[11px] font-bold text-white leading-tight">
+                                {isInstructor ? 'End for All?' : 'Leave Meeting?'}
+                            </p>
+                            <div className="w-7 h-7 rounded-full bg-slate-800 border-2 border-red-500 text-xs font-bold font-mono text-white flex items-center justify-center shadow-inner">
+                                {leaveCountdown}s
+                            </div>
+                            <div className="flex items-center gap-1.5 w-full pt-0.5">
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleCancelLeave(); }}
+                                    className="flex-1 py-1 px-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-[10px] font-semibold border border-slate-700 transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); executeLeaveMeeting(); }}
+                                    className="flex-1 py-1 px-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-[10px] font-bold transition shadow"
+                                >
+                                    Leave
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </>
         );
@@ -3342,16 +3384,40 @@ Link: ${getInviteUrl()}`;
                     <div className={`bg-slate-900/95 backdrop-blur-md px-2 py-1 rounded-full border border-slate-700/60 shadow-2xl flex items-center gap-1 ${
                         controlsDock === 'left' || controlsDock === 'right' ? 'flex-col' : 'flex-row'
                     }`}>
-                        {/* Audio / Mic Toggle */}
+                        {/* Audio / Mic Toggle with Live Input Meter */}
                         <div className="relative group/mic flex items-center bg-slate-800 rounded-full transition-all hover:bg-slate-700">
                             <button
                                 onClick={toggleAudio}
-                                className={`p-1.5 rounded-l-full transition flex items-center justify-center ${
+                                className={`p-1.5 rounded-l-full transition flex items-center justify-center relative overflow-hidden ${
                                     isAudioEnabled ? 'text-emerald-400' : 'text-red-400'
                                 }`}
-                                title={isAudioEnabled ? 'Mute Mic' : 'Unmute Mic'}
+                                title={isAudioEnabled ? `Mute Mic (Input Level: ${micLevel}%)` : 'Unmute Mic'}
                             >
-                                {isAudioEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                                {/* Dynamic Voice Input Level Background Fill */}
+                                {isAudioEnabled && micLevel > 0 && (
+                                    <span
+                                        className="absolute inset-y-0 left-0 bg-emerald-500/25 transition-all duration-75 pointer-events-none rounded-l-full"
+                                        style={{ width: `${Math.min(100, micLevel * 1.2)}%` }}
+                                    />
+                                )}
+                                <span className="relative z-10 flex items-center gap-1">
+                                    {isAudioEnabled ? (
+                                        <>
+                                            <Mic className={`w-4 h-4 transition-transform ${micLevel > 20 ? 'scale-110 text-emerald-300' : 'text-emerald-400'}`} />
+                                            {/* Visual Vertical Level Meter Bar */}
+                                            <span className="flex items-end h-3 w-1 shrink-0 bg-slate-700/80 rounded-full overflow-hidden">
+                                                <span
+                                                    className={`w-full rounded-full transition-all duration-75 ${
+                                                        micLevel > 60 ? 'bg-emerald-400' : (micLevel > 15 ? 'bg-emerald-400/80' : 'bg-slate-500')
+                                                    }`}
+                                                    style={{ height: `${Math.max(2, Math.min(12, (micLevel / 100) * 12))}px` }}
+                                                />
+                                            </span>
+                                        </>
+                                    ) : (
+                                        <MicOff className="w-4 h-4" />
+                                    )}
+                                </span>
                             </button>
                             <button
                                 onClick={() => { setShowMicSettings(!showMicSettings); setShowCamSettings(false); }}
