@@ -1147,8 +1147,12 @@ router.get('/search-targets', authenticate, asyncHandler(async (req, res) => {
  */
 router.put('/sessions/:id', authenticate, authorize('instructor', 'lab_assistant', 'admin', 'principal'), [
     body('title').optional().trim().notEmpty().withMessage('Title cannot be empty'),
-    body('targetType').optional().isIn(['student', 'group', 'class']),
-    body('targetId').optional().isUUID().withMessage('Valid target ID required'),
+    body('targetType').optional().isIn(['student', 'group', 'class', 'all']),
+    body('targetId').optional().custom((val) => {
+        if (!val || val === '') return true;
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(val);
+    }),
     body('scheduledAt').optional().isISO8601(),
     body('durationMinutes').optional().isInt({ min: 5, max: 240 })
 ], asyncHandler(async (req, res) => {
@@ -1185,11 +1189,19 @@ router.put('/sessions/:id', authenticate, authorize('instructor', 'lab_assistant
     let targetList = [];
     if (Array.isArray(targets) && targets.length > 0) {
         targetList = targets;
-    } else if (targetType && targetId) {
+    } else if (targetType && targetType !== 'all' && targetId) {
         targetList.push({ type: targetType, id: targetId });
     }
 
-    if (targetList.length > 0) {
+    if (targetType === 'all') {
+        updateData.targetStudentId = null;
+        updateData.targetGroupId = null;
+        updateData.targetClassId = null;
+        updateData.questionsAsked = {
+            ...(session.questionsAsked || {}),
+            assignedTargets: []
+        };
+    } else if (targetList.length > 0) {
         updateData.targetStudentId = null;
         updateData.targetGroupId = null;
         updateData.targetClassId = null;

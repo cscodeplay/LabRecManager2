@@ -550,6 +550,11 @@ function MeetingActionCard({ action, onConfirmed }) {
     };
 
     const handleSaveAndConfirm = async () => {
+        if (targetType !== 'all' && !targetId) {
+            toast.error(`Please select a ${targetType} from the dropdown before confirming.`);
+            return;
+        }
+
         setIsSaving(true);
         try {
             const scheduledAtISO = datetimeVal ? new Date(datetimeVal).toISOString() : action.scheduledAt;
@@ -557,7 +562,7 @@ function MeetingActionCard({ action, onConfirmed }) {
                 title: title.trim(),
                 scheduledAt: scheduledAtISO,
                 durationMinutes: parseInt(duration, 10),
-                targetType: targetType === 'all' ? undefined : targetType,
+                targetType: targetType,
                 targetId: targetType === 'all' ? undefined : targetId,
                 autoAdmit: true
             };
@@ -578,7 +583,8 @@ function MeetingActionCard({ action, onConfirmed }) {
             }
         } catch (err) {
             console.error('Failed to update meeting:', err);
-            toast.error(err.response?.data?.message || err.message || 'Failed to update meeting');
+            const errDetail = err.response?.data?.errors?.[0]?.msg || err.response?.data?.message || err.message;
+            toast.error(errDetail || 'Failed to update meeting');
         } finally {
             setIsSaving(false);
         }
