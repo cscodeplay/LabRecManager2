@@ -24,6 +24,7 @@ const upload = multer({
             'application/pdf', 'text/markdown',
             'application/vnd.ms-excel',
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp', 'image/tiff', 'image/svg+xml',
             'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/aac', 'audio/x-m4a',
             'video/mp4', 'video/mpeg', 'video/ogg', 'video/webm', 'video/x-msvideo', 'video/quicktime',
             'application/vnd.ms-powerpoint',
@@ -32,7 +33,8 @@ const upload = multer({
             'text/html'
         ];
         if (allowedTypes.includes(file.mimetype) ||
-            file.originalname.match(/\.(txt|csv|json|pdf|md|sql|log)$/i)) {
+            file.mimetype.startsWith('image/') ||
+            file.originalname.match(/\.(txt|csv|json|pdf|md|sql|log|png|jpg|jpeg|webp|bmp|gif|tiff|svg)$/i)) {
             cb(null, true);
         } else {
             cb(new Error(`Unsupported file type: ${file.mimetype}`), false);

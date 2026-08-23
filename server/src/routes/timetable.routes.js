@@ -592,4 +592,87 @@ router.post('/calendar/seed-punjab', authenticate, authorize('admin'), asyncHand
     });
 }));
 
+/**
+ * @route   POST /api/calendar/bulk
+ * @desc    Bulk upsert holidays/events for an academic year (from AI extraction or client import)
+ * @access  Private (Admin, Principal)
+ */
+router.post('/calendar/bulk', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { events = [], academicYearId } = req.body;
+    const schoolId = req.user.schoolId;
+
+    if (!Array.isArray(events) || events.length === 0) {
+        return res.status(400).json({ success: false, message: 'events array is required' });
+    }
+
+    let targetYearId = academicYearId;
+    if (!targetYearId) {
+        const currentYear = await prisma.academicYear.findFirst({
+            where: { schoolId, isCurrent: true }
+        });
+        targetYearId = currentYear?.id;
+    }
+
+    if (!targetYearId) {
+        return res.status(400).json({ success: false, message: 'No active academic year found' });
+    }
+
+    let imported = 0;
+    let failed = 0;
+    const results = [];
+
+    for (const item of events) {
+        if (!item.date || !item.title) {
+            failed++;
+            continue;
+        }
+
+        try {
+            const dateObj = new Date(item.date);
+            if (isNaN(dateObj.getTime())) {
+                failed++;
+                continue;
+            }
+
+            const upserted = await prisma.schoolCalendar.upsert({
+                where: {
+                    unique_calendar_date_per_school: {
+                        schoolId,
+                        date: dateObj
+                    }
+                },
+                create: {
+                    schoolId,
+                    academicYearId: targetYearId,
+                    date: dateObj,
+                    title: item.title,
+                    titleHindi: item.titleHindi || item.titlePunjabi || null,
+                    type: item.type || 'gazetted_holiday',
+                    isHoliday: item.isHoliday !== undefined ? item.isHoliday : true,
+                    source: item.source || 'admin_custom',
+                    createdById: req.user.id
+                },
+                update: {
+                    title: item.title,
+                    titleHindi: item.titleHindi || item.titlePunjabi || undefined,
+                    type: item.type || undefined,
+                    isHoliday: item.isHoliday !== undefined ? item.isHoliday : undefined,
+                    source: item.source || undefined
+                }
+            });
+            results.push(upserted);
+            imported++;
+        } catch (err) {
+            console.error('Failed to import calendar event:', item, err.message);
+            failed++;
+        }
+    }
+
+    res.json({
+        success: true,
+        message: `Successfully imported ${imported} calendar events (${failed} skipped)`,
+        data: { imported, failed, events: results }
+    });
+}));
+
 module.exports = router;

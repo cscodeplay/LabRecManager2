@@ -260,7 +260,30 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
 8. **REPORT GENERATION**: When the user asks to generate, export, or download a report (e.g. "generate PDF report for XII NM-A girls", "export Excel report of student groups"), include this tag:
    <!--REPORT_ACTION:{"entities":["students","groups"],"filters":{"gender":"female","classId":""},"format":"pdf"}:END_REPORT-->
    Supported entities: "students", "classes", "groups", "assignments", "lab_pcs". Supported formats: "pdf", "xlsx", "csv".
-8. Be extremely concise. No unnecessary explanations. Results speak for themselves.
+9. **CALENDAR & HOLIDAY PROCESSING (MULTILINGUAL - PUNJABI / HINDI / ENGLISH)**:
+- The school calendar is stored in the \`school_calendar\` table:
+  (id UUID, school_id UUID, academic_year_id UUID, date DATE, title VARCHAR(255), title_hindi VARCHAR(255), type calendar_event_type, is_holiday BOOLEAN, source calendar_source, created_at TIMESTAMP).
+  * Valid \`type\` enum values: 'gazetted_holiday', 'restricted_holiday', 'exam_day', 'event', 'custom', 'summer_vacation', 'winter_vacation'.
+  * Valid \`source\` enum values: 'punjab_govt', 'admin_custom'.
+- When a user uploads a holiday PDF/image or asks to add/update holidays in the school calendar:
+  1. Accurately recognize Indian language text, especially Punjabi (Gurmukhi) and Hindi:
+     * ਛੁੱਟੀਆਂ / ਸਰਕਾਰੀ ਛੁੱਟੀਆਂ → Holidays / Gazetted Holidays
+     * ਪ੍ਰਕਾਸ਼ ਪੁਰਬ / ਗੁਰਪੁਰਬ → Birthday / Gurpurab (e.g. Guru Nanak Dev Ji, Guru Gobind Singh Ji)
+     * ਸ਼ਹੀਦੀ ਦਿਵਸ → Martyrdom Day
+     * ਵਿਸਾਖੀ / ਵੈਸਾਖੀ → Baisakhi / Vaisakhi
+     * ਦੀਵਾਲੀ / ਬੰਦੀ ਛੋੜ ਦਿਵਸ → Diwali / Bandi Chhor Divas
+     * ਹੋਲੀ / ਹੋਲਾ ਮਹੱਲਾ → Holi / Hola Mohalla
+     * ਗਣਤੰਤਰ ਦਿਵਸ → Republic Day
+     * ਸੁਤੰਤਰਤਾ ਦਿਵਸ / ਅਜ਼ਾਦੀ ਦਿਵਸ → Independence Day
+     * ਗਾਂਧੀ ਜਯੰਤੀ → Gandhi Jayanti
+     * ਦੁਸਹਿਰਾ / ਦਸਹਿਰਾ → Dussehra
+     * ਗਰਮੀਆਂ ਦੀਆਂ ਛੁੱਟੀਆਂ → Summer Vacation ('summer_vacation')
+     * ਸਰਦੀਆਂ ਦੀਆਂ ਛੁੱਟੀਆਂ → Winter Vacation ('winter_vacation')
+     * ਮਾਘੀ, ਲੋਹੜੀ, ਈਦ, ਕ੍ਰਿਸਮਸ, etc.
+  2. Parse each holiday into standard format with \`YYYY-MM-DD\`. Store the original Punjabi / Hindi title in \`title_hindi\` and the standard English name in \`title\`.
+  3. If user role is admin, generate a PostgreSQL \`INSERT INTO school_calendar ... ON CONFLICT (school_id, date) DO UPDATE SET title = EXCLUDED.title, title_hindi = EXCLUDED.title_hindi, type = EXCLUDED.type, is_holiday = EXCLUDED.is_holiday;\` query wrapped in <!--EXEC_SQL:...:END_SQL--> to automatically save the events to the database.
+  4. Always present a formatted Markdown table of all extracted holidays with columns: Date | English Name | Punjabi/Hindi Name | Type | Status.
+10. Be extremely concise. No unnecessary explanations. Results speak for themselves.
 ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     }
 
@@ -1048,6 +1071,161 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
             }
         }
 
+        // Intent: School Calendar & Holiday Import / Update (Multilingual: Punjabi Gurmukhi, Hindi, English)
+        const isCalendarHolidayIntent = (
+            userRole === 'admin' || userRole === 'principal'
+        ) && (
+            (msgLower.includes('calendar') || msgLower.includes('holiday') || msgLower.includes('holidays') || 
+             msgLower.includes('vacation') || msgLower.includes('ਛੁੱਟੀਆਂ') || msgLower.includes('ਛੁੱਟੀ') || 
+             msgLower.includes('ਕੈਲੰਡਰ') || msgLower.includes('ਗੁਰਪੁਰਬ') || msgLower.includes('ਵੈਸਾਖੀ') || 
+             msgLower.includes('ਦੀਵਾਲੀ') || msgLower.includes('ਸ਼ਹੀਦੀ ਦਿਵਸ') || msgLower.includes('ਦਿਵਸ') ||
+             msgLower.includes('त्योहार') || msgLower.includes('छुट्टी') || msgLower.includes('छुट्टियां') || msgLower.includes('कैलेंडर')) &&
+            (msgLower.includes('update') || msgLower.includes('add') || msgLower.includes('import') || 
+             msgLower.includes('save') || msgLower.includes('seed') || msgLower.includes('insert') || 
+             msgLower.includes('set') || msgLower.includes('schedule') || msgLower.includes('sync') ||
+             msgLower.includes('ਪਾਓ') || msgLower.includes('ਜੋੜੋ') || msgLower.includes('ਅੱਪਡੇਟ') || msgLower.includes('ਦਰਜ') || 
+             (documentContext && documentContext.length > 50))
+        );
+
+        if (isCalendarHolidayIntent) {
+            try {
+                console.log('[ChatBot] Calendar / Holiday intent detected:', message);
+                const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
+                const schoolId = currentUser?.schoolId;
+
+                let targetAcademicYearId = academicYearId;
+                if (!targetAcademicYearId && schoolId) {
+                    const currYear = await prisma.academicYear.findFirst({
+                        where: { schoolId, isCurrent: true }
+                    });
+                    targetAcademicYearId = currYear?.id;
+                }
+
+                if (schoolId && targetAcademicYearId) {
+                    const holidayExtractPrompt = `You are an expert multilingual school calendar parser.
+Extract all holidays, vacation periods, and events from the text below. Accurately recognize Indian languages, particularly Punjabi (Gurmukhi) and Hindi.
+
+Return ONLY a valid JSON array of objects with this exact structure:
+[
+  {
+    "date": "YYYY-MM-DD",
+    "title": "English Name of Holiday",
+    "titleHindi": "Original Punjabi (Gurmukhi) / Hindi Name (e.g. ਵੈਸਾਖੀ / बैसाखी)",
+    "type": "gazetted_holiday",
+    "isHoliday": true
+  }
+]
+
+Allowed types: "gazetted_holiday", "restricted_holiday", "summer_vacation", "winter_vacation", "exam_day", "event", "custom".
+If a date range is mentioned (e.g., Summer Vacation 1 June to 30 June), generate an entry for key dates or distinct periods.
+Reference Year: ${new Date().getFullYear()}
+
+User Request: ${message}
+Document/Context:
+${documentContext || message}
+`;
+
+                    let parsedHolidays = [];
+                    // Try Groq first for structured JSON extraction
+                    if (this.groqClient) {
+                        try {
+                            const res = await this.groqClient.chat.completions.create({
+                                model: 'llama-3.3-70b-versatile',
+                                messages: [{ role: 'user', content: holidayExtractPrompt }],
+                                temperature: 0.1
+                            });
+                            const raw = res.choices[0]?.message?.content || '';
+                            const match = raw.match(/\[[\s\S]*\]/);
+                            if (match) parsedHolidays = JSON.parse(match[0]);
+                        } catch (e) {
+                            console.warn('[ChatBot] Groq holiday parsing failed:', e.message);
+                        }
+                    }
+
+                    if (parsedHolidays.length === 0 && this.geminiModels && this.geminiModels.length > 0) {
+                        try {
+                            const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+                            const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+                            const res = await model.generateContent(holidayExtractPrompt);
+                            const raw = res.response.text();
+                            const match = raw.match(/\[[\s\S]*\]/);
+                            if (match) parsedHolidays = JSON.parse(match[0]);
+                        } catch (e) {
+                            console.warn('[ChatBot] Gemini holiday parsing failed:', e.message);
+                        }
+                    }
+
+                    if (parsedHolidays && parsedHolidays.length > 0) {
+                        let insertedCount = 0;
+                        const savedItems = [];
+
+                        for (const h of parsedHolidays) {
+                            if (!h.date || !h.title) continue;
+                            const d = new Date(h.date);
+                            if (isNaN(d.getTime())) continue;
+
+                            try {
+                                const saved = await prisma.schoolCalendar.upsert({
+                                    where: {
+                                        unique_calendar_date_per_school: {
+                                            schoolId,
+                                            date: d
+                                        }
+                                    },
+                                    create: {
+                                        schoolId,
+                                        academicYearId: targetAcademicYearId,
+                                        date: d,
+                                        title: h.title,
+                                        titleHindi: h.titleHindi || null,
+                                        type: h.type || 'gazetted_holiday',
+                                        isHoliday: h.isHoliday !== undefined ? h.isHoliday : true,
+                                        source: 'admin_custom',
+                                        createdById: userId
+                                    },
+                                    update: {
+                                        title: h.title,
+                                        titleHindi: h.titleHindi || undefined,
+                                        type: h.type || undefined,
+                                        isHoliday: h.isHoliday !== undefined ? h.isHoliday : undefined
+                                    }
+                                });
+                                savedItems.push(saved);
+                                insertedCount++;
+                            } catch (itemErr) {
+                                console.warn('[ChatBot] Upsert calendar item failed:', h, itemErr.message);
+                            }
+                        }
+
+                        // Broadcast update via Socket.io
+                        try {
+                            const io = cronService.getSocketIO();
+                            if (io) io.emit('calendar:updated');
+                        } catch (e) {}
+
+                        // Build Markdown table response
+                        const tableRows = savedItems.map(item => {
+                            const dateFormatted = new Date(item.date).toISOString().split('T')[0];
+                            const nativeTitle = item.titleHindi || '-';
+                            const eventType = item.type?.replace('_', ' ') || 'Holiday';
+                            return `| \`${dateFormatted}\` | **${item.title}** | ${nativeTitle} | \`${eventType}\` | ${item.isHoliday ? '🔴 Holiday' : '🔵 Event'} |`;
+                        }).join('\n');
+
+                        return {
+                            message: `🗓️ **School Calendar Successfully Updated!**\n\nI have recognized and imported **${insertedCount} holidays / events** into your school calendar:\n\n| Date | Holiday (English) | Original (ਪੰਜਾਬੀ / हिंदी) | Type | Status |\n| :--- | :--- | :--- | :--- | :--- |\n${tableRows}\n\n✨ [Click here to view School Calendar](/admin/calendar)`,
+                            sql: null,
+                            executionResult: null,
+                            chartData: null,
+                            reportAction: null,
+                            provider: 'groq'
+                        };
+                    }
+                }
+            } catch (err) {
+                console.error('[ChatBot] Calendar holiday handler failed:', err.message);
+            }
+        }
+
         const schema = await this.getSchema();
         const systemPrompt = this.buildSystemPrompt(schema, documentContext, userRole);
 
@@ -1360,19 +1538,138 @@ ${queryResult.error}\n\nFailed Query:\
     // ═══ DOCUMENT EXTRACTION ═══
     async extractDocumentText(buffer, mimeType, fileName) {
         try {
-            if (mimeType.includes('text/plain') || mimeType.includes('text/csv')) return buffer.toString('utf-8');
-            if (mimeType.includes('application/json')) return JSON.stringify(JSON.parse(buffer.toString('utf-8')), null, 2);
-            if (mimeType.includes('application/pdf') || fileName.toLowerCase().endsWith('.pdf')) {
-                const pdfParse = require('pdf-parse');
-                const data = await pdfParse(buffer);
-                const readable = data.text.replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s{3,}/g, ' ').trim();
-                return readable.length > 50 ? readable.substring(0, 15000) : `[PDF extracted text is empty or too short]`;
+            const isText = mimeType.includes('text/plain') || mimeType.includes('text/csv') || fileName.toLowerCase().endsWith('.txt') || fileName.toLowerCase().endsWith('.csv');
+            if (isText) return buffer.toString('utf-8');
+
+            const isJson = mimeType.includes('application/json') || fileName.toLowerCase().endsWith('.json');
+            if (isJson) {
+                try {
+                    return JSON.stringify(JSON.parse(buffer.toString('utf-8')), null, 2);
+                } catch (e) {
+                    return buffer.toString('utf-8');
+                }
             }
-            return `[Binary file: ${fileName}, ${buffer.length}B, ${mimeType}]`;
+
+            const isPdf = mimeType.includes('application/pdf') || fileName.toLowerCase().endsWith('.pdf');
+            if (isPdf) {
+                try {
+                    const pdfParse = require('pdf-parse');
+                    const data = await pdfParse(buffer);
+                    // Retain all Unicode scripts (Punjabi Gurmukhi \u0A00-\u0A7F, Hindi Devanagari \u0900-\u097F, etc.) while stripping non-printable control chars
+                    let readable = data.text
+                        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
+                        .replace(/\r\n/g, '\n')
+                        .replace(/[ \t]{3,}/g, '  ')
+                        .trim();
+
+                    if (readable.length > 40) {
+                        return readable.substring(0, 30000);
+                    }
+                    console.log('[ChatBot] PDF text empty or scanned, attempting AI Vision OCR...');
+                } catch (pdfErr) {
+                    console.warn('[ChatBot] pdf-parse failed, attempting AI Vision fallback:', pdfErr.message);
+                }
+            }
+
+            // If image or scanned PDF, use Multimodal AI Vision (Gemini / Groq)
+            const isImage = mimeType.startsWith('image/') || fileName.match(/\.(png|jpg|jpeg|webp|bmp|gif|tiff)$/i);
+            if (isImage || isPdf) {
+                const visionResult = await this.extractMultimodalText(buffer, mimeType, fileName);
+                if (visionResult && visionResult.length > 20) {
+                    return visionResult;
+                }
+            }
+
+            return `[Binary file: ${fileName}, ${buffer.length} bytes, ${mimeType}]`;
         } catch (err) { 
             console.error('[ChatBot] Document parse error:', err.message);
             return `[Failed to parse ${fileName}: ${err.message}]`; 
         }
+    }
+
+    /**
+     * Multimodal OCR / Vision for images and holiday calendar documents with full Indian language support
+     */
+    async extractMultimodalText(buffer, mimeType, fileName) {
+        const base64Data = buffer.toString('base64');
+        const effectiveMime = (mimeType && mimeType !== 'application/octet-stream') 
+            ? mimeType 
+            : (fileName.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg');
+
+        const visionPrompt = `You are an expert multilingual document extractor and OCR specialist for an educational management system.
+Your task is to analyze this document / holiday list / academic calendar image or file and transcribe all information in full detail.
+
+CRITICAL INSTRUCTIONS:
+1. Accurately recognize and transcribe Indian regional languages, especially Punjabi (Gurmukhi script - ਗੁਰਮੁਖੀ) and Hindi (Devanagari script - देवनागरी), alongside English.
+2. If this is a holiday calendar / gazette notification / academic schedule:
+   - Extract every holiday, festival, exam day, vacation, and event.
+   - Extract the Date (Day, Month, Year).
+   - Extract the original name in Punjabi/Hindi (e.g., "ਗੁਰੂ ਨਾਨਕ ਦੇਵ ਜੀ ਪ੍ਰਕਾਸ਼ ਪੁਰਬ", "ਵੈਸਾਖੀ", "ਦੀਵਾਲੀ", "ਹੋਲੀ", "ਗਣਤੰਤਰ ਦਿਵਸ", "ਗਰਮੀਆਂ ਦੀਆਂ ਛੁੱਟੀਆਂ").
+   - Extract the English translation/transliteration (e.g. "Guru Nanak Dev Birthday", "Baisakhi", "Diwali", "Republic Day", "Summer Vacation").
+   - Extract holiday type (Gazetted Holiday, Restricted Holiday, Vacation, Event).
+3. If this is a table, preserve the table structure row by row with dates clearly associated with event names.
+4. Return the complete transcription and clean structured list.`;
+
+        // 1. Try Gemini Vision models
+        if (this.geminiModels && this.geminiModels.length > 0) {
+            const geminiKey = process.env.GEMINI_API_KEY;
+            if (geminiKey) {
+                const genAI = new GoogleGenerativeAI(geminiKey);
+                const visionModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+                for (const modelName of visionModels) {
+                    try {
+                        console.log(`[ChatBot] Running Gemini Vision (${modelName}) on ${fileName}...`);
+                        const model = genAI.getGenerativeModel({ model: modelName });
+                        const result = await model.generateContent([
+                            visionPrompt,
+                            {
+                                inlineData: {
+                                    data: base64Data,
+                                    mimeType: effectiveMime
+                                }
+                            }
+                        ]);
+                        const text = result?.response?.text() || '';
+                        if (text.trim().length > 20) {
+                            console.log(`[ChatBot] Gemini Vision successfully extracted ${text.length} chars from ${fileName}`);
+                            return text.trim();
+                        }
+                    } catch (gErr) {
+                        console.warn(`[ChatBot] Gemini Vision (${modelName}) failed:`, gErr.message);
+                    }
+                }
+            }
+        }
+
+        // 2. Try Groq Vision (llama-3.2-11b-vision-preview)
+        if (this.groqClient && effectiveMime.startsWith('image/')) {
+            try {
+                console.log(`[ChatBot] Running Groq Vision on ${fileName}...`);
+                const dataUrl = `data:${effectiveMime};base64,${base64Data}`;
+                const completion = await this.groqClient.chat.completions.create({
+                    model: 'llama-3.2-11b-vision-preview',
+                    messages: [
+                        {
+                            role: 'user',
+                            content: [
+                                { type: 'text', text: visionPrompt },
+                                { type: 'image_url', image_url: { url: dataUrl } }
+                            ]
+                        }
+                    ],
+                    temperature: 0.1
+                });
+                const text = completion.choices[0]?.message?.content || '';
+                if (text.trim().length > 20) {
+                    console.log(`[ChatBot] Groq Vision successfully extracted ${text.length} chars from ${fileName}`);
+                    return text.trim();
+                }
+            } catch (grErr) {
+                console.warn('[ChatBot] Groq Vision failed:', grErr.message);
+            }
+        }
+
+        return '';
     }
 }
 

@@ -89,6 +89,12 @@ export default function AdminCalendarPage() {
         setShowModal(true);
     };
 
+    const handleAddEventForDate = (dateStr) => {
+        setEditingEvent(null);
+        setForm({ date: dateStr || '', title: '', titleHindi: '', type: 'custom', isHoliday: true });
+        setShowModal(true);
+    };
+
     const handleEditEvent = (event) => {
         setEditingEvent(event);
         setForm({
@@ -279,20 +285,35 @@ export default function AdminCalendarPage() {
                             {calendarDays.map((cell, i) => (
                                 <div
                                     key={i}
-                                    className={`min-h-[80px] md:min-h-[100px] border-b border-r border-slate-100 dark:border-slate-800 p-1 ${
-                                        cell.day ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-950'
+                                    onDoubleClick={() => cell.dateStr && handleAddEventForDate(cell.dateStr)}
+                                    className={`min-h-[85px] md:min-h-[105px] border-b border-r border-slate-100 dark:border-slate-800 p-1 relative group/cell transition-colors ${
+                                        cell.day ? 'bg-white dark:bg-slate-900 hover:bg-slate-50/80 dark:hover:bg-slate-800/40' : 'bg-slate-50 dark:bg-slate-950'
                                     } ${isToday(cell.day) ? 'ring-2 ring-inset ring-primary-400' : ''}`}
                                 >
                                     {cell.day && (
                                         <>
-                                            <div className={`text-sm font-medium mb-1 px-1 ${
-                                                isToday(cell.day)
-                                                    ? 'text-primary-600 font-bold'
-                                                    : cell.events.some(e => e.isHoliday)
-                                                        ? 'text-red-600'
-                                                        : 'text-slate-700 dark:text-slate-300'
-                                            }`}>
-                                                {cell.day}
+                                            <div className="flex items-center justify-between mb-1 px-1">
+                                                <span className={`text-sm font-medium ${
+                                                    isToday(cell.day)
+                                                        ? 'text-primary-600 font-bold'
+                                                        : cell.events.some(e => e.isHoliday)
+                                                            ? 'text-red-600'
+                                                            : 'text-slate-700 dark:text-slate-300'
+                                                }`}>
+                                                    {cell.day}
+                                                </span>
+                                                {/* Hover Add Event Icon Button */}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleAddEventForDate(cell.dateStr);
+                                                    }}
+                                                    className="opacity-0 group-hover/cell:opacity-100 transition-opacity p-0.5 hover:bg-primary-100 dark:hover:bg-primary-900/50 text-primary-600 dark:text-primary-400 rounded cursor-pointer"
+                                                    title={`Add event on ${cell.dateStr}`}
+                                                    aria-label={`Add event on ${cell.dateStr}`}
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" />
+                                                </button>
                                             </div>
                                             {cell.events.map(e => {
                                                 const typeInfo = EVENT_TYPES[e.type] || EVENT_TYPES.custom;
