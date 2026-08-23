@@ -5,12 +5,12 @@ import {
     Bot, Send, Upload, Database, ChevronDown, ChevronRight, Trash2,
     Sparkles, FileText, AlertTriangle, Copy, Check, RefreshCw, X,
     Loader2, Minimize2, Maximize2, Download, Image as ImageIcon, User, BarChart2, Expand, Shrink, File,
-    HelpCircle, History, FilePlus, Maximize, Minimize,
+    HelpCircle, History, FilePlus, Maximize, Minimize, Plus,
     Calendar, Clock, Video, Users, CheckCircle, ExternalLink, Edit3, Save, Link2
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
-import api, { reportsAPI, meetingAPI } from '@/lib/api';
+import api, { reportsAPI, meetingAPI, calendarAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
@@ -847,6 +847,266 @@ function MeetingActionCard({ action, onConfirmed }) {
     );
 }
 
+/* ─── CALENDAR ACTION CARD ─── */
+function CalendarActionCard({ action }) {
+    const [events, setEvents] = useState(Array.isArray(action?.events) ? action.events : []);
+    const [isEditing, setIsEditing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const academicYearId = action?.academicYearId || '';
+
+    const handleUpdateRow = (index, field, value) => {
+        setEvents(prev => {
+            const copy = [...prev];
+            copy[index] = { ...copy[index], [field]: value };
+            return copy;
+        });
+    };
+
+    const handleDeleteRow = (index) => {
+        setEvents(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleAddRow = () => {
+        setEvents(prev => [
+            ...prev,
+            {
+                id: `custom-${Date.now()}`,
+                date: new Date().toISOString().split('T')[0],
+                title: 'New Holiday / Event',
+                titleHindi: '',
+                type: 'gazetted_holiday',
+                isHoliday: true
+            }
+        ]);
+        setIsEditing(true);
+    };
+
+    const handleConfirm = async () => {
+        if (events.length === 0) {
+            toast.error('No holidays to add');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const res = await calendarAPI.bulkImportEvents({
+                events: events.map(e => ({
+                    date: e.date,
+                    title: e.title,
+                    titleHindi: e.titleHindi || null,
+                    type: e.type || 'gazetted_holiday',
+                    isHoliday: e.isHoliday !== undefined ? e.isHoliday : true
+                })),
+                academicYearId: academicYearId || undefined
+            });
+
+            toast.success(res.data?.message || `Successfully added ${events.length} holidays to School Calendar!`);
+            setIsConfirmed(true);
+            setIsEditing(false);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to update calendar');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const getTypeBadge = (type) => {
+        switch (type) {
+            case 'gazetted_holiday':
+                return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">Gazetted</span>;
+            case 'restricted_holiday':
+                return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-yellow-100 text-yellow-800">Restricted</span>;
+            case 'summer_vacation':
+                return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800">Summer Vacation</span>;
+            case 'winter_vacation':
+                return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800">Winter Vacation</span>;
+            case 'exam_day':
+                return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-700">Exam Day</span>;
+            default:
+                return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">Event</span>;
+        }
+    };
+
+    return (
+        <div className="mt-2.5 rounded-xl border border-emerald-200 bg-gradient-to-b from-emerald-50/90 via-white to-teal-50/50 shadow-sm overflow-hidden text-[12px]">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
+                        <Calendar className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="font-semibold text-[13px] tracking-tight">
+                        {isConfirmed ? 'Holidays Added to Calendar' : 'Confirm Holiday Calendar'}
+                    </span>
+                </div>
+                {isConfirmed ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Confirmed
+                    </span>
+                ) : (
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/20 text-white">
+                        {events.length} Recognized
+                    </span>
+                )}
+            </div>
+
+            <div className="p-3.5 space-y-3">
+                {/* Information Notice */}
+                {!isConfirmed && (
+                    <div className="text-[11px] text-slate-600 flex items-center justify-between">
+                        <span>Review recognized holidays before saving:</span>
+                        <button
+                            type="button"
+                            onClick={() => setIsEditing(!isEditing)}
+                            className={`px-2 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition ${
+                                isEditing
+                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                        >
+                            <Edit3 className="w-3.5 h-3.5" /> {isEditing ? 'Done Editing' : 'Edit List'}
+                        </button>
+                    </div>
+                )}
+
+                {/* Holiday List Table / Container */}
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs max-h-60 overflow-y-auto">
+                    {events.length === 0 ? (
+                        <div className="p-4 text-center text-slate-400 text-[11px]">No holidays recognized in document</div>
+                    ) : isEditing && !isConfirmed ? (
+                        <div className="p-2 space-y-2">
+                            {events.map((ev, idx) => (
+                                <div key={idx} className="p-2 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5">
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                        <input
+                                            type="date"
+                                            value={ev.date}
+                                            onChange={(e) => handleUpdateRow(idx, 'date', e.target.value)}
+                                            className="px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono"
+                                        />
+                                        <select
+                                            value={ev.type || 'gazetted_holiday'}
+                                            onChange={(e) => handleUpdateRow(idx, 'type', e.target.value)}
+                                            className="px-2 py-1 bg-white border border-slate-300 rounded text-[11px]"
+                                        >
+                                            <option value="gazetted_holiday">Gazetted Holiday</option>
+                                            <option value="restricted_holiday">Restricted Holiday</option>
+                                            <option value="summer_vacation">Summer Vacation</option>
+                                            <option value="winter_vacation">Winter Vacation</option>
+                                            <option value="exam_day">Exam Day</option>
+                                            <option value="event">Event</option>
+                                        </select>
+                                        <div className="flex items-center justify-end">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDeleteRow(idx)}
+                                                className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                                title="Delete item"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                        <input
+                                            type="text"
+                                            value={ev.title}
+                                            onChange={(e) => handleUpdateRow(idx, 'title', e.target.value)}
+                                            placeholder="Holiday Name (English)"
+                                            className="px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-medium"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={ev.titleHindi || ''}
+                                            onChange={(e) => handleUpdateRow(idx, 'titleHindi', e.target.value)}
+                                            placeholder="ਪੰਜਾਬੀ / हिंदी Title"
+                                            className="px-2 py-1 bg-white border border-slate-300 rounded text-[11px]"
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                            <button
+                                type="button"
+                                onClick={handleAddRow}
+                                className="w-full py-1.5 border border-dashed border-emerald-300 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition"
+                            >
+                                <Plus className="w-3.5 h-3.5" /> Add Another Holiday
+                            </button>
+                        </div>
+                    ) : (
+                        <table className="w-full text-left text-[11px]">
+                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold sticky top-0">
+                                <tr>
+                                    <th className="px-2.5 py-1.5">Date</th>
+                                    <th className="px-2.5 py-1.5">Holiday</th>
+                                    <th className="px-2.5 py-1.5">ਪੰਜਾਬੀ / हिंदी</th>
+                                    <th className="px-2.5 py-1.5 text-right">Type</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-slate-700">
+                                {events.map((ev, idx) => (
+                                    <tr key={idx} className="hover:bg-slate-50/80">
+                                        <td className="px-2.5 py-1.5 font-mono text-[10px] text-slate-500 whitespace-nowrap">
+                                            {ev.date}
+                                        </td>
+                                        <td className="px-2.5 py-1.5 font-medium text-slate-900">
+                                            {ev.title}
+                                        </td>
+                                        <td className="px-2.5 py-1.5 text-slate-600 font-medium">
+                                            {ev.titleHindi || '-'}
+                                        </td>
+                                        <td className="px-2.5 py-1.5 text-right whitespace-nowrap">
+                                            {getTypeBadge(ev.type)}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+
+                {/* Footer Controls */}
+                {!isConfirmed ? (
+                    <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-slate-500">
+                            {events.length} holiday(s) to add
+                        </span>
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            disabled={isSaving || events.length === 0}
+                            className="px-3.5 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white ml-auto"
+                        >
+                            {isSaving ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                                <CheckCircle className="w-3.5 h-3.5" />
+                            )}
+                            Confirm & Add to Calendar
+                        </button>
+                    </div>
+                ) : (
+                    <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Successfully Added to Calendar</span>
+                        </div>
+                        <a
+                            href="/admin/calendar"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm"
+                        >
+                            <Calendar className="w-3.5 h-3.5" /> Open Calendar
+                        </a>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 /* ═══════════════════════════════════════════════════════
    MAIN FLOATING CHATBOT COMPONENT
    ═══════════════════════════════════════════════════════ */
@@ -973,6 +1233,7 @@ export default function FloatingChatbot() {
                         chartData: d.chartData, 
                         reportAction: d.reportAction, 
                         meetingAction: d.meetingAction,
+                        calendarAction: d.calendarAction,
                         model: d.model, 
                         provider: d.provider, 
                         timestamp: d.timestamp 
@@ -1248,6 +1509,7 @@ export default function FloatingChatbot() {
                                     {msg.chartData && <ChatChart chartData={msg.chartData} />}
                                     {msg.reportAction && <ReportActionCard action={msg.reportAction} />}
                                     {msg.meetingAction && <MeetingActionCard action={msg.meetingAction} />}
+                                    {msg.calendarAction && <CalendarActionCard action={msg.calendarAction} />}
                                     {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
                                 </div>
                             </div>

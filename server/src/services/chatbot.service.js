@@ -1191,6 +1191,17 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
         }
 
         // Intent: School Calendar & Holiday Import / Update (Multilingual: Punjabi Gurmukhi, Hindi, English)
+        const docLower = (documentContext || '').toLowerCase();
+        const hasHolidayDoc = documentContext && documentContext.length > 20 && (
+            docLower.includes('holiday') || docLower.includes('vacation') || docLower.includes('gazette') ||
+            docLower.includes('ਛੁੱਟੀਆਂ') || docLower.includes('ਛੁੱਟੀ') || docLower.includes('ਕੈਲੰਡਰ') ||
+            docLower.includes('ਗੁਰਪੁਰਬ') || docLower.includes('ਸ਼ਹੀਦੀ') || docLower.includes('ਵੈਸਾਖੀ') ||
+            docLower.includes('ਦੀਵਾਲੀ') || docLower.includes('त्योहार') || docLower.includes('छुट्टी') ||
+            docLower.includes('अवकाश') || docLower.includes('calendar') || docLower.includes('academic calendar') ||
+            docLower.includes('diwali') || docLower.includes('baisakhi') || docLower.includes('republic day') ||
+            docLower.includes('independence day') || docLower.includes('holi') || docLower.includes('dusshra')
+        );
+
         const isCalendarHolidayIntent = (
             userRole === 'admin' || userRole === 'principal'
         ) && (
@@ -1198,12 +1209,8 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
              msgLower.includes('vacation') || msgLower.includes('ਛੁੱਟੀਆਂ') || msgLower.includes('ਛੁੱਟੀ') || 
              msgLower.includes('ਕੈਲੰਡਰ') || msgLower.includes('ਗੁਰਪੁਰਬ') || msgLower.includes('ਵੈਸਾਖੀ') || 
              msgLower.includes('ਦੀਵਾਲੀ') || msgLower.includes('ਸ਼ਹੀਦੀ ਦਿਵਸ') || msgLower.includes('ਦਿਵਸ') ||
-             msgLower.includes('त्योहार') || msgLower.includes('छुट्टी') || msgLower.includes('छुट्टियां') || msgLower.includes('कैलेंडर')) &&
-            (msgLower.includes('update') || msgLower.includes('add') || msgLower.includes('import') || 
-             msgLower.includes('save') || msgLower.includes('seed') || msgLower.includes('insert') || 
-             msgLower.includes('set') || msgLower.includes('schedule') || msgLower.includes('sync') ||
-             msgLower.includes('ਪਾਓ') || msgLower.includes('ਜੋੜੋ') || msgLower.includes('ਅੱਪਡੇਟ') || msgLower.includes('ਦਰਜ') || 
-             (documentContext && documentContext.length > 50))
+             msgLower.includes('त्योहार') || msgLower.includes('छुट्टी') || msgLower.includes('छुट्टियां') || msgLower.includes('कैलेंडर')) ||
+            hasHolidayDoc
         );
 
         if (isCalendarHolidayIntent) {
@@ -1213,11 +1220,13 @@ ${createdList.map((a, idx) => `${idx + 1}. **${a.title}**
                 const schoolId = currentUser?.schoolId;
 
                 let targetAcademicYearId = academicYearId;
+                let activeYearLabel = `${new Date().getFullYear()}`;
                 if (!targetAcademicYearId && schoolId) {
                     const currYear = await prisma.academicYear.findFirst({
                         where: { schoolId, isCurrent: true }
                     });
                     targetAcademicYearId = currYear?.id;
+                    if (currYear?.yearLabel) activeYearLabel = currYear.yearLabel;
                 }
 
                 if (schoolId && targetAcademicYearId) {
@@ -1275,67 +1284,28 @@ ${documentContext || message}
                     }
 
                     if (parsedHolidays && parsedHolidays.length > 0) {
-                        let insertedCount = 0;
-                        const savedItems = [];
-
-                        for (const h of parsedHolidays) {
-                            if (!h.date || !h.title) continue;
-                            const d = new Date(h.date);
-                            if (isNaN(d.getTime())) continue;
-
-                            try {
-                                const saved = await prisma.schoolCalendar.upsert({
-                                    where: {
-                                        unique_calendar_date_per_school: {
-                                            schoolId,
-                                            date: d
-                                        }
-                                    },
-                                    create: {
-                                        schoolId,
-                                        academicYearId: targetAcademicYearId,
-                                        date: d,
-                                        title: h.title,
-                                        titleHindi: h.titleHindi || null,
-                                        type: h.type || 'gazetted_holiday',
-                                        isHoliday: h.isHoliday !== undefined ? h.isHoliday : true,
-                                        source: 'admin_custom',
-                                        createdById: userId
-                                    },
-                                    update: {
-                                        title: h.title,
-                                        titleHindi: h.titleHindi || undefined,
-                                        type: h.type || undefined,
-                                        isHoliday: h.isHoliday !== undefined ? h.isHoliday : undefined
-                                    }
-                                });
-                                savedItems.push(saved);
-                                insertedCount++;
-                            } catch (itemErr) {
-                                console.warn('[ChatBot] Upsert calendar item failed:', h, itemErr.message);
-                            }
-                        }
-
-                        // Broadcast update via Socket.io
-                        try {
-                            const io = cronService.getSocketIO();
-                            if (io) io.emit('calendar:updated');
-                        } catch (e) {}
-
-                        // Build Markdown table response
-                        const tableRows = savedItems.map(item => {
-                            const dateFormatted = new Date(item.date).toISOString().split('T')[0];
-                            const nativeTitle = item.titleHindi || '-';
-                            const eventType = item.type?.replace('_', ' ') || 'Holiday';
-                            return `| \`${dateFormatted}\` | **${item.title}** | ${nativeTitle} | \`${eventType}\` | ${item.isHoliday ? '🔴 Holiday' : '🔵 Event'} |`;
-                        }).join('\n');
+                        const calendarAction = {
+                            academicYearId: targetAcademicYearId,
+                            yearLabel: activeYearLabel,
+                            events: parsedHolidays.filter(h => h.date && h.title).map((h, i) => ({
+                                id: `draft-${i}`,
+                                date: h.date,
+                                title: h.title,
+                                titleHindi: h.titleHindi || '',
+                                type: h.type || 'gazetted_holiday',
+                                isHoliday: h.isHoliday !== undefined ? h.isHoliday : true
+                            })),
+                            isConfirmed: false
+                        };
 
                         return {
-                            message: `🗓️ **School Calendar Successfully Updated!**\n\nI have recognized and imported **${insertedCount} holidays / events** into your school calendar:\n\n| Date | Holiday (English) | Original (ਪੰਜਾਬੀ / हिंदी) | Type | Status |\n| :--- | :--- | :--- | :--- | :--- |\n${tableRows}\n\n✨ [Click here to view School Calendar](/admin/calendar)`,
+                            message: `🗓️ **Recognized ${calendarAction.events.length} Holidays / Events!**\n\nI have extracted and recognized the holiday schedule with Indian regional language support (ਪੰਜਾਬੀ / हिंदी).\n\nPlease review or edit the recognized list in the confirmation box below and click **Confirm & Add to Calendar** to update your school calendar:`,
                             sql: null,
                             executionResult: null,
                             chartData: null,
                             reportAction: null,
+                            meetingAction: null,
+                            calendarAction,
                             provider: 'groq'
                         };
                     }
