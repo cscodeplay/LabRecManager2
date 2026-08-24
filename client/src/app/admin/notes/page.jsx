@@ -8,7 +8,8 @@ import {
     Search, LayoutGrid, List, ArrowUpDown, ArrowUp, ArrowDown,
     ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
     Eye, Table, Link2, Image as ImageIcon, Save, CheckCircle2,
-    RotateCcw, Sparkles, Copy, ExternalLink, Calendar, Frame, Highlighter
+    RotateCcw, Sparkles, Copy, ExternalLink, Calendar, Frame, Highlighter,
+    Wand2, ListOrdered, Bot, Zap, Check, Loader2, ArrowRight
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -99,6 +100,15 @@ export default function AdminNotesPage() {
     const [imageFrameStyle, setImageFrameStyle] = useState('img-frame-shadow');
     const [imageUrlInput, setImageUrlInput] = useState('');
 
+    // AI Note Assistant states
+    const [showAiModal, setShowAiModal] = useState(false);
+    const [aiAction, setAiAction] = useState('write'); // 'write', 'bullets', 'numbered', 'polish', 'summarize', 'expand'
+    const [aiPrompt, setAiPrompt] = useState('');
+    const [aiTone, setAiTone] = useState('professional'); // 'professional', 'concise', 'sop', 'detailed'
+    const [aiGenerating, setAiGenerating] = useState(false);
+    const [aiResultHtml, setAiResultHtml] = useState('');
+    const [aiProvider, setAiProvider] = useState('');
+
     // Form state
     const [formData, setFormData] = useState({ title: '', content: '' });
     const [editingId, setEditingId] = useState(null);
@@ -155,7 +165,8 @@ export default function AdminNotesPage() {
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.key === 'Escape') {
-                if (showImageFrameModal) setShowImageFrameModal(false);
+                if (showAiModal) setShowAiModal(false);
+                else if (showImageFrameModal) setShowImageFrameModal(false);
                 else if (showTableModal) setShowTableModal(false);
                 else if (viewingNote) setViewingNote(null);
                 else if (showModal) setShowModal(false);
@@ -163,7 +174,7 @@ export default function AdminNotesPage() {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [showImageFrameModal, showTableModal, viewingNote, showModal]);
+    }, [showAiModal, showImageFrameModal, showTableModal, viewingNote, showModal]);
 
     // Auth check & load notes
     useEffect(() => {
@@ -248,6 +259,64 @@ export default function AdminNotesPage() {
             autoSaveTimerRef.current = setTimeout(() => {
                 executeAutoSave({ title, content: formData.content }, editingId);
             }, 2000);
+        }
+    };
+
+    // AI Assistant Handlers
+    const handleTriggerAiAssist = async (actionToRun = aiAction) => {
+        setAiGenerating(true);
+        try {
+            const res = await api.post('/admin-notes/ai-assist', {
+                action: actionToRun,
+                prompt: aiPrompt,
+                content: formData.content,
+                title: formData.title,
+                tone: aiTone
+            });
+            if (res.data?.data?.html) {
+                setAiResultHtml(res.data.data.html);
+                setAiProvider(res.data.data.provider || 'AI');
+                toast.success('AI Note generated successfully!');
+            }
+        } catch (error) {
+            console.error('AI Note Assist Error:', error);
+            toast.error(error.response?.data?.message || 'Failed to generate content with AI');
+        } finally {
+            setAiGenerating(false);
+        }
+    };
+
+    const handleApplyAiResult = (mode = 'replace') => {
+        if (!aiResultHtml) return;
+
+        let newContent = formData.content;
+        let newTitle = formData.title;
+
+        // Try extracting title from <h2> or <h3> if note has no title yet
+        if (!newTitle || !newTitle.trim()) {
+            const m = aiResultHtml.match(/<h[23][^>]*>(.*?)<\/h[23]>/i);
+            if (m && m[1]) {
+                newTitle = m[1].replace(/<[^>]+>/g, '').trim();
+            }
+        }
+
+        if (mode === 'replace') {
+            newContent = aiResultHtml;
+        } else if (mode === 'append') {
+            newContent = (formData.content && formData.content !== '<p><br></p>')
+                ? `${formData.content}<p><br></p>${aiResultHtml}`
+                : aiResultHtml;
+        }
+
+        setFormData({ title: newTitle || formData.title || 'Untitled AI Note', content: newContent });
+        setShowAiModal(false);
+        setAiResultHtml('');
+        setAiPrompt('');
+        toast.success(mode === 'replace' ? 'Note updated with AI content!' : 'AI content appended to note!');
+
+        // Trigger auto-save if enabled
+        if (autoSaveEnabled && (newTitle || formData.title)) {
+            executeAutoSave({ title: newTitle || formData.title, content: newContent }, editingId);
         }
     };
 
@@ -568,6 +637,23 @@ export default function AdminNotesPage() {
                                 <span className="hidden sm:inline">List</span>
                             </button>
                         </div>
+
+                        {/* AI Draft Note Button */}
+                        <button
+                            onClick={() => {
+                                setFormData({ title: '', content: '' });
+                                setEditingId(null);
+                                setSaveStatus('idle');
+                                setAiAction('write');
+                                setAiPrompt('');
+                                setAiResultHtml('');
+                                setShowAiModal(true);
+                            }}
+                            className="px-3.5 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition flex items-center gap-1.5 active:scale-95"
+                        >
+                            <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+                            <span>AI Draft Note</span>
+                        </button>
 
                         {/* New Note Button */}
                         <button
@@ -1210,6 +1296,20 @@ export default function AdminNotesPage() {
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <button
                                         type="button"
+                                        onClick={() => {
+                                            setAiAction(formData.content && formData.content !== '<p><br></p>' ? 'bullets' : 'write');
+                                            setAiResultHtml('');
+                                            setShowAiModal(true);
+                                        }}
+                                        className="px-3 py-1 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-lg text-xs font-bold border border-violet-500 transition flex items-center gap-1.5 shadow-sm active:scale-95"
+                                        title="Use AI to write, rewrite in bullets/numbering, polish, or summarize note"
+                                    >
+                                        <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                                        <span>AI Assistant</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
                                         onClick={() => setShowTableModal(true)}
                                         className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition flex items-center gap-1.5 shadow-sm"
                                         title="Insert table with custom borders"
@@ -1468,6 +1568,297 @@ export default function AdminNotesPage() {
                                 className="btn btn-primary text-xs shadow-md"
                             >
                                 Insert Framed Image
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Note Assistant Modal */}
+            {showAiModal && (
+                <div
+                    className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 md:p-6 backdrop-blur-sm animate-in fade-in"
+                    onClick={() => !aiGenerating && setShowAiModal(false)}
+                >
+                    <div
+                        className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-100"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div className="p-4 md:p-5 border-b border-slate-100 bg-gradient-to-r from-violet-50 via-indigo-50/50 to-slate-50 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center shadow-md">
+                                    <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h2 className="text-base md:text-lg font-bold text-slate-900">AI Note Assistant</h2>
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-100 text-violet-700 border border-violet-200">
+                                            Gemini & Groq AI
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-slate-500">
+                                        Write from prompts or rewrite into structured bullets and numbered procedures
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowAiModal(false)}
+                                disabled={aiGenerating}
+                                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition"
+                                title="Close (Esc)"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-4 md:p-6 overflow-y-auto flex-1 space-y-4">
+                            {/* Action Mode Tabs */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                                    Select AI Action
+                                </label>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setAiAction('write')}
+                                        className={`p-2.5 rounded-xl border text-left text-xs font-semibold transition flex items-center gap-2 ${
+                                            aiAction === 'write'
+                                                ? 'bg-violet-50 border-violet-500 text-violet-900 ring-2 ring-violet-200 shadow-sm'
+                                                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        <Wand2 className="w-4 h-4 text-violet-600 shrink-0" />
+                                        <div>
+                                            <div className="font-bold">Write from Prompt</div>
+                                            <div className="text-[10px] text-slate-500 font-normal">Draft a new note</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setAiAction('bullets')}
+                                        className={`p-2.5 rounded-xl border text-left text-xs font-semibold transition flex items-center gap-2 ${
+                                            aiAction === 'bullets'
+                                                ? 'bg-violet-50 border-violet-500 text-violet-900 ring-2 ring-violet-200 shadow-sm'
+                                                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        <List className="w-4 h-4 text-indigo-600 shrink-0" />
+                                        <div>
+                                            <div className="font-bold">• Bullet Points</div>
+                                            <div className="text-[10px] text-slate-500 font-normal">Structure with bullets</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setAiAction('numbered')}
+                                        className={`p-2.5 rounded-xl border text-left text-xs font-semibold transition flex items-center gap-2 ${
+                                            aiAction === 'numbered'
+                                                ? 'bg-violet-50 border-violet-500 text-violet-900 ring-2 ring-violet-200 shadow-sm'
+                                                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        <ListOrdered className="w-4 h-4 text-emerald-600 shrink-0" />
+                                        <div>
+                                            <div className="font-bold">1. 2. Numbered Steps</div>
+                                            <div className="text-[10px] text-slate-500 font-normal">SOPs & Checklists</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setAiAction('polish')}
+                                        className={`p-2.5 rounded-xl border text-left text-xs font-semibold transition flex items-center gap-2 ${
+                                            aiAction === 'polish'
+                                                ? 'bg-violet-50 border-violet-500 text-violet-900 ring-2 ring-violet-200 shadow-sm'
+                                                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+                                        <div>
+                                            <div className="font-bold">Polish & Refine</div>
+                                            <div className="text-[10px] text-slate-500 font-normal">Improve tone & clarity</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setAiAction('summarize')}
+                                        className={`p-2.5 rounded-xl border text-left text-xs font-semibold transition flex items-center gap-2 ${
+                                            aiAction === 'summarize'
+                                                ? 'bg-violet-50 border-violet-500 text-violet-900 ring-2 ring-violet-200 shadow-sm'
+                                                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                                        <div>
+                                            <div className="font-bold">Executive Summary</div>
+                                            <div className="text-[10px] text-slate-500 font-normal">Key takeaways</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setAiAction('expand')}
+                                        className={`p-2.5 rounded-xl border text-left text-xs font-semibold transition flex items-center gap-2 ${
+                                            aiAction === 'expand'
+                                                ? 'bg-violet-50 border-violet-500 text-violet-900 ring-2 ring-violet-200 shadow-sm'
+                                                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        <Zap className="w-4 h-4 text-orange-500 shrink-0" />
+                                        <div>
+                                            <div className="font-bold">Expand & Elaborate</div>
+                                            <div className="text-[10px] text-slate-500 font-normal">Add depth & details</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Prompt Input */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                                    {aiAction === 'write' ? 'What would you like the AI to write?' : 'Additional Custom Instructions (Optional)'}
+                                </label>
+                                <textarea
+                                    className="input text-xs w-full min-h-[70px] p-3 font-medium"
+                                    placeholder={
+                                        aiAction === 'write'
+                                            ? 'e.g., Draft a Computer Lab Maintenance Schedule for 40 PCs before exams, including power check, OS updates, and network test...'
+                                            : 'e.g., Organize by priority, highlight urgent items in bold, and group into sections...'
+                                    }
+                                    value={aiPrompt}
+                                    onChange={(e) => setAiPrompt(e.target.value)}
+                                />
+
+                                {/* Quick Prompt Suggestions */}
+                                <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                                    <span className="text-[10px] text-slate-400 font-semibold">Quick Ideas:</span>
+                                    {[
+                                        'Weekly PC Maintenance Checklist',
+                                        'Meeting Minutes & Action Items',
+                                        'Lab Safety & Equipment Policy',
+                                        'Standard Lab Shutdown SOP'
+                                    ].map((idea, idx) => (
+                                        <button
+                                            key={idx}
+                                            type="button"
+                                            onClick={() => setAiPrompt(idea)}
+                                            className="px-2 py-0.5 bg-slate-100 hover:bg-violet-50 hover:text-violet-700 hover:border-violet-300 text-slate-600 rounded-md text-[10px] font-medium border border-slate-200 transition"
+                                        >
+                                            {idea}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Tone Selector & Generate Button */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-semibold text-slate-600">Tone:</span>
+                                    <select
+                                        value={aiTone}
+                                        onChange={(e) => setAiTone(e.target.value)}
+                                        className="input py-1 px-2.5 text-xs font-medium"
+                                    >
+                                        <option value="professional">Professional Administrative</option>
+                                        <option value="concise">Concise & Direct</option>
+                                        <option value="sop">Checklist / SOP Format</option>
+                                        <option value="detailed">Detailed Academic</option>
+                                    </select>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => handleTriggerAiAssist(aiAction)}
+                                    disabled={aiGenerating}
+                                    className="px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+                                >
+                                    {aiGenerating ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            <span>Generating Note with AI...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles className="w-4 h-4 text-amber-300" />
+                                            <span>Generate Note Content</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+
+                            {/* Generated AI Result Preview */}
+                            {aiResultHtml && (
+                                <div className="mt-4 p-4 rounded-xl border border-violet-200 bg-gradient-to-b from-violet-50/40 via-white to-slate-50 space-y-3 animate-in fade-in">
+                                    <div className="flex items-center justify-between border-b border-violet-100 pb-2">
+                                        <div className="flex items-center gap-2">
+                                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                            <span className="text-xs font-bold text-slate-900">AI Generated Content Preview</span>
+                                            {aiProvider && (
+                                                <span className="text-[9px] font-mono px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded font-semibold">
+                                                    {aiProvider}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const cleanText = aiResultHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                                                    navigator.clipboard.writeText(cleanText);
+                                                    toast.success('Text copied to clipboard!');
+                                                }}
+                                                className="px-2 py-1 text-slate-500 hover:text-slate-800 text-[10px] font-semibold flex items-center gap-1 rounded bg-white border border-slate-200 shadow-2xs"
+                                            >
+                                                <Copy className="w-3 h-3" /> Copy
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Preview Box */}
+                                    <div 
+                                        className="p-3 bg-white rounded-lg border border-slate-200 text-xs text-slate-800 max-h-60 overflow-y-auto leading-relaxed prose prose-sm max-w-none"
+                                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(aiResultHtml) }}
+                                    />
+
+                                    {/* Actions */}
+                                    <div className="flex items-center justify-end gap-2 pt-1 flex-wrap">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleApplyAiResult('append')}
+                                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-300 transition flex items-center gap-1.5"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" />
+                                            <span>Insert at End / Append</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleApplyAiResult('replace')}
+                                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition flex items-center gap-1.5"
+                                        >
+                                            <Check className="w-3.5 h-3.5" />
+                                            <span>Replace Note with AI Content</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                            <span className="text-[11px] text-slate-500">
+                                💡 Tip: You can further edit, format, or customize any AI output in the rich text editor.
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setShowAiModal(false)}
+                                className="btn btn-secondary text-xs"
+                            >
+                                Done
                             </button>
                         </div>
                     </div>

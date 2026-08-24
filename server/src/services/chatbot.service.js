@@ -1748,6 +1748,10 @@ ${queryResult.error}\n\nFailed Query:\
                 }
             }
             aiText = aiText.replace(/<!--EXEC_SQL:[\s\S]*?:END_SQL-->/g, '').trim();
+            // Clean out redundant raw SQL codeblocks from visible text so only clean natural language and visual cards are shown
+            if (executedSQL || queryResult) {
+                aiText = aiText.replace(/```sql[\s\S]*?```/gi, '').trim();
+            }
         }
 
         // Extract chart data
@@ -1759,7 +1763,7 @@ ${queryResult.error}\n\nFailed Query:\
         }
 
         // If we have query results that can be visualized
-        if (queryResult?.success && queryResult.rows?.length >= 2) {
+        if (queryResult?.success && queryResult.rows?.length >= 1) {
             const autoChart = this.autoGenerateChart(queryResult);
             if (autoChart) {
                 if (chartData) {
@@ -1772,10 +1776,14 @@ ${queryResult.error}\n\nFailed Query:\
                     }
                     if (!chartData.title || chartData.title === 'Chart Title') chartData.title = autoChart.title;
                     if (!chartData.colors) chartData.colors = autoChart.colors;
-                } else {
+                } else if (queryResult.rows.length >= 2) {
                     chartData = autoChart;
                 }
             }
+        }
+
+        if (!aiText && queryResult?.success) {
+            aiText = `Here is the information retrieved from the database (${queryResult.rows?.length || 0} ${queryResult.rows?.length === 1 ? 'record' : 'records'}):`;
         }
 
         return {

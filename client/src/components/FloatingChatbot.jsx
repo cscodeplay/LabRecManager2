@@ -8,7 +8,8 @@ import {
     HelpCircle, History, FilePlus, Maximize, Minimize, Plus,
     Calendar, Clock, Video, Users, CheckCircle, ExternalLink, Edit3, Save, Link2,
     XCircle, CalendarPlus, Undo2, BookOpen, StickyNote, GraduationCap, CheckSquare,
-    LayoutGrid, Table as TableIcon, Inbox, Layers, Laptop, Server, HardDrive
+    LayoutGrid, Table as TableIcon, Inbox, Layers, Laptop, Server, HardDrive,
+    Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
@@ -54,7 +55,7 @@ function CodeBlock({ code, language }) {
     );
 }
 
-/* ─── SQL result card item: renders one row as a structured card ─── */
+/* ─── SQL result card item: renders one row as a structured graphic card ─── */
 function SQLCardItem({ row, cols }) {
     // 1. Identify primary title candidate
     const titleKeys = [
@@ -65,7 +66,7 @@ function SQLCardItem({ row, cols }) {
     const titleVal = row[titleKey];
 
     // 2. Identify subtitle / secondary key
-    const subKeys = ['room_number', 'brand', 'model_no', 'serial_no', 'email', 'code', 'grade_level', 'category', 'item_type'];
+    const subKeys = ['brand', 'model_no', 'item_type', 'room_number', 'serial_no', 'email', 'code', 'grade_level', 'category'];
     const subKey = subKeys.find(k => k in row && k !== titleKey && row[k] !== null && row[k] !== undefined && String(row[k]).trim() !== '');
     const subVal = subKey ? row[subKey] : null;
 
@@ -74,36 +75,64 @@ function SQLCardItem({ row, cols }) {
     const statusKey = statusKeys.find(k => k in row && k !== titleKey && row[k] !== null && row[k] !== undefined && String(row[k]).trim() !== '');
     const statusVal = statusKey ? String(row[statusKey]) : null;
 
-    // Helper for status badge color
+    // 4. Identify count / quantitative metrics
+    const countKeys = ['total_computers', 'pc_count', 'count', 'total_items', 'item_count', 'quantity', 'total', 'active_count'];
+    const countKey = countKeys.find(k => k in row && row[k] !== null && row[k] !== undefined && !isNaN(Number(row[k])));
+    const countVal = countKey !== undefined ? row[countKey] : null;
+
+    // Helper for status badge color & dot
     const getBadgeStyle = (status) => {
         const s = String(status).toLowerCase();
         if (['active', 'completed', 'published', 'resolved', 'working', 'good', 'approved', 'yes'].includes(s)) {
-            return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+            return {
+                bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                dot: 'bg-emerald-500'
+            };
         }
         if (['pending', 'in_progress', 'scheduled', 'draft', 'open', 'assigned', 'review'].includes(s)) {
-            return 'bg-blue-100 text-blue-800 border-blue-200';
+            return {
+                bg: 'bg-blue-50 text-blue-700 border-blue-200',
+                dot: 'bg-blue-500'
+            };
         }
         if (['maintenance', 'warning', 'medium', 'high', 'urgent'].includes(s)) {
-            return 'bg-amber-100 text-amber-800 border-amber-200';
+            return {
+                bg: 'bg-amber-50 text-amber-700 border-amber-200',
+                dot: 'bg-amber-500 animate-pulse'
+            };
         }
         if (['inactive', 'failed', 'cancelled', 'critical', 'damaged', 'broken', 'closed', 'no'].includes(s)) {
-            return 'bg-red-100 text-red-800 border-red-200';
+            return {
+                bg: 'bg-red-50 text-red-700 border-red-200',
+                dot: 'bg-red-500'
+            };
         }
-        return 'bg-slate-100 text-slate-700 border-slate-200';
+        return {
+            bg: 'bg-slate-100 text-slate-700 border-slate-200',
+            dot: 'bg-slate-400'
+        };
     };
 
     // Card Icon detection
     const getCardIcon = () => {
         const strCols = cols.join(' ').toLowerCase();
-        if (strCols.includes('lab') || strCols.includes('room')) return <Server className="w-3.5 h-3.5 text-indigo-500 shrink-0" />;
-        if (strCols.includes('pc') || strCols.includes('item') || strCols.includes('serial') || strCols.includes('model')) return <Laptop className="w-3.5 h-3.5 text-blue-500 shrink-0" />;
-        if (strCols.includes('student') || strCols.includes('user') || strCols.includes('first_name')) return <User className="w-3.5 h-3.5 text-violet-500 shrink-0" />;
-        if (strCols.includes('assignment') || strCols.includes('class') || strCols.includes('subject')) return <BookOpen className="w-3.5 h-3.5 text-emerald-500 shrink-0" />;
-        return <Layers className="w-3.5 h-3.5 text-slate-500 shrink-0" />;
+        const itemType = String(row.item_type || row.type || row.category || '').toLowerCase();
+        
+        if (itemType.includes('pc') || itemType.includes('comp') || itemType.includes('desktop') || strCols.includes('total_computers')) {
+            return <Laptop className="w-4 h-4 text-blue-500 shrink-0" />;
+        }
+        if (itemType.includes('printer')) return <Printer className="w-4 h-4 text-amber-500 shrink-0" />;
+        if (itemType.includes('monitor') || itemType.includes('screen') || itemType.includes('display')) return <Monitor className="w-4 h-4 text-cyan-500 shrink-0" />;
+        if (itemType.includes('server')) return <Server className="w-4 h-4 text-indigo-500 shrink-0" />;
+        if (itemType.includes('projector')) return <Tv className="w-4 h-4 text-purple-500 shrink-0" />;
+        if (strCols.includes('lab') || strCols.includes('room')) return <Building2 className="w-4 h-4 text-indigo-500 shrink-0" />;
+        if (strCols.includes('student') || strCols.includes('user') || strCols.includes('first_name')) return <User className="w-4 h-4 text-violet-500 shrink-0" />;
+        if (strCols.includes('assignment') || strCols.includes('class') || strCols.includes('subject')) return <BookOpen className="w-4 h-4 text-emerald-500 shrink-0" />;
+        return <Layers className="w-4 h-4 text-slate-500 shrink-0" />;
     };
 
     // Filter remaining columns to display in key-value grid
-    const displayedCols = cols.filter(c => c !== titleKey && c !== statusKey);
+    const displayedCols = cols.filter(c => c !== titleKey && c !== statusKey && c !== countKey);
 
     const formatColName = (c) => {
         return c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -124,39 +153,86 @@ function SQLCardItem({ row, cols }) {
         return s;
     };
 
+    const badgeInfo = statusVal ? getBadgeStyle(statusVal) : null;
+
     return (
-        <div className="p-2.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 hover:shadow-2xs transition space-y-1.5 text-[11px]">
+        <div className="p-3 rounded-xl border border-slate-200/90 bg-white hover:border-indigo-300 hover:shadow-xs transition space-y-2 text-[11px] group">
             {/* Header: Icon + Title + Subtitle + Badge */}
-            <div className="flex items-start justify-between gap-1.5 border-b border-slate-100 pb-1.5">
-                <div className="flex items-start gap-1.5 min-w-0">
-                    <div className="mt-0.5">{getCardIcon()}</div>
+            <div className="flex items-start justify-between gap-1.5 border-b border-slate-100 pb-2">
+                <div className="flex items-start gap-2 min-w-0">
+                    <div className="mt-0.5 p-1 rounded-lg bg-slate-50 border border-slate-100 group-hover:bg-indigo-50 group-hover:border-indigo-100 transition">
+                        {getCardIcon()}
+                    </div>
                     <div className="min-w-0">
-                        <h5 className="font-bold text-slate-900 text-xs truncate leading-tight">
-                            {titleVal !== null && titleVal !== undefined ? String(titleVal) : 'Record'}
-                        </h5>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            <h5 className="font-bold text-slate-900 text-xs truncate leading-tight">
+                                {titleVal !== null && titleVal !== undefined ? String(titleVal) : 'Record'}
+                            </h5>
+                            {row.item_number && row.item_number !== titleVal && (
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono text-[9.5px] font-semibold border border-slate-200">
+                                    #{row.item_number}
+                                </span>
+                            )}
+                        </div>
                         {subVal && (
                             <p className="text-[10px] text-slate-500 font-medium truncate mt-0.5">
-                                {formatColName(subKey)}: <span className="text-slate-700 font-semibold">{String(subVal)}</span>
+                                {formatColName(subKey)}: <span className="text-slate-800 font-semibold">{String(subVal)}</span>
                             </p>
                         )}
                     </div>
                 </div>
-                {statusVal && (
-                    <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold border shrink-0 capitalize shadow-2xs ${getBadgeStyle(statusVal)}`}>
+                {badgeInfo && (
+                    <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold border shrink-0 capitalize flex items-center gap-1 shadow-2xs ${badgeInfo.bg}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${badgeInfo.dot}`} />
                         {statusVal}
                     </span>
                 )}
             </div>
 
+            {/* Quick Quantitative / Metric Stat Badge if available */}
+            {countKey && (
+                <div className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                        {formatColName(countKey)}
+                    </span>
+                    <span className="text-xs font-extrabold text-blue-700 bg-white px-2 py-0.5 rounded-md border border-blue-200 shadow-2xs">
+                        {countVal}
+                    </span>
+                </div>
+            )}
+
+            {/* Serial Number / Room tag if present */}
+            <div className="flex items-center gap-2 flex-wrap text-[10px]">
+                {row.room_number && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium border border-slate-200">
+                        📍 Room {row.room_number}
+                    </span>
+                )}
+                {row.serial_no && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            navigator.clipboard.writeText(String(row.serial_no));
+                            toast.success('Serial No copied!');
+                        }}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[9px] border border-slate-200 transition"
+                        title="Click to copy serial number"
+                    >
+                        <Copy className="w-2.5 h-2.5 text-slate-400" />
+                        <span>SN: {row.serial_no}</span>
+                    </button>
+                )}
+            </div>
+
             {/* Key-Value Fields Grid */}
             {displayedCols.length > 0 && (
-                <div className="grid grid-cols-2 gap-x-2 gap-y-1 pt-0.5">
-                    {displayedCols.map((c, idx) => (
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 pt-1 border-t border-slate-50">
+                    {displayedCols.filter(c => !['item_number', 'room_number', 'serial_no'].includes(c)).slice(0, 8).map((c, idx) => (
                         <div key={idx} className="min-w-0">
                             <span className="text-[8.5px] font-semibold text-slate-400 block uppercase tracking-wider truncate">
                                 {formatColName(c)}
                             </span>
-                            <span className="text-[11px] text-slate-800 truncate block font-medium">
+                            <span className="text-[10.5px] text-slate-800 truncate block font-medium">
                                 {formatVal(row[c])}
                             </span>
                         </div>
@@ -167,10 +243,9 @@ function SQLCardItem({ row, cols }) {
     );
 }
 
-/* ─── SQL result panel: Card View, Table View, SQL query inspection, CSV export ─── */
+/* ─── SQL result panel: Graphic Card View, Chart View, Table View, SQL query inspection, CSV export ─── */
 function SQLResult({ sql, result, onRerun }) {
-    const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'table'
-    const [isOpen, setIsOpen] = useState(true);
+    const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'chart' | 'table'
     const [sqlOpen, setSqlOpen] = useState(false);
     if (!result) return null;
 
@@ -180,6 +255,31 @@ function SQLResult({ sql, result, onRerun }) {
         : [];
 
     const isSelect = (result.command === 'SELECT') || (!result.command && sql?.trim().toUpperCase().startsWith('SELECT'));
+
+    // Check if results have numeric columns suitable for chart/stats
+    const numCols = rows.length > 0
+        ? cols.filter(f => {
+            const val = rows[0][f];
+            return typeof val === 'number' || (val !== null && val !== '' && !isNaN(Number(val)));
+        })
+        : [];
+    const strCols = cols.filter(c => !numCols.includes(c));
+
+    // Detect if this is an inventory count or lab equipment query
+    const countCols = cols.filter(c => ['total_computers', 'pc_count', 'count', 'total_items', 'item_count', 'quantity', 'total'].includes(c));
+    const hasCountSummary = countCols.length > 0 && rows.length > 0;
+
+    // Auto-generate inline chart structure if user clicks 'chart'
+    const inlineChartData = numCols.length > 0 && rows.length > 0 ? {
+        type: 'bar',
+        title: `${numCols[0].replace(/_/g, ' ')} by ${strCols[0] ? strCols[0].replace(/_/g, ' ') : 'Category'}`,
+        data: rows.slice(0, 15).map(r => ({
+            label: String(r[strCols[0]] || r[cols[0]] || 'Item').substring(0, 25),
+            [numCols[0]]: Number(r[numCols[0]]) || 0
+        })),
+        seriesKeys: [numCols[0]],
+        colors: DEFAULT_COLORS
+    } : null;
 
     const exportCSV = () => {
         if (!rows.length) return;
@@ -201,39 +301,56 @@ function SQLResult({ sql, result, onRerun }) {
     };
 
     return (
-        <div className="mt-2.5 rounded-2xl border border-indigo-200/90 shadow-sm overflow-hidden bg-gradient-to-b from-indigo-50/50 via-white to-slate-50/30 text-[12px] animate-in fade-in">
+        <div className="mt-2.5 rounded-2xl border border-indigo-200/90 shadow-sm overflow-hidden bg-gradient-to-b from-indigo-50/40 via-white to-slate-50/30 text-[12px] animate-in fade-in">
             {/* Header bar */}
-            <div className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex items-center justify-between gap-2">
+            <div className="px-3 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 text-white flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
-                    <Database className="w-3.5 h-3.5 text-indigo-100 shrink-0" />
-                    <span className="font-semibold text-xs tracking-tight">
+                    <Database className="w-3.5 h-3.5 text-indigo-200 shrink-0" />
+                    <span className="font-bold text-xs tracking-tight">
                         {rows.length} {rows.length === 1 ? 'Record Found' : 'Records Found'}
                     </span>
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                    {/* View Switcher: Cards / Table */}
+                    {/* View Switcher: Cards / Chart / Table */}
                     {rows.length > 0 && (
-                        <div className="flex items-center bg-indigo-900/40 p-0.5 rounded-lg border border-indigo-400/30">
+                        <div className="flex items-center bg-indigo-950/40 p-0.5 rounded-lg border border-indigo-400/30">
                             <button
                                 type="button"
                                 onClick={() => setViewMode('cards')}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 transition ${
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition ${
                                     viewMode === 'cards'
-                                        ? 'bg-white text-indigo-900 shadow-2xs'
+                                        ? 'bg-white text-indigo-950 shadow-2xs'
                                         : 'text-indigo-100 hover:text-white'
                                 }`}
-                                title="Card View"
+                                title="Graphic Cards View"
                             >
                                 <LayoutGrid className="w-3 h-3" />
                                 <span className="hidden sm:inline">Cards</span>
                             </button>
+
+                            {inlineChartData && (
+                                <button
+                                    type="button"
+                                    onClick={() => setViewMode('chart')}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition ${
+                                        viewMode === 'chart'
+                                            ? 'bg-white text-indigo-950 shadow-2xs'
+                                            : 'text-indigo-100 hover:text-white'
+                                    }`}
+                                    title="Visual Chart View"
+                                >
+                                    <BarChart2 className="w-3 h-3" />
+                                    <span className="hidden sm:inline">Chart</span>
+                                </button>
+                            )}
+
                             <button
                                 type="button"
                                 onClick={() => setViewMode('table')}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 transition ${
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition ${
                                     viewMode === 'table'
-                                        ? 'bg-white text-indigo-900 shadow-2xs'
+                                        ? 'bg-white text-indigo-950 shadow-2xs'
                                         : 'text-indigo-100 hover:text-white'
                                 }`}
                                 title="Table View"
@@ -256,12 +373,12 @@ function SQLResult({ sql, result, onRerun }) {
                         </button>
                     )}
 
-                    {/* SQL toggle */}
+                    {/* SQL query toggle */}
                     {sql && (
                         <button
                             type="button"
                             onClick={() => setSqlOpen(!sqlOpen)}
-                            title={sqlOpen ? "Hide SQL" : "Show SQL Query"}
+                            title={sqlOpen ? "Hide SQL" : "Show SQL Query Details"}
                             className={`p-1 rounded-lg transition ${
                                 sqlOpen ? 'bg-white text-indigo-900 shadow-2xs' : 'bg-indigo-500/30 hover:bg-indigo-500/50 text-indigo-100'
                             }`}
@@ -272,9 +389,9 @@ function SQLResult({ sql, result, onRerun }) {
                 </div>
             </div>
 
-            {/* SQL Query Dropdown */}
+            {/* SQL Query Collapsible Details (Hidden by default) */}
             {sqlOpen && sql && (
-                <div className="px-3 py-2 bg-slate-900 border-b border-indigo-200">
+                <div className="px-3 py-2 bg-slate-900 border-b border-indigo-200 animate-in fade-in">
                     <div className="flex items-center justify-between pb-1 border-b border-slate-800 mb-1.5">
                         <span className="text-[10px] font-mono text-indigo-300 font-semibold uppercase tracking-wider">Executed SQL Query</span>
                         <div className="flex items-center gap-2">
@@ -294,7 +411,7 @@ function SQLResult({ sql, result, onRerun }) {
             )}
 
             {/* Body Content */}
-            <div className="p-2.5 space-y-2">
+            <div className="p-2.5 space-y-2.5">
                 {/* Requires Confirmation */}
                 {result.requiresConfirmation ? (
                     <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex items-start gap-2.5">
@@ -348,13 +465,46 @@ function SQLResult({ sql, result, onRerun }) {
                         </div>
                     ) : (
                         <div className="p-3 bg-emerald-50 text-emerald-800 text-[11px] font-medium flex items-center gap-2 border border-emerald-200 rounded-xl">
-                            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                             <span>Operation executed successfully ({result.rowCount || 0} row(s) affected).</span>
                         </div>
                     )
+                ) : viewMode === 'chart' && inlineChartData ? (
+                    /* Inline Chart View */
+                    <div className="p-2 bg-white rounded-xl border border-slate-200">
+                        <ChatChart chartData={inlineChartData} />
+                    </div>
                 ) : viewMode === 'cards' ? (
-                    /* Card View */
-                    <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
+                    /* Graphic Cards View */
+                    <div className="space-y-2.5 max-h-80 overflow-y-auto pr-0.5">
+                        {/* Summary / Hero Card for 1-3 row summary query results */}
+                        {hasCountSummary && rows.length <= 3 && (
+                            <div className="grid grid-cols-1 gap-2">
+                                {rows.map((r, ri) => (
+                                    <div key={ri} className="p-3 rounded-xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-violet-500/10 border border-indigo-200 flex items-center justify-between gap-3 shadow-2xs">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                                                <Laptop className="w-4 h-4" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider truncate">
+                                                    {r.lab_name || r.name || 'Equipment Metric'} {r.room_number ? `(Room ${r.room_number})` : ''}
+                                                </div>
+                                                <div className="text-sm font-extrabold text-slate-900 flex items-baseline gap-1.5">
+                                                    <span className="text-lg text-indigo-700 font-mono">
+                                                        {r[countCols[0]] !== undefined ? r[countCols[0]] : 0}
+                                                    </span>
+                                                    <span className="text-xs font-semibold text-slate-600">
+                                                        {countCols[0].replace(/_/g, ' ')}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             {rows.slice(0, 50).map((row, idx) => (
                                 <SQLCardItem key={idx} row={row} cols={cols} />
@@ -416,9 +566,16 @@ function SQLResult({ sql, result, onRerun }) {
 /* ─── Chart component with copy/download ─── */
 const DEFAULT_COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#06b6d4'];
 
-function RenderMessage({ content }) {
+function RenderMessage({ content, hasQueryResult }) {
     if (!content) return null;
-    const parts = content.split(new RegExp('(`{3}[\\s\\S]*?`{3}|<think>[\\s\\S]*?<\\/think>)', 'g'));
+    let cleanContent = content;
+    // When structured query results are present, hide redundant raw SQL codeblocks from message body
+    if (hasQueryResult) {
+        cleanContent = cleanContent.replace(/```sql[\s\S]*?```/gi, '').trim();
+    }
+    if (!cleanContent) return null;
+
+    const parts = cleanContent.split(new RegExp('(`{3}[\\s\\S]*?`{3}|<think>[\\s\\S]*?<\\/think>)', 'g'));
     
     return (
         <div className="ai-prose text-[13px] leading-relaxed">
@@ -426,7 +583,27 @@ function RenderMessage({ content }) {
                 if (!part) return null;
                 if (part.startsWith('```')) {
                     const m = part.match(/```(\w+)?\n?([\s\S]*?)```/);
-                    if (m) return <CodeBlock key={i} code={m[2].trim()} language={m[1] || ''} />;
+                    if (m) {
+                        const lang = (m[1] || '').toLowerCase();
+                        // For raw SQL blocks in chat, render a compact collapsed accordion
+                        if (lang === 'sql') {
+                            return (
+                                <details key={i} className="my-1.5 group border border-slate-700 rounded-xl bg-slate-900 overflow-hidden text-[11px]">
+                                    <summary className="px-3 py-1.5 text-[10.5px] font-mono text-indigo-300 cursor-pointer hover:bg-slate-800 flex items-center justify-between select-none">
+                                        <div className="flex items-center gap-1.5">
+                                            <Database className="w-3.5 h-3.5 text-indigo-400" />
+                                            <span>View SQL Query</span>
+                                        </div>
+                                        <span className="text-[9px] text-slate-400">Click to expand</span>
+                                    </summary>
+                                    <div className="p-2.5 border-t border-slate-800 bg-slate-950 font-mono text-indigo-100 whitespace-pre-wrap text-[10.5px] leading-relaxed">
+                                        {m[2].trim()}
+                                    </div>
+                                </details>
+                            );
+                        }
+                        return <CodeBlock key={i} code={m[2].trim()} language={m[1] || ''} />;
+                    }
                 }
                 
                 if (part.startsWith('<think>')) {
@@ -2817,7 +2994,7 @@ export default function FloatingChatbot() {
                                     )}
                                     {msg.role === 'user'
                                         ? <p className="text-[13px] whitespace-pre-wrap">{msg.content}</p>
-                                        : <RenderMessage content={msg.content} />
+                                        : <RenderMessage content={msg.content} hasQueryResult={Boolean(msg.queryResult || msg.sql)} />
                                     }
                                     {msg.queryResult && <SQLResult sql={msg.sql} result={msg.queryResult} onRerun={() => handleRerunSQL(msg.sql)} />}
                                     {msg.chartData && <ChatChart chartData={msg.chartData} />}

@@ -632,6 +632,113 @@ RULES:
         };
     }
 
+    /**
+     * AI Assistant for Admin Notes: Write, Rewrite, Bullets, Numbered Steps, Polish, Summarize, Expand
+     */
+    async assistAdminNotes({ action = 'write', prompt = '', content = '', title = '', tone = 'professional' }) {
+        let actionInstruction = '';
+        switch (action) {
+            case 'bullets':
+            case 'rewrite_bullets':
+                actionInstruction = `Rewrite the provided note/text into clean, well-structured, easy-to-read BULLET POINTS (<ul><li>) with bold key headings or bold lead-in phrases (<strong>). Organize into logical sections with <h2> or <h3> headers where appropriate.`;
+                break;
+            case 'numbered':
+            case 'rewrite_numbered':
+                actionInstruction = `Rewrite the provided note/text into a sequential NUMBERED LIST (<ol><li>) with bold step titles (<strong>). Ideal for standard operating procedures (SOP), procedural workflows, checklists, or step-by-step instructions.`;
+                break;
+            case 'polish':
+                actionInstruction = `Polish and improve the grammar, structure, and readability of the provided text while keeping its core meaning. Maintain a clear ${tone} administrative tone. Use structured paragraphs and bold highlights.`;
+                break;
+            case 'summarize':
+                actionInstruction = `Generate a concise, high-impact Executive Summary of the provided text. Highlight the most important decisions, action items, and takeaways using bullet points (<ul><li>) and bold terms (<strong>).`;
+                break;
+            case 'expand':
+                actionInstruction = `Expand and elaborate the provided brief notes into a comprehensive, detailed, and thorough administrative document with background, key points, action items, and notes.`;
+                break;
+            case 'write':
+            default:
+                actionInstruction = `Write a comprehensive, professional administrative note on the requested topic or prompt. Include relevant sections, clear headings (<h2>/<h3>), bullet points (<ul><li>) or numbered lists (<ol><li>) where appropriate, and bold highlights.`;
+                break;
+        }
+
+        const systemPrompt = `You are an expert executive and educational administrative AI writing assistant for a school and laboratory management system.
+Your job is to generate or rewrite administrative notes, policies, meeting minutes, lab maintenance logs, notices, and procedural guides.
+
+TASK INSTRUCTION:
+${actionInstruction}
+
+USER PROMPT / TOPIC:
+${prompt || 'None provided'}
+
+EXISTING NOTE TITLE:
+${title || 'Untitled Note'}
+
+EXISTING NOTE CONTENT:
+${content || '(Empty content - generate from scratch based on prompt/title)'}
+
+TONE:
+${tone} (Educational / Administrative / Clear)
+
+FORMATTING RULES:
+1. Return valid, clean HTML content formatted for a rich text editor (ReactQuill).
+2. Use standard semantic tags: <h2>, <h3>, <p>, <ul>, <li>, <ol>, <strong>, <em>, <blockquote>.
+3. DO NOT wrap the output in markdown codeblocks (no \`\`\`html or \`\`\`). Return raw HTML string directly.
+4. Ensure lists (<ul>, <ol>) and bullet points are clean, concise, and easy to scan.
+5. If drafting from scratch and no title was provided, suggest a title on the first line inside an <h2> tag.`;
+
+        // 1. Try Gemini first
+        if (this.genAI) {
+            try {
+                const modelNames = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest', 'gemini-1.5-flash'];
+                for (const modelName of modelNames) {
+                    try {
+                        const model = this.genAI.getGenerativeModel({ model: modelName });
+                        const result = await model.generateContent(systemPrompt);
+                        let responseText = result.response.text() || '';
+                        responseText = responseText.replace(/^```html\n?/i, '').replace(/^```\n?/i, '').replace(/```$/i, '').trim();
+                        if (responseText) {
+                            return {
+                                success: true,
+                                html: responseText,
+                                provider: `gemini/${modelName}`
+                            };
+                        }
+                    } catch (e) {
+                        console.warn(`[AIService] Gemini ${modelName} failed for admin notes:`, e.message);
+                    }
+                }
+            } catch (err) {
+                console.warn('[AIService] Gemini failed for notes assist, trying Groq fallback:', err.message);
+            }
+        }
+
+        // 2. Fallback: Groq (llama-3.3-70b-versatile)
+        if (this.groq) {
+            try {
+                const completion = await this.groq.chat.completions.create({
+                    model: 'llama-3.3-70b-versatile',
+                    messages: [
+                        { role: 'system', content: 'You are an expert educational and administrative writing assistant. Output ONLY valid rich HTML tags (<h2>, <p>, <ul>, <li>, <ol>, <strong>) without markdown code fence wrapper.' },
+                        { role: 'user', content: systemPrompt }
+                    ],
+                    temperature: 0.3
+                });
+
+                let responseText = completion.choices[0]?.message?.content || '';
+                responseText = responseText.replace(/^```html\n?/i, '').replace(/^```\n?/i, '').replace(/```$/i, '').trim();
+                return {
+                    success: true,
+                    html: responseText,
+                    provider: 'groq/llama-3.3-70b'
+                };
+            } catch (groqErr) {
+                console.error('[AIService] Groq failed for notes assist:', groqErr.message);
+            }
+        }
+
+        throw new Error('All AI providers failed to generate note content.');
+    }
+
     parseJSONResponse(text) {
         let cleanText = text.trim();
         cleanText = cleanText.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
@@ -653,4 +760,5 @@ RULES:
 }
 
 module.exports = new AIService();
+
 

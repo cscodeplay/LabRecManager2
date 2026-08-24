@@ -3,6 +3,7 @@ const router = express.Router();
 const prisma = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
+const aiService = require('../services/ai.service');
 
 // Require authentication for all routes
 router.use(authenticate);
@@ -185,4 +186,36 @@ router.delete('/:id', asyncHandler(async (req, res) => {
     res.json({ success: true, data: {} });
 }));
 
+/**
+ * @route   POST /api/admin-notes/ai-assist
+ * @desc    AI Note Assistant: Write, Rewrite, Bulletize, Number, Polish, Summarize, Expand
+ * @access  Private (Admin/Principal)
+ */
+router.post('/ai-assist', asyncHandler(async (req, res) => {
+    const { action = 'write', prompt = '', content = '', title = '', tone = 'professional' } = req.body;
+
+    try {
+        const result = await aiService.assistAdminNotes({
+            action,
+            prompt,
+            content,
+            title,
+            tone
+        });
+
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (err) {
+        console.error('Admin Notes AI Assist Error:', err.message);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to generate note content using AI.',
+            error: err.message
+        });
+    }
+}));
+
 module.exports = router;
+
