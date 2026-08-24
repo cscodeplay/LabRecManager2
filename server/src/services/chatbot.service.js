@@ -247,7 +247,7 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
 - NEVER guess column values. If unsure, first query SELECT DISTINCT column_name FROM table LIMIT 20.
 - When user asks to read a document (e.g. stored in Cloudinary), first query the 'documents' table to get its 'url'.
 - ONCE YOU HAVE THE URL, output ONLY the special marker <!--FETCH_DOC:https://...--> to read its contents. The system will fetch it and pass the text back to you.
-- When listing equipment or computers across labs, use LEFT JOIN on labs (e.g. `FROM labs l LEFT JOIN lab_items li ON l.id = li.lab_id AND (li.item_type ILIKE '%pc%' OR li.item_type ILIKE '%computer%')`) so all labs are shown in the result even if some labs currently have no items registered yet.
+- When listing equipment or computers across labs, use LEFT JOIN on labs (e.g. \`FROM labs l LEFT JOIN lab_items li ON l.id = li.lab_id AND (li.item_type ILIKE '%pc%' OR li.item_type ILIKE '%computer%')\`) so all labs are shown in the result even if some labs currently have no items registered yet.
 - Use COUNT(DISTINCT ...) when counting unique entities.
 - Always handle case-insensitivity with ILIKE or LOWER().
 7. **CHART DATA**: When the user explicitly asks for a chart (e.g. pie chart), include this block:
