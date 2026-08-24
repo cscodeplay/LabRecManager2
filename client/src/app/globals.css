@@ -454,3 +454,22 @@ img.img-frame-polaroid, .notes-content img.img-frame-polaroid, .ql-editor img.im
   border-radius: 0.375rem;
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
 }
+
+/* Whiteboard iPad & Tablet Stabilization */
+.whiteboard-workspace-root {
+  touch-action: none !important;
+  overscroll-behavior: none !important;
+  -webkit-overscroll-behavior: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+
+.whiteboard-canvas-wrapper {
+  touch-action: none !important;
+  overscroll-behavior: none !important;
+  -webkit-overscroll-behavior: none !important;
+  -webkit-touch-callout: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}

@@ -144,6 +144,35 @@ export default function WhiteboardPage() {
         } 
     }, [activeFileId, sessionId, isSharing, shareTargets]);
 
+    // Prevent iOS Safari gestures and vertical rubber-band bounce when whiteboard canvas is active
+    useEffect(() => {
+        if (!activeFileId) return;
+
+        const preventOverscroll = (e) => {
+            if (e.touches && e.touches.length > 1) {
+                e.preventDefault();
+            }
+        };
+
+        const preventGestures = (e) => {
+            e.preventDefault();
+        };
+
+        document.body.classList.add('whiteboard-workspace-root');
+        document.addEventListener('gesturestart', preventGestures, { passive: false });
+        document.addEventListener('gesturechange', preventGestures, { passive: false });
+        document.addEventListener('gestureend', preventGestures, { passive: false });
+        window.addEventListener('touchmove', preventOverscroll, { passive: false });
+
+        return () => {
+            document.body.classList.remove('whiteboard-workspace-root');
+            document.removeEventListener('gesturestart', preventGestures);
+            document.removeEventListener('gesturechange', preventGestures);
+            document.removeEventListener('gestureend', preventGestures);
+            window.removeEventListener('touchmove', preventOverscroll);
+        };
+    }, [activeFileId]);
+
     const migrateLegacyWorkspace = async () => {
         try {
             const res = await api.post('/whiteboard/migrate-personal');
@@ -293,7 +322,7 @@ export default function WhiteboardPage() {
     // PHASE 2: CANVAS VIEW
     if (activeFileId) {
         return (
-            <div className="h-screen bg-slate-100 flex flex-col overflow-hidden relative">
+            <div className="h-[100dvh] w-screen bg-slate-100 flex flex-col overflow-hidden relative touch-none select-none overscroll-none whiteboard-workspace-root">
                 {/* Top Navigation & Action Controls Bar (Minimal without title bar) */}
                 <div className="absolute top-3 left-4 z-30 flex items-center gap-3">
                     <button 
@@ -333,7 +362,7 @@ export default function WhiteboardPage() {
                 </div>
 
                 {/* Whiteboard Area */}
-                <main className="flex-1 p-4 flex items-center justify-center">
+                <main className="flex-1 overflow-hidden p-2 sm:p-4 flex items-center justify-center touch-none select-none overscroll-none">
                     <div className={`${isFullscreen ? 'fixed inset-0 z-[9999] bg-slate-100 flex items-center justify-center' : 'w-full h-full'}`}>
                         <Whiteboard
                             width={1200}

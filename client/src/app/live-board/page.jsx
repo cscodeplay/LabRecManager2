@@ -115,7 +115,7 @@ export default function LiveBoardPage() {
                                 </p>
                             </div>
                         </div>
-                        <div className="bg-white rounded-xl shadow-lg overflow-hidden" style={{ height: 'calc(100vh - 200px)', minHeight: '500px' }}>
+                        <div className="bg-white rounded-xl shadow-lg overflow-hidden touch-none select-none overscroll-none whiteboard-workspace-root" style={{ height: 'calc(100vh - 200px)', minHeight: '500px' }}>
                             <Whiteboard
                                 onClose={() => { }}
                                 socket={socket}

@@ -223,7 +223,13 @@ export default function Whiteboard({
     isMeetingMode = false
 }) {
     const canvasRef = useRef(null);
+    const canvasWrapperRef = useRef(null);
     const containerRef = useRef(null);
+    const activePointerIdRef = useRef(null);
+    const activePointerTypeRef = useRef(null);
+    const isPenActiveRef = useRef(false);
+    const penReleaseTimeoutRef = useRef(null);
+    const lastPointRef = useRef(null);
     const currentPathPointsRef = useRef([]);
     const preStrokeImageDataRef = useRef(null);
     const [isDrawing, setIsDrawing] = useState(false);
@@ -1620,22 +1626,24 @@ export default function Whiteboard({
         if (!imageDragState) return;
 
         const handleMouseMove = (e) => {
-            const dx = e.clientX - imageDragState.startX;
-            const dy = e.clientY - imageDragState.startY;
+            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+            const dx = clientX - imageDragState.startX;
+            const dy = clientY - imageDragState.startY;
             const startObj = imageDragState.startObj;
 
             if (imageDragState.action === 'move') {
-                const deltaX = e.clientX - (imageDragState.lastX || imageDragState.startX);
-                const deltaY = e.clientY - (imageDragState.lastY || imageDragState.startY);
-                imageDragState.lastX = e.clientX;
-                imageDragState.lastY = e.clientY;
+                const deltaX = clientX - (imageDragState.lastX || imageDragState.startX);
+                const deltaY = clientY - (imageDragState.lastY || imageDragState.startY);
+                imageDragState.lastX = clientX;
+                imageDragState.lastY = clientY;
 
                 if (startObj.groupId) {
                     moveGroup(startObj.groupId, deltaX, deltaY);
                 } else {
                     setImageObjects(prev => prev.map(img =>
                         img.id === imageDragState.id
-                            ? { ...img, x: startObj.x + (e.clientX - imageDragState.startX), y: startObj.y + (e.clientY - imageDragState.startY) }
+                            ? { ...img, x: startObj.x + (clientX - imageDragState.startX), y: startObj.y + (clientY - imageDragState.startY) }
                             : img
                     ));
                 }
@@ -1649,7 +1657,7 @@ export default function Whiteboard({
                 const canvasCenterY = rect.top + centerY;
 
                 const startAngle = Math.atan2(imageDragState.startY - canvasCenterY, imageDragState.startX - canvasCenterX);
-                const currentAngle = Math.atan2(e.clientY - canvasCenterY, e.clientX - canvasCenterX);
+                const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
                 const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
 
                 setImageObjects(prev => prev.map(img =>
@@ -1694,9 +1702,17 @@ export default function Whiteboard({
 
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
+        window.addEventListener('touchmove', handleMouseMove, { passive: false });
+        window.addEventListener('touchend', handleMouseUp);
+        window.addEventListener('pointermove', handleMouseMove);
+        window.addEventListener('pointerup', handleMouseUp);
         return () => {
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('touchmove', handleMouseMove);
+            window.removeEventListener('touchend', handleMouseUp);
+            window.removeEventListener('pointermove', handleMouseMove);
+            window.removeEventListener('pointerup', handleMouseUp);
         };
     }, [imageDragState]);
 
@@ -1705,22 +1721,24 @@ export default function Whiteboard({
         if (!textDragState) return;
 
         const handleMouseMove = (e) => {
-            const dx = e.clientX - textDragState.startX;
-            const dy = e.clientY - textDragState.startY;
+            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+            const dx = clientX - textDragState.startX;
+            const dy = clientY - textDragState.startY;
             const startObj = textDragState.startObj;
 
             if (textDragState.action === 'move') {
-                const deltaX = e.clientX - (textDragState.lastX || textDragState.startX);
-                const deltaY = e.clientY - (textDragState.lastY || textDragState.startY);
-                textDragState.lastX = e.clientX;
-                textDragState.lastY = e.clientY;
+                const deltaX = clientX - (textDragState.lastX || textDragState.startX);
+                const deltaY = clientY - (textDragState.lastY || textDragState.startY);
+                textDragState.lastX = clientX;
+                textDragState.lastY = clientY;
 
                 if (startObj.groupId) {
                     moveGroup(startObj.groupId, deltaX, deltaY);
                 } else {
                     setTextObjects(prev => prev.map(txt =>
                         txt.id === textDragState.id
-                            ? { ...txt, x: startObj.x + (e.clientX - textDragState.startX), y: startObj.y + (e.clientY - textDragState.startY) }
+                            ? { ...txt, x: startObj.x + (clientX - textDragState.startX), y: startObj.y + (clientY - textDragState.startY) }
                             : txt
                     ));
                 }
@@ -1734,7 +1752,7 @@ export default function Whiteboard({
                 const canvasCenterY = rect.top + centerY;
 
                 const startAngle = Math.atan2(textDragState.startY - canvasCenterY, textDragState.startX - canvasCenterX);
-                const currentAngle = Math.atan2(e.clientY - canvasCenterY, e.clientX - canvasCenterX);
+                const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
                 const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
 
                 setTextObjects(prev => prev.map(txt =>
@@ -1780,9 +1798,17 @@ export default function Whiteboard({
 
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
+        window.addEventListener('touchmove', handleMouseMove, { passive: false });
+        window.addEventListener('touchend', handleMouseUp);
+        window.addEventListener('pointermove', handleMouseMove);
+        window.addEventListener('pointerup', handleMouseUp);
         return () => {
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('touchmove', handleMouseMove);
+            window.removeEventListener('touchend', handleMouseUp);
+            window.removeEventListener('pointermove', handleMouseMove);
+            window.removeEventListener('pointerup', handleMouseUp);
         };
     }, [textDragState, saveToHistory, setTextObjects]);
 
@@ -1791,15 +1817,17 @@ export default function Whiteboard({
         if (!shapeDragState) return;
 
         const handleMouseMove = (e) => {
-            const dx = e.clientX - shapeDragState.startX;
-            const dy = e.clientY - shapeDragState.startY;
+            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+            const dx = clientX - shapeDragState.startX;
+            const dy = clientY - shapeDragState.startY;
             const startObj = shapeDragState.startObj;
 
             if (shapeDragState.action === 'move') {
-                const deltaX = e.clientX - (shapeDragState.lastX || shapeDragState.startX);
-                const deltaY = e.clientY - (shapeDragState.lastY || shapeDragState.startY);
-                shapeDragState.lastX = e.clientX;
-                shapeDragState.lastY = e.clientY;
+                const deltaX = clientX - (shapeDragState.lastX || shapeDragState.startX);
+                const deltaY = clientY - (shapeDragState.lastY || shapeDragState.startY);
+                shapeDragState.lastX = clientX;
+                shapeDragState.lastY = clientY;
 
                 if (startObj.groupId) {
                     moveGroup(startObj.groupId, deltaX, deltaY);
@@ -1807,18 +1835,18 @@ export default function Whiteboard({
                     if (shapeDragState.startObjs && shapeDragState.startObjs.length > 0) {
                         setShapeObjects(prev => prev.map(shp => {
                             const sObj = shapeDragState.startObjs.find(s => s.id === shp.id);
-                            return sObj ? { ...shp, x: sObj.x + (e.clientX - shapeDragState.startX), y: sObj.y + (e.clientY - shapeDragState.startY) } : shp;
+                            return sObj ? { ...shp, x: sObj.x + (clientX - shapeDragState.startX), y: sObj.y + (clientY - shapeDragState.startY) } : shp;
                         }));
                         if (shapeDragState.startTextObjs && shapeDragState.startTextObjs.length > 0) {
                             setTextObjects(prev => prev.map(txt => {
                                 const tObj = shapeDragState.startTextObjs.find(t => t.id === txt.id);
-                                return tObj ? { ...txt, x: tObj.x + (e.clientX - shapeDragState.startX), y: tObj.y + (e.clientY - shapeDragState.startY) } : txt;
+                                return tObj ? { ...txt, x: tObj.x + (clientX - shapeDragState.startX), y: tObj.y + (clientY - shapeDragState.startY) } : txt;
                             }));
                         }
                     } else {
                         setShapeObjects(prev => prev.map(shp =>
                             shp.id === shapeDragState.id
-                                ? { ...shp, x: startObj.x + (e.clientX - shapeDragState.startX), y: startObj.y + (e.clientY - shapeDragState.startY) }
+                                ? { ...shp, x: startObj.x + (clientX - shapeDragState.startX), y: startObj.y + (clientY - shapeDragState.startY) }
                                 : shp
                         ));
                     }
@@ -1835,7 +1863,7 @@ export default function Whiteboard({
                 const canvasCenterY = rect.top + centerY;
 
                 const startAngle = Math.atan2(shapeDragState.startY - canvasCenterY, shapeDragState.startX - canvasCenterX);
-                const currentAngle = Math.atan2(e.clientY - canvasCenterY, e.clientX - canvasCenterX);
+                const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
                 const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
 
                 setShapeObjects(prev => prev.map(shp =>
@@ -1881,9 +1909,17 @@ export default function Whiteboard({
 
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
+        window.addEventListener('touchmove', handleMouseMove, { passive: false });
+        window.addEventListener('touchend', handleMouseUp);
+        window.addEventListener('pointermove', handleMouseMove);
+        window.addEventListener('pointerup', handleMouseUp);
         return () => {
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('touchmove', handleMouseMove);
+            window.removeEventListener('touchend', handleMouseUp);
+            window.removeEventListener('pointermove', handleMouseMove);
+            window.removeEventListener('pointerup', handleMouseUp);
         };
     }, [shapeDragState, saveToHistory, setShapeObjects]);
 
@@ -1899,23 +1935,24 @@ export default function Whiteboard({
         setSelectedShapeIds([]);
     }, []);
 
-    // Get position from event (works for both mouse and touch)
+    // Get position from event (works for pointer, touch, and mouse)
     const getPosition = useCallback((e) => {
         const canvas = canvasRef.current;
         if (!canvas) return { x: 0, y: 0 };
 
         const rect = canvas.getBoundingClientRect();
+        if (!rect.width || !rect.height) return { x: 0, y: 0 };
+
         const scaleX = canvas.width / rect.width;
         const scaleY = canvas.height / rect.height;
 
-        let clientX, clientY;
+        let clientX = e.clientX;
+        let clientY = e.clientY;
 
-        if (e.touches && e.touches.length > 0) {
+        // Fallback for touch events if clientX is not directly on event
+        if ((clientX === undefined || clientY === undefined) && e.touches && e.touches.length > 0) {
             clientX = e.touches[0].clientX;
             clientY = e.touches[0].clientY;
-        } else {
-            clientX = e.clientX;
-            clientY = e.clientY;
         }
 
         return {
@@ -2071,6 +2108,7 @@ export default function Whiteboard({
         setIsDrawing(true);
         setStartPos(pos);
         setCurrentPos(pos);
+        lastPointRef.current = pos;
 
         if (tool === 'pen' || tool === 'eraser' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
             const canvas = canvasRef.current;
@@ -2163,6 +2201,15 @@ export default function Whiteboard({
         if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
             pos = snapToGuides(pos, shapeObjects);
         }
+
+        // Filter sub-pixel jitter on tablet glass / digitizers
+        if (lastPointRef.current && (tool === 'pen' || tool === 'eraser' || tool === 'highlighter')) {
+            const dist = Math.hypot(pos.x - lastPointRef.current.x, pos.y - lastPointRef.current.y);
+            if (dist < 1.0) {
+                return; // Ignore sub-pixel vibration
+            }
+        }
+        lastPointRef.current = pos;
         setCurrentPos(pos);
 
         if (tool === 'select') {
@@ -2785,6 +2832,141 @@ export default function Whiteboard({
             saveToHistory();
         }
     }, [isDrawing, getPosition, tool, isAutoShape, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, lineType, shapeType, saveToHistory, emitDrawEvent, setShapeObjects, shapeObjects, isSharing, socket, sessionId, startPos, currentPos]);
+
+    // Dedicated pointer event handlers with Apple Pencil palm rejection & gesture stabilization
+    const handlePointerDown = useCallback((e) => {
+        if (!canUserDraw) return;
+        
+        // Prevent default touch scrolling / gesture recognition
+        if (e.cancelable) {
+            e.preventDefault();
+        }
+
+        // 1. Palm Rejection Logic
+        if (e.pointerType === 'pen') {
+            if (penReleaseTimeoutRef.current) {
+                clearTimeout(penReleaseTimeoutRef.current);
+                penReleaseTimeoutRef.current = null;
+            }
+            isPenActiveRef.current = true;
+            activePointerIdRef.current = e.pointerId;
+            activePointerTypeRef.current = 'pen';
+            try {
+                e.currentTarget?.setPointerCapture?.(e.pointerId);
+            } catch (_) {}
+        } else if (e.pointerType === 'touch') {
+            // Drop touch event if Apple Pencil is currently writing (true palm rejection!)
+            if (isPenActiveRef.current) {
+                return;
+            }
+            // Drop secondary touch points (e.g. resting palm while drawing with finger)
+            if (activePointerIdRef.current !== null) {
+                return;
+            }
+            activePointerIdRef.current = e.pointerId;
+            activePointerTypeRef.current = 'touch';
+            try {
+                e.currentTarget?.setPointerCapture?.(e.pointerId);
+            } catch (_) {}
+        } else if (e.pointerType === 'mouse') {
+            if (e.button !== 0) return; // Left mouse button only
+            activePointerIdRef.current = e.pointerId;
+            activePointerTypeRef.current = 'mouse';
+            try {
+                e.currentTarget?.setPointerCapture?.(e.pointerId);
+            } catch (_) {}
+        }
+
+        startDrawing(e);
+    }, [canUserDraw, startDrawing]);
+
+    const handlePointerMove = useCallback((e) => {
+        if (e.cancelable) {
+            e.preventDefault();
+        }
+        if (!isDrawing) return;
+
+        // Reject non-active pointers (palm or secondary touch points)
+        if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
+            return;
+        }
+        if (isPenActiveRef.current && e.pointerType !== 'pen') {
+            return;
+        }
+
+        draw(e);
+    }, [isDrawing, draw]);
+
+    const handlePointerUp = useCallback((e) => {
+        if (e.cancelable) {
+            e.preventDefault();
+        }
+        if (activePointerIdRef.current !== null && e.pointerId === activePointerIdRef.current) {
+            try {
+                e.currentTarget?.releasePointerCapture?.(e.pointerId);
+            } catch (_) {}
+            stopDrawing(e);
+            activePointerIdRef.current = null;
+            if (activePointerTypeRef.current === 'pen') {
+                // Keep isPenActiveRef true for 150ms to ignore trailing palm lift-off touch events
+                penReleaseTimeoutRef.current = setTimeout(() => {
+                    isPenActiveRef.current = false;
+                }, 150);
+            }
+            activePointerTypeRef.current = null;
+            lastPointRef.current = null;
+        }
+    }, [stopDrawing]);
+
+    const handlePointerCancel = useCallback((e) => {
+        if (e.cancelable) {
+            e.preventDefault();
+        }
+        if (activePointerIdRef.current !== null && e.pointerId === activePointerIdRef.current) {
+            try {
+                e.currentTarget?.releasePointerCapture?.(e.pointerId);
+            } catch (_) {}
+            stopDrawing(e);
+            activePointerIdRef.current = null;
+            if (activePointerTypeRef.current === 'pen') {
+                penReleaseTimeoutRef.current = setTimeout(() => {
+                    isPenActiveRef.current = false;
+                }, 150);
+            }
+            activePointerTypeRef.current = null;
+            lastPointRef.current = null;
+        }
+    }, [stopDrawing]);
+
+    const handlePointerLeave = useCallback((e) => {
+        if (isDrawing && (!e.currentTarget?.hasPointerCapture || !e.currentTarget.hasPointerCapture(e.pointerId))) {
+            handlePointerUp(e);
+        }
+    }, [isDrawing, handlePointerUp]);
+
+    // Attach non-passive touch listeners to canvas wrapper to block iOS rubber-band bounce
+    useEffect(() => {
+        const wrapper = canvasWrapperRef.current;
+        if (!wrapper) return;
+
+        const preventTouchScroll = (e) => {
+            if (e.cancelable) {
+                e.preventDefault();
+            }
+        };
+
+        wrapper.addEventListener('touchstart', preventTouchScroll, { passive: false });
+        wrapper.addEventListener('touchmove', preventTouchScroll, { passive: false });
+        wrapper.addEventListener('touchend', preventTouchScroll, { passive: false });
+        wrapper.addEventListener('touchcancel', preventTouchScroll, { passive: false });
+
+        return () => {
+            wrapper.removeEventListener('touchstart', preventTouchScroll);
+            wrapper.removeEventListener('touchmove', preventTouchScroll);
+            wrapper.removeEventListener('touchend', preventTouchScroll);
+            wrapper.removeEventListener('touchcancel', preventTouchScroll);
+        };
+    }, []);
 
     // Screenshot - Composites all layers (background, canvas, images, text)
     const handleScreenshot = useCallback(() => {
@@ -4335,16 +4517,22 @@ export default function Whiteboard({
                 )}
 
             {/* Canvas */}
-            <div className={`flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center relative ${isFullscreen ? 'h-full' : ''}`}>
+            <div className={`flex-1 overflow-hidden p-2 sm:p-4 bg-slate-100 flex items-center justify-center relative touch-none select-none overscroll-none whiteboard-canvas-wrapper ${isFullscreen ? 'h-full' : ''}`}>
 
                 <div 
-                    className="relative rounded-lg shadow-lg overflow-hidden"
+                    ref={canvasWrapperRef}
+                    className="relative rounded-lg shadow-lg overflow-hidden touch-none select-none overscroll-none"
                     style={{
                         width: canvasWidth,
                         height: canvasHeight,
                         transform: isFullscreen ? `scale(${fullscreenScale})` : 'none',
                         transformOrigin: 'center center',
                         backgroundColor: bgColor,
+                        touchAction: 'none',
+                        userSelect: 'none',
+                        WebkitUserSelect: 'none',
+                        WebkitTouchCallout: 'none',
+                        overscrollBehavior: 'none',
                             backgroundImage: (() => {
                                 switch (bgPattern) {
                                     case 'dotted':
@@ -4390,23 +4578,22 @@ export default function Whiteboard({
                             border: '2px solid #e2e8f0',
                             outline: '1px solid #cbd5e1'
                         }}
-                        onMouseDown={startDrawing}
-                        onMouseMove={draw}
-                        onMouseUp={stopDrawing}
-                        onMouseLeave={stopDrawing}
-                        onTouchStart={startDrawing}
-                        onTouchMove={draw}
-                        onTouchEnd={stopDrawing}
+                        onPointerDown={handlePointerDown}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={handlePointerUp}
+                        onPointerCancel={handlePointerCancel}
+                        onPointerLeave={handlePointerLeave}
                         onClick={handleCanvasClick}
                     >
                     <canvas
                         ref={canvasRef}
                         width={canvasWidth}
                         height={canvasHeight}
-                        className="absolute inset-0 touch-none pointer-events-none"
+                        className="absolute inset-0 touch-none pointer-events-none select-none"
                         style={{
                             zIndex: 50,
-                            backgroundColor: 'transparent'
+                            backgroundColor: 'transparent',
+                            touchAction: 'none'
                         }}
                     />
 
