@@ -1246,7 +1246,25 @@ function AssignmentActionCard({ action }) {
     const handleUpdateAssignment = (idx, field, value) => {
         setAssignments(prev => {
             const copy = [...prev];
-            copy[idx] = { ...copy[idx], [field]: value };
+            const current = { ...copy[idx], [field]: value };
+            
+            // Auto-calculate total max marks
+            const prac = Number(field === 'practicalMarks' ? value : (current.practicalMarks !== undefined ? current.practicalMarks : 60)) || 0;
+            const out = Number(field === 'outputMarks' ? value : (current.outputMarks !== undefined ? current.outputMarks : 20)) || 0;
+            const viva = Number(field === 'vivaMarks' ? value : (current.vivaMarks !== undefined ? current.vivaMarks : 20)) || 0;
+            const totalMax = prac + out + viva;
+            current.maxMarks = totalMax;
+
+            // Auto-calculate passing marks from passing percentage
+            const passPct = Number(field === 'passingMarksPercentage' ? value : (current.passingMarksPercentage !== undefined ? current.passingMarksPercentage : 33)) || 33;
+            current.passingMarksPercentage = passPct;
+            current.passingMarks = Math.round((totalMax * passPct) / 100);
+
+            if (field === 'latePenaltyPercent') {
+                current.latePenaltyPercent = Number(value) || 0;
+            }
+
+            copy[idx] = current;
             return copy;
         });
     };
@@ -1261,6 +1279,14 @@ function AssignmentActionCard({ action }) {
         let successCount = 0;
         try {
             for (const asg of assignments) {
+                const prac = Number(asg.practicalMarks !== undefined ? asg.practicalMarks : 60) || 0;
+                const out = Number(asg.outputMarks !== undefined ? asg.outputMarks : 20) || 0;
+                const viva = Number(asg.vivaMarks !== undefined ? asg.vivaMarks : 20) || 0;
+                const totalMax = prac + out + viva;
+                const passPct = Number(asg.passingMarksPercentage !== undefined ? asg.passingMarksPercentage : 33) || 33;
+                const passMarks = Math.round((totalMax * passPct) / 100);
+                const latePenalty = Number(asg.latePenaltyPercent !== undefined ? asg.latePenaltyPercent : 10);
+
                 const payload = {
                     title: asg.title,
                     description: asg.description || asg.aim || asg.title,
@@ -1269,32 +1295,35 @@ function AssignmentActionCard({ action }) {
                     assignmentType: asg.assignmentType || 'program',
                     programmingLanguage: asg.programmingLanguage || 'python',
                     experimentNumber: asg.experimentNumber || '1',
-                    maxMarks: Number(asg.maxMarks) || 100,
-                    passingMarks: Number(asg.passingMarks) || 35,
-                    practicalMarks: Number(asg.practicalMarks) || 60,
-                    vivaMarks: Number(asg.vivaMarks) || 20,
-                    outputMarks: Number(asg.outputMarks) || 20,
+                    practicalMarks: prac,
+                    outputMarks: out,
+                    vivaMarks: viva,
+                    maxMarks: totalMax,
+                    passingMarks: passMarks,
+                    latePenaltyPercent: latePenalty,
+                    lateSubmissionAllowed: true,
                     academicYearId: action?.academicYearId || undefined,
                     status: 'published'
                 };
 
                 const res = await assignmentsAPI.create(payload);
-                const created = res.data?.data;
+                const created = res.data?.data?.assignment || res.data?.data || res.data;
+                const createdId = created?.id || res.data?.data?.assignment?.id || res.data?.assignment?.id || res.data?.id;
 
-                if (created?.id) {
+                if (createdId) {
                     successCount++;
                     const dueDateObj = asg.dueDate ? new Date(asg.dueDate) : undefined;
                     // Target classes
                     for (const cid of (asg.matchedClassIds || [])) {
-                        await assignmentsAPI.addTarget(created.id, { targetType: 'class', targetId: cid, dueDate: dueDateObj }).catch(() => {});
+                        await assignmentsAPI.addTarget(createdId, { targetType: 'class', targetId: cid, dueDate: dueDateObj }).catch(() => {});
                     }
                     // Target groups
                     for (const gid of (asg.matchedGroupIds || [])) {
-                        await assignmentsAPI.addTarget(created.id, { targetType: 'group', targetId: gid, dueDate: dueDateObj }).catch(() => {});
+                        await assignmentsAPI.addTarget(createdId, { targetType: 'group', targetId: gid, dueDate: dueDateObj }).catch(() => {});
                     }
                     // Target students
                     for (const sid of (asg.matchedStudentIds || [])) {
-                        await assignmentsAPI.addTarget(created.id, { targetType: 'student', targetId: sid, dueDate: dueDateObj }).catch(() => {});
+                        await assignmentsAPI.addTarget(createdId, { targetType: 'student', targetId: sid, dueDate: dueDateObj }).catch(() => {});
                     }
                 }
             }
@@ -1348,6 +1377,15 @@ function AssignmentActionCard({ action }) {
             return isoStr;
         }
     };
+
+    // Calculate marks breakdown
+    const pracMarks = Number(firstAsg.practicalMarks !== undefined ? firstAsg.practicalMarks : 60);
+    const outMarks = Number(firstAsg.outputMarks !== undefined ? firstAsg.outputMarks : 20);
+    const vivMarks = Number(firstAsg.vivaMarks !== undefined ? firstAsg.vivaMarks : 20);
+    const calcMaxMarks = pracMarks + outMarks + vivMarks;
+    const passPercentage = Number(firstAsg.passingMarksPercentage !== undefined ? firstAsg.passingMarksPercentage : 33);
+    const calcPassMarks = Math.round((calcMaxMarks * passPercentage) / 100);
+    const latePenalty = Number(firstAsg.latePenaltyPercent !== undefined ? firstAsg.latePenaltyPercent : 10);
 
     return (
         <div className={`mt-2.5 rounded-2xl border shadow-sm overflow-hidden text-[12px] transition-all animate-in fade-in ${
@@ -1444,23 +1482,86 @@ function AssignmentActionCard({ action }) {
                             </div>
                         </div>
 
+                        <div>
+                            <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Due Date</label>
+                            <input
+                                type="datetime-local"
+                                value={firstAsg.dueDate ? firstAsg.dueDate.substring(0, 16) : ''}
+                                onChange={(e) => handleUpdateAssignment(0, 'dueDate', e.target.value)}
+                                className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                        </div>
+
+                        {/* Marks Breakdown Grid */}
+                        <div className="p-2 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5">
+                            <div className="flex items-center justify-between text-[10px] font-bold text-slate-700">
+                                <span>Marks Breakdown</span>
+                                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded font-semibold">
+                                    Total Max: {calcMaxMarks}
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-1.5">
+                                <div>
+                                    <label className="text-[8px] font-semibold text-slate-500 block mb-0.5 uppercase">Practical</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={firstAsg.practicalMarks !== undefined ? firstAsg.practicalMarks : 60}
+                                        onChange={(e) => handleUpdateAssignment(0, 'practicalMarks', e.target.value)}
+                                        className="w-full px-1.5 py-1 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[8px] font-semibold text-slate-500 block mb-0.5 uppercase">Output</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={firstAsg.outputMarks !== undefined ? firstAsg.outputMarks : 20}
+                                        onChange={(e) => handleUpdateAssignment(0, 'outputMarks', e.target.value)}
+                                        className="w-full px-1.5 py-1 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[8px] font-semibold text-slate-500 block mb-0.5 uppercase">Viva</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={firstAsg.vivaMarks !== undefined ? firstAsg.vivaMarks : 20}
+                                        onChange={(e) => handleUpdateAssignment(0, 'vivaMarks', e.target.value)}
+                                        className="w-full px-1.5 py-1 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Passing % & Late Penalty % */}
                         <div className="grid grid-cols-2 gap-2">
                             <div>
-                                <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Due Date</label>
+                                <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">
+                                    Pass % ({calcPassMarks} Marks)
+                                </label>
                                 <input
-                                    type="datetime-local"
-                                    value={firstAsg.dueDate ? firstAsg.dueDate.substring(0, 16) : ''}
-                                    onChange={(e) => handleUpdateAssignment(0, 'dueDate', e.target.value)}
-                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    type="number"
+                                    min="1"
+                                    max="100"
+                                    value={firstAsg.passingMarksPercentage !== undefined ? firstAsg.passingMarksPercentage : 33}
+                                    onChange={(e) => handleUpdateAssignment(0, 'passingMarksPercentage', e.target.value)}
+                                    placeholder="33"
+                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 />
                             </div>
                             <div>
-                                <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Max Marks</label>
+                                <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">
+                                    Late Penalty %
+                                </label>
                                 <input
                                     type="number"
-                                    value={firstAsg.maxMarks || 100}
-                                    onChange={(e) => handleUpdateAssignment(0, 'maxMarks', e.target.value)}
-                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    min="0"
+                                    max="100"
+                                    value={firstAsg.latePenaltyPercent !== undefined ? firstAsg.latePenaltyPercent : 10}
+                                    onChange={(e) => handleUpdateAssignment(0, 'latePenaltyPercent', e.target.value)}
+                                    placeholder="10"
+                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 />
                             </div>
                         </div>
@@ -1499,8 +1600,13 @@ function AssignmentActionCard({ action }) {
                             </div>
                             <div className="flex items-center gap-1 text-slate-700 truncate">
                                 <CheckSquare className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                <span className="font-medium truncate">Max: {firstAsg.maxMarks || 100}</span>
+                                <span className="font-medium truncate">Max: {calcMaxMarks} (Prac {pracMarks}+Out {outMarks}+Viva {vivMarks})</span>
                             </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-1 pt-1 text-[10px] text-slate-500 border-t border-slate-100 bg-slate-50/60 p-1.5 rounded-lg">
+                            <span>Passing: <strong className="text-slate-800">{passPercentage}%</strong> ({calcPassMarks} marks)</span>
+                            <span>Late Penalty: <strong className="text-slate-800">-{latePenalty}%</strong></span>
                         </div>
                     </div>
                 )}

@@ -697,31 +697,43 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 const fallbackSchool = await prisma.school.findFirst({ select: { id: true } });
                 const schoolId = currentUser?.schoolId || fallbackSchool?.id;
 
-                const assignmentsDraftList = extractedAssignments.map((item, idx) => ({
-                    id: `draft-asg-${Date.now()}-${idx}`,
-                    title: item.title || `Lab Task #${idx + 1}`,
-                    description: item.description || item.title || `Lab Task #${idx + 1}`,
-                    aim: item.aim || item.description || item.title || `Lab Task #${idx + 1}`,
-                    experimentNumber: item.experimentNumber || `${idx + 1}`,
-                    assignmentType: item.assignmentType || 'program',
-                    programmingLanguage: item.programmingLanguage || 'python',
-                    subjectId: targetSubjectId,
-                    subjectName: subjectObj ? subjectObj.name : 'Computer Science',
-                    maxMarks: 100,
-                    passingMarks: 35,
-                    practicalMarks: 60,
-                    vivaMarks: 20,
-                    outputMarks: 20,
-                    dueDate: dueDate.toISOString(),
-                    matchedClassIds: resolution.matchedClassIds || [],
-                    matchedGroupIds: resolution.matchedGroupIds || [],
-                    matchedStudentIds: resolution.matchedStudentIds || [],
-                    targetClassNames: matchedClassNames,
-                    targetGroupNames: matchedGroupNames,
-                    targetStudentNames: matchedStudentNames,
-                    targetSummaryStr: targetSummaryStr,
-                    status: status
-                }));
+                const assignmentsDraftList = extractedAssignments.map((item, idx) => {
+                    const practicalMarks = Number(item.practicalMarks) || 60;
+                    const outputMarks = Number(item.outputMarks) || 20;
+                    const vivaMarks = Number(item.vivaMarks) || 20;
+                    const maxMarks = practicalMarks + outputMarks + vivaMarks;
+                    const passingMarksPercentage = Number(item.passingMarksPercentage) || 33;
+                    const passingMarks = Math.round((maxMarks * passingMarksPercentage) / 100);
+                    const latePenaltyPercent = Number(item.latePenaltyPercent) || 10;
+
+                    return {
+                        id: `draft-asg-${Date.now()}-${idx}`,
+                        title: item.title || `Lab Task #${idx + 1}`,
+                        description: item.description || item.title || `Lab Task #${idx + 1}`,
+                        aim: item.aim || item.description || item.title || `Lab Task #${idx + 1}`,
+                        experimentNumber: item.experimentNumber || `${idx + 1}`,
+                        assignmentType: item.assignmentType || 'program',
+                        programmingLanguage: item.programmingLanguage || 'python',
+                        subjectId: targetSubjectId,
+                        subjectName: subjectObj ? subjectObj.name : 'Computer Science',
+                        practicalMarks,
+                        outputMarks,
+                        vivaMarks,
+                        maxMarks,
+                        passingMarksPercentage,
+                        passingMarks,
+                        latePenaltyPercent,
+                        dueDate: dueDate.toISOString(),
+                        matchedClassIds: resolution.matchedClassIds || [],
+                        matchedGroupIds: resolution.matchedGroupIds || [],
+                        matchedStudentIds: resolution.matchedStudentIds || [],
+                        targetClassNames: matchedClassNames,
+                        targetGroupNames: matchedGroupNames,
+                        targetStudentNames: matchedStudentNames,
+                        targetSummaryStr: targetSummaryStr,
+                        status: status
+                    };
+                });
 
                 const assignmentAction = {
                     isDraft: true,
