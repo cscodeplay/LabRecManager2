@@ -432,41 +432,44 @@ function ReportActionCard({ action }) {
     };
 
     return (
-        <div className="my-2 p-3 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 font-bold text-xs text-indigo-950">
-                    <Sparkles className="w-4 h-4 text-indigo-600" />
-                    Interactive Custom Report Ready
-                </span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full uppercase">
+        <div className="mt-2 rounded-xl bg-gradient-to-r from-indigo-50/90 to-purple-50/90 border border-indigo-200 shadow-2xs overflow-hidden text-[11px]">
+            <div className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
+                    <span className="font-semibold text-xs tracking-tight">Report Ready</span>
+                </div>
+                <span className="text-[9px] font-semibold px-1.5 py-0.5 bg-white/20 text-white rounded-md uppercase">
                     {(action.entities || []).join(', ')}
                 </span>
             </div>
-            <p className="text-[11px] text-slate-600">
-                Click a format below to generate & download your custom report:
-            </p>
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                <button
-                    onClick={() => handleDownload('pdf')}
-                    disabled={downloading}
-                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 shadow-xs transition"
-                >
-                    <FileText className="w-3 h-3" /> PDF
-                </button>
-                <button
-                    onClick={() => handleDownload('xlsx')}
-                    disabled={downloading}
-                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 shadow-xs transition"
-                >
-                    <File className="w-3 h-3" /> Excel (XLSX)
-                </button>
-                <button
-                    onClick={() => handleDownload('csv')}
-                    disabled={downloading}
-                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 shadow-xs transition"
-                >
-                    <Download className="w-3 h-3" /> CSV
-                </button>
+            <div className="p-2.5 flex items-center justify-between gap-2">
+                <span className="text-slate-600 text-[11px] truncate">Export format:</span>
+                <div className="flex items-center gap-1.5">
+                    <button
+                        onClick={() => handleDownload('pdf')}
+                        disabled={downloading}
+                        title="Download PDF"
+                        className="p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition shadow-2xs disabled:opacity-50"
+                    >
+                        <FileText className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        onClick={() => handleDownload('xlsx')}
+                        disabled={downloading}
+                        title="Download Excel (XLSX)"
+                        className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition shadow-2xs disabled:opacity-50"
+                    >
+                        <File className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        onClick={() => handleDownload('csv')}
+                        disabled={downloading}
+                        title="Download CSV"
+                        className="p-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition shadow-2xs disabled:opacity-50"
+                    >
+                        <Download className="w-3.5 h-3.5" />
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -644,25 +647,27 @@ function MeetingActionCard({ action, onConfirmed }) {
     }) : (action.scheduledAt ? new Date(action.scheduledAt).toLocaleString() : 'Now');
 
     return (
-        <div className="mt-2.5 rounded-xl border border-indigo-200 bg-gradient-to-b from-indigo-50/90 via-white to-violet-50/50 shadow-sm overflow-hidden text-[12px]">
+        <div className="mt-2.5 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50/90 via-white to-violet-50/50 shadow-sm overflow-hidden text-[12px]">
             {/* Header */}
-            <div className="px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-                        <Video className="w-3.5 h-3.5" />
-                    </div>
-                    <span className="font-semibold text-[13px] tracking-tight">
-                        {isConfirmed ? 'Meeting Confirmed' : 'Confirm Meeting'}
+            <div className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                    <Video className="w-3.5 h-3.5 text-indigo-100" />
+                    <span className="font-semibold text-xs tracking-tight">
+                        {isConfirmed ? 'Meeting Scheduled' : 'Meeting Draft'}
                     </span>
                 </div>
-                {isConfirmed && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-400 text-emerald-950 flex items-center gap-1">
-                        <Check className="w-3 h-3" /> Confirmed
+                {isConfirmed ? (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
+                        <Check className="w-2.5 h-2.5" /> Confirmed
+                    </span>
+                ) : (
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/20 text-white">
+                        {action.meetingLink}
                     </span>
                 )}
             </div>
 
-            <div className="p-3.5 space-y-3">
+            <div className="p-3 space-y-2.5">
                 {/* Editable / Readonly Fields */}
                 <div className="space-y-2.5">
                     {/* Meeting Title */}
@@ -889,45 +894,67 @@ function MeetingActionCard({ action, onConfirmed }) {
                     <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
                         <button
                             type="button"
-                            onClick={() => setIsEditing(!isEditing)}
-                            className={`p-1.5 rounded-lg border transition ${
-                                isEditing
-                                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700 hover:bg-indigo-100'
-                                    : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
-                            }`}
-                            title={isEditing ? 'Cancel Edit' : 'Edit Details'}
+                            onClick={handleCopyInvite}
+                            title={copied ? "Copied!" : "Copy Invite Link"}
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition shadow-2xs"
                         >
-                            <Edit3 className="w-4 h-4" />
+                            {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                         </button>
 
-                        <button
-                            type="button"
-                            onClick={handleSaveAndConfirm}
-                            disabled={isSaving}
-                            className="px-3.5 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white ml-auto"
-                        >
-                            {isSaving ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                                <CheckCircle className="w-3.5 h-3.5" />
-                            )}
-                            Confirm & Finalize
-                        </button>
+                        <div className="flex items-center gap-1.5 ml-auto">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(!isEditing)}
+                                className={`p-1.5 rounded-lg border transition shadow-2xs ${
+                                    isEditing
+                                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                                }`}
+                                title={isEditing ? 'Done Editing' : 'Edit Details'}
+                            >
+                                <Edit3 className="w-4 h-4" />
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleSaveAndConfirm}
+                                disabled={isSaving}
+                                title="Confirm & Finalize Meeting"
+                                className="p-1.5 px-3 rounded-lg text-white font-semibold flex items-center justify-center gap-1 transition shadow-sm bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50"
+                            >
+                                {isSaving ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <Check className="w-4 h-4" />
+                                )}
+                            </button>
+                        </div>
                     </div>
                 ) : (
                     <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                        <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
                             <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Meeting Scheduled</span>
+                            <span>Scheduled</span>
                         </div>
-                        <a
-                            href={`/meeting/${action.meetingLink}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm"
-                        >
-                            <Video className="w-3.5 h-3.5" /> Open Room
-                        </a>
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                type="button"
+                                onClick={handleCopyInvite}
+                                title="Copy Invite Link"
+                                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition shadow-2xs"
+                            >
+                                {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                            <a
+                                href={`/meeting/${action.meetingLink}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Join Meeting"
+                                className="p-1.5 px-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition shadow-2xs"
+                            >
+                                <Video className="w-3.5 h-3.5" /> <span>Join</span>
+                            </a>
+                        </div>
                     </div>
                 )}
             </div>
@@ -1032,68 +1059,49 @@ function NoteActionCard({ action }) {
                 : 'border-amber-200 bg-gradient-to-b from-amber-50/90 via-white to-orange-50/50'
         }`}>
             {/* Header */}
-            <div className={`px-3.5 py-2.5 text-white flex items-center justify-between ${
+            <div className={`px-3 py-1.5 text-white flex items-center justify-between ${
                 isConfirmed
                     ? 'bg-gradient-to-r from-emerald-600 to-teal-600'
                     : 'bg-gradient-to-r from-amber-600 to-orange-600'
             }`}>
-                <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-                        {isConfirmed ? <Check className="w-3.5 h-3.5" /> : <StickyNote className="w-3.5 h-3.5" />}
-                    </div>
-                    <span className="font-semibold text-[13px] tracking-tight">
-                        {isConfirmed ? 'Note Saved' : 'Note Draft (Pending Confirmation)'}
+                <div className="flex items-center gap-1.5">
+                    <StickyNote className="w-3.5 h-3.5 text-amber-100" />
+                    <span className="font-semibold text-xs tracking-tight">
+                        {isConfirmed ? 'Note Saved' : 'Note Draft'}
                     </span>
                 </div>
                 {isConfirmed ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
-                        <Check className="w-3 h-3" /> Saved
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
+                        <Check className="w-2.5 h-2.5" /> Saved
                     </span>
                 ) : (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-950 flex items-center gap-1 shadow-xs">
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-950 flex items-center gap-1 shadow-xs">
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-800 animate-ping" />
-                        Draft Mode
+                        Draft
                     </span>
                 )}
             </div>
 
-            <div className="p-3.5 space-y-3">
-                {!isConfirmed && (
-                    <div className="text-[11px] text-slate-600 flex items-center justify-between">
-                        <span>Review or customize note before saving:</span>
-                        <button
-                            type="button"
-                            onClick={() => setIsEditing(!isEditing)}
-                            className={`px-2 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition ${
-                                isEditing
-                                    ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-xs'
-                                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                            }`}
-                        >
-                            <Edit3 className="w-3.5 h-3.5" /> {isEditing ? 'Done Editing' : 'Edit Note'}
-                        </button>
-                    </div>
-                )}
-
+            <div className="p-2.5 space-y-2.5">
                 {isEditing && !isConfirmed ? (
-                    <div className="p-3 bg-white rounded-xl border border-amber-100 shadow-2xs space-y-2.5">
+                    <div className="p-2.5 bg-white rounded-xl border border-amber-100 shadow-2xs space-y-2">
                         <div className="grid grid-cols-3 gap-2">
                             <div className="col-span-2">
-                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Note Title</label>
+                                <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Note Title</label>
                                 <input
                                     type="text"
                                     value={title}
                                     onChange={(e) => setTitle(e.target.value)}
                                     placeholder="Note Title"
-                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
                                 />
                             </div>
                             <div>
-                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Category</label>
+                                <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Category</label>
                                 <select
                                     value={category}
                                     onChange={(e) => setCategory(e.target.value)}
-                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
                                 >
                                     <option value="general">General</option>
                                     <option value="academic">Academic</option>
@@ -1105,25 +1113,25 @@ function NoteActionCard({ action }) {
                             </div>
                         </div>
                         <div>
-                            <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Note Content</label>
+                            <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Note Content</label>
                             <textarea
-                                rows={4}
+                                rows={3}
                                 value={content}
                                 onChange={(e) => setContent(e.target.value)}
                                 placeholder="Note details..."
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 resize-y"
+                                className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 resize-y"
                             />
                         </div>
                     </div>
                 ) : (
-                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1.5">
                         <div className="flex items-start justify-between gap-2">
-                            <h4 className="font-bold text-slate-900 text-sm leading-snug">
+                            <h4 className="font-bold text-slate-900 text-xs leading-snug">
                                 {title}
                             </h4>
                             {getCategoryBadge(category)}
                         </div>
-                        <div className="text-xs text-slate-700 whitespace-pre-wrap bg-slate-50/80 p-2.5 rounded-lg border border-slate-100 max-h-48 overflow-y-auto leading-relaxed">
+                        <div className="text-[11px] text-slate-700 whitespace-pre-wrap bg-slate-50/80 p-2 rounded-lg border border-slate-100 max-h-40 overflow-y-auto leading-relaxed">
                             {content || 'No content'}
                         </div>
                     </div>
@@ -1135,33 +1143,49 @@ function NoteActionCard({ action }) {
                         <button
                             type="button"
                             onClick={handleCancel}
-                            className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-red-600 hover:bg-red-50 text-[11px] font-semibold flex items-center gap-1.5 transition"
+                            title="Cancel Draft"
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-red-600 hover:bg-red-50 transition shadow-2xs"
                         >
-                            <X className="w-3.5 h-3.5" /> Cancel
+                            <X className="w-4 h-4" />
                         </button>
-                        <button
-                            type="button"
-                            onClick={handleConfirm}
-                            disabled={isSaving || !title.trim() || !content.trim()}
-                            className="px-4 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white disabled:opacity-50"
-                        >
-                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                            Confirm & Save Note
-                        </button>
+                        <div className="flex items-center gap-1.5 ml-auto">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(!isEditing)}
+                                className={`p-1.5 rounded-lg border transition shadow-2xs ${
+                                    isEditing
+                                        ? 'bg-amber-50 border-amber-300 text-amber-800'
+                                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                                }`}
+                                title={isEditing ? 'Done Editing' : 'Edit Note'}
+                            >
+                                <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirm}
+                                disabled={isSaving || !title.trim() || !content.trim()}
+                                title="Confirm & Save Note"
+                                className="p-1.5 px-3 rounded-lg text-white font-medium flex items-center justify-center gap-1 transition shadow-sm bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 disabled:opacity-50"
+                            >
+                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                            </button>
+                        </div>
                     </div>
                 ) : (
                     <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                        <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
                             <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Saved to Admin Notes</span>
+                            <span>Saved</span>
                         </div>
                         <a
                             href="/admin/notes"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm"
+                            title="Open Admin Notes"
+                            className="p-1.5 px-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition shadow-2xs"
                         >
-                            <StickyNote className="w-3.5 h-3.5" /> View Notes
+                            <StickyNote className="w-3.5 h-3.5" /> <span>Notes</span>
                         </a>
                     </div>
                 )}
@@ -1332,80 +1356,61 @@ function AssignmentActionCard({ action }) {
                 : 'border-blue-200 bg-gradient-to-b from-blue-50/90 via-white to-indigo-50/50'
         }`}>
             {/* Header */}
-            <div className={`px-3.5 py-2.5 text-white flex items-center justify-between ${
+            <div className={`px-3 py-1.5 text-white flex items-center justify-between ${
                 isConfirmed
                     ? 'bg-gradient-to-r from-emerald-600 to-teal-600'
                     : 'bg-gradient-to-r from-blue-600 to-indigo-600'
             }`}>
-                <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-                        {isConfirmed ? <Check className="w-3.5 h-3.5" /> : <BookOpen className="w-3.5 h-3.5" />}
-                    </div>
-                    <span className="font-semibold text-[13px] tracking-tight">
-                        {isConfirmed ? 'Assignment Created & Published' : 'Assignment Draft (Pending Confirmation)'}
+                <div className="flex items-center gap-1.5">
+                    <BookOpen className="w-3.5 h-3.5 text-blue-100" />
+                    <span className="font-semibold text-xs tracking-tight">
+                        {isConfirmed ? 'Assignment Created' : 'Assignment Draft'}
                     </span>
                 </div>
                 {isConfirmed ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
-                        <Check className="w-3 h-3" /> Published
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
+                        <Check className="w-2.5 h-2.5" /> Published
                     </span>
                 ) : (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-300 text-amber-950 flex items-center gap-1 shadow-xs">
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-300 text-amber-950 flex items-center gap-1 shadow-xs">
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-800 animate-ping" />
-                        Draft Mode
+                        Draft
                     </span>
                 )}
             </div>
 
-            <div className="p-3.5 space-y-3">
-                {!isConfirmed && (
-                    <div className="text-[11px] text-slate-600 flex items-center justify-between">
-                        <span>Review task details and targets before creating:</span>
-                        <button
-                            type="button"
-                            onClick={() => setIsEditing(!isEditing)}
-                            className={`px-2 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition ${
-                                isEditing
-                                    ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-xs'
-                                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                            }`}
-                        >
-                            <Edit3 className="w-3.5 h-3.5" /> {isEditing ? 'Done Editing' : 'Edit Details'}
-                        </button>
-                    </div>
-                )}
-
+            <div className="p-2.5 space-y-2.5">
                 {/* Assignment Details */}
                 {isEditing && !isConfirmed ? (
-                    <div className="p-3 bg-white rounded-xl border border-blue-100 shadow-2xs space-y-2.5">
+                    <div className="p-2.5 bg-white rounded-xl border border-blue-100 shadow-2xs space-y-2">
                         <div>
-                            <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Assignment Title</label>
+                            <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Assignment Title</label>
                             <input
                                 type="text"
                                 value={firstAsg.title || ''}
                                 onChange={(e) => handleUpdateAssignment(0, 'title', e.target.value)}
                                 placeholder="Assignment Title"
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
                             />
                         </div>
 
                         <div>
-                            <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Aim / Instructions</label>
+                            <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Aim / Instructions</label>
                             <textarea
-                                rows={3}
+                                rows={2}
                                 value={firstAsg.aim || firstAsg.description || ''}
                                 onChange={(e) => {
                                     handleUpdateAssignment(0, 'aim', e.target.value);
                                     handleUpdateAssignment(0, 'description', e.target.value);
                                 }}
                                 placeholder="Describe the task or experiment aim..."
-                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+                                className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
                             />
                         </div>
 
                         <div className="grid grid-cols-2 gap-2">
                             <div>
-                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Subject</label>
+                                <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Subject</label>
                                 <select
                                     value={firstAsg.subjectId || ''}
                                     onChange={(e) => {
@@ -1413,7 +1418,7 @@ function AssignmentActionCard({ action }) {
                                         handleUpdateAssignment(0, 'subjectId', e.target.value);
                                         if (sel) handleUpdateAssignment(0, 'subjectName', sel.name);
                                     }}
-                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 >
                                     {targetOptions.subjects.map(s => (
                                         <option key={s.id} value={s.id}>{s.name} ({s.code || 'Sub'})</option>
@@ -1424,11 +1429,11 @@ function AssignmentActionCard({ action }) {
                                 </select>
                             </div>
                             <div>
-                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Type</label>
+                                <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Type</label>
                                 <select
                                     value={firstAsg.assignmentType || 'program'}
                                     onChange={(e) => handleUpdateAssignment(0, 'assignmentType', e.target.value)}
-                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 >
                                     <option value="program">Programming / Coding</option>
                                     <option value="experiment">Lab Experiment</option>
@@ -1441,60 +1446,60 @@ function AssignmentActionCard({ action }) {
 
                         <div className="grid grid-cols-2 gap-2">
                             <div>
-                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Due Date</label>
+                                <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Due Date</label>
                                 <input
                                     type="datetime-local"
                                     value={firstAsg.dueDate ? firstAsg.dueDate.substring(0, 16) : ''}
                                     onChange={(e) => handleUpdateAssignment(0, 'dueDate', e.target.value)}
-                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 />
                             </div>
                             <div>
-                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Max Marks</label>
+                                <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Max Marks</label>
                                 <input
                                     type="number"
                                     value={firstAsg.maxMarks || 100}
                                     onChange={(e) => handleUpdateAssignment(0, 'maxMarks', e.target.value)}
-                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 />
                             </div>
                         </div>
                     </div>
                 ) : (
-                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
+                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2">
                         <div className="flex items-start justify-between gap-2">
-                            <div>
-                                <h4 className="font-bold text-slate-900 text-sm leading-snug">
+                            <div className="min-w-0">
+                                <h4 className="font-bold text-slate-900 text-xs leading-snug truncate">
                                     {firstAsg.title || 'Untitled Assignment'}
                                 </h4>
-                                <p className="text-xs text-slate-600 line-clamp-2 mt-0.5">
+                                <p className="text-[11px] text-slate-600 line-clamp-2 mt-0.5 leading-relaxed">
                                     {firstAsg.aim || firstAsg.description}
                                 </p>
                             </div>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 shrink-0 capitalize">
+                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-800 border border-blue-200 shrink-0 capitalize">
                                 {firstAsg.assignmentType || 'Program'}
                             </span>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2 pt-1 text-xs border-t border-slate-100">
-                            <div className="flex items-center gap-1.5 text-slate-700">
+                        <div className="grid grid-cols-2 gap-1.5 pt-1 text-[11px] border-t border-slate-100">
+                            <div className="flex items-center gap-1 text-slate-700 truncate">
                                 <GraduationCap className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                                 <span className="font-medium truncate">{firstAsg.subjectName || 'Computer Science'}</span>
                             </div>
-                            <div className="flex items-center gap-1.5 text-slate-700">
+                            <div className="flex items-center gap-1 text-slate-700 truncate">
                                 <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                                 <span className="font-medium truncate">{firstAsg.targetSummaryStr || 'All Students'}</span>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2 pt-0.5 text-xs">
-                            <div className="flex items-center gap-1.5 text-slate-700">
+                        <div className="grid grid-cols-2 gap-1.5 pt-0.5 text-[11px]">
+                            <div className="flex items-center gap-1 text-slate-700 truncate">
                                 <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                <span className="font-medium text-[11px]">{formatDue(firstAsg.dueDate)}</span>
+                                <span className="font-medium truncate">{formatDue(firstAsg.dueDate)}</span>
                             </div>
-                            <div className="flex items-center gap-1.5 text-slate-700">
+                            <div className="flex items-center gap-1 text-slate-700 truncate">
                                 <CheckSquare className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                <span className="font-medium text-[11px]">Max Marks: {firstAsg.maxMarks || 100}</span>
+                                <span className="font-medium truncate">Max: {firstAsg.maxMarks || 100}</span>
                             </div>
                         </div>
                     </div>
@@ -1506,42 +1511,59 @@ function AssignmentActionCard({ action }) {
                         <button
                             type="button"
                             onClick={handleCancel}
-                            className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-red-600 hover:bg-red-50 text-[11px] font-semibold flex items-center gap-1.5 transition"
+                            title="Cancel Draft"
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-red-600 hover:bg-red-50 transition shadow-2xs"
                         >
-                            <X className="w-3.5 h-3.5" /> Cancel
+                            <X className="w-4 h-4" />
                         </button>
-                        <button
-                            type="button"
-                            onClick={handleConfirm}
-                            disabled={isSaving || !firstAsg.title}
-                            className="px-4 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white disabled:opacity-50"
-                        >
-                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                            Confirm & Create Assignment
-                        </button>
+                        <div className="flex items-center gap-1.5 ml-auto">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(!isEditing)}
+                                className={`p-1.5 rounded-lg border transition shadow-2xs ${
+                                    isEditing
+                                        ? 'bg-blue-50 border-blue-300 text-blue-700'
+                                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                                }`}
+                                title={isEditing ? 'Done Editing' : 'Edit Details'}
+                            >
+                                <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirm}
+                                disabled={isSaving || !firstAsg.title}
+                                title="Confirm & Create Assignment"
+                                className="p-1.5 px-3 rounded-lg text-white font-medium flex items-center justify-center gap-1 transition shadow-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50"
+                            >
+                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                            </button>
+                        </div>
                     </div>
                 ) : (
                     <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                        <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
                             <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Assignment Created & Assigned</span>
+                            <span>Published</span>
                         </div>
                         <div className="flex gap-1.5">
                             <a
                                 href="/assignments"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm"
+                                title="View Assignments"
+                                className="p-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-2xs transition flex items-center justify-center"
                             >
-                                <BookOpen className="w-3.5 h-3.5" /> Assignments
+                                <BookOpen className="w-3.5 h-3.5" />
                             </a>
                             <a
                                 href="/assigned-work"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm"
+                                title="View Assigned Work"
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white shadow-2xs transition flex items-center justify-center"
                             >
-                                <Users className="w-3.5 h-3.5" /> Assigned Work
+                                <Users className="w-3.5 h-3.5" />
                             </a>
                         </div>
                     </div>
@@ -1686,103 +1708,83 @@ function CalendarActionCard({ action }) {
                     : 'border-indigo-200 bg-gradient-to-b from-indigo-50/90 via-white to-violet-50/50'
             }`}>
                 {/* Header */}
-                <div className={`px-3.5 py-2.5 text-white flex items-center justify-between ${
+                <div className={`px-3 py-1.5 text-white flex items-center justify-between ${
                     isConfirmed 
                         ? 'bg-gradient-to-r from-emerald-600 to-teal-600' 
                         : 'bg-gradient-to-r from-indigo-600 to-violet-600'
                 }`}>
-                    <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-                            {isConfirmed ? <Check className="w-3.5 h-3.5" /> : <CalendarPlus className="w-3.5 h-3.5" />}
-                        </div>
-                        <span className="font-semibold text-[13px] tracking-tight">
-                            {isConfirmed ? 'Event Added to Calendar' : 'Event Draft (Pending Confirmation)'}
+                    <div className="flex items-center gap-1.5">
+                        <CalendarPlus className="w-3.5 h-3.5 text-indigo-100" />
+                        <span className="font-semibold text-xs tracking-tight">
+                            {isConfirmed ? 'Event Added' : 'Event Draft'}
                         </span>
                     </div>
                     {isConfirmed ? (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
-                            <Check className="w-3 h-3" /> Confirmed
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
+                            <Check className="w-2.5 h-2.5" /> Confirmed
                         </span>
                     ) : (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-300 text-amber-950 flex items-center gap-1 shadow-xs">
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-300 text-amber-950 flex items-center gap-1 shadow-xs">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-800 animate-ping" />
-                            Draft Mode
+                            Draft
                         </span>
                     )}
                 </div>
 
-                <div className="p-3.5 space-y-3">
-                    {/* Information / Edit Header */}
-                    {!isConfirmed && (
-                        <div className="text-[11px] text-slate-600 flex items-center justify-between">
-                            <span>Review event details before confirming:</span>
-                            <button
-                                type="button"
-                                onClick={() => setIsEditing(!isEditing)}
-                                className={`px-2 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition ${
-                                    isEditing
-                                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700 shadow-xs'
-                                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                                }`}
-                            >
-                                <Edit3 className="w-3.5 h-3.5" /> {isEditing ? 'Done Editing' : 'Edit Details'}
-                            </button>
-                        </div>
-                    )}
-
+                <div className="p-2.5 space-y-2.5">
                     {/* Single Event Body */}
                     {isEditing && !isConfirmed ? (
-                        <div className="p-3 bg-white rounded-xl border border-indigo-100 shadow-2xs space-y-2.5">
+                        <div className="p-2.5 bg-white rounded-xl border border-indigo-100 shadow-2xs space-y-2">
                             <div>
-                                <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Event Title (English)</label>
+                                <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Event Title (English)</label>
                                 <input
                                     type="text"
                                     value={singleEvent.title || ''}
                                     onChange={(e) => handleUpdateRow(0, 'title', e.target.value)}
                                     placeholder="Event Name"
-                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                 />
                             </div>
 
                             <div className="grid grid-cols-2 gap-2">
                                 <div>
-                                    <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Regional Name (ਪੰਜਾਬੀ / हिंदी)</label>
+                                    <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Regional (ਪੰਜਾਬੀ/हिंदी)</label>
                                     <input
                                         type="text"
                                         value={singleEvent.titleHindi || ''}
                                         onChange={(e) => handleUpdateRow(0, 'titleHindi', e.target.value)}
                                         placeholder="ਈਵੈਂਟ / इवेंट"
-                                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                        className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Time (Optional)</label>
+                                    <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Time (Optional)</label>
                                     <input
                                         type="text"
                                         value={singleEvent.time || ''}
                                         onChange={(e) => handleUpdateRow(0, 'time', e.target.value)}
                                         placeholder="e.g. 09:30 AM"
-                                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                        className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                     />
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-2">
                                 <div>
-                                    <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Event Date</label>
+                                    <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Event Date</label>
                                     <input
                                         type="date"
                                         value={singleEvent.date || ''}
                                         onChange={(e) => handleUpdateRow(0, 'date', e.target.value)}
-                                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                        className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Event Type</label>
+                                    <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Event Type</label>
                                     <select
                                         value={singleEvent.type || 'event'}
                                         onChange={(e) => handleUpdateRow(0, 'type', e.target.value)}
-                                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                        className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                     >
                                         <option value="event">School Event</option>
                                         <option value="exam_day">Exam Day</option>
@@ -1795,28 +1797,28 @@ function CalendarActionCard({ action }) {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-2 pt-1">
+                            <div className="flex items-center gap-2 pt-0.5">
                                 <input
                                     type="checkbox"
                                     id="isHolidayCheck"
                                     checked={!!singleEvent.isHoliday}
                                     onChange={(e) => handleUpdateRow(0, 'isHoliday', e.target.checked)}
-                                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                                    className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500"
                                 />
-                                <label htmlFor="isHolidayCheck" className="text-xs text-slate-700 font-medium cursor-pointer">
-                                    Mark as School Holiday (Campus Closed)
+                                <label htmlFor="isHolidayCheck" className="text-[11px] text-slate-700 font-medium cursor-pointer">
+                                    School Holiday (Campus Closed)
                                 </label>
                             </div>
                         </div>
                     ) : (
-                        <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2.5">
+                        <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2">
                             <div className="flex items-start justify-between gap-2">
                                 <div>
-                                    <h4 className="font-bold text-slate-900 text-sm leading-snug">
+                                    <h4 className="font-bold text-slate-900 text-xs leading-snug">
                                         {singleEvent.title || 'Untitled Event'}
                                     </h4>
                                     {singleEvent.titleHindi && (
-                                        <p className="text-xs text-slate-600 font-medium mt-0.5">
+                                        <p className="text-[11px] text-slate-600 font-medium mt-0.5">
                                             {singleEvent.titleHindi}
                                         </p>
                                     )}
@@ -1826,20 +1828,20 @@ function CalendarActionCard({ action }) {
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2 pt-1 text-xs border-t border-slate-100">
-                                <div className="flex items-center gap-1.5 text-slate-700">
+                            <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] border-t border-slate-100">
+                                <div className="flex items-center gap-1 text-slate-700">
                                     <Calendar className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                                     <span className="font-medium">{formattedDate || singleEvent.date}</span>
                                 </div>
-                                <div className="flex items-center gap-1.5 text-slate-700">
+                                <div className="flex items-center gap-1 text-slate-700">
                                     <Clock className="w-3.5 h-3.5 text-violet-500 shrink-0" />
                                     <span className="font-medium">{singleEvent.time || 'All Day'}</span>
                                 </div>
                             </div>
 
-                            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 pt-0.5">
-                                <span className={`w-2 h-2 rounded-full ${singleEvent.isHoliday ? 'bg-red-500' : 'bg-emerald-500'}`} />
-                                <span>{singleEvent.isHoliday ? 'School Closed (Holiday)' : 'Normal School Day (Open)'}</span>
+                            <div className="text-[10px] text-slate-500 flex items-center gap-1.5 pt-0.5">
+                                <span className={`w-1.5 h-1.5 rounded-full ${singleEvent.isHoliday ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                                <span>{singleEvent.isHoliday ? 'Campus Closed' : 'Campus Open'}</span>
                             </div>
                         </div>
                     )}
@@ -1850,37 +1852,49 @@ function CalendarActionCard({ action }) {
                             <button
                                 type="button"
                                 onClick={handleCancel}
-                                className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-red-600 hover:bg-red-50 text-[11px] font-semibold flex items-center gap-1.5 transition"
+                                title="Cancel Draft"
+                                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-red-600 hover:bg-red-50 transition shadow-2xs"
                             >
-                                <X className="w-3.5 h-3.5" /> Cancel
+                                <X className="w-4 h-4" />
                             </button>
-                            <button
-                                type="button"
-                                onClick={handleConfirm}
-                                disabled={isSaving || !singleEvent.title || !singleEvent.date}
-                                className="px-4 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white disabled:opacity-50"
-                            >
-                                {isSaving ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                    <CheckCircle className="w-3.5 h-3.5" />
-                                )}
-                                Confirm & Add to Calendar
-                            </button>
+                            <div className="flex items-center gap-1.5 ml-auto">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditing(!isEditing)}
+                                    className={`p-1.5 rounded-lg border transition shadow-2xs ${
+                                        isEditing
+                                            ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                                            : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                                    }`}
+                                    title={isEditing ? 'Done Editing' : 'Edit Details'}
+                                >
+                                    <Edit3 className="w-4 h-4" />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleConfirm}
+                                    disabled={isSaving || !singleEvent.title || !singleEvent.date}
+                                    title="Confirm & Add to Calendar"
+                                    className="p-1.5 px-3 rounded-lg text-white font-medium flex items-center justify-center gap-1 transition shadow-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50"
+                                >
+                                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                </button>
+                            </div>
                         </div>
                     ) : (
                         <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                            <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
                                 <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>Added to School Calendar</span>
+                                <span>Added</span>
                             </div>
                             <a
                                 href="/admin/calendar"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm"
+                                title="Open Calendar"
+                                className="p-1.5 px-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition shadow-2xs"
                             >
-                                <Calendar className="w-3.5 h-3.5" /> View Calendar
+                                <Calendar className="w-3.5 h-3.5" /> <span>Calendar</span>
                             </a>
                         </div>
                     )}
@@ -1891,49 +1905,29 @@ function CalendarActionCard({ action }) {
 
     /* ─── State: Multi-Event / Holiday Table Mode ─── */
     return (
-        <div className="mt-2.5 rounded-xl border border-emerald-200 bg-gradient-to-b from-emerald-50/90 via-white to-teal-50/50 shadow-sm overflow-hidden text-[12px] animate-in fade-in">
+        <div className="mt-2.5 rounded-2xl border border-emerald-200 bg-gradient-to-b from-emerald-50/90 via-white to-teal-50/50 shadow-sm overflow-hidden text-[12px] animate-in fade-in">
             {/* Header */}
-            <div className="px-3.5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-                        <Calendar className="w-3.5 h-3.5" />
-                    </div>
-                    <span className="font-semibold text-[13px] tracking-tight">
-                        {isConfirmed ? 'Holidays Added to Calendar' : 'Confirm Holiday Calendar'}
+            <div className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-100" />
+                    <span className="font-semibold text-xs tracking-tight">
+                        {isConfirmed ? 'Holidays Added' : 'Holidays Draft'}
                     </span>
                 </div>
                 {isConfirmed ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
-                        <Check className="w-3 h-3" /> Confirmed
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
+                        <Check className="w-2.5 h-2.5" /> Confirmed
                     </span>
                 ) : (
-                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/20 text-white">
-                        {events.length} Recognized
+                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-md bg-white/20 text-white">
+                        {events.length} Items
                     </span>
                 )}
             </div>
 
-            <div className="p-3.5 space-y-3">
-                {/* Information Notice */}
-                {!isConfirmed && (
-                    <div className="text-[11px] text-slate-600 flex items-center justify-between">
-                        <span>Review recognized holidays before saving:</span>
-                        <button
-                            type="button"
-                            onClick={() => setIsEditing(!isEditing)}
-                            className={`px-2 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition ${
-                                isEditing
-                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                            }`}
-                        >
-                            <Edit3 className="w-3.5 h-3.5" /> {isEditing ? 'Done Editing' : 'Edit List'}
-                        </button>
-                    </div>
-                )}
-
+            <div className="p-2.5 space-y-2.5">
                 {/* Holiday List Table / Container */}
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs max-h-60 overflow-y-auto">
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs max-h-56 overflow-y-auto">
                     {events.length === 0 ? (
                         <div className="p-4 text-center text-slate-400 text-[11px]">No holidays recognized in document</div>
                     ) : isEditing && !isConfirmed ? (
@@ -1993,32 +1987,32 @@ function CalendarActionCard({ action }) {
                                 onClick={handleAddRow}
                                 className="w-full py-1.5 border border-dashed border-emerald-300 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition"
                             >
-                                <Plus className="w-3.5 h-3.5" /> Add Another Holiday
+                                <Plus className="w-3.5 h-3.5" /> Add Holiday
                             </button>
                         </div>
                     ) : (
                         <table className="w-full text-left text-[11px]">
                             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold sticky top-0">
                                 <tr>
-                                    <th className="px-2.5 py-1.5">Date</th>
-                                    <th className="px-2.5 py-1.5">Holiday</th>
-                                    <th className="px-2.5 py-1.5">ਪੰਜਾਬੀ / हिंदी</th>
-                                    <th className="px-2.5 py-1.5 text-right">Type</th>
+                                    <th className="px-2 py-1">Date</th>
+                                    <th className="px-2 py-1">Holiday</th>
+                                    <th className="px-2 py-1">ਪੰਜਾਬੀ / हिंदी</th>
+                                    <th className="px-2 py-1 text-right">Type</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-slate-700">
                                 {events.map((ev, idx) => (
                                     <tr key={idx} className="hover:bg-slate-50/80">
-                                        <td className="px-2.5 py-1.5 font-mono text-[10px] text-slate-500 whitespace-nowrap">
+                                        <td className="px-2 py-1 font-mono text-[10px] text-slate-500 whitespace-nowrap">
                                             {ev.date}
                                         </td>
-                                        <td className="px-2.5 py-1.5 font-medium text-slate-900">
+                                        <td className="px-2 py-1 font-medium text-slate-900">
                                             {ev.title}
                                         </td>
-                                        <td className="px-2.5 py-1.5 text-slate-600 font-medium">
+                                        <td className="px-2 py-1 text-slate-600 font-medium">
                                             {ev.titleHindi || '-'}
                                         </td>
-                                        <td className="px-2.5 py-1.5 text-right whitespace-nowrap">
+                                        <td className="px-2 py-1 text-right whitespace-nowrap">
                                             {getTypeBadge(ev.type, ev.isHoliday)}
                                         </td>
                                     </tr>
@@ -2034,42 +2028,53 @@ function CalendarActionCard({ action }) {
                         <button
                             type="button"
                             onClick={handleCancel}
-                            className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-red-600 hover:bg-red-50 text-[11px] font-semibold flex items-center gap-1.5 transition"
+                            title="Cancel Draft"
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-red-600 hover:bg-red-50 transition shadow-2xs"
                         >
-                            <X className="w-3.5 h-3.5" /> Cancel
+                            <X className="w-4 h-4" />
                         </button>
-                        <div className="flex items-center gap-2 ml-auto">
-                            <span className="text-[11px] text-slate-500">
-                                {events.length} holiday(s)
-                            </span>
+                        <div className="flex items-center gap-1.5 ml-auto">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(!isEditing)}
+                                className={`p-1.5 rounded-lg border transition shadow-2xs ${
+                                    isEditing
+                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                                }`}
+                                title={isEditing ? 'Done Editing' : 'Edit List'}
+                            >
+                                <Edit3 className="w-4 h-4" />
+                            </button>
                             <button
                                 type="button"
                                 onClick={handleConfirm}
                                 disabled={isSaving || events.length === 0}
-                                className="px-3.5 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+                                title="Confirm & Add All to Calendar"
+                                className="p-1.5 px-3 rounded-lg text-white font-medium flex items-center justify-center gap-1 transition shadow-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50"
                             >
                                 {isSaving ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    <Loader2 className="w-4 h-4 animate-spin" />
                                 ) : (
-                                    <CheckCircle className="w-3.5 h-3.5" />
+                                    <Check className="w-4 h-4" />
                                 )}
-                                Confirm & Add to Calendar
                             </button>
                         </div>
                     </div>
                 ) : (
                     <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                        <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
                             <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Successfully Added to Calendar</span>
+                            <span>Added</span>
                         </div>
                         <a
                             href="/admin/calendar"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition shadow-sm"
+                            title="Open Calendar"
+                            className="p-1.5 px-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition shadow-2xs"
                         >
-                            <Calendar className="w-3.5 h-3.5" /> Open Calendar
+                            <Calendar className="w-3.5 h-3.5" /> <span>Calendar</span>
                         </a>
                     </div>
                 )}
