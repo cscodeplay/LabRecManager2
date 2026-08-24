@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { submissionsAPI, gradesAPI, compilerAPI } from '@/lib/api';
+import InteractiveTerminal from '@/components/InteractiveTerminal';
 import toast from 'react-hot-toast';
 
 // Helper to get component max marks breakdown dynamically
@@ -237,7 +238,7 @@ export default function SubmissionDetailPage() {
                 <div className="grid lg:grid-cols-3 gap-6">
                     {/* Main Content */}
                     <div className="lg:col-span-2 space-y-6">
-                        {/* Submitted Code & Live Python Compiler */}
+                        {/* Submitted Code & Live Interactive Terminal */}
                         {submission.codeContent && (
                             <div className="card p-6 border border-slate-200">
                                 <div className="flex items-center justify-between gap-3 mb-4">
@@ -245,40 +246,25 @@ export default function SubmissionDetailPage() {
                                         <Code className="w-5 h-5 text-primary-600" />
                                         <h2 className="text-lg font-semibold text-slate-900">Submitted Code</h2>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={handleRunCode}
-                                        disabled={runningCode}
-                                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm font-medium transition flex items-center gap-2 disabled:opacity-50"
-                                        title="Run Code"
-                                    >
-                                        {runningCode ? (
-                                            <Loader2 className="w-5 h-5 animate-spin" />
-                                        ) : (
-                                            <Play className="w-5 h-5 fill-white" />
-                                        )}
-                                    </button>
                                 </div>
                                 <pre className="code-block overflow-x-auto bg-slate-900 text-emerald-400 p-4 rounded-xl font-mono text-sm">{submission.codeContent}</pre>
 
-                                {/* Live Execution Output Box */}
-                                {(liveOutput || execError) && (
-                                    <div className="mt-4 p-4 bg-slate-950 border border-slate-800 rounded-xl">
-                                        <div className="flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                                            <Terminal className="w-4 h-4 text-emerald-500" />
-                                            Live Execution Terminal Output
-                                        </div>
-                                        {liveOutput && (
-                                            <pre className="font-mono text-xs text-slate-100 whitespace-pre-wrap">{liveOutput}</pre>
-                                        )}
-                                        {execError && (
-                                            <div className="text-xs font-mono text-red-400 mt-1 flex items-start gap-2">
-                                                <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-500 mt-0.5" />
-                                                <pre className="whitespace-pre-wrap">{execError}</pre>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
+                                {/* Live Execution Terminal with Interactive input() support */}
+                                <div className="mt-6">
+                                    <label className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                                        <Terminal className="w-4 h-4 text-emerald-600" />
+                                        <span>Interactive Execution Terminal</span>
+                                        <span className="text-[11px] font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                                            Test student's code with live interactive inputs
+                                        </span>
+                                    </label>
+                                    <InteractiveTerminal
+                                        code={submission.codeContent}
+                                        language={submission?.assignment?.programmingLanguage || 'python'}
+                                        autoSyncOutput={false}
+                                        className="mt-2"
+                                    />
+                                </div>
                             </div>
                         )}
 

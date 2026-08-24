@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { ArrowLeft, Upload, Code, Image, FileText, Send, Play, Terminal, Loader2, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { assignmentsAPI, submissionsAPI, compilerAPI } from '@/lib/api';
+import InteractiveTerminal from '@/components/InteractiveTerminal';
 import toast from 'react-hot-toast';
 
 export default function SubmitAssignmentPage() {
@@ -191,67 +192,68 @@ export default function SubmitAssignmentPage() {
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                             <div className="flex items-center gap-2">
                                 <Code className="w-5 h-5 text-primary-600" />
-                                <h2 className="text-lg font-semibold text-slate-900">Code / Program ({assignment?.programmingLanguage || 'Code'})</h2>
+                                <h2 className="text-lg font-semibold text-slate-900">Code / Program ({assignment?.programmingLanguage || 'Python'})</h2>
                             </div>
-                            <button
-                                type="button"
-                                onClick={handleRunCode}
-                                disabled={runningCode}
-                                className="p-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center disabled:opacity-50"
-                                title="Run Code"
-                            >
-                                {runningCode ? (
-                                    <Loader2 className="w-5 h-5 animate-spin" />
-                                ) : (
-                                    <Play className="w-5 h-5 fill-white" />
-                                )}
-                            </button>
                         </div>
 
                         <textarea
                             className="input font-mono text-sm min-h-[300px] bg-slate-900 text-emerald-400 p-4 rounded-xl shadow-inner focus:ring-2 focus:ring-emerald-500"
-                            placeholder="Write your code here..."
+                            placeholder="Write or paste your code here..."
                             {...register('codeContent', { required: assignment?.assignmentType === 'program' ? 'Code is required' : false })}
                         />
                         {errors.codeContent && (
                             <p className="text-red-500 text-sm mt-1">{errors.codeContent.message}</p>
                         )}
                         
-                        <div className="mt-4">
-                            <label className="text-sm font-semibold text-slate-700 mb-2 block">Custom Input (stdin)</label>
-                            <textarea
-                                className="input font-mono text-sm min-h-[100px] bg-slate-800 text-emerald-100 p-3 rounded-lg shadow-inner focus:ring-2 focus:ring-emerald-500"
-                                placeholder="Enter dynamic inputs for your program here (e.g. if using input() in python, or cin in C++)"
-                                {...register('customInput')}
+                        {/* Interactive IDE Terminal with Live Inline input() */}
+                        <div className="mt-6">
+                            <label className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                                <Terminal className="w-4 h-4 text-emerald-600" />
+                                <span>Interactive Terminal & Live Output</span>
+                                <span className="text-[11px] font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                                    Supports live interactive typing & input()
+                                </span>
+                            </label>
+                            <InteractiveTerminal
+                                code={watch('codeContent') || ''}
+                                language={assignment?.programmingLanguage || 'python'}
+                                initialStdin={watch('customInput') || ''}
+                                autoSyncOutput={true}
+                                onOutputChange={(out) => setValue('outputContent', out)}
+                                className="mt-2"
                             />
                         </div>
 
-                        {/* Compiler Execution Status Banner */}
-                        {execStatus && (
-                            <div className={`mt-3 p-3 rounded-lg flex items-start gap-2.5 text-xs font-mono border ${execStatus.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
-                                {execStatus.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />}
-                                <div className="flex-1">
-                                    <p className="font-semibold">{execStatus.success ? 'Execution Successful' : 'Execution Error'}</p>
-                                    <pre className="whitespace-pre-wrap mt-1 text-[11px] font-mono">{execStatus.message}</pre>
+                        <div className="mt-4">
+                            <details className="text-xs text-slate-500 group">
+                                <summary className="cursor-pointer font-medium text-slate-600 hover:text-slate-900 select-none py-1">
+                                    ⚙️ Advanced: Pre-fill Batch Custom Input (stdin)
+                                </summary>
+                                <div className="mt-2">
+                                    <textarea
+                                        className="input font-mono text-xs min-h-[80px] bg-slate-800 text-emerald-100 p-3 rounded-lg shadow-inner focus:ring-2 focus:ring-emerald-500"
+                                        placeholder="Optional: Enter pre-filled batch inputs (one per line) if not typing interactively in the terminal..."
+                                        {...register('customInput')}
+                                    />
                                 </div>
-                            </div>
-                        )}
+                            </details>
+                        </div>
                     </div>
 
-                    {/* Generated Program Output */}
+                    {/* Final Program Output */}
                     <div className="card p-6 border border-slate-200">
                         <div className="flex items-center justify-between gap-2 mb-4">
                             <div className="flex items-center gap-2">
                                 <Terminal className="w-5 h-5 text-emerald-600" />
-                                <h2 className="text-lg font-semibold text-slate-900">Program Output</h2>
+                                <h2 className="text-lg font-semibold text-slate-900">Final Program Output</h2>
                             </div>
                             <span className="text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md font-medium">
-                                Auto-generated via Compiler or editable
+                                Auto-synchronized from Terminal or editable
                             </span>
                         </div>
                         <textarea
-                            className="input font-mono text-sm min-h-[160px] bg-slate-950 text-slate-100 p-4 rounded-xl shadow-inner border border-slate-800"
-                            placeholder="Program output will be automatically generated here when you click 'Run Code'..."
+                            className="input font-mono text-sm min-h-[140px] bg-slate-950 text-slate-100 p-4 rounded-xl shadow-inner border border-slate-800"
+                            placeholder="Program output will be automatically generated and recorded here as you run code in the Interactive Terminal..."
                             {...register('outputContent')}
                         />
                     </div>
