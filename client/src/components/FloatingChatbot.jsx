@@ -945,6 +945,16 @@ function NoteActionCard({ action }) {
     const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
     const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
 
+    useEffect(() => {
+        if (action) {
+            setTitle(action.title || 'New Admin Note');
+            setContent(action.content || '');
+            setCategory(action.category || 'general');
+            setIsConfirmed(action.isConfirmed || false);
+            setIsCancelled(action.isCancelled || false);
+        }
+    }, [action]);
+
     const handleConfirm = async () => {
         if (!title.trim() || !content.trim()) {
             toast.error('Title and content are required for note');
@@ -1172,6 +1182,15 @@ function AssignmentActionCard({ action }) {
     const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
     const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
     const [targetOptions, setTargetOptions] = useState({ classes: [], groups: [], students: [], subjects: [] });
+
+    useEffect(() => {
+        if (action) {
+            const raw = Array.isArray(action.assignments) ? action.assignments : (action.title ? [action] : []);
+            setAssignments(raw);
+            setIsConfirmed(action.isConfirmed || false);
+            setIsCancelled(action.isCancelled || false);
+        }
+    }, [action]);
 
     // Load available classes, groups, students, subjects for targeting
     useEffect(() => {

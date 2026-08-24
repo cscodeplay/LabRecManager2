@@ -903,25 +903,55 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
         // Intent: Note Creation
         const isNoteCreationIntent = (
-            (msgLower.includes('create note') || msgLower.includes('save note') || msgLower.includes('new note') || msgLower.includes('save this as note') || msgLower.includes('save as note') || msgLower.includes('create a note'))
+            /\b(create|add|save|make|write|take|keep)\s+(a\s+|an\s+)?(note|admin\s*note|sticky\s*note|memo|reminder)\b/i.test(msgLower) ||
+            /\b(note\s*down|take\s*note|make\s*note|save\s*note|create\s*note|add\s*note)\b/i.test(msgLower) ||
+            /^(note|notes|memo|reminder)\s*:/i.test(msgLower.trim()) ||
+            msgLower.includes('ਨੋਟ ਬਣਾਓ') || msgLower.includes('ਨੋਟ ਲਿਖੋ') || msgLower.includes('ਨੋਟ ਸੇਵ') ||
+            msgLower.includes('नोट बनाएं') || msgLower.includes('नोट लिखें') || msgLower.includes('नोट जोड़ें')
         );
+
         if (isNoteCreationIntent) {
             try {
                 console.log('[ChatBot] Note creation intent detected');
-                const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
-                const authorId = currentUser?.id || (await prisma.user.findFirst({ where: { role: 'admin' } })).id;
                 
-                let noteContent = documentContext || message.replace(/create note|save note|new note|save this as note|save as note|create a note/gi, '').trim();
-                if (!noteContent) noteContent = 'Empty AI Note';
-                
-                const titleMatch = noteContent.split('\n')[0];
+                let rawContent = documentContext || message;
+                let noteContent = rawContent
+                    .replace(/^(please\s+)?(can you\s+)?(create|add|save|make|write|take|keep)\s+(a\s+|an\s+)?(note|admin\s*note|sticky\s*note|memo|reminder)\s*(about|on|for|that|:|to)?/gi, '')
+                    .replace(/^(note\s*down|take\s*note|make\s*note|save\s*note|create\s*note|add\s*note)\s*(about|on|for|that|:|to)?/gi, '')
+                    .replace(/^(note|notes|memo|reminder)\s*:\s*/gi, '')
+                    .trim();
+
+                if (!noteContent) noteContent = 'New AI Note';
+
+                const lines = noteContent.split('\n').map(l => l.trim()).filter(Boolean);
+                let title = 'AI Generated Note';
+                if (lines.length > 0) {
+                    const firstLine = lines[0].replace(/^[#*-]\s*/, '').trim();
+                    title = firstLine.length > 60 ? firstLine.substring(0, 57) + '...' : firstLine;
+                }
+
+                // Smart category detection
+                let category = 'general';
+                const lower = noteContent.toLowerCase();
+                if (lower.includes('exam') || lower.includes('class') || lower.includes('student') || lower.includes('syllabus') || lower.includes('subject') || lower.includes('attendance') || lower.includes('academic') || lower.includes('lecture')) {
+                    category = 'academic';
+                } else if (lower.includes('lab') || lower.includes('pc') || lower.includes('equipment') || lower.includes('computer') || lower.includes('shift') || lower.includes('hardware')) {
+                    category = 'lab';
+                } else if (lower.includes('remind') || lower.includes('tomorrow') || lower.includes('deadline') || lower.includes('due') || lower.includes('schedule') || lower.includes('meeting')) {
+                    category = 'reminder';
+                } else if (lower.includes('urgent') || lower.includes('critical') || lower.includes('important') || lower.includes('alert') || lower.includes('attention')) {
+                    category = 'important';
+                } else if (lower.includes('admin') || lower.includes('fee') || lower.includes('procurement') || lower.includes('vendor') || lower.includes('principal') || lower.includes('staff')) {
+                    category = 'admin';
+                }
+
                 const noteAction = {
                     isDraft: true,
                     isConfirmed: false,
                     isCancelled: false,
                     title,
                     content: noteContent,
-                    category: 'general'
+                    category
                 };
 
                 return {
