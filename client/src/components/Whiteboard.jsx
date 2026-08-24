@@ -3344,7 +3344,9 @@ export default function Whiteboard({
         if (currentImageObjects.length > 0) {
             await Promise.all(currentImageObjects.map(imgObj => new Promise((resolve) => {
                 const img = new Image();
-                img.crossOrigin = 'anonymous';
+                if (imgObj.src && (imgObj.src.startsWith('http://') || imgObj.src.startsWith('https://'))) {
+                    img.crossOrigin = 'anonymous';
+                }
                 const drawImg = () => {
                     try {
                         ctx.save();
@@ -3360,7 +3362,27 @@ export default function Whiteboard({
                     resolve();
                 };
                 img.onload = drawImg;
-                img.onerror = resolve;
+                img.onerror = () => {
+                    if (img.crossOrigin) {
+                        const fallbackImg = new Image();
+                        fallbackImg.onload = () => {
+                            try {
+                                ctx.save();
+                                const centerX = imgObj.x + imgObj.width / 2;
+                                const centerY = imgObj.y + imgObj.height / 2;
+                                ctx.translate(centerX, centerY);
+                                ctx.rotate((imgObj.rotation || 0) * Math.PI / 180);
+                                ctx.drawImage(fallbackImg, -imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
+                                ctx.restore();
+                            } catch (e) {}
+                            resolve();
+                        };
+                        fallbackImg.onerror = resolve;
+                        fallbackImg.src = imgObj.src;
+                    } else {
+                        resolve();
+                    }
+                };
                 img.src = imgObj.src;
                 if (img.complete) {
                     drawImg();
@@ -3408,14 +3430,46 @@ export default function Whiteboard({
         }
 
         playShutterSound();
-        finalCanvas.toBlob((blob) => {
-            if (!blob) return;
-            setScreenshotBlob(blob);
-            setScreenshotPreview(URL.createObjectURL(blob));
-            const dateStr = new Date().toISOString().slice(0, 10);
-            const timeStr = new Date().toTimeString().slice(0, 8).replace(/:/g, '-');
-            setScreenshotName(`Whiteboard_Screenshot_Page_${currentPage + 1}_${dateStr}_${timeStr}.png`);
-        }, 'image/png');
+        try {
+            finalCanvas.toBlob((blob) => {
+                const dateStr = new Date().toISOString().slice(0, 10);
+                const timeStr = new Date().toTimeString().slice(0, 8).replace(/:/g, '-');
+                const defaultName = `Whiteboard_Screenshot_Page_${currentPage + 1}_${dateStr}_${timeStr}.png`;
+
+                if (blob) {
+                    setScreenshotBlob(blob);
+                    setScreenshotPreview(URL.createObjectURL(blob));
+                    setScreenshotName(defaultName);
+                    toast.success('Screenshot captured!');
+                } else {
+                    const dataUrl = finalCanvas.toDataURL('image/png');
+                    setScreenshotPreview(dataUrl);
+                    setScreenshotName(defaultName);
+                    fetch(dataUrl)
+                        .then(res => res.blob())
+                        .then(b => setScreenshotBlob(b))
+                        .catch(() => {});
+                    toast.success('Screenshot captured!');
+                }
+            }, 'image/png');
+        } catch (err) {
+            console.error('Screenshot export error:', err);
+            try {
+                const dataUrl = finalCanvas.toDataURL('image/png');
+                setScreenshotPreview(dataUrl);
+                const dateStr = new Date().toISOString().slice(0, 10);
+                const timeStr = new Date().toTimeString().slice(0, 8).replace(/:/g, '-');
+                setScreenshotName(`Whiteboard_Screenshot_Page_${currentPage + 1}_${dateStr}_${timeStr}.png`);
+                fetch(dataUrl)
+                    .then(res => res.blob())
+                    .then(b => setScreenshotBlob(b))
+                    .catch(() => {});
+                toast.success('Screenshot captured!');
+            } catch (fallbackErr) {
+                console.error('Final fallback failed:', fallbackErr);
+                toast.error('Could not capture screenshot');
+            }
+        }
     }, [currentPage, pageBackgrounds, pageImageObjects, pageShapeObjects, pageTextObjects, selection]);
 
     // Save and return data
@@ -3923,19 +3977,29 @@ export default function Whiteboard({
                         {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
                     </button>
                 </div>
-            ) : (
-                <div className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/50 px-2 py-1 flex items-center gap-0.5 rounded-full z-40 max-w-[95%] overflow-visible whitespace-nowrap hide-scrollbar transition-all ${
+            ) : (() => {
+                const isVertical = toolbarDock === 'left' || toolbarDock === 'right';
+                const popoverPos = toolbarDock === 'left'
+                    ? 'left-[125%] top-0'
+                    : toolbarDock === 'right'
+                    ? 'right-[125%] top-0'
+                    : toolbarDock === 'top'
+                    ? 'top-full left-1/2 -translate-x-1/2 mt-2'
+                    : 'bottom-full left-1/2 -translate-x-1/2 mb-2';
+
+                return (
+                <div className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-40 overflow-visible whitespace-nowrap hide-scrollbar transition-all ${
                     toolbarDock === 'top'
-                        ? 'top-4 left-1/2 transform -translate-x-1/2 flex-row'
+                        ? 'top-4 left-1/2 transform -translate-x-1/2 flex-row items-center px-2 py-1 rounded-full gap-0.5 max-w-[95%]'
                         : toolbarDock === 'left'
-                        ? 'left-4 top-1/2 transform -translate-y-1/2 flex-col max-h-[90vh] overflow-y-auto'
+                        ? 'left-4 top-1/2 transform -translate-y-1/2 flex-col items-center w-12 py-2.5 px-1 rounded-2xl gap-1 max-h-[90vh] overflow-y-auto overflow-x-hidden'
                         : toolbarDock === 'right'
-                        ? 'right-4 top-1/2 transform -translate-y-1/2 flex-col max-h-[90vh] overflow-y-auto'
-                        : 'bottom-4 left-1/2 transform -translate-x-1/2 flex-row'
+                        ? 'right-4 top-1/2 transform -translate-y-1/2 flex-col items-center w-12 py-2.5 px-1 rounded-2xl gap-1 max-h-[90vh] overflow-y-auto overflow-x-hidden'
+                        : 'bottom-4 left-1/2 transform -translate-x-1/2 flex-row items-center px-2 py-1 rounded-full gap-0.5 max-w-[95%]'
                 }`}>
                     {/* Tools */}
-                    <div className="flex items-center gap-0.5">
-                        <div className="flex items-center gap-0.5 relative">
+                    <div className={`flex ${isVertical ? 'flex-col gap-1' : 'items-center gap-0.5'}`}>
+                        <div className={`flex ${isVertical ? 'flex-col gap-1' : 'items-center gap-0.5'} relative`}>
                         {[
                             { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select' },
                             { id: 'pen', icon: Pencil, label: 'Pen' },
@@ -3998,9 +4062,9 @@ export default function Whiteboard({
                                     <t.icon className="w-3.5 h-3.5" />
                                 </button>
                                 
-                                {/* Popovers rendered relatively above the button */}
+                                {/* Popovers rendered with dynamic positioning */}
                                 {tool === t.id && t.id === 'pen' && showStrokePicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-2 min-w-[120px]">
+                                    <div className={`absolute ${popoverPos} p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-2 min-w-[120px]`}>
                                         <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1 text-center">Stroke Width</p>
                                         <input
                                             type="range"
@@ -4016,7 +4080,7 @@ export default function Whiteboard({
 
                                 {/* Image Tool Popover */}
                                 {tool === t.id && t.id === 'image' && showImagePicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 min-w-[150px]">
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 min-w-[150px]`}>
                                         <button 
                                             onClick={() => { imageInputRef.current?.click(); setShowImagePicker(false); }}
                                             className="text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded-md transition"
@@ -4033,7 +4097,7 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'eraser' && showEraserPicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-2 w-48">
+                                    <div className={`absolute ${popoverPos} p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-2 w-48`}>
                                         <div className="flex justify-between text-xs text-slate-300">
                                             <span>Size</span>
                                             <span>{eraserSize}px</span>
@@ -4050,7 +4114,7 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'highlighter' && showHighlighterPicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-1">
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-1`}>
                                         {HIGHLIGHTER_COLORS.map(c => (
                                             <button
                                                 key={c}
@@ -4064,7 +4128,7 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'select' && showSelectPicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[120px]">
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[120px]`}>
                                         <button
                                             onClick={() => { setSelectMode('rectangle'); setShowSelectPicker(false); }}
                                             className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'rectangle' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
@@ -4083,7 +4147,7 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'line' && showLinePicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[100px]">
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[100px]`}>
                                         <button
                                             onClick={() => { setLineType('line'); setShowLinePicker(false); }}
                                             className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'line' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
@@ -4102,7 +4166,7 @@ export default function Whiteboard({
                                 )}
                                 
                                 {tool === t.id && t.id === 'text' && showTextBgPicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-2">
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex gap-2`}>
                                         <button
                                             onClick={() => {
                                                 const newVal = !isBold;
@@ -4155,7 +4219,7 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'shape' && showShapePicker && (
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 grid grid-cols-2 gap-1 w-[120px]">
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 grid grid-cols-2 gap-1 w-[120px]`}>
                                         {[
                                             { id: 'rectangle', icon: RectangleHorizontal, label: 'Rectangle' },
                                             { id: 'circle', icon: Circle, label: 'Circle' },
@@ -4188,11 +4252,11 @@ export default function Whiteboard({
                         </div>
                     </div>
 
-                    {/* Vertical Divider */}
-                    
+                    {/* Divider */}
+                    <div className={`${isVertical ? 'w-6 h-px my-0.5' : 'w-px h-4 mx-1'} bg-slate-700/60 shrink-0`} />
 
-                    {/* Colors */}
-                    <div className="flex items-center gap-0.5 relative">
+                    {/* Colors & Style */}
+                    <div className={`flex ${isVertical ? 'flex-col gap-1' : 'items-center gap-0.5'} relative`}>
                         <button
                             onClick={() => setShowColorPicker(!showColorPicker)}
                             className="flex items-center gap-1 p-1 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white"
@@ -4206,7 +4270,7 @@ export default function Whiteboard({
                         </button>
 
                         {showColorPicker && (
-                            <div className="absolute bottom-full left-0 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-10 w-[220px]">
+                            <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 w-[220px]`}>
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="text-xs font-semibold text-slate-300">Colors</span>
                                     <button
@@ -4234,160 +4298,158 @@ export default function Whiteboard({
                         )}
 
                         {/* Custom Color Picker Modal */}
-                    {showCustomColorPicker && (
-                        <div className="absolute bottom-full left-0 mb-2 p-4 bg-white rounded-lg shadow-xl border border-slate-200 z-20 w-72">
-                            <div className="flex items-center justify-between mb-3">
-                                <p className="text-sm font-semibold text-slate-700">Custom Color</p>
-                                <button onClick={() => setShowCustomColorPicker(false)} className="text-slate-400 hover:text-slate-600">
-                                    <X className="w-4 h-4" />
-                                </button>
-                            </div>
+                        {showCustomColorPicker && (
+                            <div className={`absolute ${popoverPos} p-4 bg-white rounded-lg shadow-xl border border-slate-200 z-50 w-72`}>
+                                <div className="flex items-center justify-between mb-3">
+                                    <p className="text-sm font-semibold text-slate-700">Custom Color</p>
+                                    <button onClick={() => setShowCustomColorPicker(false)} className="text-slate-400 hover:text-slate-600">
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
 
-                            {/* Color Preview */}
-                            <div
-                                className="w-full h-16 rounded-lg border border-slate-200 mb-3"
-                                style={{ backgroundColor: hexInput }}
-                            />
+                                {/* Color Preview */}
+                                <div
+                                    className="w-full h-16 rounded-lg border border-slate-200 mb-3"
+                                    style={{ backgroundColor: hexInput }}
+                                />
 
-                            {/* Mode Tabs */}
-                            <div className="flex gap-2 mb-3">
-                                <button
-                                    onClick={() => setCustomColorMode('rgb')}
-                                    className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition ${customColorMode === 'rgb' ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-600'
-                                        }`}
-                                >
-                                    RGB
-                                </button>
-                                <button
-                                    onClick={() => setCustomColorMode('hsb')}
-                                    className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition ${customColorMode === 'hsb' ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-600'
-                                        }`}
-                                >
-                                    HSB
-                                </button>
-                            </div>
+                                {/* Mode Tabs */}
+                                <div className="flex gap-2 mb-3">
+                                    <button
+                                        onClick={() => setCustomColorMode('rgb')}
+                                        className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition ${customColorMode === 'rgb' ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-600'
+                                            }`}
+                                    >
+                                        RGB
+                                    </button>
+                                    <button
+                                        onClick={() => setCustomColorMode('hsb')}
+                                        className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition ${customColorMode === 'hsb' ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-600'
+                                            }`}
+                                    >
+                                        HSB
+                                    </button>
+                                </div>
 
-                            {/* RGB Sliders */}
-                            {customColorMode === 'rgb' && (
-                                <div className="space-y-2 mb-3">
-                                    {['r', 'g', 'b'].map(key => (
-                                        <div key={key} className="flex items-center gap-2">
-                                            <span className="w-4 text-xs font-medium text-slate-500 uppercase">{key}</span>
+                                {/* RGB Sliders */}
+                                {customColorMode === 'rgb' && (
+                                    <div className="space-y-2 mb-3">
+                                        {['r', 'g', 'b'].map(key => (
+                                            <div key={key} className="flex items-center gap-2">
+                                                <span className="w-4 text-xs font-medium text-slate-500 uppercase">{key}</span>
+                                                <input
+                                                    type="range"
+                                                    min="0"
+                                                    max="255"
+                                                    value={customRgb[key]}
+                                                    onChange={(e) => handleRgbChange(key, e.target.value)}
+                                                    className="flex-1 h-2 rounded-full appearance-none cursor-pointer"
+                                                    style={{
+                                                        background: `linear-gradient(to right, 
+                                                            ${key === 'r' ? `rgb(0,${customRgb.g},${customRgb.b}), rgb(255,${customRgb.g},${customRgb.b})` : ''}
+                                                            ${key === 'g' ? `rgb(${customRgb.r},0,${customRgb.b}), rgb(${customRgb.r},255,${customRgb.b})` : ''}
+                                                            ${key === 'b' ? `rgb(${customRgb.r},${customRgb.g},0), rgb(${customRgb.r},${customRgb.g},255)` : ''}
+                                                        )`
+                                                    }}
+                                                />
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="255"
+                                                    value={customRgb[key]}
+                                                    onChange={(e) => handleRgbChange(key, e.target.value)}
+                                                    className="w-14 px-2 py-1 text-xs border border-slate-200 rounded text-center"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* HSB Sliders */}
+                                {customColorMode === 'hsb' && (
+                                    <div className="space-y-2 mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className="w-4 text-xs font-medium text-slate-500">H</span>
                                             <input
                                                 type="range"
                                                 min="0"
-                                                max="255"
-                                                value={customRgb[key]}
-                                                onChange={(e) => handleRgbChange(key, e.target.value)}
+                                                max="360"
+                                                value={customHsb.h}
+                                                onChange={(e) => handleHsbChange('h', e.target.value)}
                                                 className="flex-1 h-2 rounded-full appearance-none cursor-pointer"
-                                                style={{
-                                                    background: `linear-gradient(to right, 
-                                                        ${key === 'r' ? `rgb(0,${customRgb.g},${customRgb.b}), rgb(255,${customRgb.g},${customRgb.b})` : ''}
-                                                        ${key === 'g' ? `rgb(${customRgb.r},0,${customRgb.b}), rgb(${customRgb.r},255,${customRgb.b})` : ''}
-                                                        ${key === 'b' ? `rgb(${customRgb.r},${customRgb.g},0), rgb(${customRgb.r},${customRgb.g},255)` : ''}
-                                                    )`
-                                                }}
+                                                style={{ background: 'linear-gradient(to right, red, yellow, lime, cyan, blue, magenta, red)' }}
                                             />
                                             <input
                                                 type="number"
                                                 min="0"
-                                                max="255"
-                                                value={customRgb[key]}
-                                                onChange={(e) => handleRgbChange(key, e.target.value)}
+                                                max="360"
+                                                value={customHsb.h}
+                                                onChange={(e) => handleHsbChange('h', e.target.value)}
                                                 className="w-14 px-2 py-1 text-xs border border-slate-200 rounded text-center"
                                             />
                                         </div>
-                                    ))}
-                                </div>
-                            )}
+                                        <div className="flex items-center gap-2">
+                                            <span className="w-4 text-xs font-medium text-slate-500">S</span>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="100"
+                                                value={customHsb.s}
+                                                onChange={(e) => handleHsbChange('s', e.target.value)}
+                                                className="flex-1 h-2 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-slate-300 to-primary-500"
+                                            />
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                value={customHsb.s}
+                                                onChange={(e) => handleHsbChange('s', e.target.value)}
+                                                className="w-14 px-2 py-1 text-xs border border-slate-200 rounded text-center"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="w-4 text-xs font-medium text-slate-500">B</span>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="100"
+                                                value={customHsb.b}
+                                                onChange={(e) => handleHsbChange('b', e.target.value)}
+                                                className="flex-1 h-2 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-black to-white"
+                                            />
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                value={customHsb.b}
+                                                onChange={(e) => handleHsbChange('b', e.target.value)}
+                                                className="w-14 px-2 py-1 text-xs border border-slate-200 rounded text-center"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
 
-                            {/* HSB Sliders */}
-                            {customColorMode === 'hsb' && (
-                                <div className="space-y-2 mb-3">
-                                    <div className="flex items-center gap-2">
-                                        <span className="w-4 text-xs font-medium text-slate-500">H</span>
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="360"
-                                            value={customHsb.h}
-                                            onChange={(e) => handleHsbChange('h', e.target.value)}
-                                            className="flex-1 h-2 rounded-full appearance-none cursor-pointer"
-                                            style={{ background: 'linear-gradient(to right, red, yellow, lime, cyan, blue, magenta, red)' }}
-                                        />
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="360"
-                                            value={customHsb.h}
-                                            onChange={(e) => handleHsbChange('h', e.target.value)}
-                                            className="w-14 px-2 py-1 text-xs border border-slate-200 rounded text-center"
-                                        />
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="w-4 text-xs font-medium text-slate-500">S</span>
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="100"
-                                            value={customHsb.s}
-                                            onChange={(e) => handleHsbChange('s', e.target.value)}
-                                            className="flex-1 h-2 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-slate-300 to-primary-500"
-                                        />
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            value={customHsb.s}
-                                            onChange={(e) => handleHsbChange('s', e.target.value)}
-                                            className="w-14 px-2 py-1 text-xs border border-slate-200 rounded text-center"
-                                        />
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="w-4 text-xs font-medium text-slate-500">B</span>
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="100"
-                                            value={customHsb.b}
-                                            onChange={(e) => handleHsbChange('b', e.target.value)}
-                                            className="flex-1 h-2 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-black to-white"
-                                        />
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            value={customHsb.b}
-                                            onChange={(e) => handleHsbChange('b', e.target.value)}
-                                            className="w-14 px-2 py-1 text-xs border border-slate-200 rounded text-center"
-                                        />
-                                    </div>
+                                {/* Hex Input */}
+                                <div className="flex items-center gap-2 mb-3">
+                                    <span className="text-xs font-medium text-slate-500">HEX</span>
+                                    <input
+                                        type="text"
+                                        value={hexInput}
+                                        onChange={(e) => handleHexChange(e.target.value)}
+                                        className="flex-1 px-2 py-1.5 text-sm border border-slate-200 rounded font-mono"
+                                        placeholder="#000000"
+                                    />
                                 </div>
-                            )}
 
-                            {/* Hex Input */}
-                            <div className="flex items-center gap-2 mb-3">
-                                <span className="text-xs font-medium text-slate-500">HEX</span>
-                                <input
-                                    type="text"
-                                    value={hexInput}
-                                    onChange={(e) => handleHexChange(e.target.value)}
-                                    className="flex-1 px-2 py-1.5 text-sm border border-slate-200 rounded font-mono"
-                    placeholder="#000000"
-                                />
+                                {/* Apply Button */}
+                                <button
+                                    onClick={applyCustomColor}
+                                    className="w-full py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium rounded-lg transition"
+                                >
+                                    Apply Color
+                                </button>
                             </div>
-
-                            {/* Apply Button */}
-                            <button
-                                onClick={applyCustomColor}
-                                className="w-full py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium rounded-lg transition"
-                            >
-                                Apply Color
-                            </button>
-                        </div>
-                    )}
-
-                        {/* Stroke Width Removed because it opens inside Pen popover */}
+                        )}
 
                         {/* Stroke Style */}
                         <div className="relative">
@@ -4403,7 +4465,7 @@ export default function Whiteboard({
                                 </div>
                             </button>
                             {showStrokeStylePicker && (
-                                <div className="absolute bottom-full left-0 mb-2 p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-10 w-28">
+                                <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 w-28`}>
                                     <div className="flex flex-col gap-1">
                                         {['solid', 'dashed', 'dotted'].map(s => (
                                             <button
@@ -4420,8 +4482,6 @@ export default function Whiteboard({
                             )}
                         </div>
                     </div>
-
-                    
 
                     {/* Background Pattern */}
                     <div className="relative">
@@ -4445,7 +4505,7 @@ export default function Whiteboard({
                             <ChevronDown className="w-3 h-3 opacity-70" />
                         </button>
                         {showBgPicker && (
-                            <div className="absolute bottom-full left-0 mb-2 p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-10 w-48 text-slate-200">
+                            <div className={`absolute ${popoverPos} p-3 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 w-48 text-slate-200`}>
                                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Pattern</p>
                                 <div className="grid grid-cols-4 gap-1 mb-3">
                                     {[
@@ -4483,11 +4543,11 @@ export default function Whiteboard({
                                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Color</p>
                                 <div className="grid grid-cols-5 gap-1 mb-2">
                                     {[
-                                        '#ffffff', '#f5f5f5', '#e0e0e0', '#9e9e9e', '#424242', // Grays
-                                        '#fff9c4', '#fff176', '#ffeb3b', '#ffc107', '#ff9800', // Yellows/Oranges
-                                        '#c8e6c9', '#81c784', '#4caf50', '#2e7d32', '#1b5e20', // Greens
-                                        '#bbdefb', '#64b5f6', '#2196f3', '#1565c0', '#0d47a1', // Blues
-                                        '#f8bbd0', '#f06292', '#e91e63', '#ad1457', '#880e4f', // Pinks
+                                        '#ffffff', '#f5f5f5', '#e0e0e0', '#9e9e9e', '#424242',
+                                        '#fff9c4', '#fff176', '#ffeb3b', '#ffc107', '#ff9800',
+                                        '#c8e6c9', '#81c784', '#4caf50', '#2e7d32', '#1b5e20',
+                                        '#bbdefb', '#64b5f6', '#2196f3', '#1565c0', '#0d47a1',
+                                        '#f8bbd0', '#f06292', '#e91e63', '#ad1457', '#880e4f',
                                     ].map((c, idx) => (
                                         <button
                                             key={c + idx}
@@ -4518,8 +4578,6 @@ export default function Whiteboard({
                         )}
                     </div>
 
-                    
-
                     {/* OCR Toggle */}
                     <button
                         onClick={() => setIsOcrActive(!isOcrActive)}
@@ -4529,10 +4587,11 @@ export default function Whiteboard({
                         <Scan className="w-3.5 h-3.5" />
                     </button>
 
-                    
+                    {/* Divider */}
+                    <div className={`${isVertical ? 'w-6 h-px my-0.5' : 'w-px h-4 mx-1'} bg-slate-700/60 shrink-0`} />
 
                     {/* Undo/Redo */}
-                    <div className="flex items-center gap-0.5">
+                    <div className={`flex ${isVertical ? 'flex-col gap-0.5' : 'items-center gap-0.5'}`}>
                         <button
                             onClick={handleUndo}
                             className="p-1 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
@@ -4570,10 +4629,11 @@ export default function Whiteboard({
                         </button>
                     )}
 
-                    
+                    {/* Divider */}
+                    <div className={`${isVertical ? 'w-6 h-px my-0.5' : 'w-px h-4 mx-1'} bg-slate-700/60 shrink-0`} />
 
                     {/* Page Navigation */}
-                    <div className="flex items-center gap-0.5 bg-slate-800/80 rounded-full px-1 py-0.5">
+                    <div className={`flex ${isVertical ? 'flex-col gap-0.5 p-1 rounded-xl' : 'items-center gap-0.5 px-1 py-0.5 rounded-full'} bg-slate-800/80`}>
                         <button
                             onClick={goToPrevPage}
                             disabled={currentPage === 0}
@@ -4582,7 +4642,7 @@ export default function Whiteboard({
                         >
                             <ChevronLeft className="w-3.5 h-3.5" />
                         </button>
-                        <span className="text-xs font-medium text-slate-300 min-w-[36px] text-center tracking-wider">
+                        <span className={`text-[10px] font-medium text-slate-300 ${isVertical ? 'text-center' : 'min-w-[36px] text-center tracking-wider'}`}>
                             {currentPage + 1}/{totalPages}
                         </span>
                         <button
@@ -4595,17 +4655,18 @@ export default function Whiteboard({
                         </button>
                         <button
                             onClick={addNewPage}
-                            className="p-1 hover:bg-green-500/20 text-green-400 rounded-full transition ml-0.5"
+                            className="p-1 hover:bg-green-500/20 text-green-400 rounded-full transition"
                             title="Add New Page"
                         >
                             <Plus className="w-3.5 h-3.5" />
                         </button>
                     </div>
 
-                    
+                    {/* Divider */}
+                    <div className={`${isVertical ? 'w-6 h-px my-0.5' : 'w-px h-4 mx-1'} bg-slate-700/60 shrink-0`} />
 
                     {/* Sharing, Download & Save (Tight grouped) */}
-                    <div className="flex items-center gap-0.5">
+                    <div className={`flex ${isVertical ? 'flex-col gap-1' : 'items-center gap-0.5'}`}>
                         {isInstructor && !isMeetingMode && (
                             <button
                                 onClick={isSharing ? onStopSharing : onShare}
@@ -4653,7 +4714,8 @@ export default function Whiteboard({
                         </button>
                     </div>
                 </div>
-            )}
+                );
+            })()}
                 
                 {/* Clipboard Panel */}
                 {showClipboard && clipboardHistory.length > 0 && (
@@ -6020,12 +6082,29 @@ export default function Whiteboard({
                             >
                                 Cancel
                             </button>
+                            <button
+                                onClick={() => {
+                                    if (screenshotPreview) {
+                                        const a = document.createElement('a');
+                                        a.href = screenshotPreview;
+                                        a.download = screenshotName || `Whiteboard_Screenshot_${Date.now()}.png`;
+                                        document.body.appendChild(a);
+                                        a.click();
+                                        document.body.removeChild(a);
+                                        toast.success('Screenshot downloaded to device!');
+                                    }
+                                }}
+                                className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white font-medium transition flex items-center gap-1.5"
+                                title="Download PNG directly"
+                            >
+                                <Download className="w-4 h-4" /> Download PNG
+                            </button>
                             <button 
                                 onClick={saveScreenshot}
                                 className="px-6 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition flex items-center gap-2"
                                 disabled={isSavingScreenshot}
                             >
-                                {isSavingScreenshot ? 'Saving...' : 'Save Screenshot'}
+                                {isSavingScreenshot ? 'Saving...' : 'Save to Documents'}
                             </button>
                         </div>
                     </div>

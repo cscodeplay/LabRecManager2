@@ -21,6 +21,7 @@ import { useGlobalMeeting } from '@/components/GlobalMeetingContext';
 import { meetingAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import io from 'socket.io-client';
+import fixWebmDuration from 'fix-webm-duration';
 import Whiteboard from '@/components/Whiteboard';
 import VideoTile from '@/components/VideoTile';
 import LiveMeetingQuiz from '@/components/LiveMeetingQuiz';
@@ -322,12 +323,14 @@ export default function GlobalMeetingRoom() {
     const mediaRecorderRef = useRef(null);
     const recordedChunksRef = useRef([]);
     const recordingTimerRef = useRef(null);
+    const recordingTimeRef = useRef(0);
     const sessionTimerRef = useRef(null);
     const chatContainerRef = useRef(null);
     const audioContextRef = useRef(null);
     const analyserRef = useRef(null);
     const micAnimFrameRef = useRef(null);
     const canvasAnimRef = useRef(null);
+    const canvasIntervalRef = useRef(null);
     const activeRoomIdRef = useRef(code);
 
     const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'principal' || user?.role === 'lab_assistant';
@@ -855,8 +858,13 @@ export default function GlobalMeetingRoom() {
     const toggleScreenShare = async () => {
         try {
             if (isScreenSharing) {
-                await switchCamera(selectedCamera || '');
+                const currentVideo = localStreamRef.current?.getVideoTracks()[0];
+                if (currentVideo) {
+                    currentVideo.stop();
+                    localStreamRef.current?.removeTrack(currentVideo);
+                }
                 setIsScreenSharing(false);
+                await switchCamera(selectedCamera || '');
                 if (activeSpace === 'screen_share') {
                     switchActiveSpace('vc_tiles');
                 }
@@ -868,11 +876,20 @@ export default function GlobalMeetingRoom() {
                 });
                 toast.success('Screen share stopped');
             } else {
+                if (!navigator.mediaDevices?.getDisplayMedia) {
+                    toast.error('Screen sharing is not supported in this browser');
+                    return;
+                }
+
                 const screenStream = await navigator.mediaDevices.getDisplayMedia({
                     video: { cursor: 'always' },
                     audio: false
                 });
                 const screenTrack = screenStream.getVideoTracks()[0];
+                if (!screenTrack) {
+                    toast.error('No video track found in screen share');
+                    return;
+                }
 
                 screenTrack.onended = () => {
                     setIsScreenSharing(false);
@@ -888,24 +905,32 @@ export default function GlobalMeetingRoom() {
                     });
                 };
 
-                const oldVideoTrack = localStreamRef.current?.getVideoTracks()[0];
+                if (!localStreamRef.current) {
+                    localStreamRef.current = new MediaStream();
+                }
+                const oldVideoTrack = localStreamRef.current.getVideoTracks()[0];
                 if (oldVideoTrack) {
+                    oldVideoTrack.stop();
                     localStreamRef.current.removeTrack(oldVideoTrack);
                 }
                 localStreamRef.current.addTrack(screenTrack);
                 setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
 
                 peersRef.current.forEach(async (pc) => {
-                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-                    if (sender) await sender.replaceTrack(screenTrack);
-                });
-
-                peersRef.current.forEach(async (pc) => {
-                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-                    if (sender) await sender.replaceTrack(screenTrack);
+                    try {
+                        const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+                        if (sender) {
+                            await sender.replaceTrack(screenTrack);
+                        } else {
+                            pc.addTrack(screenTrack, localStreamRef.current);
+                        }
+                    } catch (peerErr) {
+                        console.warn('Error updating peer screen track:', peerErr);
+                    }
                 });
 
                 setIsScreenSharing(true);
+                setIsVideoEnabled(true);
                 switchActiveSpace('screen_share');
 
                 socketRef.current?.emit('meeting:media-toggle', {
@@ -917,8 +942,10 @@ export default function GlobalMeetingRoom() {
                 toast.success('Screen sharing started');
             }
         } catch (error) {
-            console.error('Screen share error:', error);
-            toast.error('Could not start screen share');
+            if (error.name !== 'NotAllowedError') {
+                console.error('Screen share error:', error);
+                toast.error('Could not start screen share');
+            }
         }
     };
 
@@ -1594,7 +1621,7 @@ export default function GlobalMeetingRoom() {
         if (!videoTrackAdded) {
             const hasLiveLocalVideo = localStreamRef.current && localStreamRef.current.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
             if (hasLiveLocalVideo) {
-                const videoTrack = localStreamRef.current.getVideoTracks().find(t => t.enabled);
+                const videoTrack = localStreamRef.current.getVideoTracks().find(t => t.enabled && t.readyState === 'live');
                 if (videoTrack) {
                     stream.addTrack(videoTrack.clone());
                     videoTrackAdded = true;
@@ -1666,9 +1693,11 @@ export default function GlobalMeetingRoom() {
                 ctx.fillStyle = '#cbd5e1';
                 ctx.font = '16px system-ui, sans-serif';
                 ctx.fillText(`Host: ${session?.host ? `${session.host.firstName} ${session.host.lastName}` : (user?.firstName || 'Host')}`, 640, 600);
-
-                canvasAnimRef.current = requestAnimationFrame(draw);
             };
+
+            if (canvasIntervalRef.current) clearInterval(canvasIntervalRef.current);
+            if (canvasAnimRef.current) cancelAnimationFrame(canvasAnimRef.current);
+            canvasIntervalRef.current = setInterval(draw, 1000 / 30);
             draw();
 
             const canvasStream = canvas.captureStream(30);
@@ -1683,17 +1712,16 @@ export default function GlobalMeetingRoom() {
         try {
             const recordStream = createCompositeRecordStream();
             recordedChunksRef.current = [];
-            const mimeType = MediaRecorder.isTypeSupported('video/mp4')
-                ? 'video/mp4'
-                : MediaRecorder.isTypeSupported('video/webm;codecs=h264')
-                ? 'video/webm;codecs=h264'
+            const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+                ? 'video/webm;codecs=vp8,opus'
                 : MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
                 ? 'video/webm;codecs=vp9,opus'
                 : MediaRecorder.isTypeSupported('video/webm')
                 ? 'video/webm'
-                : 'video/mp4';
+                : '';
 
-            const mediaRecorder = new MediaRecorder(recordStream, { mimeType });
+            const options = mimeType ? { mimeType } : undefined;
+            const mediaRecorder = new MediaRecorder(recordStream, options);
             mediaRecorderRef.current = mediaRecorder;
 
             mediaRecorder.ondataavailable = (event) => {
@@ -1704,31 +1732,55 @@ export default function GlobalMeetingRoom() {
 
             mediaRecorder.onstop = async () => {
                 if (canvasAnimRef.current) cancelAnimationFrame(canvasAnimRef.current);
-                const blob = new Blob(recordedChunksRef.current, { type: mimeType });
-                setRecordedBlob(blob);
-                setShowRecordingModal(true);
-                setIsRecording(false);
+                if (canvasIntervalRef.current) clearInterval(canvasIntervalRef.current);
                 if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
 
-                // Auto-upload immediately in background so recordings are never lost
-                const targetId = session?.id || activeRoomIdRef.current || code;
-                try {
-                    const finalDuration = Math.max(recordingTime, 1);
-                    const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-                    const file = new File([blob], `meeting_${targetId}_${Date.now()}.${ext}`, { type: mimeType });
-                    await meetingAPI.uploadRecording(targetId, file, finalDuration);
-                    toast.success('Recording saved to session records!', { icon: '💾' });
-                } catch (saveErr) {
-                    console.log('Background upload on stop error:', saveErr);
+                const rawBlob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+                const durationMs = Math.max((recordingTimeRef.current || 1) * 1000, 1000);
+
+                const finalizeRecording = async (blobToSave) => {
+                    setRecordedBlob(blobToSave);
+                    setShowRecordingModal(true);
+                    setIsRecording(false);
+
+                    // Auto-upload immediately in background so recordings are never lost
+                    const targetId = session?.id || activeRoomIdRef.current || code;
+                    try {
+                        const finalDuration = Math.max(Math.round(durationMs / 1000), 1);
+                        const file = new File([blobToSave], `meeting_${targetId}_${Date.now()}.webm`, { type: 'video/webm' });
+                        await meetingAPI.uploadRecording(targetId, file, finalDuration);
+                        toast.success('Recording saved to session records!', { icon: '💾' });
+                    } catch (saveErr) {
+                        console.log('Background upload on stop error:', saveErr);
+                    }
+                };
+
+                if (typeof fixWebmDuration === 'function' && durationMs > 0) {
+                    try {
+                        fixWebmDuration(rawBlob, durationMs, (fixedBlob) => {
+                            finalizeRecording(fixedBlob);
+                        });
+                    } catch (e) {
+                        console.warn('fixWebmDuration failed, using raw blob:', e);
+                        finalizeRecording(rawBlob);
+                    }
+                } else {
+                    finalizeRecording(rawBlob);
                 }
             };
 
-            mediaRecorder.start();
+            mediaRecorder.start(1000);
             setIsRecording(true);
             setRecordingTime(0);
+            recordingTimeRef.current = 0;
 
+            if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
             recordingTimerRef.current = setInterval(() => {
-                setRecordingTime(prev => prev + 1);
+                setRecordingTime(prev => {
+                    const next = prev + 1;
+                    recordingTimeRef.current = next;
+                    return next;
+                });
             }, 1000);
 
             toast.success('Meeting recording started', { icon: '🎙️' });

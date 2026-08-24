@@ -2008,14 +2008,20 @@ router.get('/recordings/:filename', optionalAuth, asyncHandler(async (req, res) 
     // Verify access if user is authenticated
     if (req.user) {
         const session = await prisma.meeting.findFirst({
-            where: { recordingFilePath: { contains: filename } }
+            where: { recordingFilePath: { contains: filename } },
+            include: {
+                participants: { select: { userId: true } }
+            }
         });
 
         if (session) {
+            const isParticipant = session.participants?.some(p => p.userId === req.user.id);
             const isAuthorized = req.user.id === session.targetStudentId ||
                 req.user.id === session.hostId ||
+                isParticipant ||
                 req.user.role === 'admin' ||
-                req.user.role === 'principal';
+                req.user.role === 'principal' ||
+                req.user.role === 'instructor';
 
             if (!isAuthorized) {
                 return res.status(403).json({ success: false, message: 'Not authorized to view this recording' });
@@ -2046,7 +2052,8 @@ router.get('/recordings/:filename', optionalAuth, asyncHandler(async (req, res) 
     } else {
         const head = {
             'Content-Length': fileSize,
-            'Content-Type': 'video/webm',
+            'Content-Type': contentType,
+            'Accept-Ranges': 'bytes',
         };
         res.writeHead(200, head);
         fs.createReadStream(filePath).pipe(res);
