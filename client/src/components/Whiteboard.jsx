@@ -193,6 +193,123 @@ const HostVideoRenderer = ({ stream }) => {
         </div>
     );
 };
+
+// Snap angle to nearest 45 degree cardinal/diagonal within 3.5 deg threshold
+const snapRotationAngle = (rawAngle) => {
+    const normalized = ((rawAngle % 360) + 360) % 360;
+    const nearest45 = Math.round(normalized / 45) * 45;
+    const diff = Math.abs(normalized - nearest45);
+    if (diff <= 3.5 || diff >= 356.5) {
+        return (nearest45 % 360);
+    }
+    return Math.round(rawAngle * 10) / 10;
+};
+
+// 360-Degree Circular Protractor & Rotation Dial UI
+function RotationDial({ obj }) {
+    if (!obj) return null;
+    const cx = (obj.x || 0) + (obj.width || 100) / 2;
+    const cy = (obj.y || 0) + (obj.height || 100) / 2;
+    const radius = Math.max(90, Math.min(obj.width || 100, obj.height || 100) * 0.75);
+    const rawRot = obj.rotation || 0;
+    const normRot = ((rawRot % 360) + 360) % 360;
+    const rad = (normRot - 90) * (Math.PI / 180); // 0 deg is at top (12 o'clock)
+    
+    const pointerX = cx + radius * Math.cos(rad);
+    const pointerY = cy + radius * Math.sin(rad);
+
+    // Generate 24 tick marks (every 15 degrees)
+    const ticks = [];
+    for (let deg = 0; deg < 360; deg += 15) {
+        const tickRad = (deg - 90) * (Math.PI / 180);
+        const isCardinal = deg % 90 === 0;
+        const isDiagonal = deg % 45 === 0 && !isCardinal;
+        const tickLen = isCardinal ? 14 : isDiagonal ? 9 : 5;
+        const isCurrentSnapped = Math.abs(normRot - deg) < 2 || Math.abs(normRot - deg) > 358;
+
+        const x1 = cx + (radius - tickLen) * Math.cos(tickRad);
+        const y1 = cy + (radius - tickLen) * Math.sin(tickRad);
+        const x2 = cx + radius * Math.cos(tickRad);
+        const y2 = cy + radius * Math.sin(tickRad);
+
+        let labelPos = null;
+        if (isCardinal) {
+            const labelDist = radius + 18;
+            labelPos = {
+                x: cx + labelDist * Math.cos(tickRad),
+                y: cy + labelDist * Math.sin(tickRad),
+                text: `${deg}°`
+            };
+        }
+
+        ticks.push({ deg, x1, y1, x2, y2, isCardinal, isDiagonal, isCurrentSnapped, labelPos });
+    }
+
+    return (
+        <div className="absolute inset-0 pointer-events-none z-[60] overflow-visible animate-in fade-in duration-150">
+            <svg width="100%" height="100%" className="overflow-visible pointer-events-none">
+                {/* Outer guide circle */}
+                <circle cx={cx} cy={cy} r={radius} fill="rgba(15, 23, 42, 0.4)" stroke="#6366f1" strokeWidth="1.5" strokeDasharray="3,3" />
+
+                {/* Cardinal & minor tick marks */}
+                {ticks.map((t, idx) => (
+                    <g key={idx}>
+                        <line
+                            x1={t.x1}
+                            y1={t.y1}
+                            x2={t.x2}
+                            y2={t.y2}
+                            stroke={t.isCurrentSnapped ? '#10b981' : t.isCardinal ? '#3b82f6' : t.isDiagonal ? '#38bdf8' : 'rgba(148, 163, 184, 0.5)'}
+                            strokeWidth={t.isCurrentSnapped ? 3 : t.isCardinal ? 2.5 : t.isDiagonal ? 1.75 : 1}
+                        />
+                        {t.labelPos && (
+                            <text
+                                x={t.labelPos.x}
+                                y={t.labelPos.y}
+                                textAnchor="middle"
+                                dominantBaseline="central"
+                                fill={t.isCurrentSnapped ? '#34d399' : '#93c5fd'}
+                                fontSize="11"
+                                fontWeight="bold"
+                                fontFamily="monospace"
+                            >
+                                {t.labelPos.text}
+                            </text>
+                        )}
+                    </g>
+                ))}
+
+                {/* Center Pivot Point */}
+                <circle cx={cx} cy={cy} r="4" fill="#3b82f6" stroke="#ffffff" strokeWidth="2" />
+
+                {/* Active Radial Line */}
+                <line
+                    x1={cx}
+                    y1={cy}
+                    x2={pointerX}
+                    y2={pointerY}
+                    stroke="#6366f1"
+                    strokeWidth="2.5"
+                    strokeDasharray={normRot % 45 === 0 ? "none" : "4,2"}
+                />
+
+                {/* Active Indicator Node */}
+                <circle cx={pointerX} cy={pointerY} r="7" fill="#6366f1" stroke="#ffffff" strokeWidth="2.5" />
+            </svg>
+
+            {/* Floating Angle Tooltip Badge */}
+            <div
+                className="absolute px-3 py-1.5 rounded-full bg-slate-950/95 text-white text-xs font-mono font-bold shadow-2xl border border-indigo-500/60 flex items-center gap-1.5 backdrop-blur-md z-[70] transform -translate-x-1/2 -translate-y-1/2"
+                style={{ left: `${cx}px`, top: `${cy - radius - 36}px` }}
+            >
+                <RotateCw className="w-3.5 h-3.5 text-indigo-400 animate-spin" style={{ animationDuration: '4s' }} />
+                <span className="text-indigo-200">Angle:</span>
+                <span className="text-emerald-400 font-extrabold text-[13px]">{Math.round(normRot)}°</span>
+            </div>
+        </div>
+    );
+}
+
 export default function Whiteboard({
     onSave,
     onClose,
@@ -468,6 +585,15 @@ export default function Whiteboard({
 
     // Get current page's shape objects (derived state)
     const shapeObjects = pageShapeObjects[currentPage] || [];
+
+    // Active rotating object for 360-degree rotation dial overlay
+    const activeRotatingObject = imageDragState?.action === 'rotate'
+        ? { ...imageObjects.find(i => i.id === imageDragState.id), objType: 'image' }
+        : shapeDragState?.action === 'rotate'
+        ? { ...shapeObjects.find(s => s.id === shapeDragState.id), objType: 'shape' }
+        : textDragState?.action === 'rotate'
+        ? { ...textObjects.find(t => t.id === textDragState.id), objType: 'text' }
+        : null;
 
     // Helper ref to track current page for stable callbacks
     const currentPageRef = useRef(currentPage);
@@ -1659,10 +1785,11 @@ export default function Whiteboard({
                 const startAngle = Math.atan2(imageDragState.startY - canvasCenterY, imageDragState.startX - canvasCenterX);
                 const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
                 const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
+                const newRotation = snapRotationAngle((startObj.rotation || 0) + angleDiff);
 
                 setImageObjects(prev => prev.map(img =>
                     img.id === imageDragState.id
-                        ? { ...img, rotation: startObj.rotation + angleDiff }
+                        ? { ...img, rotation: newRotation }
                         : img
                 ));
             } else if (imageDragState.action.startsWith('resize-')) {
@@ -1754,10 +1881,11 @@ export default function Whiteboard({
                 const startAngle = Math.atan2(textDragState.startY - canvasCenterY, textDragState.startX - canvasCenterX);
                 const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
                 const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
+                const newRotation = snapRotationAngle((startObj.rotation || 0) + angleDiff);
 
                 setTextObjects(prev => prev.map(txt =>
                     txt.id === textDragState.id
-                        ? { ...txt, rotation: (startObj.rotation || 0) + angleDiff }
+                        ? { ...txt, rotation: newRotation }
                         : txt
                 ));
             } else if (textDragState.action.startsWith('resize-')) {
@@ -1865,10 +1993,11 @@ export default function Whiteboard({
                 const startAngle = Math.atan2(shapeDragState.startY - canvasCenterY, shapeDragState.startX - canvasCenterX);
                 const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
                 const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
+                const newRotation = snapRotationAngle((startObj.rotation || 0) + angleDiff);
 
                 setShapeObjects(prev => prev.map(shp =>
                     shp.id === shapeDragState.id
-                        ? { ...shp, rotation: (startObj.rotation || 0) + angleDiff }
+                        ? { ...shp, rotation: newRotation }
                         : shp
                 ));
             } else if (shapeDragState.action.startsWith('resize-')) {
@@ -2100,6 +2229,10 @@ export default function Whiteboard({
         // Handle select tool - start drawing selection box
         if (tool === 'select') {
             setSelection(null); // Clear previous selection
+            setSelectedShapeIds([]);
+            setSelectedTextIds([]);
+            setSelectedImageId(null);
+            setEditingTextId(null);
             if (selectMode === 'lasso') {
                 setLassoPath([{ x: pos.x, y: pos.y }]);
             }
@@ -2745,21 +2878,39 @@ export default function Whiteboard({
                         ]);
 
                         if (groupIdsToSelect.size > 0) {
-                            const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                            const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                            const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                            const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.groupId);
+                            const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.groupId);
+                            const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.groupId);
                             selectedShapes = Array.from(new Set([...selectedShapes, ...groupShapeIds]));
                             selectedTexts = Array.from(new Set([...selectedTexts, ...groupTextIds]));
                             selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
                         }
 
-                        if (selectedShapes.length > 0) setSelectedShapeIds(selectedShapes);
-                        else setSelectedShapeIds([]);
-                        if (selectedTexts.length > 0) setSelectedTextIds(selectedTexts);
-                        else setSelectedTextIds([]);
-                        if (selectedImages.length > 0) setSelectedImageId(selectedImages[selectedImages.length - 1]);
-                        else setSelectedImageId(null);
+                        if (selectedShapes.length > 0 || selectedTexts.length > 0 || selectedImages.length > 0) {
+                            setSelectedShapeIds(selectedShapes);
+                            setSelectedTextIds(selectedTexts);
+                            setSelectedImageId(selectedImages.length > 0 ? selectedImages[selectedImages.length - 1] : null);
+                            setSelection({ x: minX, y: minY, width: selWidth, height: selHeight, path: lassoPath });
+                        } else {
+                            setSelectedShapeIds([]);
+                            setSelectedTextIds([]);
+                            setSelectedImageId(null);
+                            setSelection(null);
+                            setEditingTextId(null);
+                        }
+                    } else {
+                        setSelectedShapeIds([]);
+                        setSelectedTextIds([]);
+                        setSelectedImageId(null);
+                        setSelection(null);
+                        setEditingTextId(null);
                     }
+                } else {
+                    setSelectedShapeIds([]);
+                    setSelectedTextIds([]);
+                    setSelectedImageId(null);
+                    setSelection(null);
+                    setEditingTextId(null);
                 }
                 setLassoPath([]);
             } else {
@@ -2800,20 +2951,33 @@ export default function Whiteboard({
                     ]);
 
                     if (groupIdsToSelect.size > 0) {
-                        const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                        const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
-                        const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                        const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.groupId);
+                        const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.groupId);
+                        const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.groupId);
                         selectedShapes = Array.from(new Set([...selectedShapes, ...groupShapeIds]));
                         selectedTexts = Array.from(new Set([...selectedTexts, ...groupTextIds]));
                         selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
                     }
 
-                    if (selectedShapes.length > 0) setSelectedShapeIds(selectedShapes);
-                    else setSelectedShapeIds([]);
-                    if (selectedTexts.length > 0) setSelectedTextIds(selectedTexts);
-                    else setSelectedTextIds([]);
-                    if (selectedImages.length > 0) setSelectedImageId(selectedImages[selectedImages.length - 1]);
-                    else setSelectedImageId(null);
+                    if (selectedShapes.length > 0 || selectedTexts.length > 0 || selectedImages.length > 0) {
+                        setSelectedShapeIds(selectedShapes);
+                        setSelectedTextIds(selectedTexts);
+                        setSelectedImageId(selectedImages.length > 0 ? selectedImages[selectedImages.length - 1] : null);
+                        setSelection({ x, y, width: selWidth, height: selHeight });
+                    } else {
+                        setSelectedShapeIds([]);
+                        setSelectedTextIds([]);
+                        setSelectedImageId(null);
+                        setSelection(null);
+                        setEditingTextId(null);
+                    }
+                } else {
+                    // Click on empty space: deselect everything
+                    setSelectedShapeIds([]);
+                    setSelectedTextIds([]);
+                    setSelectedImageId(null);
+                    setSelection(null);
+                    setEditingTextId(null);
                 }
             }
         } else if (tool === 'text') {
@@ -2969,7 +3133,7 @@ export default function Whiteboard({
     }, []);
 
     // Screenshot - Composites all layers (background, canvas, images, text)
-    const handleScreenshot = useCallback(() => {
+    const handleScreenshot = useCallback(async () => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
@@ -2996,7 +3160,7 @@ export default function Whiteboard({
                 for (let x = 0; x <= exportCanvas.width; x += patternSize) {
                     ctx.beginPath();
                     ctx.moveTo(x, 0);
-                    ctx.lineTo(x, exportCanvas.height);
+                    ctx.lineTo(exportCanvas.height);
                     ctx.stroke();
                 }
                 for (let y = 0; y <= exportCanvas.height; y += patternSize) {
@@ -3025,14 +3189,11 @@ export default function Whiteboard({
             ctx.restore();
         }
 
-        // 3. Draw the main canvas (drawings)
+        // 3. Draw the main canvas (live strokes and drawings)
         ctx.drawImage(canvas, 0, 0);
 
-        // 4. Draw image objects
+        // 4. Draw shapes to screenshot
         const currentShapeObjects = pageShapeObjects[currentPage] || [];
-        const currentImageObjects = pageImageObjects[currentPage] || [];
-
-        // Draw shapes to screenshot
         currentShapeObjects.forEach(shpObj => {
             ctx.save();
             const centerX = shpObj.x + shpObj.width / 2;
@@ -3178,21 +3339,36 @@ export default function Whiteboard({
             ctx.restore();
         });
 
-        currentImageObjects.forEach(imgObj => {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.src = imgObj.src;
+        // 5. Draw image objects (asynchronously preloaded to guarantee capture)
+        const currentImageObjects = pageImageObjects[currentPage] || [];
+        if (currentImageObjects.length > 0) {
+            await Promise.all(currentImageObjects.map(imgObj => new Promise((resolve) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                const drawImg = () => {
+                    try {
+                        ctx.save();
+                        const centerX = imgObj.x + imgObj.width / 2;
+                        const centerY = imgObj.y + imgObj.height / 2;
+                        ctx.translate(centerX, centerY);
+                        ctx.rotate((imgObj.rotation || 0) * Math.PI / 180);
+                        ctx.drawImage(img, -imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
+                        ctx.restore();
+                    } catch (e) {
+                        console.error("Error rendering image in screenshot", e);
+                    }
+                    resolve();
+                };
+                img.onload = drawImg;
+                img.onerror = resolve;
+                img.src = imgObj.src;
+                if (img.complete) {
+                    drawImg();
+                }
+            })));
+        }
 
-            ctx.save();
-            const centerX = imgObj.x + imgObj.width / 2;
-            const centerY = imgObj.y + imgObj.height / 2;
-            ctx.translate(centerX, centerY);
-            ctx.rotate((imgObj.rotation || 0) * Math.PI / 180);
-            ctx.drawImage(img, -imgObj.width / 2, -imgObj.height / 2, imgObj.width, imgObj.height);
-            ctx.restore();
-        });
-
-        // 5. Draw text objects
+        // 6. Draw text objects
         const currentTextObjects = pageTextObjects[currentPage] || [];
         currentTextObjects.forEach(txtObj => {
             ctx.save();
@@ -3222,7 +3398,7 @@ export default function Whiteboard({
         let finalCanvas = exportCanvas;
 
         // If there's a selection, crop to it
-        if (selection) {
+        if (selection && selection.width > 5 && selection.height > 5) {
             const cropCanvas = document.createElement('canvas');
             cropCanvas.width = selection.width;
             cropCanvas.height = selection.height;
@@ -3236,8 +3412,11 @@ export default function Whiteboard({
             if (!blob) return;
             setScreenshotBlob(blob);
             setScreenshotPreview(URL.createObjectURL(blob));
+            const dateStr = new Date().toISOString().slice(0, 10);
+            const timeStr = new Date().toTimeString().slice(0, 8).replace(/:/g, '-');
+            setScreenshotName(`Whiteboard_Screenshot_Page_${currentPage + 1}_${dateStr}_${timeStr}.png`);
         }, 'image/png');
-    }, [currentPage, pageBackgrounds, pageImageObjects, pageTextObjects, selection]);
+    }, [currentPage, pageBackgrounds, pageImageObjects, pageShapeObjects, pageTextObjects, selection]);
 
     // Save and return data
     const handleSave = useCallback(() => {
@@ -4704,44 +4883,53 @@ export default function Whiteboard({
                     {imageObjects.map((imgObj) => {
                         const isSelected = selectedImageId === imgObj.id;
                         const handleSize = 10;
+                        const canInteract = tool === 'select' || isSelected || tool === 'pan';
+
+                        const handleStartMove = (e) => {
+                            if (!canUserDraw) return;
+                            e.stopPropagation();
+                            if (e.target.dataset?.handle) return;
+                            setSelectedImageId(imgObj.id);
+                            setSelectedShapeIds([]);
+                            setSelectedTextIds([]);
+                            if (imgObj.isLocked) return;
+
+                            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                            setImageDragState({
+                                id: imgObj.id,
+                                action: 'move',
+                                startX: clientX,
+                                startY: clientY,
+                                startObj: { ...imgObj }
+                            });
+                        };
 
                         return (
                             <div
                                 key={imgObj.id}
-                                className="absolute"
-                                    style={{
-                                        left: imgObj.x,
-                                        top: imgObj.y,
-                                        width: imgObj.width,
-                                        height: imgObj.height,
-                                        zIndex: imgObj.zIndex || (isSelected ? 20 : 10),
-                                    transform: `rotate(${imgObj.rotation}deg)`,
+                                className="absolute select-none"
+                                style={{
+                                    left: imgObj.x,
+                                    top: imgObj.y,
+                                    width: imgObj.width,
+                                    height: imgObj.height,
+                                    zIndex: imgObj.zIndex || (isSelected ? 25 : 10),
+                                    transform: `rotate(${imgObj.rotation || 0}deg)`,
                                     transformOrigin: 'center center',
-                                    cursor: isSelected ? 'move' : 'crosshair',
-                                    pointerEvents: 'none',
-                                    // Disable pointer events when select tool is active so selection rectangle can be drawn
-                                    pointerEvents: 'none',
+                                    cursor: isSelected ? 'move' : (tool === 'select' ? 'pointer' : 'default'),
+                                    pointerEvents: canInteract ? 'auto' : ((tool === 'pen' || tool === 'eraser' || tool === 'highlighter') && !isSelected ? 'none' : 'auto'),
+                                    touchAction: 'none'
                                 }}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     setSelectedImageId(imgObj.id);
+                                    setSelectedShapeIds([]);
+                                    setSelectedTextIds([]);
                                 }}
-                                onMouseDown={(e) => {
-                                    if (!isSelected) {
-                                        e.stopPropagation();
-                                        setSelectedImageId(imgObj.id);
-                                        return;
-                                    }
-                                    if (e.target.dataset.handle) return; // Let handles handle their own events
-                                    e.stopPropagation();
-                                    setImageDragState({
-                                        id: imgObj.id,
-                                        action: 'move',
-                                        startX: e.clientX,
-                                        startY: e.clientY,
-                                        startObj: { ...imgObj }
-                                    });
-                                }}
+                                onMouseDown={handleStartMove}
+                                onPointerDown={handleStartMove}
+                                onTouchStart={handleStartMove}
                             >
                                 {/* Image */}
                                 <img
@@ -4751,111 +4939,147 @@ export default function Whiteboard({
                                     draggable={false}
                                 />
 
-                                {/* Selection Border */}
+                                {/* Selection Border & Handles */}
                                 {isSelected && (
                                     <>
-                                        <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none" />
-                                        <div className="absolute inset-0" style={{ pointerEvents: 'auto', cursor: 'move' }} onMouseDown={(e) => { if (!canUserDraw) return; e.stopPropagation(); e.preventDefault(); if (imgObj.isLocked) return; setImageDragState({ id: imgObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...imgObj } }); }} />
+                                        <div className="absolute inset-0 border-2 border-indigo-500 rounded-sm pointer-events-none shadow-sm" />
+                                        <div 
+                                            className="absolute inset-0" 
+                                            style={{ pointerEvents: 'auto', cursor: 'move', touchAction: 'none' }} 
+                                            onMouseDown={handleStartMove}
+                                            onPointerDown={handleStartMove}
+                                            onTouchStart={handleStartMove}
+                                        />
 
                                         {!imgObj.isLocked && (
                                             <>
-                                        {/* Corner Resize Handles */}
-                                        {['nw', 'ne', 'sw', 'se'].map(corner => {
-                                            const pos = {
-                                                nw: { left: -handleSize / 2, top: -handleSize / 2, cursor: 'nwse-resize' },
-                                                ne: { right: -handleSize / 2, top: -handleSize / 2, cursor: 'nesw-resize' },
-                                                sw: { left: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nesw-resize' },
-                                                se: { right: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nwse-resize' },
-                                            }[corner];
+                                                {/* Corner Resize Handles */}
+                                                {['nw', 'ne', 'sw', 'se'].map(corner => {
+                                                    const pos = {
+                                                        nw: { left: -handleSize / 2, top: -handleSize / 2, cursor: 'nwse-resize' },
+                                                        ne: { right: -handleSize / 2, top: -handleSize / 2, cursor: 'nesw-resize' },
+                                                        sw: { left: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nesw-resize' },
+                                                        se: { right: -handleSize / 2, bottom: -handleSize / 2, cursor: 'nwse-resize' },
+                                                    }[corner];
 
-                                            return (
-                                                <div
-                                                    key={corner}
-                                                    data-handle={corner}
-                                                    className="absolute bg-white border-2 border-blue-500 rounded-sm z-30"
-                                                    style={{
-                                                        width: handleSize,
-                                                        height: handleSize,
-                                                        ...pos,
-                                                    }}
-                                                    onMouseDown={(e) => {
+                                                    const handleResizeStart = (e) => {
                                                         e.stopPropagation();
+                                                        if (e.cancelable) e.preventDefault();
+                                                        const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                        const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
                                                         setImageDragState({
                                                             id: imgObj.id,
                                                             action: `resize-${corner}`,
-                                                            startX: e.clientX,
-                                                            startY: e.clientY,
+                                                            startX: clientX,
+                                                            startY: clientY,
                                                             startObj: { ...imgObj }
                                                         });
-                                                    }}
-                                                />
-                                            );
-                                        })}
+                                                    };
 
-                                            </>
-                                        )}
-                                        {/* Edge Resize Handles */}
-                                        {['n', 'e', 's', 'w'].map(edge => {
-                                            const pos = {
-                                                n: { left: '50%', top: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
-                                                s: { left: '50%', bottom: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
-                                                e: { right: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
-                                                w: { left: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
-                                            }[edge];
+                                                    return (
+                                                        <div
+                                                            key={corner}
+                                                            data-handle={corner}
+                                                            className="absolute bg-white border-2 border-indigo-600 rounded-sm shadow-md z-30"
+                                                            style={{
+                                                                width: handleSize + 2,
+                                                                height: handleSize + 2,
+                                                                touchAction: 'none',
+                                                                pointerEvents: 'auto',
+                                                                ...pos,
+                                                            }}
+                                                            onMouseDown={handleResizeStart}
+                                                            onPointerDown={handleResizeStart}
+                                                            onTouchStart={handleResizeStart}
+                                                        />
+                                                    );
+                                                })}
 
-                                            return (
-                                                <div
-                                                    key={edge}
-                                                    data-handle={edge}
-                                                    className="absolute bg-white border-2 border-blue-500 rounded-sm z-30"
-                                                    style={{
-                                                        width: handleSize,
-                                                        height: handleSize,
-                                                        ...pos,
-                                                    }}
-                                                    onMouseDown={(e) => {
+                                                {/* Edge Resize Handles */}
+                                                {['n', 'e', 's', 'w'].map(edge => {
+                                                    const pos = {
+                                                        n: { left: '50%', top: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
+                                                        s: { left: '50%', bottom: -handleSize / 2, transform: 'translateX(-50%)', cursor: 'ns-resize' },
+                                                        e: { right: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+                                                        w: { left: -handleSize / 2, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' },
+                                                    }[edge];
+
+                                                    const handleEdgeResizeStart = (e) => {
                                                         e.stopPropagation();
+                                                        if (e.cancelable) e.preventDefault();
+                                                        const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                        const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
                                                         setImageDragState({
                                                             id: imgObj.id,
                                                             action: `resize-${edge}`,
-                                                            startX: e.clientX,
-                                                            startY: e.clientY,
+                                                            startX: clientX,
+                                                            startY: clientY,
                                                             startObj: { ...imgObj }
                                                         });
-                                                    }}
-                                                />
-                                            );
-                                        })}
+                                                    };
 
-                                        {/* Rotate Handle */}
-                                        <div
-                                            className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center z-30"
-                                            style={{ top: -35 }}
-                                        >
-                                            <div className="w-px h-5 bg-blue-500" />
-                                            <div
-                                                data-handle="rotate"
-                                                className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center cursor-grab hover:bg-blue-600" style={{ cursor: 'grab' }}
-                                                onMouseDown={(e) => {
-                                                    e.stopPropagation();
-                                                    setImageDragState({
-                                                        id: imgObj.id,
-                                                        action: 'rotate',
-                                                        startX: e.clientX,
-                                                        startY: e.clientY,
-                                                        startObj: { ...imgObj }
-                                                    });
-                                                }}
-                                            >
-                                                <RotateCw className="w-3 h-3 text-white" />
-                                            </div>
-                                        </div>
+                                                    return (
+                                                        <div
+                                                            key={edge}
+                                                            data-handle={edge}
+                                                            className="absolute bg-white border-2 border-indigo-600 rounded-sm shadow-md z-30"
+                                                            style={{
+                                                                width: handleSize,
+                                                                height: handleSize,
+                                                                touchAction: 'none',
+                                                                pointerEvents: 'auto',
+                                                                ...pos,
+                                                            }}
+                                                            onMouseDown={handleEdgeResizeStart}
+                                                            onPointerDown={handleEdgeResizeStart}
+                                                            onTouchStart={handleEdgeResizeStart}
+                                                        />
+                                                    );
+                                                })}
 
-                                        {!imgObj.isLocked && (
-                                            <>
+                                                {/* Rotate Handle */}
+                                                <div
+                                                    className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center z-30"
+                                                    style={{ top: -35, pointerEvents: 'auto' }}
+                                                >
+                                                    <div className="w-px h-5 bg-indigo-500" />
+                                                    <div
+                                                        data-handle="rotate"
+                                                        className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center cursor-grab hover:bg-indigo-700 shadow-md transition-transform hover:scale-110 active:cursor-grabbing"
+                                                        style={{ cursor: 'grab', touchAction: 'none', pointerEvents: 'auto' }}
+                                                        onMouseDown={(e) => {
+                                                            e.stopPropagation();
+                                                            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                            setImageDragState({
+                                                                id: imgObj.id,
+                                                                action: 'rotate',
+                                                                startX: clientX,
+                                                                startY: clientY,
+                                                                startObj: { ...imgObj }
+                                                            });
+                                                        }}
+                                                        onPointerDown={(e) => {
+                                                            e.stopPropagation();
+                                                            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                                                            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                                                            setImageDragState({
+                                                                id: imgObj.id,
+                                                                action: 'rotate',
+                                                                startX: clientX,
+                                                                startY: clientY,
+                                                                startObj: { ...imgObj }
+                                                            });
+                                                        }}
+                                                    >
+                                                        <RotateCw className="w-3.5 h-3.5" />
+                                                    </div>
+                                                </div>
+
                                                 {/* Delete Button */}
                                                 <button
-                                                    className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg"
+                                                    className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center z-30 shadow-lg text-white transition-transform hover:scale-110"
+                                                    style={{ pointerEvents: 'auto' }}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         setImageObjects(prev => prev.filter(i => i.id !== imgObj.id));
@@ -4863,7 +5087,7 @@ export default function Whiteboard({
                                                         saveToHistory();
                                                     }}
                                                 >
-                                                    <X className="w-3 h-3 text-white" />
+                                                    <X className="w-3.5 h-3.5" />
                                                 </button>
                                             </>
                                         )}
@@ -5730,6 +5954,9 @@ export default function Whiteboard({
                             </div>
                         </div>
                     )}
+
+                    {/* 360-Degree Rotation Protractor & Angle Dial Overlay */}
+                    {activeRotatingObject && <RotationDial obj={activeRotatingObject} />}
                 </div>
             </div>
 

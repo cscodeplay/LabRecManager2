@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play , GripVertical } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play, GripVertical, ChevronUp, ChevronDown, Check, Camera } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import api from '@/lib/api';
 import fixWebmDuration from 'fix-webm-duration';
@@ -14,6 +14,13 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
     const [uploadProgress, setUploadProgress] = useState(null);
     const recordingTimeRef = useRef(0);
     const timerIntervalRef = useRef(null);
+
+    // Audio / Video Device Selection State
+    const [availableDevices, setAvailableDevices] = useState({ cameras: [], microphones: [] });
+    const [selectedCamera, setSelectedCamera] = useState('');
+    const [selectedMicrophone, setSelectedMicrophone] = useState('');
+    const [showCamMenu, setShowCamMenu] = useState(false);
+    const [showMicMenu, setShowMicMenu] = useState(false);
     
     const mediaRecorderRef = useRef(null);
     const recordedChunksRef = useRef([]);
@@ -41,12 +48,38 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
         imageObjectsRef.current = imageObjects;
     }, [imageObjects]);
 
+    // Enumerate connected cameras and microphones
+    const refreshDevices = async () => {
+        try {
+            if (!navigator.mediaDevices?.enumerateDevices) return;
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const cameras = devices.filter(d => d.kind === 'videoinput');
+            const microphones = devices.filter(d => d.kind === 'audioinput');
+            setAvailableDevices({ cameras, microphones });
+            if (cameras.length > 0 && !selectedCamera) {
+                setSelectedCamera(cameras[0].deviceId);
+            }
+            if (microphones.length > 0 && !selectedMicrophone) {
+                setSelectedMicrophone(microphones[0].deviceId);
+            }
+        } catch (err) {
+            console.error("Failed to enumerate media devices", err);
+        }
+    };
+
+    useEffect(() => {
+        refreshDevices();
+        navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
+        return () => {
+            navigator.mediaDevices?.removeEventListener?.('devicechange', refreshDevices);
+        };
+    }, []);
+
     // Draggable camera state
     const [position, setPosition] = useState({ x: 24, y: 24 });
     const isDragging = useRef(false);
     const dragOffset = useRef({ x: 0, y: 0 });
 
-    
     const [micLevel, setMicLevel] = useState(0);
     const audioContextRef = useRef(null);
     const analyserRef = useRef(null);
@@ -126,6 +159,69 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
         };
     }, []);
 
+    // Switch Camera Device
+    const switchCamera = async (deviceId) => {
+        if (deviceId) setSelectedCamera(deviceId);
+        try {
+            if (!streamRef.current) {
+                streamRef.current = new MediaStream();
+            }
+            const oldTracks = streamRef.current.getVideoTracks();
+            oldTracks.forEach(track => {
+                track.stop();
+                streamRef.current.removeTrack(track);
+            });
+
+            const constraints = {
+                video: deviceId ? { deviceId: { exact: deviceId } } : true
+            };
+            const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+            const newVideoTrack = newStream.getVideoTracks()[0];
+            if (newVideoTrack) {
+                streamRef.current.addTrack(newVideoTrack);
+                setHasCamera(true);
+                if (videoPreviewRef.current) {
+                    videoPreviewRef.current.srcObject = streamRef.current;
+                }
+                refreshDevices();
+            }
+        } catch (err) {
+            console.error("Failed to switch camera", err);
+            toast.error("Failed to access selected camera");
+        }
+    };
+
+    // Switch Microphone Device
+    const switchMicrophone = async (deviceId) => {
+        if (deviceId) setSelectedMicrophone(deviceId);
+        try {
+            if (!streamRef.current) {
+                streamRef.current = new MediaStream();
+            }
+            const oldTracks = streamRef.current.getAudioTracks();
+            oldTracks.forEach(track => {
+                track.stop();
+                streamRef.current.removeTrack(track);
+            });
+            stopAudioAnalysis();
+
+            const constraints = {
+                audio: deviceId ? { deviceId: { exact: deviceId } } : true
+            };
+            const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+            const newAudioTrack = newStream.getAudioTracks()[0];
+            if (newAudioTrack) {
+                streamRef.current.addTrack(newAudioTrack);
+                setHasMic(true);
+                startAudioAnalysis(newStream);
+                refreshDevices();
+            }
+        } catch (err) {
+            console.error("Failed to switch microphone", err);
+            toast.error("Failed to access selected microphone");
+        }
+    };
+
     const toggleCamera = async () => {
         if (!streamRef.current) {
             streamRef.current = new MediaStream();
@@ -139,24 +235,10 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
             });
             setHasCamera(false);
         } else {
-            try {
-                const newStream = await navigator.mediaDevices.getUserMedia({ video: true });
-                const newVideoTrack = newStream.getVideoTracks()[0];
-                if (newVideoTrack) {
-                    streamRef.current.addTrack(newVideoTrack);
-                    setHasCamera(true);
-                    if (videoPreviewRef.current) {
-                        videoPreviewRef.current.srcObject = streamRef.current;
-                    }
-                }
-            } catch (err) {
-                console.error("Failed to re-enable camera", err);
-                toast.error("Failed to access camera");
-            }
+            await switchCamera(selectedCamera);
         }
     };
 
-    
     useEffect(() => {
         if (hasCamera && videoPreviewRef.current && streamRef.current) {
             videoPreviewRef.current.srcObject = streamRef.current;
@@ -177,18 +259,7 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
             setHasMic(false);
             stopAudioAnalysis();
         } else {
-            try {
-                const newStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                const newAudioTrack = newStream.getAudioTracks()[0];
-                if (newAudioTrack) {
-                    streamRef.current.addTrack(newAudioTrack);
-                    setHasMic(true);
-                    startAudioAnalysis(newStream);
-                }
-            } catch (err) {
-                console.error("Failed to re-enable mic", err);
-                toast.error("Failed to access microphone");
-            }
+            await switchMicrophone(selectedMicrophone);
         }
     };
 
@@ -663,27 +734,122 @@ const WhiteboardRecorder = ({ canvasRef, sessionId, socket, shapeObjects = [], t
                 <div className="px-1 text-slate-500 hover:text-slate-300 cursor-grab active:cursor-grabbing">
                     <GripVertical className="w-4 h-4" />
                 </div>
-                <button onPointerDown={(e) => e.stopPropagation()}
-                    onClick={toggleMic}
-                    className={`p-1.5 rounded-full transition-all ${hasMic ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
-                    title={hasMic ? 'Mute Microphone' : 'Unmute Microphone'}
-                >
-                    <div className="relative flex items-center justify-center">
-                        {hasMic ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-                        {hasMic && (
-                            <div className="absolute inset-0 text-green-400 overflow-hidden" style={{ clipPath: `inset(${100 - (micLevel * 100)}% 0 0 0)` }}>
-                                <Mic className="w-4 h-4 fill-current" />
+                {/* Microphone Controls with Dropdown */}
+                <div className="relative flex items-center bg-slate-700/50 rounded-full">
+                    <button 
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={toggleMic}
+                        className={`p-1.5 rounded-l-full transition-all ${hasMic ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
+                        title={hasMic ? 'Mute Microphone' : 'Unmute Microphone'}
+                    >
+                        <div className="relative flex items-center justify-center">
+                            {hasMic ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                            {hasMic && (
+                                <div className="absolute inset-0 text-green-400 overflow-hidden" style={{ clipPath: `inset(${100 - (micLevel * 100)}% 0 0 0)` }}>
+                                    <Mic className="w-4 h-4 fill-current" />
+                                </div>
+                            )}
+                        </div>
+                    </button>
+                    <button 
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); setShowMicMenu(!showMicMenu); setShowCamMenu(false); }}
+                        className="px-1 py-1.5 rounded-r-full text-slate-400 hover:text-white border-l border-slate-600/40 hover:bg-slate-700 transition"
+                        title="Select Microphone"
+                    >
+                        <ChevronUp className={`w-3 h-3 transition-transform ${showMicMenu ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Microphone Device Menu Dropdown */}
+                    {showMicMenu && (
+                        <div 
+                            className="absolute bottom-[125%] left-0 w-56 bg-slate-900/98 backdrop-blur-md border border-slate-700 rounded-xl p-2 shadow-2xl z-[120] animate-in fade-in zoom-in-95 pointer-events-auto"
+                            onPointerDown={(e) => e.stopPropagation()}
+                        >
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 px-2 flex items-center justify-between">
+                                <span>Microphones</span>
+                                <span className="text-[9px] text-slate-500">{availableDevices.microphones.length} available</span>
                             </div>
-                        )}
-                    </div>
-                </button>
-                <button onPointerDown={(e) => e.stopPropagation()}
-                    onClick={toggleCamera}
-                    className={`p-1.5 rounded-full transition-all ${hasCamera ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
-                    title={hasCamera ? 'Turn Camera Off' : 'Turn Camera On'}
-                >
-                    {hasCamera ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
-                </button>
+                            <div className="space-y-1 max-h-44 overflow-y-auto">
+                                {availableDevices.microphones.length === 0 ? (
+                                    <div className="px-2 py-1.5 text-xs text-slate-400 italic">No microphones found</div>
+                                ) : (
+                                    availableDevices.microphones.map((m, idx) => {
+                                        const isSelected = selectedMicrophone === m.deviceId;
+                                        return (
+                                            <button
+                                                key={m.deviceId || idx}
+                                                onClick={() => { switchMicrophone(m.deviceId); setShowMicMenu(false); }}
+                                                className={`w-full text-left px-2.5 py-1.5 text-xs rounded-lg transition truncate flex items-center justify-between gap-1.5 ${isSelected ? 'bg-indigo-600 text-white font-medium shadow-sm' : 'text-slate-300 hover:bg-slate-800'}`}
+                                            >
+                                                <div className="flex items-center gap-2 min-w-0 truncate">
+                                                    <Mic className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                                                    <span className="truncate">{m.label || `Microphone ${idx + 1}`}</span>
+                                                </div>
+                                                {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-white" />}
+                                            </button>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Camera Controls with Dropdown */}
+                <div className="relative flex items-center bg-slate-700/50 rounded-full">
+                    <button 
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={toggleCamera}
+                        className={`p-1.5 rounded-l-full transition-all ${hasCamera ? 'text-slate-200 hover:bg-slate-700' : 'text-red-400 hover:bg-red-500/20 bg-red-500/10'}`}
+                        title={hasCamera ? 'Turn Camera Off' : 'Turn Camera On'}
+                    >
+                        {hasCamera ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+                    </button>
+                    <button 
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); setShowCamMenu(!showCamMenu); setShowMicMenu(false); }}
+                        className="px-1 py-1.5 rounded-r-full text-slate-400 hover:text-white border-l border-slate-600/40 hover:bg-slate-700 transition"
+                        title="Select Camera"
+                    >
+                        <ChevronUp className={`w-3 h-3 transition-transform ${showCamMenu ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Camera Device Menu Dropdown */}
+                    {showCamMenu && (
+                        <div 
+                            className="absolute bottom-[125%] left-0 w-56 bg-slate-900/98 backdrop-blur-md border border-slate-700 rounded-xl p-2 shadow-2xl z-[120] animate-in fade-in zoom-in-95 pointer-events-auto"
+                            onPointerDown={(e) => e.stopPropagation()}
+                        >
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 px-2 flex items-center justify-between">
+                                <span>Cameras</span>
+                                <span className="text-[9px] text-slate-500">{availableDevices.cameras.length} available</span>
+                            </div>
+                            <div className="space-y-1 max-h-44 overflow-y-auto">
+                                {availableDevices.cameras.length === 0 ? (
+                                    <div className="px-2 py-1.5 text-xs text-slate-400 italic">No cameras found</div>
+                                ) : (
+                                    availableDevices.cameras.map((c, idx) => {
+                                        const isSelected = selectedCamera === c.deviceId;
+                                        return (
+                                            <button
+                                                key={c.deviceId || idx}
+                                                onClick={() => { switchCamera(c.deviceId); setShowCamMenu(false); }}
+                                                className={`w-full text-left px-2.5 py-1.5 text-xs rounded-lg transition truncate flex items-center justify-between gap-1.5 ${isSelected ? 'bg-indigo-600 text-white font-medium shadow-sm' : 'text-slate-300 hover:bg-slate-800'}`}
+                                            >
+                                                <div className="flex items-center gap-2 min-w-0 truncate">
+                                                    <Camera className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                                                    <span className="truncate">{c.label || `Camera ${idx + 1}`}</span>
+                                                </div>
+                                                {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-white" />}
+                                            </button>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
                 
                 <div className="w-px h-5 bg-slate-700 mx-1"></div>
                 
