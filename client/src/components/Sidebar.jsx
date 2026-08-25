@@ -10,6 +10,7 @@ import {
     Beaker, ClipboardList, Activity, ClipboardCheck, Send, ListChecks, UserPlus, Monitor, FolderOpen, Pencil, Ticket, Building, Film, HardDrive,
     Clock, CalendarDays, Presentation, BookMarked
 } from 'lucide-react';
+import { useAuthStore } from '@/lib/store';
 import LanguageSelector from './LanguageSelector';
 import UserAvatar from './UserAvatar';
 
