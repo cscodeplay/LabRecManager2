@@ -182,6 +182,98 @@ router.post('/', authenticate, authorize('admin', 'principal'), [
 }));
 
 /**
+ * @route   PUT /api/classes/:id
+ * @desc    Update an existing class
+ * @access  Private (Admin, Principal)
+ */
+router.put('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const {
+        name, nameHindi, gradeLevel, section, stream,
+        academicYearId, classTeacherId, maxStudents
+    } = req.body;
+
+    const existingClass = await prisma.class.findFirst({
+        where: {
+            id,
+            ...(req.user.schoolId && { schoolId: req.user.schoolId })
+        }
+    });
+
+    if (!existingClass) {
+        return res.status(404).json({
+            success: false,
+            message: 'Class not found'
+        });
+    }
+
+    const updatedClass = await prisma.class.update({
+        where: { id },
+        data: {
+            ...(name !== undefined && { name }),
+            ...(nameHindi !== undefined && { nameHindi }),
+            ...(gradeLevel !== undefined && { gradeLevel: parseInt(gradeLevel, 10) }),
+            ...(section !== undefined && { section }),
+            ...(stream !== undefined && { stream }),
+            ...(academicYearId !== undefined && { academicYearId }),
+            ...(classTeacherId !== undefined && { classTeacherId: classTeacherId || null }),
+            ...(maxStudents !== undefined && { maxStudents: parseInt(maxStudents, 10) || 60 })
+        },
+        include: {
+            classTeacher: {
+                select: { id: true, firstName: true, lastName: true, email: true }
+            },
+            academicYear: {
+                select: { id: true, yearLabel: true, isCurrent: true }
+            },
+            _count: {
+                select: { enrollments: true, groups: true }
+            }
+        }
+    });
+
+    res.json({
+        success: true,
+        message: 'Class updated successfully',
+        messageHindi: 'कक्षा सफलतापूर्वक अपडेट की गई',
+        data: { class: updatedClass }
+    });
+}));
+
+/**
+ * @route   DELETE /api/classes/:id
+ * @desc    Delete a class
+ * @access  Private (Admin, Principal)
+ */
+router.delete('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const existingClass = await prisma.class.findFirst({
+        where: {
+            id,
+            ...(req.user.schoolId && { schoolId: req.user.schoolId })
+        }
+    });
+
+    if (!existingClass) {
+        return res.status(404).json({
+            success: false,
+            message: 'Class not found'
+        });
+    }
+
+    await prisma.class.delete({
+        where: { id }
+    });
+
+    res.json({
+        success: true,
+        message: 'Class deleted successfully',
+        messageHindi: 'कक्षा सफलतापूर्वक हटा दी गई'
+    });
+}));
+
+/**
  * @route   POST /api/classes/:id/enroll
  * @desc    Enroll students in a class
  * @access  Private (Admin, Principal)
