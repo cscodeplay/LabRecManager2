@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
     Video, Calendar, Clock, User, Play, CheckCircle, XCircle,
     Plus, Search, X, Users, CalendarPlus, Award, Shield, Trash2, Sparkles,
-    Link2, Copy, Check, Share2, Edit3, Lock, UserPlus, GraduationCap, CheckSquare, Square
+    Link2, Copy, Check, Share2, Edit3, Lock, UserPlus, GraduationCap, CheckSquare, Square, Download
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useConfirm } from '@/components/ConfirmDialog';

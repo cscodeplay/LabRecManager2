@@ -14,7 +14,7 @@ import {
     MoreVertical, UserCheck, UserX, PenTool, Coffee, Loader2,
     Info, Copy, Check, Share2, Key, LayoutGrid, ScreenShare,
     AlertTriangle, Shield, UserPlus, Link2, ExternalLink,
-    Smile, HelpCircle, Award, Zap
+    Smile, HelpCircle, Award, Zap, X
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useGlobalMeeting } from '@/components/GlobalMeetingContext';
