@@ -108,14 +108,55 @@ export default function AITimetableGeneratorModal({
             });
 
             const rawSlots = res.data?.data?.slots || [];
+            const returnedSubjects = res.data?.data?.subjects || subjects || [];
+            const returnedInstructors = res.data?.data?.instructors || instructors || [];
             setClassDetails(res.data?.data?.classInfo || null);
 
             if (rawSlots.length === 0) {
                 toast.error('AI could not identify specific slots from prompt. Please provide more details.');
             } else {
-                setGeneratedSlots(rawSlots);
+                // Auto-resolve IDs if missing
+                const resolvedSlots = rawSlots.map(s => {
+                    let sId = s.subjectId;
+                    let sName = s.subjectName;
+                    if (!sId && sName) {
+                        const matched = returnedSubjects.find(sub =>
+                            sub.name.toLowerCase() === sName.toLowerCase() ||
+                            sub.name.toLowerCase().includes(sName.toLowerCase()) ||
+                            (sub.code && sName.toLowerCase().includes(sub.code.toLowerCase()))
+                        );
+                        if (matched) {
+                            sId = matched.id;
+                            sName = matched.name;
+                        }
+                    }
+
+                    let iId = s.instructorId;
+                    let iName = s.instructorName;
+                    if (!iId && iName) {
+                        const matched = returnedInstructors.find(ins => {
+                            const full = `${ins.firstName} ${ins.lastName || ''}`.trim().toLowerCase();
+                            return full.includes(iName.toLowerCase()) || iName.toLowerCase().includes(ins.firstName.toLowerCase());
+                        });
+                        if (matched) {
+                            iId = matched.id;
+                            iName = `${matched.firstName} ${matched.lastName || ''}`.trim();
+                        }
+                    }
+
+                    return {
+                        ...s,
+                        periodNumber: parseInt(s.periodNumber, 10),
+                        subjectId: sId || null,
+                        subjectName: sName || '',
+                        instructorId: iId || null,
+                        instructorName: iName || ''
+                    };
+                });
+
+                setGeneratedSlots(resolvedSlots);
                 setHasGenerated(true);
-                toast.success(`AI drafted ${rawSlots.length} timetable slot(s)!`, { icon: '✨' });
+                toast.success(`AI drafted ${resolvedSlots.length} timetable slot(s)!`, { icon: '✨' });
             }
         } catch (error) {
             console.error('AI Timetable generation failed:', error);
@@ -139,7 +180,7 @@ export default function AITimetableGeneratorModal({
             ...prev,
             {
                 dayOfWeek: lastSlot?.dayOfWeek || 'friday',
-                periodNumber: lastSlot?.periodNumber || 1,
+                periodNumber: parseInt(lastSlot?.periodNumber || 1, 10),
                 startTime: lastSlot?.startTime || '08:00',
                 endTime: lastSlot?.endTime || '08:40',
                 subjectId: lastSlot?.subjectId || null,
@@ -158,8 +199,10 @@ export default function AITimetableGeneratorModal({
     };
 
     const handleApplyToTimetable = async () => {
-        if (!timetable?.id) {
-            toast.error('No active timetable found to apply slots');
+        let activeTimetableId = timetable?.id;
+
+        if (!activeTimetableId && !classId) {
+            toast.error('No active class or timetable selected to apply slots');
             return;
         }
 
@@ -170,24 +213,60 @@ export default function AITimetableGeneratorModal({
 
         setIsApplying(true);
         try {
-            // Format slots for timetableAPI.bulkAddSlots
+            // Auto-create active timetable if class doesn't have one yet
+            if (!activeTimetableId && classId) {
+                const effectiveFrom = new Date().toISOString().split('T')[0];
+                const newTtRes = await timetableAPI.create({
+                    classId,
+                    name: `Class Timetable (${new Date().getFullYear()})`,
+                    effectiveFrom
+                });
+                activeTimetableId = newTtRes.data?.data?.timetable?.id;
+            }
+
+            if (!activeTimetableId) {
+                toast.error('Failed to locate or create active timetable');
+                return;
+            }
+
+            // Format slots with strict ID resolution
             const formattedSlots = generatedSlots.map(s => {
-                const p = periodStructure.find(ps => ps.periodNumber === s.periodNumber);
+                const pNum = parseInt(s.periodNumber, 10);
+                const p = periodStructure.find(ps => ps.periodNumber === pNum);
+                
+                let resolvedSubjectId = s.subjectId;
+                if (!resolvedSubjectId && s.subjectName) {
+                    const matchedSub = subjects.find(sub =>
+                        sub.name.toLowerCase() === s.subjectName.toLowerCase() ||
+                        sub.name.toLowerCase().includes(s.subjectName.toLowerCase())
+                    );
+                    if (matchedSub) resolvedSubjectId = matchedSub.id;
+                }
+
+                let resolvedInstructorId = s.instructorId;
+                if (!resolvedInstructorId && s.instructorName) {
+                    const matchedInst = instructors.find(ins => {
+                        const full = `${ins.firstName} ${ins.lastName || ''}`.trim().toLowerCase();
+                        return full.includes(s.instructorName.toLowerCase()) || s.instructorName.toLowerCase().includes(ins.firstName.toLowerCase());
+                    });
+                    if (matchedInst) resolvedInstructorId = matchedInst.id;
+                }
+
                 return {
-                    dayOfWeek: s.dayOfWeek,
-                    periodNumber: s.periodNumber,
+                    dayOfWeek: (s.dayOfWeek || 'monday').toLowerCase(),
+                    periodNumber: pNum,
                     startTime: s.startTime || p?.startTime || '08:00',
                     endTime: s.endTime || p?.endTime || '08:40',
-                    subjectId: s.subjectId || null,
-                    instructorId: s.instructorId || null,
+                    subjectId: resolvedSubjectId || null,
+                    instructorId: resolvedInstructorId || null,
                     roomNumber: s.roomNumber || null,
                     slotType: s.slotType || 'lecture'
                 };
             });
 
-            await timetableAPI.addBulkSlots(timetable.id, { slots: formattedSlots });
+            await timetableAPI.addBulkSlots(activeTimetableId, { slots: formattedSlots });
             toast.success(`Successfully applied ${formattedSlots.length} slot(s) to timetable!`, { icon: '🎉' });
-            if (onSlotsApplied) onSlotsApplied();
+            if (onSlotsApplied) onSlotsApplied(activeTimetableId);
             onClose();
         } catch (error) {
             console.error('Failed to apply slots:', error);

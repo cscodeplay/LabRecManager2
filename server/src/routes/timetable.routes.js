@@ -24,8 +24,9 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
     const where = { schoolId, classId, isActive: true, ...(sessionId && { academicYearId: sessionId }) };
 
-    const timetable = await prisma.timetable.findFirst({
+    let timetable = await prisma.timetable.findFirst({
         where,
+        orderBy: { effectiveFrom: 'desc' },
         include: {
             class: { select: { id: true, name: true, gradeLevel: true, section: true } },
             academicYear: { select: { id: true, yearLabel: true } },
@@ -39,6 +40,25 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             }
         }
     });
+
+    if (!timetable && sessionId) {
+        timetable = await prisma.timetable.findFirst({
+            where: { schoolId, classId, isActive: true },
+            orderBy: { effectiveFrom: 'desc' },
+            include: {
+                class: { select: { id: true, name: true, gradeLevel: true, section: true } },
+                academicYear: { select: { id: true, yearLabel: true } },
+                slots: {
+                    where: dayOfWeek ? { dayOfWeek } : {},
+                    orderBy: [{ dayOfWeek: 'asc' }, { periodNumber: 'asc' }],
+                    include: {
+                        subject: { select: { id: true, name: true, nameHindi: true, code: true } },
+                        instructor: { select: { id: true, firstName: true, lastName: true, email: true } }
+                    }
+                }
+            }
+        });
+    }
 
     if (!timetable) {
         return res.json({ success: true, data: { timetable: null, message: 'No timetable found for this class' } });
@@ -171,7 +191,7 @@ router.post('/:id/slots', authenticate, authorize('admin', 'principal'), asyncHa
 
 /**
  * @route   POST /api/timetable/:id/slots/bulk
- * @desc    Add multiple slots at once (for building entire day/week)
+ * @desc    Add or update multiple slots at once (for building entire day/week)
  * @access  Private (Admin, Principal)
  */
 router.post('/:id/slots/bulk', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
@@ -181,25 +201,59 @@ router.post('/:id/slots/bulk', authenticate, authorize('admin', 'principal'), as
         return res.status(400).json({ success: false, message: 'slots array is required' });
     }
 
-    const createdSlots = await prisma.timetableSlot.createMany({
-        data: slots.map(s => ({
-            timetableId: req.params.id,
-            dayOfWeek: s.dayOfWeek,
-            periodNumber: s.periodNumber,
-            startTime: s.startTime,
-            endTime: s.endTime,
-            subjectId: s.subjectId || null,
-            instructorId: s.instructorId || null,
-            roomNumber: s.roomNumber || null,
-            slotType: s.slotType || 'lecture'
-        })),
-        skipDuplicates: true
-    });
+    const timetableId = req.params.id;
+
+    // Perform atomic upsert for every slot so that existing slots are overwritten and new slots are inserted
+    const results = await prisma.$transaction(
+        slots.map(s => {
+            const periodNumber = parseInt(s.periodNumber, 10);
+            const dayOfWeek = (s.dayOfWeek || 'monday').toLowerCase();
+            const subjectId = (s.subjectId && typeof s.subjectId === 'string' && s.subjectId.trim() !== '') ? s.subjectId : null;
+            const instructorId = (s.instructorId && typeof s.instructorId === 'string' && s.instructorId.trim() !== '') ? s.instructorId : null;
+            const roomNumber = (s.roomNumber && typeof s.roomNumber === 'string' && s.roomNumber.trim() !== '') ? s.roomNumber : null;
+            const slotType = s.slotType || 'lecture';
+            const startTime = s.startTime || '08:00';
+            const endTime = s.endTime || '08:40';
+
+            return prisma.timetableSlot.upsert({
+                where: {
+                    unique_slot_per_day_period: {
+                        timetableId,
+                        dayOfWeek,
+                        periodNumber
+                    }
+                },
+                update: {
+                    startTime,
+                    endTime,
+                    subjectId,
+                    instructorId,
+                    roomNumber,
+                    slotType
+                },
+                create: {
+                    timetableId,
+                    dayOfWeek,
+                    periodNumber,
+                    startTime,
+                    endTime,
+                    subjectId,
+                    instructorId,
+                    roomNumber,
+                    slotType
+                },
+                include: {
+                    subject: { select: { id: true, name: true, nameHindi: true, code: true } },
+                    instructor: { select: { id: true, firstName: true, lastName: true, email: true } }
+                }
+            });
+        })
+    );
 
     res.status(201).json({
         success: true,
-        message: `${createdSlots.count} slots added`,
-        data: { count: createdSlots.count }
+        message: `${results.length} slots applied successfully`,
+        data: { count: results.length, slots: results }
     });
 }));
 
