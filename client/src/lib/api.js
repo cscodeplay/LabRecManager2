@@ -587,6 +587,8 @@ export const timetableAPI = {
     // Slots
     addSlot: (timetableId, data) => api.post(`/timetable/${timetableId}/slots`, data),
     addSlotsBulk: (timetableId, slots) => api.post(`/timetable/${timetableId}/slots/bulk`, { slots }),
+    bulkAddSlots: (timetableId, data) => api.post(`/timetable/${timetableId}/slots/bulk`, Array.isArray(data) ? { slots: data } : data),
+    addBulkSlots: (timetableId, data) => api.post(`/timetable/${timetableId}/slots/bulk`, Array.isArray(data) ? { slots: data } : data),
     updateSlot: (slotId, data) => api.put(`/timetable/slots/${slotId}`, data),
     deleteSlot: (slotId) => api.delete(`/timetable/slots/${slotId}`),
     

@@ -736,7 +736,92 @@ FORMATTING RULES:
             }
         }
 
-        throw new Error('All AI providers failed to generate note content.');
+    /**
+     * Parse natural language timetable prompt and return structured slots
+     */
+    async generateTimetableSlots(prompt, context = {}, preferredProvider = 'groq') {
+        const { subjects = [], instructors = [], periodStructure = [], existingSlots = {} } = context;
+
+        const subjectContext = subjects.map(s => `ID: "${s.id}", Name: "${s.name}" (Code: ${s.code || 'N/A'})`).join('\n');
+        const instructorContext = instructors.map(i => `ID: "${i.id}", Name: "${i.firstName} ${i.lastName}"`).join('\n');
+        const periodContext = periodStructure.map(p => `Period ${p.periodNumber}: ${p.startTime} - ${p.endTime} (${p.slotType || 'lecture'})`).join('\n');
+
+        const systemPrompt = `You are an expert school timetable and educational scheduling AI.
+Your task is to analyze the user's natural language instructions to construct or update timetable slots across the school week (monday, tuesday, wednesday, thursday, friday, saturday).
+
+CONTEXT:
+Available Subjects:
+${subjectContext || 'No subjects registered yet'}
+
+Available Instructors:
+${instructorContext || 'No instructors registered yet'}
+
+Period Timings Structure:
+${periodContext || 'Period 1: 08:00-08:40, Period 2: 08:40-09:20, Period 3: 09:20-10:00, Period 4: 10:00-10:15 (break), Period 5: 10:15-10:55, Period 6: 10:55-11:35, Period 7: 11:35-12:15, Period 8: 12:15-12:55'}
+
+User Instructions / Prompt:
+"${prompt}"
+
+INSTRUCTIONS & RULES:
+1. Parse the lecture numbers (Period 1 to 8+), days of the week ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'), subjects, instructors, room numbers, and slot types.
+2. Match subjects and instructors to their EXACT IDs from the provided context list if they match. If a subject or instructor is mentioned that is not in the context list, leave subjectId / instructorId as null and provide subjectName / instructorName.
+3. For days, valid lowercase values are: 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'.
+4. Slot types can be: 'lecture', 'lab', 'break_period', 'assembly', 'free', 'sports', 'library'.
+5. If the prompt specifies a range like "Every day" or "Mon-Fri", generate slots for all respective days.
+6. Provide accurate startTime and endTime based on the period number from the period structure.
+
+Return ONLY a valid JSON array of slot objects with the following schema:
+[
+  {
+    "dayOfWeek": "monday",
+    "periodNumber": 1,
+    "startTime": "08:00",
+    "endTime": "08:40",
+    "subjectId": "uuid-or-null",
+    "subjectName": "Physics",
+    "instructorId": "uuid-or-null",
+    "instructorName": "Dr. Sharma",
+    "roomNumber": "101",
+    "slotType": "lecture",
+    "isNew": true
+  }
+]
+`;
+
+        // 1. Try Groq
+        if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
+            try {
+                console.log('[AIService] Generating timetable slots via Groq...');
+                const completion = await this.groq.chat.completions.create({
+                    model: 'llama-3.3-70b-versatile',
+                    messages: [
+                        { role: 'system', content: 'You are an educational scheduling AI. Output ONLY a valid JSON array.' },
+                        { role: 'user', content: systemPrompt }
+                    ],
+                    temperature: 0.2
+                });
+
+                const responseText = completion.choices[0]?.message?.content || '[]';
+                return this.parseJSONResponse(responseText);
+            } catch (groqErr) {
+                console.error('[AIService] Groq failed for timetable slots:', groqErr.message);
+            }
+        }
+
+        // 2. Try Gemini
+        if (this.genAI) {
+            try {
+                console.log('[AIService] Generating timetable slots via Gemini...');
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+                const result = await model.generateContent(systemPrompt);
+                const responseText = result.response.text();
+                return this.parseJSONResponse(responseText);
+            } catch (geminiErr) {
+                console.error('[AIService] Gemini failed for timetable slots:', geminiErr.message);
+            }
+        }
+
+        throw new Error('AI providers unavailable or failed to parse timetable slots');
     }
 
     parseJSONResponse(text) {

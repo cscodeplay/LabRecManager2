@@ -292,4 +292,57 @@ router.post('/batch-create', authenticate, authorize('instructor', 'lab_assistan
     });
 }));
 
+/**
+ * @route   POST /api/ai/generate-timetable-slots
+ * @desc    Generate structured timetable slots from natural language prompt
+ * @access  Private (Admin, Principal, Instructor)
+ */
+router.post('/generate-timetable-slots', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const { prompt, classId, periodStructure = [], existingSlots = {}, provider = 'groq' } = req.body;
+
+    if (!prompt || !prompt.trim()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Prompt instruction is required'
+        });
+    }
+
+    const schoolId = req.user.schoolId || null;
+
+    // Fetch subjects and instructors for context
+    const [subjects, instructors] = await Promise.all([
+        prisma.subject.findMany({
+            where: {
+                ...(schoolId ? { schoolId } : {}),
+                ...(classId ? { classes: { some: { classId } } } : {})
+            },
+            select: { id: true, name: true, code: true }
+        }),
+        prisma.user.findMany({
+            where: {
+                role: 'instructor',
+                ...(schoolId ? { schoolId } : {})
+            },
+            select: { id: true, firstName: true, lastName: true, email: true }
+        })
+    ]);
+
+    // Generate slots via AI service
+    const generatedSlots = await aiService.generateTimetableSlots(
+        prompt,
+        { subjects, instructors, periodStructure, existingSlots },
+        provider
+    );
+
+    res.json({
+        success: true,
+        message: `AI generated ${generatedSlots.length} timetable slot(s)`,
+        data: {
+            slots: generatedSlots,
+            subjects,
+            instructors
+        }
+    });
+}));
+
 module.exports = router;

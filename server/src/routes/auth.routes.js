@@ -410,7 +410,7 @@ router.put('/profile', authenticate, [
         });
     }
 
-    const { firstName, lastName, phone, firstNameHindi, lastNameHindi } = req.body;
+    const { firstName, lastName, phone, firstNameHindi, lastNameHindi, profileImageUrl } = req.body;
 
     // Build update data
     const updateData = {};
@@ -419,6 +419,7 @@ router.put('/profile', authenticate, [
     if (phone !== undefined) updateData.phone = phone;
     if (firstNameHindi) updateData.firstNameHindi = firstNameHindi;
     if (lastNameHindi) updateData.lastNameHindi = lastNameHindi;
+    if (profileImageUrl !== undefined) updateData.profileImageUrl = profileImageUrl;
 
     const updatedUser = await prisma.user.update({
         where: { id: req.user.id },

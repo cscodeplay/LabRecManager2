@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { User, Settings, LogOut, Shield, ChevronDown, Mail, Phone, Building } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 
+import UserAvatar from './UserAvatar';
+
 export default function ProfileDropdown() {
     const { user, logout, isAuthenticated } = useAuthStore();
     const [isOpen, setIsOpen] = useState(false);
@@ -44,12 +46,10 @@ export default function ProfileDropdown() {
             <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
-                className="flex items-center gap-2 p-1.5 pr-3 rounded-full hover:bg-slate-100 transition border border-slate-200"
+                className="flex items-center gap-2 p-1 pr-3 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition border border-slate-200 dark:border-slate-700"
             >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-medium text-sm">
-                    {user.firstName?.[0]}{user.lastName?.[0]}
-                </div>
-                <span className="text-sm font-medium text-slate-700 hidden md:block">
+                <UserAvatar user={user} size="sm" />
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 hidden md:block">
                     {user.firstName}
                 </span>
                 <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -57,12 +57,12 @@ export default function ProfileDropdown() {
 
             {/* Dropdown */}
             {isOpen && (
-                <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 z-[100] overflow-hidden">
+                <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 z-[100] overflow-hidden">
                     {/* Profile Header */}
                     <div className="p-4 bg-gradient-to-br from-primary-500 to-primary-600 text-white">
                         <div className="flex items-center gap-3">
-                            <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-xl border-2 border-white/50">
-                                {user.firstName?.[0]}{user.lastName?.[0]}
+                            <div className="p-0.5 rounded-full bg-white/30 border border-white/40">
+                                <UserAvatar user={user} size="lg" />
                             </div>
                             <div>
                                 <h3 className="font-semibold text-lg">

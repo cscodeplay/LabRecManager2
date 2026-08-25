@@ -13,6 +13,8 @@ import { authAPI, gradeScalesAPI, devicesAPI, academicYearsAPI } from '@/lib/api
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
+import UserAvatar from '@/components/UserAvatar';
+import AvatarPickerModal from '@/components/AvatarPickerModal';
 import { formatDate, formatDateTime, formatTime, formatDateRange } from '@/lib/dateUtils';
 
 export default function SettingsPage() {
@@ -23,6 +25,7 @@ export default function SettingsPage() {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'profile');
     const [saving, setSaving] = useState(false);
+    const [showAvatarModal, setShowAvatarModal] = useState(false);
 
     const [profile, setProfile] = useState({ firstName: '', lastName: '', email: '', phone: '' });
     const [notifications, setNotifications] = useState({ emailNotif: true, submissionAlerts: true, gradeAlerts: true, vivaReminders: true });
@@ -423,15 +426,63 @@ export default function SettingsPage() {
                     {/* Content */}
                     <div className="md:col-span-3">
                         {activeTab === 'profile' && (
-                            <div className="card p-6">
-                                <h2 className="text-lg font-semibold text-slate-900 mb-4">Profile Information</h2>
-                                <div className="grid md:grid-cols-2 gap-4">
-                                    <div><label className="label">First Name</label><input type="text" className="input" value={profile.firstName} onChange={(e) => setProfile({ ...profile, firstName: e.target.value })} /></div>
-                                    <div><label className="label">Last Name</label><input type="text" className="input" value={profile.lastName} onChange={(e) => setProfile({ ...profile, lastName: e.target.value })} /></div>
-                                    <div><label className="label">Email</label><input type="email" className="input" value={profile.email} disabled /></div>
-                                    <div><label className="label">Phone</label><input type="tel" className="input" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} /></div>
+                            <div className="space-y-6">
+                                {/* Profile Avatar Card */}
+                                <div className="card p-6 bg-gradient-to-r from-slate-50 to-indigo-50/40 dark:from-slate-900 dark:to-indigo-950/20 border border-slate-200 dark:border-slate-800">
+                                    <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
+                                        <div className="relative group cursor-pointer" onClick={() => setShowAvatarModal(true)}>
+                                            <div className="p-1 rounded-full bg-white dark:bg-slate-800 shadow-lg ring-4 ring-indigo-500/20 group-hover:ring-indigo-500 transition">
+                                                <UserAvatar user={user} size="2xl" />
+                                            </div>
+                                            <div className="absolute inset-0 rounded-full bg-black/40 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition rounded-full">
+                                                <User className="w-5 h-5 mb-1" />
+                                                <span className="text-[10px] font-bold">Edit</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex-1 text-center sm:text-left">
+                                            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                                                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                                                    {user?.firstName} {user?.lastName}
+                                                </h2>
+                                                <span className="text-xs uppercase font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
+                                                    {user?.role?.replace('_', ' ')}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                                Choose from live-animating characters, faculty scholars, or upload a custom photo to personalize your profile.
+                                            </p>
+                                            <div className="mt-3 flex flex-wrap gap-2 justify-center sm:justify-start">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowAvatarModal(true)}
+                                                    className="btn btn-sm btn-primary flex items-center gap-1.5 shadow-sm text-xs"
+                                                >
+                                                    <User className="w-3.5 h-3.5" />
+                                                    Change Avatar
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="mt-4"><button onClick={handleSaveProfile} disabled={saving} className="btn btn-primary"><Save className="w-4 h-4" />{saving ? 'Saving...' : 'Save Changes'}</button></div>
+
+                                {/* Profile Information Card */}
+                                <div className="card p-6">
+                                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Profile Information</h2>
+                                    <div className="grid md:grid-cols-2 gap-4">
+                                        <div><label className="label">First Name</label><input type="text" className="input" value={profile.firstName} onChange={(e) => setProfile({ ...profile, firstName: e.target.value })} /></div>
+                                        <div><label className="label">Last Name</label><input type="text" className="input" value={profile.lastName} onChange={(e) => setProfile({ ...profile, lastName: e.target.value })} /></div>
+                                        <div><label className="label">Email</label><input type="email" className="input" value={profile.email} disabled /></div>
+                                        <div><label className="label">Phone</label><input type="tel" className="input" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} /></div>
+                                    </div>
+                                    <div className="mt-4"><button onClick={handleSaveProfile} disabled={saving} className="btn btn-primary"><Save className="w-4 h-4" />{saving ? 'Saving...' : 'Save Changes'}</button></div>
+                                </div>
+
+                                <AvatarPickerModal
+                                    isOpen={showAvatarModal}
+                                    onClose={() => setShowAvatarModal(false)}
+                                    onAvatarUpdated={() => {}}
+                                />
                             </div>
                         )}
 

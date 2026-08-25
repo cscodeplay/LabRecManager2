@@ -5,15 +5,18 @@ import { useRouter } from 'next/navigation';
 import {
     Clock, Plus, Trash2, Save, RefreshCw, Users, BookOpen,
     ChevronLeft, ChevronRight, GripVertical, AlertCircle, CheckCircle,
-    LayoutGrid, User, Calendar as CalendarIcon, Edit2, Play, Info, GanttChartSquare
+    LayoutGrid, User, Calendar as CalendarIcon, Edit2, Play, Info, GanttChartSquare,
+    Sparkles, CalendarDays, Check, Activity, PartyPopper
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import { timetableAPI, classesAPI } from '@/lib/api';
+import { timetableAPI, classesAPI, calendarAPI } from '@/lib/api';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatDate, formatDateRange } from '@/lib/dateUtils';
+import PeriodWorkLogModal from '@/components/PeriodWorkLogModal';
+import AITimetableGeneratorModal from '@/components/AITimetableGeneratorModal';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DAY_LABELS = { monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat' };
@@ -52,6 +55,11 @@ export default function AdminTimetablePage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     
+    // Week & Calendar Navigation
+    const [weekOffset, setWeekOffset] = useState(0);
+    const [calendarHolidays, setCalendarHolidays] = useState({});
+    const [loggedWorkMap, setLoggedWorkMap] = useState({});
+
     // Data
     const [classes, setClasses] = useState([]);
     const [subjects, setSubjects] = useState([]);
@@ -68,11 +76,29 @@ export default function AdminTimetablePage() {
     const [instructorSchedule, setInstructorSchedule] = useState(null);
 
     // Dynamic Periods state
-    const [periodStructure, setPeriodStructure] = useState([]);
+    const [periodStructure, setPeriodStructure] = useState([...DEFAULT_PERIODS]);
 
     // Create / Edit Timetable modal
     const [showCreateModal, setShowCreateModal] = useState(false);
-    const [createForm, setCreateForm] = useState({ name: '', effectiveFrom: '', effectiveTo: '' });
+    const [createForm, setCreateForm] = useState({
+        name: '',
+        effectiveFrom: '',
+        effectiveTo: '',
+        numPeriods: 8,
+        periods: [...DEFAULT_PERIODS]
+    });
+
+    // AI Generator Modal
+    const [showAIGeneratorModal, setShowAIGeneratorModal] = useState(false);
+
+    // Period Work Log Modal
+    const [showWorkLogModal, setShowWorkLogModal] = useState(false);
+    const [workLogData, setWorkLogData] = useState({
+        period: null,
+        slot: null,
+        day: '',
+        dateStr: ''
+    });
 
     // Edit slot modal
     const [showSlotModal, setShowSlotModal] = useState(false);
@@ -88,6 +114,58 @@ export default function AdminTimetablePage() {
     const [periodForm, setPeriodForm] = useState({ startTime: '', endTime: '', slotType: 'lecture' });
 
     const isAdmin = user?.role === 'admin' || user?.role === 'principal';
+
+    // Compute dynamic week days with date formatting
+    const weekDays = useMemo(() => {
+        const today = new Date();
+        const currentDay = today.getDay(); // 0 is Sunday, 1 is Monday
+        const distanceToMonday = currentDay === 0 ? -6 : 1 - currentDay;
+        const monday = new Date(today);
+        monday.setDate(today.getDate() + distanceToMonday + weekOffset * 7);
+
+        return DAYS.map((dayKey, idx) => {
+            const d = new Date(monday);
+            d.setDate(monday.getDate() + idx);
+            const dateStr = d.toISOString().split('T')[0];
+            const isTodayDate = d.toDateString() === today.toDateString();
+            const formattedDate = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+            const fullDateDisplay = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
+
+            return {
+                dayKey,
+                date: d,
+                dateStr,
+                formattedDate,
+                fullDateDisplay,
+                isToday: isTodayDate
+            };
+        });
+    }, [weekOffset]);
+
+    // Load School Calendar Holidays
+    const loadCalendarHolidays = useCallback(async () => {
+        try {
+            if (weekDays.length === 0) return;
+            const startDate = weekDays[0].dateStr;
+            const endDate = weekDays[weekDays.length - 1].dateStr;
+            const res = await calendarAPI.getEvents({ startDate, endDate });
+            const events = res.data?.data?.events || [];
+            const hMap = {};
+            events.forEach(e => {
+                if (e.isHoliday || e.eventType === 'holiday') {
+                    const dateKey = new Date(e.date).toISOString().split('T')[0];
+                    hMap[dateKey] = e;
+                }
+            });
+            setCalendarHolidays(hMap);
+        } catch (e) {
+            console.warn('Failed to load calendar holidays:', e);
+        }
+    }, [weekDays]);
+
+    useEffect(() => {
+        loadCalendarHolidays();
+    }, [loadCalendarHolidays]);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -144,20 +222,25 @@ export default function AdminTimetablePage() {
                 });
                 setSlots(grouped);
                 
-                // Derive period structure
-                const periodsMap = new Map();
-                tt.slots.forEach(slot => {
-                    if (!periodsMap.has(slot.periodNumber)) {
-                        periodsMap.set(slot.periodNumber, {
-                            periodNumber: slot.periodNumber,
-                            startTime: slot.startTime,
-                            endTime: slot.endTime,
-                            slotType: slot.slotType
-                        });
-                    }
-                });
-                const periods = Array.from(periodsMap.values()).sort((a,b) => a.periodNumber - b.periodNumber);
-                setPeriodStructure(periods.length > 0 ? periods : [...DEFAULT_PERIODS]);
+                // Build complete period structure ensuring periods 1 to max(8, maxPeriod) are ALWAYS present!
+                const maxPeriod = Math.max(8, ...tt.slots.map(s => s.periodNumber || 1));
+                const completePeriods = [];
+                for (let pNum = 1; pNum <= maxPeriod; pNum++) {
+                    const existingSlot = tt.slots.find(s => s.periodNumber === pNum);
+                    const defaultP = DEFAULT_PERIODS[pNum - 1] || {
+                        periodNumber: pNum,
+                        startTime: '08:00',
+                        endTime: '08:40',
+                        slotType: 'lecture'
+                    };
+                    completePeriods.push({
+                        periodNumber: pNum,
+                        startTime: existingSlot?.startTime || defaultP.startTime,
+                        endTime: existingSlot?.endTime || defaultP.endTime,
+                        slotType: existingSlot?.slotType || defaultP.slotType || 'lecture'
+                    });
+                }
+                setPeriodStructure(completePeriods);
             } else {
                 const grouped = {};
                 DAYS.forEach(day => { grouped[day] = {}; });
@@ -221,6 +304,44 @@ export default function AdminTimetablePage() {
         }
     }, [selectedClassId, selectedInstructorId, viewMode, loadTimetable]);
 
+    const handleNumPeriodsChange = (count) => {
+        const n = Math.max(1, Math.min(12, parseInt(count) || 8));
+        const newPeriods = [];
+        let startMins = 8 * 60; // 08:00 AM
+        for (let i = 1; i <= n; i++) {
+            const isBreak = (i === 4);
+            const duration = isBreak ? 15 : 40;
+            const endMins = startMins + duration;
+
+            const sh = Math.floor(startMins / 60).toString().padStart(2, '0');
+            const sm = (startMins % 60).toString().padStart(2, '0');
+            const eh = Math.floor(endMins / 60).toString().padStart(2, '0');
+            const em = (endMins % 60).toString().padStart(2, '0');
+
+            newPeriods.push({
+                periodNumber: i,
+                startTime: `${sh}:${sm}`,
+                endTime: `${eh}:${em}`,
+                slotType: isBreak ? 'break_period' : 'lecture'
+            });
+
+            startMins = endMins;
+        }
+        setCreateForm(prev => ({
+            ...prev,
+            numPeriods: n,
+            periods: newPeriods
+        }));
+    };
+
+    const handleCreatePeriodTimingChange = (idx, field, value) => {
+        setCreateForm(prev => {
+            const copy = [...prev.periods];
+            copy[idx] = { ...copy[idx], [field]: value };
+            return { ...prev, periods: copy };
+        });
+    };
+
     const handleCreateTimetable = async () => {
         if (!createForm.name || !createForm.effectiveFrom || !selectedClassId) {
             toast.error('Please fill all required fields');
@@ -241,15 +362,73 @@ export default function AdminTimetablePage() {
             }
             
             const res = await timetableAPI.create(payload);
+            const newTt = res.data.data?.timetable;
             toast.success('Timetable created!');
             setShowCreateModal(false);
-            setCreateForm({ name: '', effectiveFrom: '', effectiveTo: '' });
+            if (createForm.periods && createForm.periods.length > 0) {
+                setPeriodStructure(createForm.periods);
+            }
+            setCreateForm({
+                name: '',
+                effectiveFrom: '',
+                effectiveTo: '',
+                numPeriods: 8,
+                periods: [...DEFAULT_PERIODS]
+            });
             loadTimetable(selectedClassId);
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to create timetable');
         } finally {
             setSaving(false);
         }
+    };
+
+    // Work Log modal trigger
+    const handleOpenWorkLogModal = (e, day, period, slot) => {
+        e?.stopPropagation?.();
+        const dayObj = weekDays.find(w => w.dayKey === day);
+        setWorkLogData({
+            period,
+            slot: slot || slots[day]?.[period.periodNumber] || null,
+            day,
+            dateStr: dayObj?.dateStr || new Date().toISOString().split('T')[0]
+        });
+        setShowWorkLogModal(true);
+    };
+
+    const handleWorkSaved = (logData) => {
+        const key = `${logData.slotId || logData.periodNumber}_${logData.dateStr}`;
+        setLoggedWorkMap(prev => ({
+            ...prev,
+            [key]: logData
+        }));
+    };
+
+    // Calculate time status for a period and day
+    const getPeriodTimeStatus = (period, dayObj) => {
+        if (!dayObj?.isToday) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            if (dayObj?.dateStr && dayObj.dateStr < todayStr) return { status: 'past', progressPercent: 0 };
+            return { status: 'future', progressPercent: 0 };
+        }
+
+        const now = new Date();
+        const currentMins = now.getHours() * 60 + now.getMinutes();
+        const [sh, sm] = (period.startTime || '08:00').split(':').map(Number);
+        const [eh, em] = (period.endTime || '08:40').split(':').map(Number);
+        const startMins = sh * 60 + sm;
+        const endMins = eh * 60 + em;
+
+        if (currentMins >= endMins) {
+            return { status: 'past', progressPercent: 100 };
+        }
+        if (currentMins >= startMins && currentMins < endMins) {
+            const total = Math.max(endMins - startMins, 1);
+            const elapsed = currentMins - startMins;
+            const progressPercent = Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+            return { status: 'current', progressPercent };
+        }
+        return { status: 'future', progressPercent: 0 };
     };
 
     // Slot Editing
@@ -639,22 +818,34 @@ export default function AdminTimetablePage() {
                         )}
 
                         {viewMode === 'class' && selectedClassId && (
-                            <div className="flex flex-wrap gap-2 mt-auto">
+                            <div className="flex flex-wrap items-center gap-2 mt-auto">
                                 {!timetable ? (
                                     <button onClick={() => {
                                         const date = new Date();
                                         const df = date.toISOString().split('T')[0];
                                         date.setMonth(date.getMonth() + 3);
                                         const dt = date.toISOString().split('T')[0];
-                                        setCreateForm({ name: '', effectiveFrom: df, effectiveTo: dt });
+                                        setCreateForm({
+                                            name: '',
+                                            effectiveFrom: df,
+                                            effectiveTo: dt,
+                                            numPeriods: 8,
+                                            periods: [...DEFAULT_PERIODS]
+                                        });
                                         setShowCreateModal(true);
                                     }} className="btn btn-primary">
                                         <Plus className="w-4 h-4" /> Create Timetable
                                     </button>
                                 ) : (
                                     <>
+                                        <button
+                                            onClick={() => setShowAIGeneratorModal(true)}
+                                            className="btn btn-secondary bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800"
+                                        >
+                                            <Sparkles className="w-4 h-4 text-purple-600" /> AI Assistant
+                                        </button>
                                         <button onClick={handleAutoFillWeek} disabled={saving} className="btn btn-secondary">
-                                            <Clock className="w-4 h-4" /> Auto-fill Selected Periods
+                                            <Clock className="w-4 h-4" /> Auto-fill Periods
                                         </button>
                                         <button onClick={() => loadTimetable(selectedClassId)} className="btn btn-ghost">
                                             <RefreshCw className="w-4 h-4" />
@@ -665,14 +856,44 @@ export default function AdminTimetablePage() {
                         )}
                     </div>
 
+                    {/* Week Navigation & Timetable Info */}
                     {viewMode === 'class' && timetable && (
-                        <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
-                            <span className="flex items-center gap-1">
-                                <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                <strong>{timetable.name}</strong>
-                            </span>
-                            <span>From: {formatDate(timetable.effectiveFrom)}</span>
-                            {timetable.effectiveTo && <span>To: {formatDate(timetable.effectiveTo)}</span>}
+                        <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 text-sm text-slate-600 dark:text-slate-400">
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setWeekOffset(prev => prev - 1)}
+                                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition"
+                                    title="Previous Week"
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                </button>
+                                <button
+                                    onClick={() => setWeekOffset(0)}
+                                    className={`px-3 py-1 rounded-lg text-xs font-semibold border transition ${
+                                        weekOffset === 0
+                                            ? 'bg-primary-50 border-primary-300 text-primary-700 dark:bg-primary-950/40 dark:border-primary-800 dark:text-primary-300'
+                                            : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    }`}
+                                >
+                                    {weekOffset === 0 ? 'This Week (Live)' : `${weekDays[0]?.formattedDate} - ${weekDays[5]?.formattedDate}`}
+                                </button>
+                                <button
+                                    onClick={() => setWeekOffset(prev => prev + 1)}
+                                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition"
+                                    title="Next Week"
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                                <span className="flex items-center gap-1 font-semibold text-slate-800 dark:text-slate-200">
+                                    <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                    {timetable.name}
+                                </span>
+                                <span>From: {formatDate(timetable.effectiveFrom)}</span>
+                                {timetable.effectiveTo && <span>To: {formatDate(timetable.effectiveTo)}</span>}
+                            </div>
                         </div>
                     )}
                 </div>
@@ -690,16 +911,33 @@ export default function AdminTimetablePage() {
                             <>
                                 <div className="card overflow-hidden">
                                     <div className="overflow-x-auto">
-                                        <table className="w-full border-collapse min-w-[900px]">
+                                        <table className="w-full border-collapse min-w-[950px]">
                                             <thead>
-                                                <tr className="bg-gradient-to-r from-primary-500 to-primary-600">
-                                                    <th className="px-3 py-3 text-left text-sm font-semibold text-white w-24">Period</th>
-                                                    {DAYS.map(day => (
-                                                        <th key={day} className="px-3 py-3 text-center text-sm font-semibold text-white">
-                                                            <div className="hidden md:block">{DAY_LABELS_FULL[day]}</div>
-                                                            <div className="md:hidden">{DAY_LABELS[day]}</div>
-                                                        </th>
-                                                    ))}
+                                                <tr className="bg-gradient-to-r from-primary-600 to-indigo-600 text-white">
+                                                    <th className="px-3 py-3 text-left text-sm font-semibold w-24">Period</th>
+                                                    {weekDays.map(dayObj => {
+                                                        const holiday = calendarHolidays[dayObj.dateStr];
+                                                        return (
+                                                            <th key={dayObj.dayKey} className={`px-3 py-2 text-center text-sm font-semibold transition ${dayObj.isToday ? 'bg-white/10 ring-2 ring-white/30' : ''}`}>
+                                                                <div className="flex flex-col items-center">
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span>{dayObj.fullDateDisplay}</span>
+                                                                        {dayObj.isToday && (
+                                                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-400 text-slate-950 font-extrabold uppercase">
+                                                                                Today
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {holiday && (
+                                                                        <div className="mt-1 px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-bold flex items-center gap-1 truncate max-w-[130px]" title={holiday.title}>
+                                                                            <PartyPopper className="w-3 h-3 flex-shrink-0" />
+                                                                            <span className="truncate">{holiday.title || 'Holiday'}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </th>
+                                                        );
+                                                    })}
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -736,44 +974,96 @@ export default function AdminTimetablePage() {
                                                                 </div>
                                                             </div>
                                                         </td>
-                                                        {DAYS.map(day => {
+                                                        {weekDays.map(dayObj => {
+                                                            const day = dayObj.dayKey;
                                                             const slot = slots[day]?.[period.periodNumber];
+                                                            const holiday = calendarHolidays[dayObj.dateStr];
+                                                            const { status: timeStatus, progressPercent } = getPeriodTimeStatus(period, dayObj);
+                                                            const workKey = `${slot?.id || period.periodNumber}_${dayObj.dateStr}`;
+                                                            const hasLoggedWork = !!loggedWorkMap[workKey];
+
+                                                            // Determine styling
+                                                            let cellClass = "w-full min-h-[68px] rounded-lg px-2 py-1.5 text-left transition-all border relative overflow-hidden group ";
+                                                            if (holiday) {
+                                                                cellClass += "bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-200 ";
+                                                            } else if (timeStatus === 'current') {
+                                                                cellClass += "border-emerald-500 ring-2 ring-emerald-500/30 bg-emerald-50/40 dark:bg-emerald-950/30 shadow-md ";
+                                                            } else if (timeStatus === 'past') {
+                                                                cellClass += "bg-slate-100/80 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/80 opacity-75 hover:opacity-100 ";
+                                                            } else if (slot) {
+                                                                cellClass += getSlotColor(slot.slotType) + " hover:shadow-md hover:-translate-y-0.5 ";
+                                                            } else {
+                                                                cellClass += "bg-slate-50 dark:bg-slate-800/40 border-dashed border-slate-200 dark:border-slate-700 hover:border-primary-300 hover:bg-primary-50/50 ";
+                                                            }
+
                                                             return (
-                                                                <td key={day} className="px-1 py-1 border-r border-slate-100 dark:border-slate-800">
-                                                                    <button
-                                                                        onClick={() => handleSlotClick(day, period)}
-                                                                        className={`w-full min-h-[60px] rounded-lg px-2 py-1.5 text-left transition-all hover:shadow-md hover:-translate-y-0.5 border ${slot
-                                                                            ? getSlotColor(slot.slotType)
-                                                                            : 'bg-slate-50 dark:bg-slate-800/50 border-dashed border-slate-200 dark:border-slate-700 hover:border-primary-300 hover:bg-primary-50/50'
-                                                                            }`}
-                                                                    >
-                                                                        {slot ? (
-                                                                            <>
-                                                                                <div className="text-xs font-semibold truncate leading-tight mt-1">
-                                                                                    {slot.slotType === 'break_period' ? '☕ Break' :
-                                                                                     slot.slotType === 'assembly' ? '🏫 Assembly' :
-                                                                                     slot.slotType === 'free' ? '— Free' :
-                                                                                     slot.slotType === 'sports' ? '⚽ Sports' :
-                                                                                     slot.slotType === 'library' ? '📚 Library' :
-                                                                                     slot.subject?.code || slot.subject?.name || 'No Subject'}
-                                                                                </div>
-                                                                                {slot.instructor && (
-                                                                                    <div className="text-[10px] opacity-80 truncate mt-1">
-                                                                                        {slot.instructor.firstName} {slot.instructor.lastName?.[0]}.
-                                                                                    </div>
-                                                                                )}
-                                                                                {slot.roomNumber && (
-                                                                                    <div className="text-[10px] opacity-60 truncate">
-                                                                                        Room {slot.roomNumber}
-                                                                                    </div>
-                                                                                )}
-                                                                            </>
-                                                                        ) : (
-                                                                            <div className="flex items-center justify-center h-full">
-                                                                                <Plus className="w-4 h-4 text-slate-300" />
-                                                                            </div>
+                                                                <td key={day} className="px-1 py-1 border-r border-slate-100 dark:border-slate-800 align-top">
+                                                                    <div className={cellClass}>
+                                                                        {/* Fluid Green Covered-Time Progress Fill for Live Period */}
+                                                                        {timeStatus === 'current' && !holiday && (
+                                                                            <div
+                                                                                className="absolute inset-0 bg-emerald-400/25 dark:bg-emerald-500/25 rounded-lg pointer-events-none transition-all duration-1000 ease-linear"
+                                                                                style={{ width: `${progressPercent}%` }}
+                                                                            />
                                                                         )}
-                                                                    </button>
+
+                                                                        {/* Slot Content */}
+                                                                        <div className="relative z-10 flex flex-col justify-between h-full" onClick={() => handleSlotClick(day, period)}>
+                                                                            <div>
+                                                                                {/* Header Row: Live badge & Log work button */}
+                                                                                <div className="flex items-center justify-between gap-1">
+                                                                                    {timeStatus === 'current' && !holiday && (
+                                                                                        <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full bg-emerald-600 text-white animate-pulse">
+                                                                                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                                                                                            LIVE ({progressPercent}%)
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {hasLoggedWork && (
+                                                                                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 flex items-center gap-0.5 ml-auto">
+                                                                                            <Check className="w-2.5 h-2.5" /> Logged
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {/* Plus icon to log work done */}
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={(e) => handleOpenWorkLogModal(e, day, period, slot)}
+                                                                                        className="opacity-0 group-hover:opacity-100 p-1 rounded-md bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 text-slate-600 hover:text-primary-600 hover:bg-primary-50 transition ml-auto"
+                                                                                        title="Log Work Done / Class Activity"
+                                                                                    >
+                                                                                        <Plus className="w-3.5 h-3.5" />
+                                                                                    </button>
+                                                                                </div>
+
+                                                                                {slot ? (
+                                                                                    <>
+                                                                                        <div className="text-xs font-semibold truncate leading-tight mt-1">
+                                                                                            {slot.slotType === 'break_period' ? '☕ Break' :
+                                                                                            slot.slotType === 'assembly' ? '🏫 Assembly' :
+                                                                                            slot.slotType === 'free' ? '— Free' :
+                                                                                            slot.slotType === 'sports' ? '⚽ Sports' :
+                                                                                            slot.slotType === 'library' ? '📚 Library' :
+                                                                                            slot.subject?.code || slot.subject?.name || 'No Subject'}
+                                                                                        </div>
+                                                                                        {slot.instructor && (
+                                                                                            <div className="text-[10px] opacity-80 truncate mt-0.5">
+                                                                                                {slot.instructor.firstName} {slot.instructor.lastName?.[0]}.
+                                                                                            </div>
+                                                                                        )}
+                                                                                        {slot.roomNumber && (
+                                                                                            <div className="text-[10px] opacity-60 truncate">
+                                                                                                Room {slot.roomNumber}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <div className="flex flex-col items-center justify-center py-2 text-slate-300 dark:text-slate-600 group-hover:text-primary-500 transition">
+                                                                                        <Plus className="w-4 h-4" />
+                                                                                        <span className="text-[9px]">Add</span>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
                                                                 </td>
                                                             );
                                                         })}
@@ -782,20 +1072,30 @@ export default function AdminTimetablePage() {
                                             </tbody>
                                         </table>
                                         
-                                        <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+                                        <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-between">
                                             <button onClick={handleAddPeriod} className="text-sm font-medium text-slate-600 hover:text-primary-600 flex items-center gap-1">
                                                 <Plus className="w-4 h-4" /> Add Period Row
                                             </button>
+                                            <span className="text-xs text-slate-400">
+                                                Grid Integrity: All {periodStructure.length} periods active across Monday to Saturday
+                                            </span>
                                         </div>
                                     </div>
 
                                     {/* Legend */}
-                                    <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/50 flex flex-wrap gap-3">
+                                    <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/50 flex flex-wrap items-center gap-3">
+                                        <span className="text-[11px] font-bold text-slate-500 uppercase">Slots:</span>
                                         {SLOT_TYPES.map(st => (
-                                            <span key={st.value} className={`px-2 py-1 rounded text-[10px] font-medium border ${st.color}`}>
+                                            <span key={st.value} className={`px-2 py-0.5 rounded text-[10px] font-medium border ${st.color}`}>
                                                 {st.label}
                                             </span>
                                         ))}
+                                        <span className="px-2 py-0.5 rounded text-[10px] font-medium border bg-emerald-100 text-emerald-800 border-emerald-300 flex items-center gap-1">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping" /> Live Active
+                                        </span>
+                                        <span className="px-2 py-0.5 rounded text-[10px] font-medium border bg-slate-200 text-slate-600 border-slate-300">
+                                            Past Period
+                                        </span>
                                     </div>
                                 </div>
                                 
@@ -832,7 +1132,13 @@ export default function AdminTimetablePage() {
                                     const df = date.toISOString().split('T')[0];
                                     date.setMonth(date.getMonth() + 3);
                                     const dt = date.toISOString().split('T')[0];
-                                    setCreateForm({ name: '', effectiveFrom: df, effectiveTo: dt });
+                                    setCreateForm({
+                                        name: '',
+                                        effectiveFrom: df,
+                                        effectiveTo: dt,
+                                        numPeriods: 8,
+                                        periods: [...DEFAULT_PERIODS]
+                                    });
                                     setShowCreateModal(true);
                                 }} className="btn btn-primary">
                                     <Plus className="w-4 h-4" /> Create Timetable
@@ -898,7 +1204,6 @@ export default function AdminTimetablePage() {
                             </div>
                         )}
 
-
                         {/* =========================================
                             TIMELINE VIEW
                         ========================================= */}
@@ -912,17 +1217,11 @@ export default function AdminTimetablePage() {
                                     <div className="text-center py-8 text-slate-500">No timetables found for this class.</div>
                                 ) : (
                                     <div className="space-y-4">
-                                        {/* Simple visualization replacing a complex chart lib */}
                                         {timetableHistory.map(tt => {
                                             const sf = new Date(tt.effectiveFrom);
                                             const st = tt.effectiveTo ? new Date(tt.effectiveTo) : null;
                                             const isPast = st && st < new Date();
                                             const isActive = !isPast && sf <= new Date() && (!st || st >= new Date());
-                                            
-                                            // Mock position logic based on next 90 days
-                                            const today = new Date();
-                                            const next90 = new Date();
-                                            next90.setDate(next90.getDate() + 90);
                                             
                                             return (
                                                 <div key={tt.id} className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 ${isActive ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20' : isPast ? 'bg-slate-50 border-slate-200 dark:bg-slate-900/50' : 'bg-white border-slate-200 dark:bg-slate-800'}`}>
@@ -940,7 +1239,7 @@ export default function AdminTimetablePage() {
                                                     <div>
                                                         <button 
                                                             onClick={() => {
-                                                                setTimetable(tt); // Switch to viewing it, though we usually just view the active
+                                                                setTimetable(tt);
                                                                 setViewMode('class');
                                                             }}
                                                             className="btn btn-secondary btn-sm"
@@ -968,50 +1267,122 @@ export default function AdminTimetablePage() {
                 )}
             </main>
 
-            {/* Create Timetable Modal */}
+            {/* Create Timetable Modal with Configurable Periods (Default 8 with editable timings) */}
             {showCreateModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full shadow-xl">
-                        <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-                            <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Create Timetable</h3>
-                            <p className="text-sm text-slate-500 mt-1">Set up a new timetable schedule block for this class.</p>
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-xl w-full max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-800">
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Create Timetable</h3>
+                            <p className="text-xs text-slate-500 mt-0.5">Set up timetable details, periods count, and timing structure.</p>
                         </div>
-                        <div className="p-6 space-y-4">
+                        <div className="p-6 space-y-4 overflow-y-auto flex-1">
                             <div>
-                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 block">Timetable Name *</label>
+                                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 block">Timetable Name *</label>
                                 <input
                                     type="text"
                                     value={createForm.name}
                                     onChange={(e) => setCreateForm(f => ({ ...f, name: e.target.value }))}
-                                    placeholder="e.g., Summer Timetable"
-                                    className="input w-full"
+                                    placeholder="e.g., Summer Term 2026 Timetable"
+                                    className="input w-full text-xs"
                                 />
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 block">Effective From *</label>
+                                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 block">Effective From *</label>
                                     <input
                                         type="date"
                                         value={createForm.effectiveFrom}
                                         onChange={(e) => setCreateForm(f => ({ ...f, effectiveFrom: e.target.value }))}
-                                        className="input w-full"
+                                        className="input w-full text-xs"
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 block">Effective To (optional)</label>
+                                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 block">Effective To (optional)</label>
                                     <input
                                         type="date"
                                         value={createForm.effectiveTo}
                                         onChange={(e) => setCreateForm(f => ({ ...f, effectiveTo: e.target.value }))}
-                                        className="input w-full"
+                                        className="input w-full text-xs"
                                     />
                                 </div>
                             </div>
+
+                            {/* Number of Periods Selector */}
+                            <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                        Number of Periods (Default: 8)
+                                    </label>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={12}
+                                            value={createForm.numPeriods || 8}
+                                            onChange={(e) => handleNumPeriodsChange(e.target.value)}
+                                            className="input input-sm w-20 text-center font-bold text-xs"
+                                        />
+                                        <span className="text-xs text-slate-400">Periods</span>
+                                    </div>
+                                </div>
+
+                                {/* Editable Timings Table */}
+                                <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mt-2">
+                                    <div className="max-h-48 overflow-y-auto">
+                                        <table className="w-full text-left text-xs">
+                                            <thead className="bg-slate-100 dark:bg-slate-800/70 text-slate-600 dark:text-slate-400">
+                                                <tr>
+                                                    <th className="py-1.5 px-3">Period</th>
+                                                    <th className="py-1.5 px-3">Start</th>
+                                                    <th className="py-1.5 px-3">End</th>
+                                                    <th className="py-1.5 px-3">Type</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                {createForm.periods.map((p, idx) => (
+                                                    <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                                                        <td className="py-1 px-3 font-bold text-slate-800 dark:text-slate-200">
+                                                            P{p.periodNumber}
+                                                        </td>
+                                                        <td className="py-1 px-3">
+                                                            <input
+                                                                type="time"
+                                                                value={p.startTime}
+                                                                onChange={(e) => handleCreatePeriodTimingChange(idx, 'startTime', e.target.value)}
+                                                                className="input input-xs w-24 font-mono text-[11px]"
+                                                            />
+                                                        </td>
+                                                        <td className="py-1 px-3">
+                                                            <input
+                                                                type="time"
+                                                                value={p.endTime}
+                                                                onChange={(e) => handleCreatePeriodTimingChange(idx, 'endTime', e.target.value)}
+                                                                className="input input-xs w-24 font-mono text-[11px]"
+                                                            />
+                                                        </td>
+                                                        <td className="py-1 px-3">
+                                                            <select
+                                                                value={p.slotType || 'lecture'}
+                                                                onChange={(e) => handleCreatePeriodTimingChange(idx, 'slotType', e.target.value)}
+                                                                className="select select-xs text-[11px]"
+                                                            >
+                                                                {SLOT_TYPES.map(st => (
+                                                                    <option key={st.value} value={st.value}>{st.label}</option>
+                                                                ))}
+                                                            </select>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex gap-3">
-                            <button onClick={() => setShowCreateModal(false)} className="btn btn-secondary flex-1">Cancel</button>
-                            <button onClick={handleCreateTimetable} disabled={saving} className="btn btn-primary flex-1">
-                                {saving ? 'Creating...' : 'Create'}
+                        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex gap-3 bg-slate-50 dark:bg-slate-950">
+                            <button onClick={() => setShowCreateModal(false)} className="btn btn-secondary flex-1 text-xs">Cancel</button>
+                            <button onClick={handleCreateTimetable} disabled={saving} className="btn btn-primary flex-1 text-xs">
+                                {saving ? 'Creating...' : 'Create Timetable'}
                             </button>
                         </div>
                     </div>
@@ -1020,23 +1391,23 @@ export default function AdminTimetablePage() {
 
             {/* Slot Edit Modal */}
             {showSlotModal && editingSlot && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full shadow-xl">
-                        <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-                            <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-800">
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
                                 {editingSlot.existing ? 'Edit Slot' : 'Add Slot'}
                             </h3>
-                            <p className="text-sm text-slate-500 mt-1">
+                            <p className="text-xs text-slate-500 mt-1">
                                 {DAY_LABELS_FULL[editingSlot.day]} — P{editingSlot.periodNumber} ({slotForm.startTime} - {slotForm.endTime})
                             </p>
                         </div>
                         <div className="p-6 space-y-4">
                             <div>
-                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 block">Slot Type</label>
+                                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 block">Slot Type</label>
                                 <select
                                     value={slotForm.slotType}
                                     onChange={(e) => setSlotForm(f => ({ ...f, slotType: e.target.value }))}
-                                    className="input w-full"
+                                    className="input w-full text-xs"
                                 >
                                     {SLOT_TYPES.map(st => (
                                         <option key={st.value} value={st.value}>{st.label}</option>
@@ -1047,11 +1418,11 @@ export default function AdminTimetablePage() {
                             {(slotForm.slotType === 'lecture' || slotForm.slotType === 'lab') && (
                                 <>
                                     <div>
-                                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 block">Subject</label>
+                                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 block">Subject</label>
                                         <select
                                             value={slotForm.subjectId}
                                             onChange={(e) => setSlotForm(f => ({ ...f, subjectId: e.target.value }))}
-                                            className="input w-full"
+                                            className="input w-full text-xs"
                                         >
                                             <option value="">Select subject...</option>
                                             {subjects.map(s => (
@@ -1061,11 +1432,11 @@ export default function AdminTimetablePage() {
                                     </div>
 
                                     <div>
-                                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 block">Instructor</label>
+                                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 block">Instructor</label>
                                         <select
                                             value={slotForm.instructorId}
                                             onChange={(e) => setSlotForm(f => ({ ...f, instructorId: e.target.value }))}
-                                            className="input w-full"
+                                            className="input w-full text-xs"
                                         >
                                             <option value="">Select instructor...</option>
                                             {instructors.map(i => (
@@ -1077,27 +1448,27 @@ export default function AdminTimetablePage() {
                                     </div>
 
                                     <div>
-                                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 block">Room Number</label>
+                                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 block">Room Number</label>
                                         <input
                                             type="text"
                                             value={slotForm.roomNumber}
                                             onChange={(e) => setSlotForm(f => ({ ...f, roomNumber: e.target.value }))}
                                             placeholder="e.g., Lab-1, Room 201"
-                                            className="input w-full"
+                                            className="input w-full text-xs"
                                         />
                                     </div>
                                 </>
                             )}
                         </div>
-                        <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex gap-3">
+                        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex gap-3 bg-slate-50 dark:bg-slate-950">
                             {editingSlot.existing && (
-                                <button onClick={handleDeleteSlot} disabled={saving} className="btn btn-ghost text-red-600 hover:bg-red-50">
+                                <button onClick={handleDeleteSlot} disabled={saving} className="btn btn-ghost text-red-600 hover:bg-red-50 text-xs">
                                     <Trash2 className="w-4 h-4" />
                                 </button>
                             )}
                             <div className="flex-1" />
-                            <button onClick={() => setShowSlotModal(false)} className="btn btn-secondary">Cancel</button>
-                            <button onClick={handleSaveSlot} disabled={saving} className="btn btn-primary">
+                            <button onClick={() => setShowSlotModal(false)} className="btn btn-secondary text-xs">Cancel</button>
+                            <button onClick={handleSaveSlot} disabled={saving} className="btn btn-primary text-xs">
                                 {saving ? 'Saving...' : 'Save'}
                             </button>
                         </div>
@@ -1107,49 +1478,77 @@ export default function AdminTimetablePage() {
 
             {/* Edit Period Timings Modal */}
             {showPeriodModal && editingPeriod && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full shadow-xl">
-                        <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-                            <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-800">
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                                 <Clock className="w-5 h-5 text-primary-500" /> Edit Period {editingPeriod.periodNumber}
                             </h3>
-                            <p className="text-sm text-slate-500 mt-1">Updates timings for this period across all days.</p>
+                            <p className="text-xs text-slate-500 mt-1">Updates timings for this period across all days.</p>
                         </div>
                         <div className="p-6 space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 block">Start Time</label>
+                                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 block">Start Time</label>
                                     <input
                                         type="time"
                                         value={periodForm.startTime}
                                         onChange={(e) => setPeriodForm(f => ({ ...f, startTime: e.target.value }))}
-                                        className="input w-full font-mono"
+                                        className="input w-full font-mono text-xs"
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 block">End Time</label>
+                                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 block">End Time</label>
                                     <input
                                         type="time"
                                         value={periodForm.endTime}
                                         onChange={(e) => setPeriodForm(f => ({ ...f, endTime: e.target.value }))}
-                                        className="input w-full font-mono"
+                                        className="input w-full font-mono text-xs"
                                     />
                                 </div>
                             </div>
-                            <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg flex items-start gap-2 text-sm text-slate-600 dark:text-slate-400">
+                            <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg flex items-start gap-2 text-xs text-slate-600 dark:text-slate-400">
                                 <Info className="w-4 h-4 flex-shrink-0 mt-0.5 text-blue-500" />
-                                <span>Note: Changing these timings will stretch or squeeze all slots in Period {editingPeriod.periodNumber}. Other periods will NOT automatically shift.</span>
+                                <span>Note: Changing these timings will stretch or squeeze all slots in Period {editingPeriod.periodNumber}.</span>
                             </div>
                         </div>
-                        <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex gap-3">
-                            <button onClick={() => setShowPeriodModal(false)} className="btn btn-secondary flex-1">Cancel</button>
-                            <button onClick={handleSavePeriodTiming} disabled={saving} className="btn btn-primary flex-1">
+                        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex gap-3 bg-slate-50 dark:bg-slate-950">
+                            <button onClick={() => setShowPeriodModal(false)} className="btn btn-secondary flex-1 text-xs">Cancel</button>
+                            <button onClick={handleSavePeriodTiming} disabled={saving} className="btn btn-primary flex-1 text-xs">
                                 {saving ? 'Saving...' : 'Apply Timing'}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
+
+            {/* AI Timetable Assistant Modal */}
+            <AITimetableGeneratorModal
+                isOpen={showAIGeneratorModal}
+                onClose={() => setShowAIGeneratorModal(false)}
+                timetable={timetable}
+                classId={selectedClassId}
+                periodStructure={periodStructure}
+                existingSlots={slots}
+                subjects={subjects}
+                instructors={instructors}
+                onSlotsApplied={() => loadTimetable(selectedClassId)}
+            />
+
+            {/* Period Work Log Modal */}
+            <PeriodWorkLogModal
+                isOpen={showWorkLogModal}
+                onClose={() => setShowWorkLogModal(false)}
+                period={workLogData.period}
+                slot={workLogData.slot}
+                day={workLogData.day}
+                dateStr={workLogData.dateStr}
+                classId={selectedClassId}
+                instructors={instructors}
+                subjects={subjects}
+                currentUser={user}
+                onWorkSaved={handleWorkSaved}
+            />
         </div>
     );
 }
