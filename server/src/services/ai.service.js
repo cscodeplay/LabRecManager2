@@ -736,6 +736,9 @@ FORMATTING RULES:
             }
         }
 
+        throw new Error('All AI providers failed to generate note content.');
+    }
+
     /**
      * Parse natural language timetable prompt and return structured slots
      */
