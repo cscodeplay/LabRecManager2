@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
-import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI } from '@/lib/api';
+import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
@@ -2596,6 +2596,302 @@ function CalendarActionCard({ action }) {
     );
 }
 
+/* ─── Class Creation Action Card ─── */
+function ClassActionCard({ action }) {
+    const [isEditing, setIsEditing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
+    const [createdClass, setCreatedClass] = useState(null);
+
+    // Form state
+    const [name, setName] = useState(action?.name || 'Class 11 Non-Medical A');
+    const [nameHindi, setNameHindi] = useState(action?.nameHindi || '');
+    const [gradeLevel, setGradeLevel] = useState(action?.gradeLevel || 11);
+    const [section, setSection] = useState(action?.section || 'A');
+    const [stream, setStream] = useState(action?.stream || 'Non-Medical');
+    const [maxStudents, setMaxStudents] = useState(action?.maxStudents || 60);
+    const [academicYearId, setAcademicYearId] = useState(action?.academicYearId || '');
+
+    useEffect(() => {
+        if (action) {
+            setName(action.name || '');
+            setNameHindi(action.nameHindi || '');
+            setGradeLevel(action.gradeLevel || 11);
+            setSection(action.section || 'A');
+            setStream(action.stream || 'Non-Medical');
+            setMaxStudents(action.maxStudents || 60);
+            setAcademicYearId(action.academicYearId || '');
+            setIsConfirmed(action.isConfirmed || false);
+            setIsCancelled(action.isCancelled || false);
+        }
+    }, [action]);
+
+    const handleConfirm = async () => {
+        if (!name.trim()) {
+            toast.error('Class name is required');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const res = await classesAPI.create({
+                name: name.trim(),
+                nameHindi: nameHindi.trim() || undefined,
+                gradeLevel: parseInt(gradeLevel, 10),
+                section: section.trim() || undefined,
+                stream: stream || 'General',
+                maxStudents: parseInt(maxStudents, 10) || 60,
+                academicYearId: academicYearId || undefined
+            });
+
+            const newClass = res.data?.data?.class;
+            setCreatedClass(newClass);
+            setIsConfirmed(true);
+            setIsEditing(false);
+            toast.success(res.data?.message || `Class "${name}" created successfully!`, { icon: '🎓' });
+        } catch (err) {
+            console.error('Failed to create class:', err);
+            toast.error(err.response?.data?.message || err.response?.data?.errors?.[0]?.msg || 'Failed to create class');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleCancel = () => {
+        setIsCancelled(true);
+        setIsEditing(false);
+        toast('Class creation cancelled', { icon: '🚫' });
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Class Draft Cancelled</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(false)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                    >
+                        <Undo2 className="w-3 h-3" /> Restore Draft
+                    </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                    The draft for class "{name}" was cancelled and not created.
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-2.5 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50/90 via-white to-violet-50/50 shadow-sm overflow-hidden text-[12px] animate-in fade-in">
+            {/* Header */}
+            <div className="px-3 py-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-semibold text-xs tracking-tight">
+                    <GraduationCap className="w-4 h-4 text-indigo-100" />
+                    <span>{isConfirmed ? 'Class Created' : 'Class Draft (Pending Confirmation)'}</span>
+                </div>
+                {isConfirmed ? (
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
+                        <Check className="w-2.5 h-2.5" /> Created & Active
+                    </span>
+                ) : (
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-300 text-amber-950 flex items-center gap-1">
+                        <Clock className="w-2.5 h-2.5" /> Ready to Confirm
+                    </span>
+                )}
+            </div>
+
+            {/* Content Body */}
+            <div className="p-3.5 space-y-3">
+                {isConfirmed ? (
+                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white font-bold flex items-center justify-center text-sm shadow-xs">
+                                    {gradeLevel}{section ? section : ''}
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-slate-900 text-[13px]">{name}</h4>
+                                    <p className="text-[11px] text-slate-500">{stream} Stream • Capacity: {maxStudents} Students</p>
+                                </div>
+                            </div>
+                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-full border border-emerald-200">
+                                Active
+                            </span>
+                        </div>
+                        {createdClass?.id && (
+                            <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-end">
+                                <a
+                                    href={`/classes/${createdClass.id}`}
+                                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 hover:underline"
+                                >
+                                    <ExternalLink className="w-3 h-3" /> View Class Details
+                                </a>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <>
+                        {isEditing ? (
+                            <div className="space-y-2.5">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Class Name *</label>
+                                    <input
+                                        type="text"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                        placeholder="e.g. 11 Non-Medical A"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Grade (1-12)</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="12"
+                                            value={gradeLevel}
+                                            onChange={(e) => setGradeLevel(e.target.value)}
+                                            className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Section</label>
+                                        <input
+                                            type="text"
+                                            maxLength="10"
+                                            value={section}
+                                            onChange={(e) => setSection(e.target.value)}
+                                            className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                            placeholder="A"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Stream</label>
+                                        <select
+                                            value={stream}
+                                            onChange={(e) => setStream(e.target.value)}
+                                            className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                        >
+                                            <option value="General">General</option>
+                                            <option value="Non-Medical">Non-Medical</option>
+                                            <option value="Medical">Medical</option>
+                                            <option value="Science">Science</option>
+                                            <option value="Commerce">Commerce</option>
+                                            <option value="Arts">Arts</option>
+                                            <option value="Vocational">Vocational</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Max Students</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="200"
+                                            value={maxStudents}
+                                            onChange={(e) => setMaxStudents(e.target.value)}
+                                            className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Name (Hindi)</label>
+                                        <input
+                                            type="text"
+                                            value={nameHindi}
+                                            onChange={(e) => setNameHindi(e.target.value)}
+                                            className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                            placeholder="कक्षा 11"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="bg-white/80 rounded-xl p-3 border border-indigo-100/80 space-y-2.5 shadow-2xs">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-base flex items-center justify-center shadow-xs">
+                                            {gradeLevel}{section || ''}
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-slate-900 text-[14px] leading-tight">{name}</h4>
+                                            {nameHindi && <p className="text-[11px] text-slate-500 font-medium">{nameHindi}</p>}
+                                        </div>
+                                    </div>
+                                    <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold rounded-full border border-indigo-200">
+                                        {stream}
+                                    </span>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-[11px]">
+                                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                        <span className="text-[9px] uppercase font-bold text-slate-400 block">Grade</span>
+                                        <span className="font-bold text-slate-700">Class {gradeLevel}</span>
+                                    </div>
+                                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                        <span className="text-[9px] uppercase font-bold text-slate-400 block">Section</span>
+                                        <span className="font-bold text-slate-700">Section {section || 'A'}</span>
+                                    </div>
+                                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                        <span className="text-[9px] uppercase font-bold text-slate-400 block">Capacity</span>
+                                        <span className="font-bold text-slate-700">{maxStudents} Students</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Action Buttons */}
+                        <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditing(!isEditing)}
+                                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                                >
+                                    <Edit3 className="w-3 h-3" /> {isEditing ? 'Done' : 'Edit Details'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleCancel}
+                                    className="px-2 py-1.5 text-slate-400 hover:text-red-600 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                                >
+                                    <XCircle className="w-3 h-3" /> Cancel
+                                </button>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={handleConfirm}
+                                disabled={isSaving}
+                                className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white text-[11px] font-bold rounded-lg shadow-sm shadow-indigo-500/20 transition flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                                {isSaving ? (
+                                    <>
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Creating Class...
+                                    </>
+                                ) : (
+                                    <>
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> Confirm & Create Class
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
 /* ═══════════════════════════════════════════════════════
    MAIN FLOATING CHATBOT COMPONENT
    ═══════════════════════════════════════════════════════ */
@@ -2725,6 +3021,7 @@ export default function FloatingChatbot() {
                         calendarAction: d.calendarAction,
                         assignmentAction: d.assignmentAction,
                         noteAction: d.noteAction,
+                        classAction: d.classAction,
                         model: d.model, 
                         provider: d.provider, 
                         timestamp: d.timestamp 
@@ -3003,6 +3300,7 @@ export default function FloatingChatbot() {
                                     {msg.calendarAction && <CalendarActionCard action={msg.calendarAction} />}
                                     {msg.assignmentAction && <AssignmentActionCard action={msg.assignmentAction} />}
                                     {msg.noteAction && <NoteActionCard action={msg.noteAction} />}
+                                    {msg.classAction && <ClassActionCard action={msg.classAction} />}
                                     {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
                                 </div>
                             </div>

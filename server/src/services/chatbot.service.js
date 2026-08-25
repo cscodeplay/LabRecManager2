@@ -509,6 +509,159 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             }
         }
 
+        // Intent detection: Class Creation (e.g., "create class 11 Non-Medical A", "add class 10 B", "create class 11 stream Non-Medical and section A")
+        const isClassCreationIntent = (
+            (userRole === 'admin' || userRole === 'principal') &&
+            (/\b(create|add|make|new|register|setup)\s+(a\s+|an\s+)?class\b/i.test(msgLower) ||
+             /\bclass\s+(creation|create|add)\b/i.test(msgLower) ||
+             /^(create|add|make)\s+class\b/i.test(msgLower.trim()) ||
+             msgLower.includes('ਕਲਾਸ ਬਣਾਓ') || msgLower.includes('ਨਵੀਂ ਕਲਾਸ') ||
+             msgLower.includes('कक्षा बनाएं') || msgLower.includes('नई कक्षा')) &&
+            !msgLower.includes('assignment') &&
+            !msgLower.includes('meeting') &&
+            !msgLower.includes('document')
+        );
+
+        if (isClassCreationIntent) {
+            try {
+                console.log('[ChatBot] Class creation intent detected:', message);
+
+                let targetAcademicYearId = academicYearId || null;
+                if (!targetAcademicYearId) {
+                    try {
+                        const activeSession = await prisma.academicYear.findFirst({
+                            where: { isCurrent: true }
+                        }) || await prisma.academicYear.findFirst({
+                            orderBy: { startDate: 'desc' }
+                        });
+                        targetAcademicYearId = activeSession?.id || null;
+                    } catch (e) {
+                        console.warn('[ChatBot] Could not fetch current academicYear:', e.message);
+                    }
+                }
+
+                // 1. Parse Grade Level (1-12)
+                let gradeLevel = 11;
+                const gradeMatch = message.match(/\b(?:class|grade|standard|std)\s*([1-9]|1[0-2])\b/i) ||
+                                   message.match(/\b([1-9]|1[0-2])(?:st|nd|rd|th)?\s*(?:grade|class|standard|std)?\b/i) ||
+                                   message.match(/\b([1-9]|1[0-2])\b/);
+                if (gradeMatch) {
+                    gradeLevel = parseInt(gradeMatch[1], 10);
+                }
+
+                // 2. Parse Stream
+                let stream = 'General';
+                if (/non[\s-]?medical/i.test(message)) {
+                    stream = 'Non-Medical';
+                } else if (/medical/i.test(message)) {
+                    stream = 'Medical';
+                } else if (/science/i.test(message)) {
+                    stream = 'Science';
+                } else if (/commerce/i.test(message)) {
+                    stream = 'Commerce';
+                } else if (/arts|humanities/i.test(message)) {
+                    stream = 'Arts';
+                } else if (/vocational/i.test(message)) {
+                    stream = 'Vocational';
+                } else if (gradeLevel >= 11) {
+                    stream = 'Science';
+                }
+
+                // 3. Parse Section
+                let section = '';
+                const sectionExplicitMatch = message.match(/\bsection\s*[:\-]?\s*([A-Za-z0-9]+)\b/i);
+                if (sectionExplicitMatch) {
+                    section = sectionExplicitMatch[1].toUpperCase();
+                } else {
+                    const tokens = message.trim().split(/\s+/);
+                    const lastToken = tokens[tokens.length - 1].toUpperCase();
+                    if (/^[A-F]$/.test(lastToken)) {
+                        section = lastToken;
+                    } else {
+                        const letterMatch = message.match(/\b([A-F])\b/i);
+                        if (letterMatch) {
+                            section = letterMatch[1].toUpperCase();
+                        }
+                    }
+                }
+                if (!section) section = 'A';
+
+                // 4. Construct Class Name
+                let className = '';
+                if (stream && stream !== 'General') {
+                    className = `${gradeLevel} ${stream} ${section}`.trim();
+                } else {
+                    className = `${gradeLevel}-${section}`.trim();
+                }
+
+                // 5. Try AI LLM refinement if available
+                const classExtractPrompt = `Extract class creation details from the user prompt:
+Prompt: "${message}"
+
+Return JSON ONLY with this exact format:
+{
+  "name": "string (e.g. 11 Non-Medical A)",
+  "gradeLevel": number (1-12),
+  "section": "string (e.g. A, B)",
+  "stream": "General" | "Non-Medical" | "Medical" | "Science" | "Commerce" | "Arts" | "Vocational",
+  "maxStudents": number (default 60),
+  "nameHindi": "string or empty"
+}`;
+
+                let llmExtracted = null;
+                if (this.groqClient) {
+                    try {
+                        const res = await this.groqClient.chat.completions.create({
+                            model: 'llama-3.3-70b-versatile',
+                            messages: [{ role: 'user', content: classExtractPrompt }],
+                            temperature: 0.1,
+                            response_format: { type: 'json_object' }
+                        });
+                        const raw = res.choices[0]?.message?.content || '';
+                        llmExtracted = JSON.parse(raw);
+                    } catch (e) {
+                        console.warn('[ChatBot] Groq class parsing fallback to rule-based:', e.message);
+                    }
+                }
+
+                if (llmExtracted && llmExtracted.gradeLevel) {
+                    gradeLevel = parseInt(llmExtracted.gradeLevel, 10) || gradeLevel;
+                    stream = llmExtracted.stream || stream;
+                    section = (llmExtracted.section || section).toUpperCase();
+                    className = llmExtracted.name || className;
+                }
+
+                const classAction = {
+                    isDraft: true,
+                    isConfirmed: false,
+                    isCancelled: false,
+                    name: className,
+                    nameHindi: llmExtracted?.nameHindi || '',
+                    gradeLevel,
+                    section,
+                    stream,
+                    maxStudents: llmExtracted?.maxStudents || 60,
+                    academicYearId: targetAcademicYearId
+                };
+
+                return {
+                    message: `🎓 **Class Draft Created! (Pending Confirmation)**\n\nI have prepared the draft for **Class ${className}** (Grade: **${gradeLevel}**, Stream: **${stream}**, Section: **${section}**).\n\nPlease review or edit the details in the confirmation card below and click **Confirm & Create Class**:`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    meetingAction: null,
+                    calendarAction: null,
+                    assignmentAction: null,
+                    noteAction: null,
+                    classAction,
+                    provider: 'auto'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Class creation intent error:', err);
+            }
+        }
+
         // Intent detection: AI Assignment Updating
         const isAssignmentUpdateIntent = (
             (/\b(change|update|edit|modify|extend|postpone|shift)\b/i.test(msgLower)) ||
