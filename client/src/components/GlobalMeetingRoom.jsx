@@ -331,6 +331,7 @@ export default function GlobalMeetingRoom() {
     const micAnimFrameRef = useRef(null);
     const canvasAnimRef = useRef(null);
     const canvasIntervalRef = useRef(null);
+    const recordingAudioCtxRef = useRef(null);
     const activeRoomIdRef = useRef(code);
 
     const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'principal' || user?.role === 'lab_assistant';
@@ -1545,6 +1546,7 @@ export default function GlobalMeetingRoom() {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (AudioContextClass) {
                 const audioCtx = new AudioContextClass();
+                recordingAudioCtxRef.current = audioCtx;
                 if (audioCtx.state === 'suspended') {
                     audioCtx.resume().catch(() => {});
                 }
@@ -1647,7 +1649,7 @@ export default function GlobalMeetingRoom() {
             const ctx = canvas.getContext('2d');
 
             let frame = 0;
-            const title = session?.title || session?.submission?.assignment?.title || 'Meeting Session Recording';
+            const title = session?.title || session?.questionsAsked?.sessionTitle || session?.submission?.assignment?.title || 'Meeting Session Recording';
             const roomCode = displayRoomCode || code;
 
             const draw = () => {
@@ -1753,6 +1755,12 @@ export default function GlobalMeetingRoom() {
                     setShowRecordingModal(true);
                     setIsRecording(false);
 
+                    if (recordingAudioCtxRef.current && recordingAudioCtxRef.current.state !== 'closed') {
+                        setTimeout(() => {
+                            try { recordingAudioCtxRef.current?.close(); } catch (e) {}
+                        }, 2000);
+                    }
+
                     // Auto-upload immediately in background so recordings are never lost
                     const targetId = session?.id || activeRoomIdRef.current || code;
                     try {
@@ -1766,17 +1774,31 @@ export default function GlobalMeetingRoom() {
                     }
                 };
 
+                let isFinalized = false;
+                const safeFinalize = (blob) => {
+                    if (isFinalized) return;
+                    isFinalized = true;
+                    finalizeRecording(blob);
+                };
+
+                const timeoutId = setTimeout(() => {
+                    safeFinalize(rawBlob);
+                }, 1500);
+
                 if (typeof fixWebmDuration === 'function' && durationMs > 0) {
                     try {
                         fixWebmDuration(rawBlob, durationMs, (fixedBlob) => {
-                            finalizeRecording(fixedBlob);
+                            clearTimeout(timeoutId);
+                            safeFinalize(fixedBlob);
                         });
                     } catch (e) {
+                        clearTimeout(timeoutId);
                         console.warn('fixWebmDuration failed, using raw blob:', e);
-                        finalizeRecording(rawBlob);
+                        safeFinalize(rawBlob);
                     }
                 } else {
-                    finalizeRecording(rawBlob);
+                    clearTimeout(timeoutId);
+                    safeFinalize(rawBlob);
                 }
             };
 

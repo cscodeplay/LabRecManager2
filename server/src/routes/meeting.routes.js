@@ -48,6 +48,7 @@ async function findMeetingByIdOrLink(idParam, options = {}) {
     const orList = [];
     if (isUUID(strParam)) {
         orList.push({ id: strParam });
+        orList.push({ submissionId: strParam });
     }
     orList.push({ meetingLink: { contains: strParam } });
     if (cleanDigits && cleanDigits.length >= 6) {
