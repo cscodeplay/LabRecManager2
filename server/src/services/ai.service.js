@@ -838,67 +838,46 @@ Return ONLY a valid JSON array of slot objects with the following schema:
         const { subjects = [], instructors = [], periodStructure = [] } = context;
         const text = prompt.toLowerCase();
 
-        // 1. Determine Days
-        const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-        let matchedDays = [];
-
-        if (text.includes('mon to thu') || text.includes('mon-thu') || text.includes('monday to thursday')) {
-            matchedDays = ['monday', 'tuesday', 'wednesday', 'thursday'];
-        } else if (text.includes('mon to fri') || text.includes('mon-fri') || text.includes('monday to friday')) {
-            matchedDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-        } else if (text.includes('mon to sat') || text.includes('mon-sat') || text.includes('monday to saturday')) {
-            matchedDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-        } else if (text.includes('every day') || text.includes('all days') || text.includes('daily') || text.includes('all week')) {
-            matchedDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-        } else {
-            allDays.forEach(day => {
-                const shortDay = day.substring(0, 3);
-                if (text.includes(day) || text.includes(shortDay)) {
-                    if (!matchedDays.includes(day)) matchedDays.push(day);
-                }
-            });
-        }
-
-        if (matchedDays.length === 0) {
-            matchedDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-        }
-
-        // 2. Determine Period Number
-        let periodNumber = 1;
-        const periodMatch = text.match(/(\d+)(?:st|nd|rd|th)?\s*(?:period|lecture|p\b|slot)/i) ||
-                            text.match(/(?:period|lecture|p)\s*(\d+)/i) ||
-                            text.match(/period\s*#?\s*(\d+)/i);
-        if (periodMatch) {
-            periodNumber = parseInt(periodMatch[1], 10);
-        } else if (text.includes('first')) periodNumber = 1;
-        else if (text.includes('second') || text.includes('2nd')) periodNumber = 2;
-        else if (text.includes('third') || text.includes('3rd')) periodNumber = 3;
-        else if (text.includes('fourth') || text.includes('4th')) periodNumber = 4;
-        else if (text.includes('fifth') || text.includes('5th')) periodNumber = 5;
-        else if (text.includes('sixth') || text.includes('6th')) periodNumber = 6;
-        else if (text.includes('seventh') || text.includes('7th')) periodNumber = 7;
-        else if (text.includes('eighth') || text.includes('8th')) periodNumber = 8;
-
-        // 3. Resolve Period Timings
-        const matchedPeriodInfo = periodStructure.find(p => p.periodNumber === periodNumber);
-        const defaultTimings = {
-            1: { start: '08:00', end: '08:40' },
-            2: { start: '08:40', end: '09:20' },
-            3: { start: '09:20', end: '10:00' },
-            4: { start: '10:00', end: '10:15', type: 'break_period' },
-            5: { start: '10:15', end: '10:55' },
-            6: { start: '10:55', end: '11:35' },
-            7: { start: '11:35', end: '12:15' },
-            8: { start: '12:15', end: '12:55' },
+        // Helper to normalize day strings
+        const normalizeDay = (d) => {
+            const low = (d || '').toLowerCase();
+            if (low.startsWith('mon')) return 'monday';
+            if (low.startsWith('tue')) return 'tuesday';
+            if (low.startsWith('wed')) return 'wednesday';
+            if (low.startsWith('thu')) return 'thursday';
+            if (low.startsWith('fri')) return 'friday';
+            if (low.startsWith('sat')) return 'saturday';
+            if (low.startsWith('sun')) return 'sunday';
+            return null;
         };
-        const def = defaultTimings[periodNumber] || { start: '08:00', end: '08:40' };
-        const startTime = matchedPeriodInfo?.startTime || def.start;
-        const endTime = matchedPeriodInfo?.endTime || def.end;
-        let slotType = matchedPeriodInfo?.slotType || def.type || 'lecture';
-        if (text.includes('lab') || text.includes('practical')) slotType = 'lab';
-        else if (text.includes('break')) slotType = 'break_period';
 
-        // 4. Match Subject
+        // Helper to compute or look up period timings
+        const getPeriodTimings = (pNum) => {
+            const matchedPeriodInfo = periodStructure.find(p => p.periodNumber === pNum);
+            const defaultTimings = {
+                1: { start: '08:00', end: '08:40' },
+                2: { start: '08:40', end: '09:20' },
+                3: { start: '09:20', end: '10:00' },
+                4: { start: '10:00', end: '10:15', type: 'break_period' },
+                5: { start: '10:15', end: '10:55' },
+                6: { start: '10:55', end: '11:35' },
+                7: { start: '11:35', end: '12:15' },
+                8: { start: '12:15', end: '12:55' },
+                9: { start: '12:55', end: '13:35' },
+                10: { start: '13:35', end: '14:15' },
+                11: { start: '14:15', end: '14:55' },
+                12: { start: '14:55', end: '15:35' }
+            };
+            const def = defaultTimings[pNum] || { start: '08:00', end: '08:40' };
+            const startTime = matchedPeriodInfo?.startTime || def.start;
+            const endTime = matchedPeriodInfo?.endTime || def.end;
+            let slotType = matchedPeriodInfo?.slotType || def.type || 'lecture';
+            if (text.includes('lab') || text.includes('practical')) slotType = 'lab';
+            else if (text.includes('break')) slotType = 'break_period';
+            return { startTime, endTime, slotType };
+        };
+
+        // 1. Match Subject
         let subjectId = null;
         let subjectName = '';
         for (const s of subjects) {
@@ -911,12 +890,9 @@ Return ONLY a valid JSON array of slot objects with the following schema:
             }
         }
         if (!subjectName) {
-            // Attempt extracting subject name from common keywords
-            const subRegex = /(?:subject|course|for)\s+([a-zA-Z\s]{3,25})(?:\s+for|\s+class|\s+by|\s+in|$)/i;
+            const subRegex = /(?:subject|course|for|of)\s+([a-zA-Z\s]{3,25})(?:\s+by|\s+for|\s+class|\s+in|$)/i;
             const subMatch = prompt.match(subRegex);
-            if (subMatch) {
-                subjectName = subMatch[1].trim();
-            } else if (text.includes('computer science') || text.includes('cs')) {
+            if (text.includes('computer science') || text.includes('cs')) {
                 subjectName = 'Computer Science';
             } else if (text.includes('physics')) {
                 subjectName = 'Physics';
@@ -928,12 +904,14 @@ Return ONLY a valid JSON array of slot objects with the following schema:
                 subjectName = 'Biology';
             } else if (text.includes('english')) {
                 subjectName = 'English';
+            } else if (subMatch) {
+                subjectName = subMatch[1].trim();
             } else {
                 subjectName = 'Lecture';
             }
         }
 
-        // 5. Match Instructor
+        // 2. Match Instructor
         let instructorId = null;
         let instructorName = '';
         for (const inst of instructors) {
@@ -946,38 +924,147 @@ Return ONLY a valid JSON array of slot objects with the following schema:
             }
         }
         if (!instructorName) {
-            const instRegex = /(?:instructor|teacher|faculty|by|sir|mam)\s+([a-zA-Z\s]{3,30})(?:\s+for|\s+in|\s+at|$)/i;
+            const instRegex = /(?:instructor|teacher|faculty|by|sir|mam)\s+([a-zA-Z\s]{3,30})(?:\s+for|\s+in|\s+at|\s+-|$)/i;
             const instMatch = prompt.match(instRegex);
             if (instMatch) {
                 instructorName = instMatch[1].trim();
             }
         }
 
-        // 6. Match Room Number
+        // 3. Match Room Number
         let roomNumber = '';
         const roomMatch = prompt.match(/room\s*#?\s*([a-zA-Z0-9-]+)/i) || prompt.match(/lab\s*#?\s*([a-zA-Z0-9-]+)/i);
         if (roomMatch) {
             roomNumber = roomMatch[1];
-        } else if (slotType === 'lab' || subjectName.toLowerCase().includes('computer')) {
+        } else if (subjectName.toLowerCase().includes('computer') || text.includes('lab')) {
             roomNumber = 'Lab-1';
         } else {
             roomNumber = 'Room 101';
         }
 
-        // Build array of slots across all matched days
-        return matchedDays.map(dayOfWeek => ({
-            dayOfWeek,
-            periodNumber,
-            startTime,
-            endTime,
-            subjectId,
-            subjectName,
-            instructorId,
-            instructorName,
-            roomNumber,
-            slotType,
-            isNew: true
-        }));
+        // 4. Parse Day-Period Pairings
+        let dayPeriodPairs = [];
+
+        // Check for explicit override, e.g. "with 7th lecture for both days" or "7th for both days"
+        const bothDaysOverrideMatch = text.match(/(?:with|create|set)?\s*(\d+)(?:st|nd|rd|th)?\s*(?:period|lecture|slot)?\s*(?:for|on)?\s*both\s*days/i);
+        if (bothDaysOverrideMatch) {
+            const overridePeriod = parseInt(bothDaysOverrideMatch[1], 10);
+            const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            const mentionedDays = [];
+            allDays.forEach(day => {
+                const shortDay = day.substring(0, 3);
+                if (text.includes(day) || text.includes(shortDay)) {
+                    if (!mentionedDays.includes(day)) mentionedDays.push(day);
+                }
+            });
+            const daysToUse = mentionedDays.length > 0 ? mentionedDays : ['monday', 'tuesday'];
+            daysToUse.forEach(d => {
+                dayPeriodPairs.push({ day: d, period: overridePeriod });
+            });
+        }
+
+        // Check for day ranges (e.g. "mon to thu 2nd period", "mon-fri period 3")
+        if (dayPeriodPairs.length === 0) {
+            let rangeDays = null;
+            if (text.includes('mon to thu') || text.includes('mon-thu') || text.includes('monday to thursday')) {
+                rangeDays = ['monday', 'tuesday', 'wednesday', 'thursday'];
+            } else if (text.includes('mon to fri') || text.includes('mon-fri') || text.includes('monday to friday')) {
+                rangeDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+            } else if (text.includes('mon to sat') || text.includes('mon-sat') || text.includes('monday to saturday')) {
+                rangeDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            } else if (text.includes('every day') || text.includes('all days') || text.includes('daily') || text.includes('all week')) {
+                rangeDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            }
+
+            if (rangeDays) {
+                const pMatch = text.match(/(\d+)(?:st|nd|rd|th)?\s*(?:period|lecture|p\b|slot)/i) ||
+                               text.match(/(?:period|lecture|p)\s*(\d+)/i);
+                const pNum = pMatch ? parseInt(pMatch[1], 10) : 1;
+                rangeDays.forEach(d => {
+                    dayPeriodPairs.push({ day: d, period: pNum });
+                });
+            }
+        }
+
+        // If no range or override was matched, check for individual day-period pairings like "7th lecture for mon and 9th for tue"
+        if (dayPeriodPairs.length === 0) {
+            // Pattern: "<N>th (lecture/period) for <day>"
+            const pairRegex1 = /(\d+)(?:st|nd|rd|th)?\s*(?:period|lecture|slot)?\s*(?:for|on|in)\s*(mon|tue|wed|thu|fri|sat|monday|tuesday|wednesday|thursday|friday|saturday)\b/gi;
+            let m1;
+            while ((m1 = pairRegex1.exec(text)) !== null) {
+                const p = parseInt(m1[1], 10);
+                const d = normalizeDay(m1[2]);
+                if (d && p && !dayPeriodPairs.some(existing => existing.day === d && existing.period === p)) {
+                    dayPeriodPairs.push({ day: d, period: p });
+                }
+            }
+
+            // Pattern: "<day> <N>th (lecture/period)"
+            const pairRegex2 = /(mon|tue|wed|thu|fri|sat|monday|tuesday|wednesday|thursday|friday|saturday)\s*(?:for|on|in)?\s*(\d+)(?:st|nd|rd|th)?\s*(?:period|lecture|slot)?/gi;
+            let m2;
+            while ((m2 = pairRegex2.exec(text)) !== null) {
+                const d = normalizeDay(m2[1]);
+                const p = parseInt(m2[2], 10);
+                if (d && p && !dayPeriodPairs.some(existing => existing.day === d && existing.period === p)) {
+                    dayPeriodPairs.push({ day: d, period: p });
+                }
+            }
+        }
+
+        // Fallback: If still empty, determine days and period independently
+        if (dayPeriodPairs.length === 0) {
+            const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            let matchedDays = [];
+
+            allDays.forEach(day => {
+                const shortDay = day.substring(0, 3);
+                if (text.includes(day) || text.includes(shortDay)) {
+                    if (!matchedDays.includes(day)) matchedDays.push(day);
+                }
+            });
+
+            if (matchedDays.length === 0) {
+                matchedDays = ['monday', 'tuesday'];
+            }
+
+            let periodNumber = 1;
+            const periodMatch = text.match(/(\d+)(?:st|nd|rd|th)?\s*(?:period|lecture|p\b|slot)/i) ||
+                                text.match(/(?:period|lecture|p)\s*(\d+)/i) ||
+                                text.match(/period\s*#?\s*(\d+)/i);
+            if (periodMatch) {
+                periodNumber = parseInt(periodMatch[1], 10);
+            } else if (text.includes('first') || text.includes('1st')) periodNumber = 1;
+            else if (text.includes('second') || text.includes('2nd')) periodNumber = 2;
+            else if (text.includes('third') || text.includes('3rd')) periodNumber = 3;
+            else if (text.includes('fourth') || text.includes('4th')) periodNumber = 4;
+            else if (text.includes('fifth') || text.includes('5th')) periodNumber = 5;
+            else if (text.includes('sixth') || text.includes('6th')) periodNumber = 6;
+            else if (text.includes('seventh') || text.includes('7th')) periodNumber = 7;
+            else if (text.includes('eighth') || text.includes('8th')) periodNumber = 8;
+            else if (text.includes('ninth') || text.includes('9th')) periodNumber = 9;
+
+            matchedDays.forEach(day => {
+                dayPeriodPairs.push({ day, period: periodNumber });
+            });
+        }
+
+        // Construct final slot objects
+        return dayPeriodPairs.map(pair => {
+            const { startTime, endTime, slotType } = getPeriodTimings(pair.period);
+            return {
+                dayOfWeek: pair.day,
+                periodNumber: pair.period,
+                startTime,
+                endTime,
+                subjectId,
+                subjectName,
+                instructorId,
+                instructorName,
+                roomNumber,
+                slotType,
+                isNew: true
+            };
+        });
     }
 
     parseJSONResponse(text) {

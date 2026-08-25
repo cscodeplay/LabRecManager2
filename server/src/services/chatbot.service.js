@@ -662,6 +662,96 @@ Return JSON ONLY with this exact format:
             }
         }
 
+        // Intent detection: Timetable Slot Scheduling (e.g. "Create 7th lecture for mon and 9th for Tue of computer science by instructor Charanpreet Singh", "set period 2 on monday for class 12 Medical A")
+        const isTimetableCreationIntent = (
+            (userRole === 'admin' || userRole === 'principal' || userRole === 'instructor') &&
+            (/\b(create|add|set|make|schedule|put|slot|draft)\b/i.test(msgLower) &&
+             /\b(period|lecture|timetable|slot|class\s+slot)\b/i.test(msgLower) &&
+             (/\b(mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday|every\s+day|daily|both\s+days)\b/i.test(msgLower))) &&
+            !msgLower.includes('assignment') &&
+            !msgLower.includes('meeting')
+        );
+
+        if (isTimetableCreationIntent) {
+            try {
+                console.log('[ChatBot] Timetable slot creation intent detected:', message);
+
+                const [subjects, instructors, classes] = await Promise.all([
+                    prisma.subject.findMany({ select: { id: true, name: true, nameHindi: true, code: true } }).catch(() => []),
+                    prisma.user.findMany({
+                        where: { role: { in: ['instructor', 'lab_assistant', 'admin'] } },
+                        select: { id: true, firstName: true, lastName: true, email: true }
+                    }).catch(() => []),
+                    prisma.class.findMany({
+                        select: { id: true, name: true, gradeLevel: true, section: true }
+                    }).catch(() => [])
+                ]);
+
+                // Match Class if mentioned
+                let targetClassId = null;
+                let targetClassName = null;
+                for (const c of classes) {
+                    if (msgLower.includes(c.name.toLowerCase()) || msgLower.includes(`class ${c.name.toLowerCase()}`)) {
+                        targetClassId = c.id;
+                        targetClassName = c.name;
+                        break;
+                    }
+                }
+                if (!targetClassId && classes.length > 0) {
+                    const gMatch = message.match(/\b(?:class|grade)\s*([1-9]|1[0-2])\b/i);
+                    if (gMatch) {
+                        const gNum = parseInt(gMatch[1], 10);
+                        const matchedCls = classes.find(c => c.gradeLevel === gNum);
+                        if (matchedCls) {
+                            targetClassId = matchedCls.id;
+                            targetClassName = matchedCls.name;
+                        }
+                    }
+                    if (!targetClassId) {
+                        targetClassId = classes[0].id;
+                        targetClassName = classes[0].name;
+                    }
+                }
+
+                // Generate slots using the robust rule-based engine
+                const generatedSlots = aiService.parseTimetableSlotsRuleBased(message, {
+                    subjects,
+                    instructors,
+                    periodStructure: []
+                });
+
+                if (generatedSlots && generatedSlots.length > 0) {
+                    const timetableAction = {
+                        isDraft: true,
+                        isConfirmed: false,
+                        isCancelled: false,
+                        classId: targetClassId,
+                        className: targetClassName || 'Class Timetable',
+                        slots: generatedSlots
+                    };
+
+                    const daySummary = generatedSlots.map(s => `• **${s.dayOfWeek.toUpperCase()} - Period ${s.periodNumber}** (${s.startTime}-${s.endTime}): **${s.subjectName}** ${s.instructorName ? `by *${s.instructorName}*` : ''}`).join('\n');
+
+                    return {
+                        message: `📅 **Timetable Slot Draft Created! (Pending Confirmation)**\n\nI have prepared the draft for **${generatedSlots.length} lecture slot(s)** for **${targetClassName || 'Class'}**:\n\n${daySummary}\n\nPlease review or customize the timetable cards below and click **Confirm & Apply to Timetable**:`,
+                        sql: null,
+                        executionResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        meetingAction: null,
+                        calendarAction: null,
+                        assignmentAction: null,
+                        noteAction: null,
+                        classAction: null,
+                        timetableAction,
+                        provider: 'auto'
+                    };
+                }
+            } catch (err) {
+                console.error('[ChatBot] Timetable slot creation intent error:', err);
+            }
+        }
+
         // Intent detection: AI Assignment Updating
         const isAssignmentUpdateIntent = (
             (/\b(change|update|edit|modify|extend|postpone|shift)\b/i.test(msgLower)) ||

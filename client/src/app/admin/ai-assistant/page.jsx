@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation';
 import {
     Bot, Send, Upload, Database, ChevronDown, ChevronRight, Trash2,
     Sparkles, FileText, AlertTriangle, Copy, Check, RefreshCw, X, Download, Loader2,
-    GraduationCap, Clock, CheckCircle2, Edit3, XCircle, Undo2, ExternalLink
+    GraduationCap, Clock, CheckCircle2, Edit3, XCircle, Undo2, ExternalLink, Plus, Calendar
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import api, { classesAPI } from '@/lib/api';
+import api, { classesAPI, timetableAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import { formatTime } from '@/lib/dateUtils';
@@ -460,6 +460,354 @@ function ClassActionCard({ action }) {
     );
 }
 
+/* ─── Timetable Slot Creation Action Card ─── */
+function TimetableActionCard({ action }) {
+    const [slots, setSlots] = useState(Array.isArray(action?.slots) ? action.slots : []);
+    const [isEditing, setIsEditing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
+    const classId = action?.classId || '';
+    const className = action?.className || 'Class Timetable';
+
+    // Lists for dropdowns
+    const [subjectsList, setSubjectsList] = useState([]);
+    const [instructorsList, setInstructorsList] = useState([]);
+
+    useEffect(() => {
+        if (action?.slots) {
+            setSlots(action.slots);
+            setIsConfirmed(action.isConfirmed || false);
+            setIsCancelled(action.isCancelled || false);
+        }
+    }, [action]);
+
+    useEffect(() => {
+        let isMounted = true;
+        const loadContext = async () => {
+            try {
+                const [subRes, instRes] = await Promise.all([
+                    api.get('/subjects').catch(() => ({ data: { data: { subjects: [] } } })),
+                    api.get('/users', { params: { role: 'instructor', limit: 100 } }).catch(() => ({ data: { data: { users: [] } } }))
+                ]);
+                if (isMounted) {
+                    setSubjectsList(subRes.data?.data?.subjects || []);
+                    setInstructorsList(instRes.data?.data?.users || []);
+                }
+            } catch {
+                // quiet
+            }
+        };
+        loadContext();
+        return () => { isMounted = false; };
+    }, []);
+
+    const handleSlotChange = (index, field, value) => {
+        setSlots(prev => {
+            const copy = [...prev];
+            copy[index] = { ...copy[index], [field]: value };
+            return copy;
+        });
+    };
+
+    const handleRemoveSlot = (index) => {
+        setSlots(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleAddSlot = () => {
+        const last = slots[slots.length - 1];
+        setSlots(prev => [
+            ...prev,
+            {
+                dayOfWeek: last?.dayOfWeek || 'friday',
+                periodNumber: parseInt(last?.periodNumber || 1, 10),
+                startTime: last?.startTime || '08:00',
+                endTime: last?.endTime || '08:40',
+                subjectId: last?.subjectId || null,
+                subjectName: last?.subjectName || 'Computer Science',
+                instructorId: last?.instructorId || null,
+                instructorName: last?.instructorName || '',
+                roomNumber: last?.roomNumber || 'Room 101',
+                slotType: last?.slotType || 'lecture',
+                isNew: true
+            }
+        ]);
+        setIsEditing(true);
+    };
+
+    const handleConfirm = async () => {
+        if (slots.length === 0) {
+            toast.error('No timetable slots to apply');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            let targetTimetableId = null;
+            if (classId) {
+                const ttRes = await timetableAPI.getByClass(classId).catch(() => null);
+                targetTimetableId = ttRes?.data?.data?.timetable?.id;
+                if (!targetTimetableId) {
+                    const newTt = await timetableAPI.create({
+                        classId,
+                        name: `${className} Timetable`,
+                        effectiveFrom: new Date().toISOString().split('T')[0]
+                    });
+                    targetTimetableId = newTt.data?.data?.timetable?.id;
+                }
+            } else {
+                const allTt = await timetableAPI.getAll().catch(() => null);
+                targetTimetableId = allTt?.data?.data?.timetables?.[0]?.id;
+            }
+
+            if (!targetTimetableId) {
+                toast.error('Could not find active timetable. Please create a timetable first.');
+                return;
+            }
+
+            const formattedSlots = slots.map(s => {
+                let resolvedSubjectId = s.subjectId;
+                if (!resolvedSubjectId && s.subjectName) {
+                    const matchedSub = subjectsList.find(sub =>
+                        sub.name.toLowerCase() === s.subjectName.toLowerCase() ||
+                        sub.name.toLowerCase().includes(s.subjectName.toLowerCase())
+                    );
+                    if (matchedSub) resolvedSubjectId = matchedSub.id;
+                }
+
+                let resolvedInstructorId = s.instructorId;
+                if (!resolvedInstructorId && s.instructorName) {
+                    const matchedInst = instructorsList.find(ins => {
+                        const full = `${ins.firstName} ${ins.lastName || ''}`.trim().toLowerCase();
+                        return full.includes(s.instructorName.toLowerCase()) || s.instructorName.toLowerCase().includes(ins.firstName.toLowerCase());
+                    });
+                    if (matchedInst) resolvedInstructorId = matchedInst.id;
+                }
+
+                return {
+                    dayOfWeek: (s.dayOfWeek || 'monday').toLowerCase(),
+                    periodNumber: parseInt(s.periodNumber, 10),
+                    startTime: s.startTime || '08:00',
+                    endTime: s.endTime || '08:40',
+                    subjectId: resolvedSubjectId || null,
+                    instructorId: resolvedInstructorId || null,
+                    roomNumber: s.roomNumber || null,
+                    slotType: s.slotType || 'lecture'
+                };
+            });
+
+            await timetableAPI.addBulkSlots(targetTimetableId, { slots: formattedSlots });
+            toast.success(`Successfully applied ${formattedSlots.length} slot(s) to timetable!`, { icon: '🎉' });
+            setIsConfirmed(true);
+            setIsEditing(false);
+        } catch (err) {
+            console.error('Failed to apply timetable slots:', err);
+            toast.error(err.response?.data?.message || 'Failed to apply timetable slots');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleCancel = () => {
+        setIsCancelled(true);
+        setIsEditing(false);
+        toast('Timetable draft cancelled', { icon: '🚫' });
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-300">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Timetable Draft Cancelled</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(false)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                    >
+                        <Undo2 className="w-3 h-3" /> Restore Draft
+                    </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                    The {slots.length} draft slot(s) were cancelled and not added to the timetable.
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-2.5 rounded-2xl border border-purple-200 dark:border-purple-900/50 bg-gradient-to-b from-purple-50/90 via-white to-indigo-50/50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 shadow-sm overflow-hidden text-[12px] animate-in fade-in">
+            {/* Header */}
+            <div className="px-3.5 py-2 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2 font-semibold text-xs tracking-tight">
+                    <Calendar className="w-4 h-4 text-purple-100" />
+                    <span>{isConfirmed ? 'Timetable Slots Applied' : 'Timetable Draft Slots'}</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 text-white">
+                        {className}
+                    </span>
+                </div>
+                {isConfirmed ? (
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
+                        <Check className="w-2.5 h-2.5" /> Applied ({slots.length})
+                    </span>
+                ) : (
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-300 text-amber-950 flex items-center gap-1">
+                        <Clock className="w-2.5 h-2.5" /> {slots.length} Slot(s) Pending
+                    </span>
+                )}
+            </div>
+
+            {/* Slots List */}
+            <div className="p-3 space-y-2.5">
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {slots.map((slot, idx) => (
+                        <div key={idx} className="p-2.5 bg-white dark:bg-slate-800 rounded-xl border border-purple-100/90 dark:border-purple-900/50 shadow-2xs space-y-2">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <span className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 font-extrabold text-[10px] uppercase">
+                                        {slot.dayOfWeek}
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-[10px]">
+                                        Period {slot.periodNumber} ({slot.startTime} - {slot.endTime})
+                                    </span>
+                                </div>
+                                {!isConfirmed && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRemoveSlot(idx)}
+                                        className="text-slate-300 hover:text-red-500 transition p-1"
+                                        title="Remove Slot"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+
+                            {isEditing && !isConfirmed ? (
+                                <div className="grid grid-cols-2 gap-2 pt-1">
+                                    <div>
+                                        <label className="text-[9px] font-bold text-slate-400 uppercase block mb-0.5">Subject</label>
+                                        <input
+                                            type="text"
+                                            value={slot.subjectName || ''}
+                                            onChange={(e) => handleSlotChange(idx, 'subjectName', e.target.value)}
+                                            className="w-full px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[11px] font-medium text-slate-800 dark:text-white"
+                                            placeholder="Subject"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] font-bold text-slate-400 uppercase block mb-0.5">Instructor</label>
+                                        <input
+                                            type="text"
+                                            value={slot.instructorName || ''}
+                                            onChange={(e) => handleSlotChange(idx, 'instructorName', e.target.value)}
+                                            className="w-full px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[11px] font-medium text-slate-800 dark:text-white"
+                                            placeholder="Instructor"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] font-bold text-slate-400 uppercase block mb-0.5">Period Number</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="12"
+                                            value={slot.periodNumber}
+                                            onChange={(e) => handleSlotChange(idx, 'periodNumber', parseInt(e.target.value, 10))}
+                                            className="w-full px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[11px] font-medium text-slate-800 dark:text-white"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] font-bold text-slate-400 uppercase block mb-0.5">Room</label>
+                                        <input
+                                            type="text"
+                                            value={slot.roomNumber || ''}
+                                            onChange={(e) => handleSlotChange(idx, 'roomNumber', e.target.value)}
+                                            className="w-full px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[11px] font-medium text-slate-800 dark:text-white"
+                                            placeholder="Room 101"
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-between text-[11px]">
+                                    <div>
+                                        <span className="font-bold text-slate-900 dark:text-white text-[12px] block">{slot.subjectName || 'Regular Session'}</span>
+                                        <span className="text-slate-500 dark:text-slate-400">
+                                            {slot.instructorName ? `Instructor: ${slot.instructorName}` : 'No instructor assigned'} • {slot.roomNumber || 'Room 101'}
+                                        </span>
+                                    </div>
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 capitalize">
+                                        {slot.slotType || 'lecture'}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+
+                {/* Footer Actions */}
+                {isConfirmed ? (
+                    <div className="pt-2 border-t border-purple-100 dark:border-purple-900/50 flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Successfully added to timetable
+                        </span>
+                        <a
+                            href="/admin/timetable"
+                            className="text-[11px] font-bold text-purple-700 dark:text-purple-400 hover:text-purple-800 flex items-center gap-1 hover:underline"
+                        >
+                            <ExternalLink className="w-3 h-3" /> View Timetable
+                        </a>
+                    </div>
+                ) : (
+                    <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(!isEditing)}
+                                className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                            >
+                                <Edit3 className="w-3 h-3" /> {isEditing ? 'Done' : 'Edit Slots'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleAddSlot}
+                                className="px-2 py-1.5 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 text-purple-700 dark:text-purple-300 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                            >
+                                <Plus className="w-3 h-3" /> Add Slot
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleCancel}
+                                className="px-2 py-1.5 text-slate-400 hover:text-red-600 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                            >
+                                <XCircle className="w-3 h-3" /> Cancel
+                            </button>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            disabled={isSaving || slots.length === 0}
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-[11px] font-bold rounded-lg shadow-sm shadow-purple-500/20 transition flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                            {isSaving ? (
+                                <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Applying Slots...
+                                </>
+                            ) : (
+                                <>
+                                    <CheckCircle2 className="w-3.5 h-3.5" /> Confirm & Apply to Timetable
+                                </>
+                            )}
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // Document badge
 function DocumentBadge({ doc, onRemove }) {
     return (
@@ -544,6 +892,7 @@ export default function AIAssistantPage() {
                     queryResult: data.queryResult,
                     reportAction: data.reportAction,
                     classAction: data.classAction,
+                    timetableAction: data.timetableAction,
                     timestamp: data.timestamp
                 }]);
             }
@@ -685,6 +1034,7 @@ export default function AIAssistantPage() {
                                     <>
                                         <RenderMessage content={msg.content} />
                                         {msg.classAction && <ClassActionCard action={msg.classAction} />}
+                                        {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
                                     </>
                                 )}
                                 {msg.queryResult && (
