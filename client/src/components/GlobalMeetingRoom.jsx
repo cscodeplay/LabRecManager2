@@ -1530,6 +1530,13 @@ export default function GlobalMeetingRoom() {
     // =========================================================================
     // ROBUST MEETING RECORDING ENGINE (WebAudio Multi-Track & Presentation Capture)
     // =========================================================================
+    const getMeetingRecordingFilename = (ext = 'webm') => {
+        const rawTitle = session?.title || session?.questionsAsked?.sessionTitle || session?.submission?.assignment?.title || 'Meeting';
+        const safeTitle = rawTitle.replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().replace(/\s+/g, '_');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        return `${safeTitle || 'Meeting'}_${dateStr}_${Date.now()}.${ext}`;
+    };
+
     const createCompositeRecordStream = () => {
         const stream = new MediaStream();
 
@@ -1538,6 +1545,9 @@ export default function GlobalMeetingRoom() {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (AudioContextClass) {
                 const audioCtx = new AudioContextClass();
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(() => {});
+                }
                 const audioDest = audioCtx.createMediaStreamDestination();
 
                 // Mix local microphone audio
@@ -1747,7 +1757,8 @@ export default function GlobalMeetingRoom() {
                     const targetId = session?.id || activeRoomIdRef.current || code;
                     try {
                         const finalDuration = Math.max(Math.round(durationMs / 1000), 1);
-                        const file = new File([blobToSave], `meeting_${targetId}_${Date.now()}.webm`, { type: 'video/webm' });
+                        const fileName = getMeetingRecordingFilename('webm');
+                        const file = new File([blobToSave], fileName, { type: 'video/webm' });
                         await meetingAPI.uploadRecording(targetId, file, finalDuration);
                         toast.success('Recording saved to session records!', { icon: '💾' });
                     } catch (saveErr) {
@@ -1803,7 +1814,7 @@ export default function GlobalMeetingRoom() {
         const a = document.createElement('a');
         a.href = url;
         const ext = recordedBlob.type.includes('mp4') ? 'mp4' : 'webm';
-        a.download = `meeting_${session?.id || code}_${Date.now()}.${ext}`;
+        a.download = getMeetingRecordingFilename(ext);
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -1823,7 +1834,8 @@ export default function GlobalMeetingRoom() {
 
             const finalDuration = Math.max(recordingTime, 1);
             const ext = recordedBlob.type.includes('mp4') ? 'mp4' : 'webm';
-            const file = new File([recordedBlob], `meeting_${targetId}_${Date.now()}.${ext}`, { type: recordedBlob.type });
+            const fileName = getMeetingRecordingFilename(ext);
+            const file = new File([recordedBlob], fileName, { type: recordedBlob.type || 'video/webm' });
             await meetingAPI.uploadRecording(targetId, file, finalDuration);
 
             clearTimeout(timer1);

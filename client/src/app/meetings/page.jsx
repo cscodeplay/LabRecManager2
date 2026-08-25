@@ -261,8 +261,8 @@ export default function MeetingPage() {
         try {
             const res = await meetingAPI.getSessions({ limit: 100 });
             const allSessions = res.data.data.sessions || [];
-            // Show completed sessions or any session that has an uploaded recording
-            const validRecordings = allSessions.filter(s => s.recordingUrl || s.status === 'completed');
+            // Strictly show sessions that have an uploaded recording
+            const validRecordings = allSessions.filter(s => !!s.recordingUrl);
             setRecordings(validRecordings);
         } catch (error) {
             console.error('Error loading recordings:', error);
@@ -270,6 +270,15 @@ export default function MeetingPage() {
         } finally {
             setLoadingRecordings(false);
         }
+    };
+
+    const formatRecordingDuration = (seconds) => {
+        if (!seconds && seconds !== 0) return null;
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        if (mins === 0) return `${secs}s`;
+        if (secs === 0) return `${mins} min`;
+        return `${mins}m ${secs}s`;
     };
 
     const formatFileSize = (bytes) => {
@@ -975,6 +984,7 @@ export default function MeetingPage() {
                                             getStatusIcon={getStatusIcon}
                                             getStatusBadge={getStatusBadge}
                                             onEdit={handleOpenEditModal}
+                                            onWatchRecording={setSelectedRecording}
                                         />
                                     ))}
                                 </div>
@@ -1005,8 +1015,8 @@ export default function MeetingPage() {
                     </>
                 )}
 
-                {/* Recordings Tab Content (Admin Only) */}
-                {activeTab === 'recordings' && isAdmin && (
+                {/* Recordings Tab Content (Admin & Instructors) */}
+                {activeTab === 'recordings' && canViewRecordings && (
                     <div className="space-y-6">
                         {/* Stats */}
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1015,16 +1025,18 @@ export default function MeetingPage() {
                                     <Video className="w-8 h-8 opacity-80" />
                                     <div>
                                         <p className="text-2xl font-bold">{recordings.length}</p>
-                                        <p className="text-sm opacity-80">Total Sessions</p>
+                                        <p className="text-sm opacity-80">Total Recordings</p>
                                     </div>
                                 </div>
                             </div>
                             <div className="card p-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white">
                                 <div className="flex items-center gap-3">
-                                    <Play className="w-8 h-8 opacity-80" />
+                                    <Clock className="w-8 h-8 opacity-80" />
                                     <div>
-                                        <p className="text-2xl font-bold">{recordings.filter(r => r.recordingUrl).length}</p>
-                                        <p className="text-sm opacity-80">With Recordings</p>
+                                        <p className="text-2xl font-bold">
+                                            {Math.round(recordings.reduce((sum, r) => sum + (r.recordingDuration || (r.durationMinutes ? r.durationMinutes * 60 : 0)), 0) / 60)} min
+                                        </p>
+                                        <p className="text-sm opacity-80">Total Duration</p>
                                     </div>
                                 </div>
                             </div>
@@ -1032,8 +1044,10 @@ export default function MeetingPage() {
                                 <div className="flex items-center gap-3">
                                     <Shield className="w-8 h-8 opacity-80" />
                                     <div>
-                                        <p className="text-2xl font-bold">{recordings.filter(r => !r.recordingUrl).length}</p>
-                                        <p className="text-sm opacity-80">Missing Recordings</p>
+                                        <p className="text-2xl font-bold">
+                                            {formatFileSize(recordings.reduce((sum, r) => sum + (r.recordingSize || 0), 0))}
+                                        </p>
+                                        <p className="text-sm opacity-80">Storage Used</p>
                                     </div>
                                 </div>
                             </div>
@@ -1050,28 +1064,17 @@ export default function MeetingPage() {
                             </div>
                         </div>
 
-                        {/* Filters */}
+                        {/* Search Filter */}
                         <div className="card p-4">
-                            <div className="flex flex-col md:flex-row gap-4">
-                                <div className="flex-1 relative">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                    <input
-                                        type="text"
-                                        placeholder="Search by student or examiner..."
-                                        className="input pl-10 w-full"
-                                        value={recordingSearch}
-                                        onChange={(e) => setRecordingSearch(e.target.value)}
-                                    />
-                                </div>
-                                <select
-                                    className="input"
-                                    value={recordingFilter}
-                                    onChange={(e) => setRecordingFilter(e.target.value)}
-                                >
-                                    <option value="all">All Sessions</option>
-                                    <option value="with_recording">With Recording</option>
-                                    <option value="without_recording">Missing Recording</option>
-                                </select>
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Search by meeting title, student, or host..."
+                                    className="input pl-10 w-full"
+                                    value={recordingSearch}
+                                    onChange={(e) => setRecordingSearch(e.target.value)}
+                                />
                             </div>
                         </div>
 
@@ -1084,35 +1087,44 @@ export default function MeetingPage() {
                             <div className="space-y-4">
                                 {recordings
                                     .filter(session => {
-                                        const searchMatch = recordingSearch === '' ||
-                                            session.student?.firstName?.toLowerCase().includes(recordingSearch.toLowerCase()) ||
-                                            session.student?.lastName?.toLowerCase().includes(recordingSearch.toLowerCase()) ||
-                                            session.examiner?.firstName?.toLowerCase().includes(recordingSearch.toLowerCase()) ||
-                                            session.examiner?.lastName?.toLowerCase().includes(recordingSearch.toLowerCase());
-                                        let recordingMatch = true;
-                                        if (recordingFilter === 'with_recording') recordingMatch = !!session.recordingUrl;
-                                        if (recordingFilter === 'without_recording') recordingMatch = !session.recordingUrl;
-                                        return searchMatch && recordingMatch;
+                                        if (!session.recordingUrl) return false;
+                                        const titleMatch = (session.title || session.questionsAsked?.sessionTitle || session.submission?.assignment?.title || '')
+                                            .toLowerCase().includes(recordingSearch.toLowerCase());
+                                        const studentMatch = (session.targetStudent?.firstName || session.student?.firstName || '')
+                                            .toLowerCase().includes(recordingSearch.toLowerCase()) ||
+                                            (session.targetStudent?.lastName || session.student?.lastName || '')
+                                            .toLowerCase().includes(recordingSearch.toLowerCase());
+                                        const hostMatch = (session.host?.firstName || session.examiner?.firstName || '')
+                                            .toLowerCase().includes(recordingSearch.toLowerCase()) ||
+                                            (session.host?.lastName || session.examiner?.lastName || '')
+                                            .toLowerCase().includes(recordingSearch.toLowerCase());
+                                        return recordingSearch === '' || titleMatch || studentMatch || hostMatch;
                                     })
                                     .map((session) => (
-                                        <div key={session.id} className={`card p-5 hover:shadow-lg transition ${!session.recordingUrl ? 'border-l-4 border-amber-500' : 'border-l-4 border-emerald-500'}`}>
+                                        <div key={session.id} className="card p-5 hover:shadow-lg transition border-l-4 border-emerald-500">
                                             <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                                                 <div className="flex-1">
                                                     <div className="flex items-start gap-3">
-                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${session.recordingUrl ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                                                        <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-emerald-100 text-emerald-600 shrink-0">
                                                             <Video className="w-6 h-6" />
                                                         </div>
                                                         <div>
-                                                            <h3 className="font-semibold text-slate-900">Meeting Session</h3>
+                                                            <h3 className="font-semibold text-slate-900 text-base">
+                                                                {session.title || session.questionsAsked?.sessionTitle || session.submission?.assignment?.title || 'Meeting Session'}
+                                                            </h3>
                                                             <div className="flex flex-wrap gap-3 text-sm text-slate-500 mt-1">
-                                                                <span className="flex items-center gap-1">
-                                                                    <User className="w-4 h-4" />
-                                                                    Student: {session.student?.firstName} {session.student?.lastName}
-                                                                </span>
-                                                                <span className="flex items-center gap-1">
-                                                                    <Shield className="w-4 h-4" />
-                                                                    Examiner: {session.examiner?.firstName} {session.examiner?.lastName}
-                                                                </span>
+                                                                {(session.targetStudent || session.student) && (
+                                                                    <span className="flex items-center gap-1">
+                                                                        <User className="w-4 h-4" />
+                                                                        Student: {(session.targetStudent || session.student).firstName} {(session.targetStudent || session.student).lastName}
+                                                                    </span>
+                                                                )}
+                                                                {(session.host || session.examiner) && (
+                                                                    <span className="flex items-center gap-1">
+                                                                        <Shield className="w-4 h-4" />
+                                                                        Host: {session.host ? `${session.host.firstName} ${session.host.lastName}` : `${session.examiner?.firstName} ${session.examiner?.lastName}`}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1121,29 +1133,24 @@ export default function MeetingPage() {
                                                             <Calendar className="w-4 h-4" />
                                                             {formatDateTime(session.actualEndTime || session.updatedAt)}
                                                         </span>
-                                                        <span className="flex items-center gap-1">
-                                                            <Clock className="w-4 h-4" />
-                                                            {session.durationMinutes} min
+                                                        <span className="flex items-center gap-1 text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                                            <Clock className="w-4 h-4 text-emerald-600" />
+                                                            Recorded: {session.recordingDuration ? formatRecordingDuration(session.recordingDuration) : `${session.durationMinutes || 10} min`}
                                                         </span>
                                                         {session.recordingSize && (
-                                                            <span className="text-emerald-600">📁 {formatFileSize(session.recordingSize)}</span>
+                                                            <span className="text-slate-600">📁 {formatFileSize(session.recordingSize)}</span>
                                                         )}
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-3">
-                                                    {session.recordingUrl ? (
-                                                        <button
-                                                            onClick={() => setSelectedRecording(session)}
-                                                            className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
-                                                            title="Watch Recording"
-                                                        >
-                                                            <Play className="w-5 h-5" />
-                                                        </button>
-                                                    ) : (
-                                                        <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm font-medium">
-                                                            No Recording
-                                                        </span>
-                                                    )}
+                                                    <button
+                                                        onClick={() => setSelectedRecording(session)}
+                                                        className="px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm flex items-center gap-2 font-semibold text-sm"
+                                                        title="Watch Recording"
+                                                    >
+                                                        <Play className="w-4 h-4 fill-white" />
+                                                        <span>Watch</span>
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
@@ -1164,46 +1171,66 @@ export default function MeetingPage() {
             {/* Video Player Modal for Recordings */}
             {selectedRecording && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+                    <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
                         <div className="p-4 border-b flex items-center justify-between">
                             <div>
                                 <h2 className="text-lg font-semibold text-slate-900">
-                                    Meeting Recording - {selectedRecording.student?.firstName} {selectedRecording.student?.lastName}
+                                    {selectedRecording.title || selectedRecording.questionsAsked?.sessionTitle || selectedRecording.submission?.assignment?.title || 'Meeting Recording'}
                                 </h2>
                                 <p className="text-sm text-slate-500">
                                     Host: {selectedRecording.host ? `${selectedRecording.host.firstName} ${selectedRecording.host.lastName}` : (selectedRecording.examiner ? `${selectedRecording.examiner.firstName} ${selectedRecording.examiner.lastName}` : 'Host')} • {formatDateTime(selectedRecording.actualEndTime || selectedRecording.updatedAt)}
                                 </p>
                             </div>
-                            <button
-                                onClick={() => setSelectedRecording(null)}
-                                className="p-2 hover:bg-slate-100 rounded-lg transition"
-                            >
-                                ✕
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <a
+                                    href={selectedRecording.recordingUrl?.startsWith('http') || selectedRecording.recordingUrl?.startsWith('/api') ? selectedRecording.recordingUrl : `/api/meetings/recordings/${selectedRecording.recordingUrl?.split('/').pop()}`}
+                                    download={selectedRecording.recordingUrl?.split('/').pop() || 'meeting_recording.webm'}
+                                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
+                                    title="Download Video File"
+                                >
+                                    <Download className="w-4 h-4" /> Download
+                                </a>
+                                <button
+                                    onClick={() => setSelectedRecording(null)}
+                                    className="p-2 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-lg transition"
+                                >
+                                    ✕
+                                </button>
+                            </div>
                         </div>
-                        <div className="p-4">
+                        <div className="p-4 overflow-y-auto">
                             <video
                                 controls
                                 autoPlay
-                                className="w-full rounded-lg bg-black aspect-video"
-                                src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'}/meetings/recordings/${selectedRecording.recordingUrl?.split('/').pop()}`}
+                                className="w-full rounded-lg bg-black aspect-video shadow-md"
+                                src={selectedRecording.recordingUrl?.startsWith('http') || selectedRecording.recordingUrl?.startsWith('/api') ? selectedRecording.recordingUrl : `/api/meetings/recordings/${selectedRecording.recordingUrl?.split('/').pop()}`}
                             >
                                 Your browser does not support video playback.
                             </video>
-                            <div className="mt-4 bg-slate-50 rounded-lg p-4">
+                            <div className="mt-4 bg-slate-50 rounded-xl p-4 border border-slate-200">
                                 <h3 className="font-medium text-slate-900 mb-2">Session Details</h3>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                     <div>
-                                        <p className="text-slate-500">Student</p>
-                                        <p className="font-medium">{selectedRecording.student?.firstName} {selectedRecording.student?.lastName}</p>
+                                        <p className="text-slate-500 text-xs">Target / Student</p>
+                                        <p className="font-medium mt-0.5">
+                                            {selectedRecording.targetStudent ? `${selectedRecording.targetStudent.firstName} ${selectedRecording.targetStudent.lastName}` : (selectedRecording.student ? `${selectedRecording.student.firstName} ${selectedRecording.student.lastName}` : 'All Participants')}
+                                        </p>
                                     </div>
                                     <div>
-                                        <p className="text-slate-500">Duration</p>
-                                        <p className="font-medium">{selectedRecording.durationMinutes} minutes</p>
+                                        <p className="text-slate-500 text-xs">Recorded Duration</p>
+                                        <p className="font-medium text-emerald-700 mt-0.5">
+                                            {selectedRecording.recordingDuration ? formatRecordingDuration(selectedRecording.recordingDuration) : `${selectedRecording.durationMinutes} min`}
+                                        </p>
                                     </div>
                                     <div>
-                                        <p className="text-slate-500">Remarks</p>
-                                        <p className="font-medium">{selectedRecording.examinerRemarks || 'No remarks'}</p>
+                                        <p className="text-slate-500 text-xs">File Size</p>
+                                        <p className="font-medium mt-0.5">
+                                            {formatFileSize(selectedRecording.recordingSize)}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-500 text-xs">Remarks</p>
+                                        <p className="font-medium mt-0.5">{selectedRecording.examinerRemarks || 'None'}</p>
                                     </div>
                                 </div>
                             </div>
@@ -1674,8 +1701,9 @@ export default function MeetingPage() {
 }
 
 // Session Card Component
-function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isLive, onEdit }) {
+function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isLive, onEdit, onWatchRecording }) {
     const { roomCode, formattedCode, passcode, copied, copyLink, copyInvitation } = useMeetingLink(session);
+    const isPastSession = session.status === 'completed' || session.status === 'cancelled' || session.status === 'missed';
 
     return (
         <div className={`card card-hover p-6 ${isLive ? 'ring-2 ring-red-500 ring-opacity-50' : ''}`}>
@@ -1709,14 +1737,16 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                             {session.title || session.questionsAsked?.sessionTitle || session.submission?.assignment?.title || 'Meeting Session'}
                         </h3>
 
-                        <div className="flex flex-wrap items-center gap-3 mt-2 text-xs">
-                            <span className="font-mono font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded-md border border-primary-200">
-                                ID: {formattedCode}
-                            </span>
-                            <span className="font-mono font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
-                                Passcode: {passcode}
-                            </span>
-                        </div>
+                        {!isPastSession && (
+                            <div className="flex flex-wrap items-center gap-3 mt-2 text-xs">
+                                <span className="font-mono font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded-md border border-primary-200">
+                                    ID: {formattedCode}
+                                </span>
+                                <span className="font-mono font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                                    Passcode: {passcode}
+                                </span>
+                            </div>
+                        )}
                         <div className="flex flex-wrap gap-y-2 gap-x-4 mt-2.5 text-xs text-slate-500">
                             <span className="flex items-center gap-1.5">
                                 <Calendar className="w-3.5 h-3.5 text-primary-500" />
@@ -1724,7 +1754,11 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                             </span>
                             <span className="flex items-center gap-1.5">
                                 <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                <span>{session.durationMinutes} minutes</span>
+                                <span>
+                                    {isPastSession && session.recordingDuration
+                                        ? `${Math.floor(session.recordingDuration / 60)}m ${session.recordingDuration % 60}s`
+                                        : `${session.durationMinutes} minutes`}
+                                </span>
                             </span>
                             
                             {/* Host Details */}
@@ -1784,29 +1818,34 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
 
                 {/* Action and Copiable Link Buttons */}
                 <div className="flex items-center gap-2 self-end sm:self-center">
-                    {/* Copy Link Button */}
-                    <button
-                        onClick={copyLink}
-                        className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition shadow-sm ${
-                            copied
-                                ? 'bg-emerald-50 border-emerald-300 text-emerald-600'
-                                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
-                        }`}
-                        title="Copy direct meeting join link"
-                    >
-                        {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Link2 className="w-4 h-4 text-primary-600" />}
-                        <span className="hidden md:inline">{copied ? 'Copied' : 'Copy Link'}</span>
-                    </button>
+                    {/* Copy Link & Invite Buttons: ONLY for scheduled or in_progress sessions (NEVER for past sessions) */}
+                    {!isPastSession && (
+                        <>
+                            {/* Copy Link Button */}
+                            <button
+                                onClick={copyLink}
+                                className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition shadow-sm ${
+                                    copied
+                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-600'
+                                        : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                                }`}
+                                title="Copy direct meeting join link"
+                            >
+                                {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Link2 className="w-4 h-4 text-primary-600" />}
+                                <span className="hidden md:inline">{copied ? 'Copied' : 'Copy Link'}</span>
+                            </button>
 
-                    {/* Copy Full Invitation */}
-                    <button
-                        onClick={copyInvitation}
-                        className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
-                        title="Copy full meeting invitation with ID and passcode"
-                    >
-                        <Copy className="w-4 h-4 text-slate-600" />
-                        <span className="hidden lg:inline">Invite</span>
-                    </button>
+                            {/* Copy Full Invitation */}
+                            <button
+                                onClick={copyInvitation}
+                                className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                                title="Copy full meeting invitation with ID and passcode"
+                            >
+                                <Copy className="w-4 h-4 text-slate-600" />
+                                <span className="hidden lg:inline">Invite</span>
+                            </button>
+                        </>
+                    )}
 
                     {/* Edit Scheduled Meeting Button (Admin / Instructor) */}
                     {session.status === 'scheduled' && isInstructor && (
@@ -1841,6 +1880,18 @@ function SessionCard({ session, isInstructor, getStatusIcon, getStatusBadge, isL
                             <Video className="w-4 h-4" />
                             <span>Re-join</span>
                         </Link>
+                    )}
+
+                    {/* Watch Recording for past completed meetings ONLY if recording exists */}
+                    {isPastSession && session.recordingUrl && (
+                        <button
+                            onClick={() => onWatchRecording && onWatchRecording(session)}
+                            className="px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold transition shadow-sm flex items-center gap-1.5 whitespace-nowrap"
+                            title="Watch Session Recording"
+                        >
+                            <Play className="w-4 h-4 fill-white" />
+                            <span>Watch Recording</span>
+                        </button>
                     )}
                 </div>
             </div>

@@ -3143,50 +3143,116 @@ export default function Whiteboard({
         exportCanvas.height = canvas.height;
         const ctx = exportCanvas.getContext('2d', { willReadFrequently: true });
 
-        // 1. Draw background color
-        const currentBg = pageBackgrounds[currentPage] || { color: '#ffffff', pattern: 'none' };
-        ctx.fillStyle = currentBg.color;
-        ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        // 1. Draw background color & pattern with full resilience
+        try {
+            const currentBg = pageBackgrounds[currentPage] || { color: '#ffffff', pattern: 'plain' };
+            const effectiveColor = currentBg.color || bgColor || '#ffffff';
+            ctx.fillStyle = effectiveColor;
+            ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
 
-        // 2. Draw background pattern if any
-        if (currentBg.pattern && currentBg.pattern !== 'none') {
-            ctx.save();
-            ctx.globalAlpha = 0.3;
-            ctx.strokeStyle = '#888888';
-            ctx.lineWidth = 1;
+            const pattern = currentBg.pattern || bgPattern || 'plain';
+            if (pattern && pattern !== 'plain' && pattern !== 'none') {
+                ctx.save();
+                ctx.strokeStyle = '#94a3b8';
+                ctx.fillStyle = '#94a3b8';
+                ctx.lineWidth = 1;
+                ctx.globalAlpha = 0.25;
 
-            const patternSize = 20;
-            if (currentBg.pattern === 'grid') {
-                for (let x = 0; x <= exportCanvas.width; x += patternSize) {
-                    ctx.beginPath();
-                    ctx.moveTo(x, 0);
-                    ctx.lineTo(exportCanvas.height);
-                    ctx.stroke();
-                }
-                for (let y = 0; y <= exportCanvas.height; y += patternSize) {
-                    ctx.beginPath();
-                    ctx.moveTo(0, y);
-                    ctx.lineTo(exportCanvas.width, y);
-                    ctx.stroke();
-                }
-            } else if (currentBg.pattern === 'dots') {
-                ctx.fillStyle = '#888888';
-                for (let x = 0; x <= exportCanvas.width; x += patternSize) {
-                    for (let y = 0; y <= exportCanvas.height; y += patternSize) {
+                if (pattern === 'grid') {
+                    const step = 25;
+                    for (let x = 0; x <= exportCanvas.width; x += step) {
                         ctx.beginPath();
-                        ctx.arc(x, y, 2, 0, Math.PI * 2);
-                        ctx.fill();
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, exportCanvas.height);
+                        ctx.stroke();
+                    }
+                    for (let y = 0; y <= exportCanvas.height; y += step) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(exportCanvas.width, y);
+                        ctx.stroke();
+                    }
+                } else if (pattern === 'dotted') {
+                    const step = 20;
+                    for (let x = 0; x <= exportCanvas.width; x += step) {
+                        for (let y = 0; y <= exportCanvas.height; y += step) {
+                            ctx.beginPath();
+                            ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+                } else if (pattern === 'lined') {
+                    const step = 25;
+                    for (let y = 0; y <= exportCanvas.height; y += step) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(exportCanvas.width, y);
+                        ctx.stroke();
+                    }
+                } else if (pattern === 'graph') {
+                    for (let x = 0; x <= exportCanvas.width; x += 20) {
+                        ctx.beginPath();
+                        ctx.lineWidth = x % 100 === 0 ? 1.5 : 0.5;
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, exportCanvas.height);
+                        ctx.stroke();
+                    }
+                    for (let y = 0; y <= exportCanvas.height; y += 20) {
+                        ctx.beginPath();
+                        ctx.lineWidth = y % 100 === 0 ? 1.5 : 0.5;
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(exportCanvas.width, y);
+                        ctx.stroke();
+                    }
+                } else if (pattern === 'music') {
+                    for (let y = 40; y <= exportCanvas.height; y += 80) {
+                        for (let line = 0; line < 5; line++) {
+                            const ly = y + line * 8;
+                            ctx.beginPath();
+                            ctx.moveTo(0, ly);
+                            ctx.lineTo(exportCanvas.width, ly);
+                            ctx.stroke();
+                        }
+                    }
+                } else if (pattern === 'iso') {
+                    const stepX = 30;
+                    const stepY = 52;
+                    for (let x = -exportCanvas.height; x <= exportCanvas.width + exportCanvas.height; x += stepX) {
+                        ctx.beginPath();
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x + exportCanvas.height * 0.577, exportCanvas.height);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x - exportCanvas.height * 0.577, exportCanvas.height);
+                        ctx.stroke();
+                    }
+                    for (let y = 0; y <= exportCanvas.height; y += stepY) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(exportCanvas.width, y);
+                        ctx.stroke();
+                    }
+                } else if (pattern === 'hex') {
+                    const r = 20;
+                    const dx = r * 1.5;
+                    const dy = r * Math.sqrt(3);
+                    for (let row = 0; row * dy <= exportCanvas.height + dy; row++) {
+                        for (let col = 0; col * dx <= exportCanvas.width + dx; col++) {
+                            const hx = col * dx;
+                            const hy = row * dy + (col % 2 === 1 ? dy / 2 : 0);
+                            ctx.beginPath();
+                            ctx.arc(hx, hy, 1.5, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
                     }
                 }
-            } else if (currentBg.pattern === 'lines') {
-                for (let y = 0; y <= exportCanvas.height; y += patternSize) {
-                    ctx.beginPath();
-                    ctx.moveTo(0, y);
-                    ctx.lineTo(exportCanvas.width, y);
-                    ctx.stroke();
-                }
+                ctx.restore();
             }
-            ctx.restore();
+        } catch (bgErr) {
+            console.warn('Background rendering in screenshot fallback:', bgErr);
+            ctx.fillStyle = bgColor || '#ffffff';
+            ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
         }
 
         // 3. Draw the main canvas (live strokes and drawings)

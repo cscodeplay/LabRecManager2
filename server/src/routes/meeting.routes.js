@@ -1935,7 +1935,8 @@ const recordingStorage = multer.diskStorage({
         const sessionId = req.params.id || 'meeting';
         const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
         const ext = path.extname(file.originalname) || '.webm';
-        cb(null, `meeting-${safeId}-${Date.now()}${ext}`);
+        const baseName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_\-]/g, '_');
+        cb(null, `${baseName || `meeting-${safeId}`}-${Date.now()}${ext}`);
     }
 });
 

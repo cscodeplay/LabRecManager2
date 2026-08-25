@@ -16,6 +16,7 @@ import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
 import WhiteboardShareModal from '@/components/WhiteboardShareModal';
 import MeetingPollManager from '@/components/MeetingPollManager';
+import fixWebmDuration from 'fix-webm-duration';
 
 export default function MeetingRoomDetailPage() {
     const router = useRouter();
@@ -776,9 +777,24 @@ export default function MeetingRoomDetailPage() {
             };
 
             mediaRecorderRef.current.onstop = () => {
-                const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-                setRecordedBlob(blob);
-                setShowRecordingOptions(true);
+                const rawBlob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+                const durationMs = Math.max((recordingTimeRef.current || recordingTime || 1) * 1000, 1000);
+
+                if (typeof fixWebmDuration === 'function' && durationMs > 0) {
+                    try {
+                        fixWebmDuration(rawBlob, durationMs, (fixedBlob) => {
+                            setRecordedBlob(fixedBlob);
+                            setShowRecordingOptions(true);
+                        });
+                    } catch (e) {
+                        console.warn('fixWebmDuration error, using raw blob:', e);
+                        setRecordedBlob(rawBlob);
+                        setShowRecordingOptions(true);
+                    }
+                } else {
+                    setRecordedBlob(rawBlob);
+                    setShowRecordingOptions(true);
+                }
             };
 
             mediaRecorderRef.current.start(1000); // Collect data every second
@@ -795,6 +811,13 @@ export default function MeetingRoomDetailPage() {
             console.error('Error starting recording:', error);
             toast.error('Failed to start recording');
         }
+    };
+
+    const getMeetingRecordingFilename = (ext = 'webm') => {
+        const rawTitle = session?.title || session?.questionsAsked?.sessionTitle || session?.submission?.assignment?.title || 'Meeting';
+        const safeTitle = rawTitle.replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().replace(/\s+/g, '_');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        return `${safeTitle || 'Meeting'}_${dateStr}_${Date.now()}.${ext}`;
     };
 
     const stopRecording = () => {
@@ -815,7 +838,7 @@ export default function MeetingRoomDetailPage() {
             const url = URL.createObjectURL(recordedBlob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = `meeting_${session?.student?.lastName || 'session'}_${new Date().toISOString().split('T')[0]}.webm`;
+            link.download = getMeetingRecordingFilename('webm');
             document.body.appendChild(link);
             link.click();
             link.remove();
@@ -831,8 +854,10 @@ export default function MeetingRoomDetailPage() {
         }
 
         try {
-            const file = new File([recordedBlob], `meeting_${session.id}_${Date.now()}.webm`, { type: 'video/webm' });
-            const res = await meetingAPI.uploadRecording(session.id, file, recordingTime);
+            const fileName = getMeetingRecordingFilename('webm');
+            const file = new File([recordedBlob], fileName, { type: 'video/webm' });
+            const finalDuration = Math.max(recordingTime, 1);
+            const res = await meetingAPI.uploadRecording(session.id, file, finalDuration);
             toast.success('Recording saved to database!');
             setShowRecordingOptions(false);
             setRecordedBlob(null);
