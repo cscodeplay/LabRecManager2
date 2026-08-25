@@ -805,7 +805,8 @@ Return ONLY a valid JSON array of slot objects with the following schema:
                 });
 
                 const responseText = completion.choices[0]?.message?.content || '[]';
-                return this.parseJSONResponse(responseText);
+                const parsed = this.parseJSONResponse(responseText);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
             } catch (groqErr) {
                 console.error('[AIService] Groq failed for timetable slots:', groqErr.message);
             }
@@ -818,13 +819,165 @@ Return ONLY a valid JSON array of slot objects with the following schema:
                 const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
                 const result = await model.generateContent(systemPrompt);
                 const responseText = result.response.text();
-                return this.parseJSONResponse(responseText);
+                const parsed = this.parseJSONResponse(responseText);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
             } catch (geminiErr) {
                 console.error('[AIService] Gemini failed for timetable slots:', geminiErr.message);
             }
         }
 
-        throw new Error('AI providers unavailable or failed to parse timetable slots');
+        // 3. Guaranteed Rule-Based Natural Language Scheduler Fallback
+        console.log('[AIService] Using rule-based natural language scheduler fallback...');
+        return this.parseTimetableSlotsRuleBased(prompt, context);
+    }
+
+    /**
+     * Rule-Based Natural Language Timetable Parser (Zero-Failure Fallback)
+     */
+    parseTimetableSlotsRuleBased(prompt, context = {}) {
+        const { subjects = [], instructors = [], periodStructure = [] } = context;
+        const text = prompt.toLowerCase();
+
+        // 1. Determine Days
+        const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        let matchedDays = [];
+
+        if (text.includes('mon to thu') || text.includes('mon-thu') || text.includes('monday to thursday')) {
+            matchedDays = ['monday', 'tuesday', 'wednesday', 'thursday'];
+        } else if (text.includes('mon to fri') || text.includes('mon-fri') || text.includes('monday to friday')) {
+            matchedDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+        } else if (text.includes('mon to sat') || text.includes('mon-sat') || text.includes('monday to saturday')) {
+            matchedDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        } else if (text.includes('every day') || text.includes('all days') || text.includes('daily') || text.includes('all week')) {
+            matchedDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        } else {
+            allDays.forEach(day => {
+                const shortDay = day.substring(0, 3);
+                if (text.includes(day) || text.includes(shortDay)) {
+                    if (!matchedDays.includes(day)) matchedDays.push(day);
+                }
+            });
+        }
+
+        if (matchedDays.length === 0) {
+            matchedDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+        }
+
+        // 2. Determine Period Number
+        let periodNumber = 1;
+        const periodMatch = text.match(/(\d+)(?:st|nd|rd|th)?\s*(?:period|lecture|p\b|slot)/i) ||
+                            text.match(/(?:period|lecture|p)\s*(\d+)/i) ||
+                            text.match(/period\s*#?\s*(\d+)/i);
+        if (periodMatch) {
+            periodNumber = parseInt(periodMatch[1], 10);
+        } else if (text.includes('first')) periodNumber = 1;
+        else if (text.includes('second') || text.includes('2nd')) periodNumber = 2;
+        else if (text.includes('third') || text.includes('3rd')) periodNumber = 3;
+        else if (text.includes('fourth') || text.includes('4th')) periodNumber = 4;
+        else if (text.includes('fifth') || text.includes('5th')) periodNumber = 5;
+        else if (text.includes('sixth') || text.includes('6th')) periodNumber = 6;
+        else if (text.includes('seventh') || text.includes('7th')) periodNumber = 7;
+        else if (text.includes('eighth') || text.includes('8th')) periodNumber = 8;
+
+        // 3. Resolve Period Timings
+        const matchedPeriodInfo = periodStructure.find(p => p.periodNumber === periodNumber);
+        const defaultTimings = {
+            1: { start: '08:00', end: '08:40' },
+            2: { start: '08:40', end: '09:20' },
+            3: { start: '09:20', end: '10:00' },
+            4: { start: '10:00', end: '10:15', type: 'break_period' },
+            5: { start: '10:15', end: '10:55' },
+            6: { start: '10:55', end: '11:35' },
+            7: { start: '11:35', end: '12:15' },
+            8: { start: '12:15', end: '12:55' },
+        };
+        const def = defaultTimings[periodNumber] || { start: '08:00', end: '08:40' };
+        const startTime = matchedPeriodInfo?.startTime || def.start;
+        const endTime = matchedPeriodInfo?.endTime || def.end;
+        let slotType = matchedPeriodInfo?.slotType || def.type || 'lecture';
+        if (text.includes('lab') || text.includes('practical')) slotType = 'lab';
+        else if (text.includes('break')) slotType = 'break_period';
+
+        // 4. Match Subject
+        let subjectId = null;
+        let subjectName = '';
+        for (const s of subjects) {
+            const sName = s.name.toLowerCase();
+            const sCode = (s.code || '').toLowerCase();
+            if (text.includes(sName) || (sCode && text.includes(sCode))) {
+                subjectId = s.id;
+                subjectName = s.name;
+                break;
+            }
+        }
+        if (!subjectName) {
+            // Attempt extracting subject name from common keywords
+            const subRegex = /(?:subject|course|for)\s+([a-zA-Z\s]{3,25})(?:\s+for|\s+class|\s+by|\s+in|$)/i;
+            const subMatch = prompt.match(subRegex);
+            if (subMatch) {
+                subjectName = subMatch[1].trim();
+            } else if (text.includes('computer science') || text.includes('cs')) {
+                subjectName = 'Computer Science';
+            } else if (text.includes('physics')) {
+                subjectName = 'Physics';
+            } else if (text.includes('chemistry')) {
+                subjectName = 'Chemistry';
+            } else if (text.includes('mathematics') || text.includes('math')) {
+                subjectName = 'Mathematics';
+            } else if (text.includes('biology')) {
+                subjectName = 'Biology';
+            } else if (text.includes('english')) {
+                subjectName = 'English';
+            } else {
+                subjectName = 'Lecture';
+            }
+        }
+
+        // 5. Match Instructor
+        let instructorId = null;
+        let instructorName = '';
+        for (const inst of instructors) {
+            const fullName = `${inst.firstName} ${inst.lastName || ''}`.trim().toLowerCase();
+            const fName = inst.firstName.toLowerCase();
+            if (text.includes(fullName) || text.includes(fName)) {
+                instructorId = inst.id;
+                instructorName = `${inst.firstName} ${inst.lastName || ''}`.trim();
+                break;
+            }
+        }
+        if (!instructorName) {
+            const instRegex = /(?:instructor|teacher|faculty|by|sir|mam)\s+([a-zA-Z\s]{3,30})(?:\s+for|\s+in|\s+at|$)/i;
+            const instMatch = prompt.match(instRegex);
+            if (instMatch) {
+                instructorName = instMatch[1].trim();
+            }
+        }
+
+        // 6. Match Room Number
+        let roomNumber = '';
+        const roomMatch = prompt.match(/room\s*#?\s*([a-zA-Z0-9-]+)/i) || prompt.match(/lab\s*#?\s*([a-zA-Z0-9-]+)/i);
+        if (roomMatch) {
+            roomNumber = roomMatch[1];
+        } else if (slotType === 'lab' || subjectName.toLowerCase().includes('computer')) {
+            roomNumber = 'Lab-1';
+        } else {
+            roomNumber = 'Room 101';
+        }
+
+        // Build array of slots across all matched days
+        return matchedDays.map(dayOfWeek => ({
+            dayOfWeek,
+            periodNumber,
+            startTime,
+            endTime,
+            subjectId,
+            subjectName,
+            instructorId,
+            instructorName,
+            roomNumber,
+            slotType,
+            isNew: true
+        }));
     }
 
     parseJSONResponse(text) {

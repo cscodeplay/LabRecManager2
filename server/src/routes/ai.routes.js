@@ -309,12 +309,16 @@ router.post('/generate-timetable-slots', authenticate, authorize('admin', 'princ
 
     const schoolId = req.user.schoolId || null;
 
-    // Fetch subjects and instructors for context
-    const [subjects, instructors] = await Promise.all([
+    // Fetch class info, subjects and instructors for context
+    const [classInfo, subjects, instructors] = await Promise.all([
+        classId ? prisma.class.findUnique({
+            where: { id: classId },
+            select: { id: true, name: true, gradeLevel: true, section: true }
+        }) : null,
         prisma.subject.findMany({
             where: {
                 ...(schoolId ? { schoolId } : {}),
-                ...(classId ? { classes: { some: { classId } } } : {})
+                ...(classId ? { classSubjects: { some: { classId } } } : {})
             },
             select: { id: true, name: true, code: true }
         }),
@@ -327,10 +331,19 @@ router.post('/generate-timetable-slots', authenticate, authorize('admin', 'princ
         })
     ]);
 
+    // If no subjects found for specific class, load all subjects for school
+    let availableSubjects = subjects;
+    if (availableSubjects.length === 0 && schoolId) {
+        availableSubjects = await prisma.subject.findMany({
+            where: { schoolId },
+            select: { id: true, name: true, code: true }
+        });
+    }
+
     // Generate slots via AI service
     const generatedSlots = await aiService.generateTimetableSlots(
         prompt,
-        { subjects, instructors, periodStructure, existingSlots },
+        { classInfo, subjects: availableSubjects, instructors, periodStructure, existingSlots },
         provider
     );
 
@@ -339,8 +352,9 @@ router.post('/generate-timetable-slots', authenticate, authorize('admin', 'princ
         message: `AI generated ${generatedSlots.length} timetable slot(s)`,
         data: {
             slots: generatedSlots,
-            subjects,
-            instructors
+            subjects: availableSubjects,
+            instructors,
+            classInfo
         }
     });
 }));
