@@ -501,43 +501,110 @@ export default function AdminTimetablePage() {
         }
     };
 
+    // Helper to convert HH:MM to total minutes
+    const timeToMinutes = (timeStr) => {
+        if (!timeStr || !timeStr.includes(':')) return 0;
+        const [h, m] = timeStr.split(':').map(Number);
+        return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+    };
+
+    // Helper to convert total minutes to HH:MM
+    const minutesToTime = (totalMins) => {
+        const normalized = Math.max(0, Math.min(24 * 60 - 1, Math.round(totalMins)));
+        const h = Math.floor(normalized / 60).toString().padStart(2, '0');
+        const m = (normalized % 60).toString().padStart(2, '0');
+        return `${h}:${m}`;
+    };
+
+    // Auto-cascade subsequent period timings without overlapping
+    const cascadePeriodTimings = (currentPeriods, modifiedPeriodNo, newStartTime, newEndTime, shouldCascade = true) => {
+        const sorted = [...currentPeriods].sort((a, b) => a.periodNumber - b.periodNumber);
+        const modIdx = sorted.findIndex(p => p.periodNumber === modifiedPeriodNo);
+        if (modIdx === -1) return sorted;
+
+        const updated = [...sorted];
+        updated[modIdx] = {
+            ...updated[modIdx],
+            startTime: newStartTime,
+            endTime: newEndTime
+        };
+
+        if (shouldCascade) {
+            let runningEndMins = timeToMinutes(newEndTime);
+            for (let i = modIdx + 1; i < updated.length; i++) {
+                const prevDur = Math.max(15, timeToMinutes(updated[i].endTime) - timeToMinutes(updated[i].startTime) || 40);
+                const nextStart = minutesToTime(runningEndMins);
+                const nextEnd = minutesToTime(runningEndMins + prevDur);
+                updated[i] = {
+                    ...updated[i],
+                    startTime: nextStart,
+                    endTime: nextEnd
+                };
+                runningEndMins = runningEndMins + prevDur;
+            }
+        }
+
+        return updated;
+    };
+
     // Period Editing & Reordering
+    const [autoAdjustSubsequent, setAutoAdjustSubsequent] = useState(true);
+
     const handleEditPeriodClick = (period) => {
         setEditingPeriod(period);
         setPeriodForm({ startTime: period.startTime, endTime: period.endTime, slotType: period.slotType || 'lecture' });
+        setAutoAdjustSubsequent(true);
         setShowPeriodModal(true);
     };
 
     const handleSavePeriodTiming = async () => {
-        if(!timetable) return;
+        if (!editingPeriod) return;
         setSaving(true);
         try {
-            // Find all slots with this period number
-            const slotsToUpdate = [];
-            DAYS.forEach(d => {
-                const s = slots[d]?.[editingPeriod.periodNumber];
-                if(s) slotsToUpdate.push(s);
-            });
-            
-            // Sequential update to avoid overload
-            for(const s of slotsToUpdate) {
-                await timetableAPI.updateSlot(s.id, {
-                    startTime: periodForm.startTime,
-                    endTime: periodForm.endTime,
+            // Compute updated period structure with auto-adjusted non-overlapping timings
+            const updatedPeriods = cascadePeriodTimings(
+                periodStructure,
+                editingPeriod.periodNumber,
+                periodForm.startTime,
+                periodForm.endTime,
+                autoAdjustSubsequent
+            );
+
+            // 1. Locally update period structure immediately
+            setPeriodStructure(updatedPeriods);
+
+            // 2. Persist updated timings to timetable in DB if timetable exists
+            if (timetable?.id) {
+                await api.put(`/timetable/${timetable.id}/period-timings`, {
+                    periodTimings: updatedPeriods
                 });
+
+                // Also update individual slots locally and in state
+                const updatedSlots = { ...slots };
+                DAYS.forEach(d => {
+                    if (updatedSlots[d]) {
+                        updatedPeriods.forEach(p => {
+                            if (updatedSlots[d][p.periodNumber]) {
+                                updatedSlots[d][p.periodNumber] = {
+                                    ...updatedSlots[d][p.periodNumber],
+                                    startTime: p.startTime,
+                                    endTime: p.endTime
+                                };
+                            }
+                        });
+                    }
+                });
+                setSlots(updatedSlots);
             }
-            
-            // Also locally update periodStructure
-            setPeriodStructure(prev => prev.map(p => 
-                p.periodNumber === editingPeriod.periodNumber 
-                    ? { ...p, startTime: periodForm.startTime, endTime: periodForm.endTime }
-                    : p
-            ));
-            
-            toast.success('Period timings updated successfully');
+
+            toast.success(
+                autoAdjustSubsequent
+                    ? 'Period timings updated & subsequent periods auto-adjusted without overlap!'
+                    : 'Period timing updated successfully!'
+            );
             setShowPeriodModal(false);
-            loadTimetable(selectedClassId); // Reload to ensure full sync
-        } catch(err) {
+        } catch (err) {
+            console.error('Failed to update period timings:', err);
             toast.error('Failed to update period timings');
         } finally {
             setSaving(false);
@@ -565,8 +632,16 @@ export default function AdminTimetablePage() {
                 await timetableAPI.deleteSlot(s.id);
             }
             
+            const newStructure = periodStructure.filter(p => p.periodNumber !== periodNumber);
+            setPeriodStructure(newStructure);
+            
+            if (timetable?.id) {
+                await api.put(`/timetable/${timetable.id}/period-timings`, {
+                    periodTimings: newStructure
+                }).catch(() => {});
+            }
+
             toast.success(`Period ${periodNumber} removed`);
-            setPeriodStructure(prev => prev.filter(p => p.periodNumber !== periodNumber));
             loadTimetable(selectedClassId);
         } catch(e) {
             toast.error('Failed to remove period');
@@ -575,31 +650,38 @@ export default function AdminTimetablePage() {
         }
     };
 
-    const handleAddPeriod = () => {
+    const handleAddPeriod = async () => {
         const nextPeriodNo = periodStructure.length > 0 ? Math.max(...periodStructure.map(p => p.periodNumber)) + 1 : 1;
         const lastPeriod = periodStructure.length > 0 ? periodStructure[periodStructure.length - 1] : { endTime: '08:00' };
         
-        // Add 40 mins to last end time
-        let st = lastPeriod.endTime;
-        if(!st) st = '08:00';
-        const [h,m] = st.split(':').map(Number);
-        const startMins = h * 60 + m;
+        // Auto calculate non-overlapping start & end time
+        let st = lastPeriod.endTime || '08:00';
+        const startMins = timeToMinutes(st);
         const endMins = startMins + 40;
-        const sh = Math.floor(startMins / 60).toString().padStart(2, '0');
-        const sm = (startMins % 60).toString().padStart(2, '0');
-        const eh = Math.floor(endMins / 60).toString().padStart(2, '0');
-        const em = (endMins % 60).toString().padStart(2, '0');
+        const startTime = minutesToTime(startMins);
+        const endTime = minutesToTime(endMins);
         
         const newPeriod = {
             periodNumber: nextPeriodNo,
-            startTime: `${sh}:${sm}`,
-            endTime: `${eh}:${em}`,
+            startTime,
+            endTime,
             slotType: 'lecture'
         };
         
-        setPeriodStructure(prev => [...prev, newPeriod]);
-        // Note: Slots are not created until user clicks the grid to add one, 
-        // to avoid spamming the DB with empty slots.
+        const updatedStructure = [...periodStructure, newPeriod];
+        setPeriodStructure(updatedStructure);
+        
+        if (timetable?.id) {
+            try {
+                await api.put(`/timetable/${timetable.id}/period-timings`, {
+                    periodTimings: updatedStructure
+                });
+            } catch (err) {
+                console.warn('Could not sync new period structure with backend:', err);
+            }
+        }
+
+        toast.success(`Period ${nextPeriodNo} added (${startTime}–${endTime}) without overlap!`);
     };
 
     // Drag and Drop implementation
@@ -1233,31 +1315,36 @@ export default function AdminTimetablePage() {
 
                                                                     {/* Main Slot info */}
                                                                     <div className="relative z-10 w-full">
-                                                                        {/* Top row: Live badge & Slot Type */}
+                                                                        {/* Top row: Status Badge & Concise Slot Type Badge (L for Lecture, P for Lab) */}
                                                                         <div className="flex items-center justify-between gap-1 mb-1">
                                                                             {isLive ? (
                                                                                 <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-xs animate-pulse">
                                                                                     <Activity className="w-3 h-3 animate-spin" />
-                                                                                    LIVE NOW
+                                                                                    LIVE
+                                                                                </span>
+                                                                            ) : loggedWork ? (
+                                                                                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300">
+                                                                                    <Check className="w-3 h-3 text-emerald-600" /> Done
                                                                                 </span>
                                                                             ) : isPast && slot ? (
-                                                                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
-                                                                                    Done
+                                                                                <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                                                                    <Check className="w-2.5 h-2.5 mr-0.5" /> Done
                                                                                 </span>
                                                                             ) : (
-                                                                                <span className="text-[9px] font-bold uppercase tracking-wider opacity-75">
-                                                                                    {slotType === 'break_period' ? 'Break' : slotType}
-                                                                                </span>
+                                                                                <span />
                                                                             )}
 
-                                                                            {/* Slot Type Badge */}
+                                                                            {/* Concise Slot Type Badge (L = Lecture, P = Lab/Practical) */}
                                                                             {slot && (
-                                                                                <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-md uppercase ${
-                                                                                    slot.slotType === 'lab' ? 'bg-purple-200/80 text-purple-900 dark:bg-purple-900/60 dark:text-purple-200' :
-                                                                                    slot.slotType === 'break_period' ? 'bg-amber-200/80 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200' :
-                                                                                    'bg-blue-200/80 text-blue-900 dark:bg-blue-900/60 dark:text-blue-200'
-                                                                                }`}>
-                                                                                    {slot.slotType === 'break_period' ? 'Break' : slot.slotType || 'Lecture'}
+                                                                                <span
+                                                                                    className={`text-[10px] font-black px-1.5 py-0.2 rounded-md ${
+                                                                                        slot.slotType === 'lab' ? 'bg-purple-200/90 text-purple-900 dark:bg-purple-900/70 dark:text-purple-200' :
+                                                                                        slot.slotType === 'break_period' ? 'bg-amber-200/90 text-amber-900 dark:bg-amber-900/70 dark:text-amber-200' :
+                                                                                        'bg-blue-200/90 text-blue-900 dark:bg-blue-900/70 dark:text-blue-200'
+                                                                                    }`}
+                                                                                    title={slot.slotType === 'lab' ? 'Practical Lab (P)' : slot.slotType === 'break_period' ? 'Break' : 'Theory Lecture (L)'}
+                                                                                >
+                                                                                    {slot.slotType === 'lab' ? 'P' : slot.slotType === 'break_period' ? '☕' : 'L'}
                                                                                 </span>
                                                                             )}
                                                                         </div>
@@ -1627,20 +1714,25 @@ export default function AdminTimetablePage() {
             {showPeriodModal && editingPeriod && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                        <div className="p-6 border-b border-slate-200 dark:border-slate-800">
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                        <div className="p-5 border-b border-slate-200 dark:border-slate-800">
+                            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                                 <Clock className="w-5 h-5 text-primary-500" /> Edit Period {editingPeriod.periodNumber}
                             </h3>
                             <p className="text-xs text-slate-500 mt-1">Updates timings for this period across all days.</p>
                         </div>
-                        <div className="p-6 space-y-4">
+                        <div className="p-5 space-y-4">
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 block">Start Time</label>
                                     <input
                                         type="time"
                                         value={periodForm.startTime}
-                                        onChange={(e) => setPeriodForm(f => ({ ...f, startTime: e.target.value }))}
+                                        onChange={(e) => {
+                                            const newStart = e.target.value;
+                                            const dur = Math.max(15, timeToMinutes(periodForm.endTime) - timeToMinutes(periodForm.startTime) || 40);
+                                            const newEnd = minutesToTime(timeToMinutes(newStart) + dur);
+                                            setPeriodForm(f => ({ ...f, startTime: newStart, endTime: newEnd }));
+                                        }}
                                         className="input w-full font-mono text-xs"
                                     />
                                 </div>
@@ -1654,9 +1746,58 @@ export default function AdminTimetablePage() {
                                     />
                                 </div>
                             </div>
-                            <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg flex items-start gap-2 text-xs text-slate-600 dark:text-slate-400">
-                                <Info className="w-4 h-4 flex-shrink-0 mt-0.5 text-blue-500" />
-                                <span>Note: Changing these timings will stretch or squeeze all slots in Period {editingPeriod.periodNumber}.</span>
+
+                            {/* Duration Presets */}
+                            <div>
+                                <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 mb-1.5">
+                                    <span>Quick Duration Presets</span>
+                                    <span className="text-primary-600 font-mono">
+                                        {Math.max(1, timeToMinutes(periodForm.endTime) - timeToMinutes(periodForm.startTime))} mins
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    {[30, 35, 40, 45, 50, 60].map(mins => {
+                                        const curDur = timeToMinutes(periodForm.endTime) - timeToMinutes(periodForm.startTime);
+                                        const isSel = curDur === mins;
+                                        return (
+                                            <button
+                                                key={mins}
+                                                type="button"
+                                                onClick={() => {
+                                                    const startMins = timeToMinutes(periodForm.startTime);
+                                                    setPeriodForm(f => ({ ...f, endTime: minutesToTime(startMins + mins) }));
+                                                }}
+                                                className={`flex-1 py-1 rounded text-xs font-medium border transition ${
+                                                    isSel
+                                                        ? 'bg-primary-50 dark:bg-primary-950/60 border-primary-500 text-primary-700 dark:text-primary-300 font-bold shadow-2xs'
+                                                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                {mins}m
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Auto-adjust subsequent periods toggle */}
+                            <div className="bg-primary-50/50 dark:bg-primary-950/20 p-3 rounded-xl border border-primary-200 dark:border-primary-800/50 space-y-2">
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={autoAdjustSubsequent}
+                                        onChange={(e) => setAutoAdjustSubsequent(e.target.checked)}
+                                        className="rounded text-primary-600 focus:ring-primary-500 w-4 h-4"
+                                    />
+                                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                        Auto-adjust subsequent periods
+                                    </span>
+                                </label>
+                                <p className="text-[11px] text-slate-600 dark:text-slate-400 pl-6 leading-tight">
+                                    {autoAdjustSubsequent
+                                        ? `Subsequent periods (P${editingPeriod.periodNumber + 1} to P${periodStructure.length}) will automatically shift to prevent any overlapping timings.`
+                                        : 'Only update this period. Subsequent periods will keep their current timings.'}
+                                </p>
                             </div>
                         </div>
                         <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex gap-3 bg-slate-50 dark:bg-slate-950">

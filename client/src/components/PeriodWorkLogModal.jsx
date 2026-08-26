@@ -252,7 +252,7 @@ export default function PeriodWorkLogModal({
                 homeworkDescription: homework.trim(),
                 notes: fullNotes,
                 status: activityType === 'cancelled' ? 'cancelled' : 'completed',
-                lectureType: slot?.slotType === 'lab' ? 'lab' : 'theory',
+                lectureType: slot?.slotType === 'lab' ? 'practical' : 'theory',
                 scheduledDate: formattedDate,
                 scheduledDuration: 40,
                 lectureNumber: period?.periodNumber || slot?.periodNumber || 1,

@@ -1359,43 +1359,42 @@ export default function MeetingRoomDetailPage() {
 
             {/* Main content */}
             <div className="flex-1 flex relative">
-                {/* Whiteboard Background */}
-                {showWhiteboard && (
-                    <div className="absolute inset-0 z-0 bg-slate-900">
-                        <Whiteboard
-                            width={typeof window !== 'undefined' ? window.innerWidth : 800}
-                            height={typeof window !== 'undefined' ? window.innerHeight - 80 : 500}
-                            isFullscreen={true}
-                            onToggleFullscreen={() => setWhiteboardFullscreen(!whiteboardFullscreen)}
-                            onClose={() => {
-                                setShowWhiteboard(false);
-                            }}
-                            onSave={(imageData) => {
-                                setSavedWhiteboardImage(imageData);
-                                toast.success('Whiteboard saved! It will be included when session ends.');
-                            }}
-                            // Sharing props
-                            isInstructor={isInstructor}
-                            isSharing={isWhiteboardSharing}
-                            sharingTargets={whiteboardShareTargets}
-                            onShare={() => setShowShareModal(true)}
-                            onStopSharing={() => {
-                                setIsWhiteboardSharing(false);
-                                setWhiteboardShareTargets([]);
-                                if (socketRef.current && whiteboardSessionId) {
-                                    socketRef.current.emit('whiteboard:stop-share', {
-                                        sessionId: whiteboardSessionId
-                                    });
-                                }
-                                setWhiteboardSessionId(null);
-                                toast.success('Stopped sharing whiteboard');
-                            }}
-                            socket={socketRef.current}
-                            sessionId={whiteboardSessionId}
-                            whiteboardId={params?.id ? `meeting_${params.id}` : null}
-                        />
-                    </div>
-                )}
+                {/* Whiteboard Background (Kept mounted to retain canvas drawing strokes) */}
+                <div className={`absolute inset-0 bg-slate-900 ${showWhiteboard ? 'z-10 block animate-in fade-in' : 'hidden'}`}>
+                    <Whiteboard
+                        width={typeof window !== 'undefined' ? window.innerWidth : 800}
+                        height={typeof window !== 'undefined' ? window.innerHeight - 80 : 500}
+                        isFullscreen={true}
+                        onToggleFullscreen={() => setWhiteboardFullscreen(!whiteboardFullscreen)}
+                        onClose={() => {
+                            setShowWhiteboard(false);
+                        }}
+                        onSave={(imageData) => {
+                            setSavedWhiteboardImage(imageData);
+                            toast.success('Whiteboard saved! It will be included when session ends.');
+                        }}
+                        // Sharing props
+                        isInstructor={isInstructor}
+                        isSharing={isWhiteboardSharing}
+                        sharingTargets={whiteboardShareTargets}
+                        onShare={() => setShowShareModal(true)}
+                        onStopSharing={() => {
+                            setIsWhiteboardSharing(false);
+                            setWhiteboardShareTargets([]);
+                            if (socketRef.current && whiteboardSessionId) {
+                                socketRef.current.emit('whiteboard:stop-share', {
+                                    sessionId: whiteboardSessionId
+                                });
+                            }
+                            setWhiteboardSessionId(null);
+                        }}
+                        socket={socketRef.current}
+                        sessionId={whiteboardSessionId || meetingId}
+                        whiteboardId={whiteboardSessionId || meetingId}
+                        userName={user ? `${user.firstName} ${user.lastName}` : 'User'}
+                        userIdentifier={user?.studentId || user?.admissionNumber || user?.id?.slice(0, 8) || ''}
+                    />
+                </div>
 
                 {/* Video area */}
                 <div className={showWhiteboard ? "absolute top-4 right-4 w-72 flex flex-col gap-4 z-10" : "flex-1 p-4 flex flex-col"}>
@@ -1806,9 +1805,9 @@ export default function MeetingRoomDetailPage() {
                             {availableDevices.cameras.length === 0 ? (
                                 <option value="">No cameras found</option>
                             ) : (
-                                availableDevices.cameras.map((camera) => (
-                                    <option key={camera.deviceId} value={camera.deviceId}>
-                                        {camera.label || `Camera ${camera.deviceId.slice(0, 8)}`}
+                                availableDevices.cameras.map((camera, idx) => (
+                                    <option key={camera.deviceId || idx} value={camera.deviceId}>
+                                        {camera.label?.trim() || (camera.deviceId && camera.deviceId.length >= 4 ? `Camera (${camera.deviceId.slice(0, 5)})` : `Camera ${idx + 1}`)}
                                     </option>
                                 ))
                             )}
@@ -1851,9 +1850,9 @@ export default function MeetingRoomDetailPage() {
                             {availableDevices.microphones.length === 0 ? (
                                 <option value="">No microphones found</option>
                             ) : (
-                                availableDevices.microphones.map((mic) => (
-                                    <option key={mic.deviceId} value={mic.deviceId}>
-                                        {mic.label || `Microphone ${mic.deviceId.slice(0, 8)}`}
+                                availableDevices.microphones.map((mic, idx) => (
+                                    <option key={mic.deviceId || idx} value={mic.deviceId}>
+                                        {mic.label?.trim() || (mic.deviceId && mic.deviceId.length >= 4 ? `Mic (${mic.deviceId.slice(0, 5)})` : `Microphone ${idx + 1}`)}
                                     </option>
                                 ))
                             )}

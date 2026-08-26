@@ -85,7 +85,7 @@ exports.createLecturePlan = async (req, res, next) => {
             academicYearId: bodyAcademicYearId
         } = req.body;
 
-        // Resolve academicYearId
+        // Resolve academicYearId with fallback
         let academicYearId = bodyAcademicYearId;
         if (!academicYearId) {
             const currentYear = await prisma.academicYear.findFirst({
@@ -95,13 +95,27 @@ exports.createLecturePlan = async (req, res, next) => {
             academicYearId = currentYear?.id;
         }
         if (!academicYearId) {
-            return next(new AppError('No active academic year found for this school', 400));
+            const anyYear = await prisma.academicYear.findFirst({
+                where: { schoolId },
+                orderBy: { startDate: 'desc' },
+                select: { id: true }
+            });
+            academicYearId = anyYear?.id;
+        }
+        if (!academicYearId) {
+            return next(new AppError('No academic year found for this school', 400));
         }
 
-        const instructorId = req.user.role === 'instructor' ? req.user.id : req.body.instructorId;
-        if (!instructorId) {
-            return next(new AppError('Instructor ID is required', 400));
-        }
+        const instructorId = (req.user.role === 'instructor' ? req.user.id : req.body.instructorId) || req.user.id;
+
+        // Map lectureType safely to match Prisma enum: theory | practical | demo | revision | assessment
+        let normalizedType = (lectureType || 'theory').toLowerCase();
+        if (normalizedType === 'lab') normalizedType = 'practical';
+        const validTypes = ['theory', 'practical', 'demo', 'revision', 'assessment'];
+        if (!validTypes.includes(normalizedType)) normalizedType = 'theory';
+
+        const parsedLectureNum = parseInt(lectureNumber, 10);
+        const parsedDuration = parseInt(scheduledDuration, 10);
 
         const plan = await prisma.lecturePlan.create({
             data: {
@@ -111,17 +125,17 @@ exports.createLecturePlan = async (req, res, next) => {
                 classId,
                 subjectId,
                 timetableSlotId: timetableSlotId || null,
-                title,
-                titleHindi,
-                description,
-                lectureNumber: parseInt(lectureNumber, 10),
-                scheduledDate: new Date(scheduledDate),
-                scheduledDuration: parseInt(scheduledDuration, 10) || 40,
-                lectureType: lectureType || 'theory',
-                notes,
-                notesHindi,
-                homeworkDescription,
-                status: 'planned'
+                title: title || 'Lecture Session',
+                titleHindi: titleHindi || null,
+                description: description || null,
+                lectureNumber: isNaN(parsedLectureNum) ? 1 : parsedLectureNum,
+                scheduledDate: scheduledDate ? new Date(scheduledDate) : new Date(),
+                scheduledDuration: isNaN(parsedDuration) || parsedDuration <= 0 ? 40 : parsedDuration,
+                lectureType: normalizedType,
+                notes: notes || null,
+                notesHindi: notesHindi || null,
+                homeworkDescription: homeworkDescription || null,
+                status: req.body.status || 'planned'
             },
             include: {
                 class: { select: { id: true, name: true } },
@@ -156,8 +170,19 @@ exports.updateLecturePlan = async (req, res, next) => {
         if (updateData.scheduledDate) {
             updateData.scheduledDate = new Date(updateData.scheduledDate);
         }
-        if (updateData.lectureNumber) {
-            updateData.lectureNumber = parseInt(updateData.lectureNumber, 10);
+        if (updateData.lectureNumber !== undefined) {
+            const num = parseInt(updateData.lectureNumber, 10);
+            updateData.lectureNumber = isNaN(num) ? 1 : num;
+        }
+        if (updateData.scheduledDuration !== undefined) {
+            const dur = parseInt(updateData.scheduledDuration, 10);
+            updateData.scheduledDuration = isNaN(dur) || dur <= 0 ? 40 : dur;
+        }
+        if (updateData.lectureType) {
+            let normalized = updateData.lectureType.toLowerCase();
+            if (normalized === 'lab') normalized = 'practical';
+            const validTypes = ['theory', 'practical', 'demo', 'revision', 'assessment'];
+            updateData.lectureType = validTypes.includes(normalized) ? normalized : 'theory';
         }
 
         const plan = await prisma.lecturePlan.update({

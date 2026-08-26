@@ -521,9 +521,9 @@ export default function CameraOverlay({
                                         className="w-full bg-slate-700 text-white text-sm rounded-lg px-2 py-1.5 border-0"
                                     >
                                         <option value="">Default Camera</option>
-                                        {videoDevices.map(device => (
-                                            <option key={device.deviceId} value={device.deviceId}>
-                                                {device.label || `Camera ${device.deviceId.slice(0, 8)}`}
+                                        {videoDevices.map((device, idx) => (
+                                            <option key={device.deviceId || idx} value={device.deviceId}>
+                                                {device.label?.trim() || (device.deviceId && device.deviceId.length >= 4 ? `Camera (${device.deviceId.slice(0, 5)})` : `Camera ${idx + 1}`)}
                                             </option>
                                         ))}
                                     </select>
@@ -538,9 +538,9 @@ export default function CameraOverlay({
                                         className="w-full bg-slate-700 text-white text-sm rounded-lg px-2 py-1.5 border-0"
                                     >
                                         <option value="">Default Microphone</option>
-                                        {audioDevices.map(device => (
-                                            <option key={device.deviceId} value={device.deviceId}>
-                                                {device.label || `Mic ${device.deviceId.slice(0, 8)}`}
+                                        {audioDevices.map((device, idx) => (
+                                            <option key={device.deviceId || idx} value={device.deviceId}>
+                                                {device.label?.trim() || (device.deviceId && device.deviceId.length >= 4 ? `Mic (${device.deviceId.slice(0, 5)})` : `Microphone ${idx + 1}`)}
                                             </option>
                                         ))}
                                     </select>

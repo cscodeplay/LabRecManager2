@@ -896,15 +896,32 @@ export default function GlobalMeetingRoom() {
                 toast.success('Screen share stopped');
             } else {
                 if (!navigator.mediaDevices?.getDisplayMedia) {
-                    toast.error('Screen sharing is not supported in this browser');
+                    toast.error('Screen sharing is not supported in this browser. Please use Safari on iPadOS 13+ or desktop browser.');
                     return;
                 }
 
-                const screenStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: { cursor: 'always' },
-                    audio: false
-                });
-                const screenTrack = screenStream.getVideoTracks()[0];
+                // Detect iPad / iOS / Mobile to provide clean compatible constraints (WebKit rejects 'cursor' constraint)
+                const isIOSorIPad = typeof navigator !== 'undefined' && (
+                    /iPad|iPhone|iPod/i.test(navigator.userAgent) ||
+                    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+                );
+                const isMobile = isIOSorIPad || (typeof navigator !== 'undefined' && /Android|webOS|Mobile/i.test(navigator.userAgent));
+
+                let screenStream;
+                try {
+                    // Try optimal constraints for desktop or minimal clean constraints for iPad/mobile
+                    screenStream = await navigator.mediaDevices.getDisplayMedia(
+                        isMobile || isIOSorIPad
+                            ? { video: true, audio: false }
+                            : { video: { cursor: 'always' }, audio: false }
+                    );
+                } catch (constraintErr) {
+                    // Fallback to basic { video: true } if complex constraints fail
+                    console.warn('Retrying screen share with basic constraints for iPad/Mobile:', constraintErr);
+                    screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+                }
+
+                const screenTrack = screenStream?.getVideoTracks()[0];
                 if (!screenTrack) {
                     toast.error('No video track found in screen share');
                     return;
@@ -961,9 +978,9 @@ export default function GlobalMeetingRoom() {
                 toast.success('Screen sharing started');
             }
         } catch (error) {
-            if (error.name !== 'NotAllowedError') {
+            if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') {
                 console.error('Screen share error:', error);
-                toast.error('Could not start screen share');
+                toast.error('Could not start screen share: ' + (error.message || 'Permission denied'));
             }
         }
     };
@@ -2652,33 +2669,31 @@ Link: ${getInviteUrl()}`;
             {/* SPACE 3: VC GALLERY TILES MAXIMIZED                                       */}
             {/* ========================================================================= */}
             <div className="relative w-full h-full flex-1 overflow-hidden z-0">
-                {/* 1. WHITEBOARD SPACE */}
-                {activeSpace === 'whiteboard' && (
-                    <div className="absolute inset-0 w-full h-full z-0 bg-slate-900 animate-in fade-in">
-                        <Whiteboard
-                            width={typeof window !== 'undefined' ? window.innerWidth : 1280}
-                            height={typeof window !== 'undefined' ? window.innerHeight : 800}
-                            isFullscreen={isFullscreen}
-                            onClose={() => switchActiveSpace('vc_tiles')}
-                            onSave={() => toast.success('Whiteboard snapshot saved!')}
-                            isMeetingMode={true}
-                            showCameraControls={false}
-                            isInstructor={isInstructor}
-                            socket={socketRef.current}
-                            sessionId={activeRoomIdRef.current || code}
-                            isSharing={true}
-                            whiteboardId={session?.id || code}
-                            userName={user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'User'}
-                            userIdentifier={user?.studentId || user?.admissionNumber || user?.id?.slice(0, 8) || ''}
-                            permissions={{
-                                canDraw: isInstructor ? true : canDrawOnWhiteboard,
-                                canShareAudio: isAudioEnabled,
-                                canShareVideo: isVideoEnabled
-                            }}
-                            isStudent={!isInstructor}
-                        />
-                    </div>
-                )}
+                {/* 1. WHITEBOARD SPACE (Kept mounted to retain canvas drawing strokes & state) */}
+                <div className={`absolute inset-0 w-full h-full bg-slate-900 ${activeSpace === 'whiteboard' ? 'z-10 block animate-in fade-in' : 'hidden'}`}>
+                    <Whiteboard
+                        width={typeof window !== 'undefined' ? window.innerWidth : 1280}
+                        height={typeof window !== 'undefined' ? window.innerHeight : 800}
+                        isFullscreen={isFullscreen}
+                        onClose={() => switchActiveSpace('vc_tiles')}
+                        onSave={() => toast.success('Whiteboard snapshot saved!')}
+                        isMeetingMode={true}
+                        showCameraControls={false}
+                        isInstructor={isInstructor}
+                        socket={socketRef.current}
+                        sessionId={activeRoomIdRef.current || code}
+                        isSharing={true}
+                        whiteboardId={session?.id || code}
+                        userName={user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'User'}
+                        userIdentifier={user?.studentId || user?.admissionNumber || user?.id?.slice(0, 8) || ''}
+                        permissions={{
+                            canDraw: isInstructor ? true : canDrawOnWhiteboard,
+                            canShareAudio: isAudioEnabled,
+                            canShareVideo: isVideoEnabled
+                        }}
+                        isStudent={!isInstructor}
+                    />
+                </div>
 
                 {/* 2. SHARED SCREEN SPACE (Flicker-Free Presenter) */}
                 {activeSpace === 'screen_share' && (
@@ -3892,16 +3907,16 @@ Link: ${getInviteUrl()}`;
                                 <ChevronUp className="w-3 h-3" />
                             </button>
                             {showMicSettings && (
-                                <div className="absolute bottom-[110%] left-0 w-48 bg-slate-800 border border-slate-700 rounded-xl p-2 shadow-xl z-50">
+                                <div className="absolute bottom-[110%] left-0 w-52 bg-slate-800 border border-slate-700 rounded-xl p-2 shadow-xl z-50">
                                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Select Microphone</div>
                                     <div className="space-y-1 max-h-48 overflow-y-auto">
-                                        {availableDevices.microphones.map(m => (
+                                        {availableDevices.microphones.map((m, idx) => (
                                             <button
-                                                key={m.deviceId}
+                                                key={m.deviceId || idx}
                                                 onClick={() => { switchMicrophone(m.deviceId); setShowMicSettings(false); }}
-                                                className={`w-full text-left px-2 py-1.5 text-xs rounded-lg transition ${selectedMicrophone === m.deviceId ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
+                                                className={`w-full text-left px-2 py-1.5 text-xs rounded-lg transition truncate ${selectedMicrophone === m.deviceId ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
                                             >
-                                                {m.label || `Mic (${m.deviceId.slice(0,5)})`}
+                                                {m.label?.trim() || (m.deviceId && m.deviceId.length >= 4 ? `Mic (${m.deviceId.slice(0,5)})` : `Microphone ${idx + 1}`)}
                                             </button>
                                         ))}
                                     </div>
@@ -3928,16 +3943,16 @@ Link: ${getInviteUrl()}`;
                                 <ChevronUp className="w-3 h-3" />
                             </button>
                             {showCamSettings && (
-                                <div className="absolute bottom-[110%] left-0 w-48 bg-slate-800 border border-slate-700 rounded-xl p-2 shadow-xl z-50">
+                                <div className="absolute bottom-[110%] left-0 w-52 bg-slate-800 border border-slate-700 rounded-xl p-2 shadow-xl z-50">
                                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Select Camera</div>
                                     <div className="space-y-1 max-h-48 overflow-y-auto">
-                                        {availableDevices.cameras.map(c => (
+                                        {availableDevices.cameras.map((c, idx) => (
                                             <button
-                                                key={c.deviceId}
+                                                key={c.deviceId || idx}
                                                 onClick={() => { switchCamera(c.deviceId); setShowCamSettings(false); }}
-                                                className={`w-full text-left px-2 py-1.5 text-xs rounded-lg transition ${selectedCamera === c.deviceId ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
+                                                className={`w-full text-left px-2 py-1.5 text-xs rounded-lg transition truncate ${selectedCamera === c.deviceId ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
                                             >
-                                                {c.label || `Camera (${c.deviceId.slice(0,5)})`}
+                                                {c.label?.trim() || (c.deviceId && c.deviceId.length >= 4 ? `Camera (${c.deviceId.slice(0,5)})` : `Camera ${idx + 1}`)}
                                             </button>
                                         ))}
                                     </div>

@@ -628,18 +628,27 @@ export default function TimetablePage() {
                                                                                     <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
                                                                                     LIVE ({cellProgress}%)
                                                                                 </span>
-                                                                            ) : (
-                                                                                <span className="text-[9px] font-bold uppercase opacity-75">
-                                                                                    {slotType === 'break_period' ? 'Break' : slotType}
+                                                                            ) : loggedWork ? (
+                                                                                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                                                                                    <Check className="w-2.5 h-2.5 text-emerald-600" /> Done
                                                                                 </span>
+                                                                            ) : isPast ? (
+                                                                                <span className="inline-flex items-center text-[8px] font-bold px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                                                                    <Check className="w-2 h-2 mr-0.5" /> Done
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span />
                                                                             )}
 
-                                                                            <span className={`text-[8px] font-extrabold px-1.5 py-0.2 rounded uppercase ${
-                                                                                daySlot.slotType === 'lab' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' :
-                                                                                daySlot.slotType === 'break_period' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' :
-                                                                                'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                                                                            }`}>
-                                                                                {daySlot.slotType === 'break_period' ? 'Break' : daySlot.slotType || 'Lecture'}
+                                                                            <span
+                                                                                className={`text-[9px] font-black px-1.5 py-0.2 rounded uppercase ${
+                                                                                    daySlot.slotType === 'lab' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' :
+                                                                                    daySlot.slotType === 'break_period' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' :
+                                                                                    'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                                                                }`}
+                                                                                title={daySlot.slotType === 'lab' ? 'Practical Lab (P)' : daySlot.slotType === 'break_period' ? 'Break' : 'Theory Lecture (L)'}
+                                                                            >
+                                                                                {daySlot.slotType === 'lab' ? 'P' : daySlot.slotType === 'break_period' ? '☕' : 'L'}
                                                                             </span>
                                                                         </div>
 

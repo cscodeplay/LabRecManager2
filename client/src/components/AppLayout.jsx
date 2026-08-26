@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, Search } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import Sidebar from './Sidebar';
 import NotificationBell from './NotificationBell';
 import ProfileDropdown from './ProfileDropdown';
 import SessionSelector, { ReadOnlyBanner } from './SessionSelector';
 import { DatabaseStatusBadge } from './DatabaseStatus';
 import FloatingChatbot from './FloatingChatbot';
+import GlobalSearch from './GlobalSearch';
 import { useAuthStore } from '@/lib/store';
 
 export default function AppLayout({ children }) {
@@ -18,7 +19,6 @@ export default function AppLayout({ children }) {
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-    const [searchQuery, setSearchQuery] = useState('');
 
     // Don't show layout on login/register pages
     const isAuthPage = pathname === '/login' || pathname === '/register';
@@ -72,7 +72,7 @@ export default function AppLayout({ children }) {
                 {/* Top Header */}
                 <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200">
                     <div className="px-4 h-16 flex items-center justify-between gap-4">
-                        {/* Left side - Mobile menu & Search */}
+                        {/* Left side - Mobile menu & Collapsible Floating Global Search */}
                         <div className="flex items-center gap-3 flex-1">
                             {/* Mobile menu button */}
                             <button
@@ -82,19 +82,8 @@ export default function AppLayout({ children }) {
                                 <Menu className="w-5 h-5 text-slate-600" />
                             </button>
 
-                            {/* Search */}
-                            <div className="hidden md:flex items-center gap-2 flex-1 max-w-md">
-                                <div className="relative flex-1">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                    <input
-                                        type="text"
-                                        placeholder="Search assignments, students..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="w-full pl-9 pr-4 py-2 bg-slate-100 border-0 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:bg-white transition"
-                                    />
-                                </div>
-                            </div>
+                            {/* Collapsible Floating Global Search */}
+                            <GlobalSearch />
                         </div>
 
                         {/* Right side - Session, Status, Notifications, Profile */}

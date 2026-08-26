@@ -162,6 +162,7 @@ app.use('/api/teaching', teachingRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/admin/chatbot', chatbotRoutes);
 app.use('/api/compiler', compilerRoutes);
+app.use('/api/search', require('./routes/search.routes'));
 
 const prisma = require('./config/database');
 
