@@ -2007,6 +2007,9 @@ model SchoolCalendar {
   titleHindi     String?           @map("title_hindi") @db.VarChar(255)
   type           CalendarEventType @default(gazetted_holiday)
   isHoliday      Boolean           @default(true) @map("is_holiday")
+  startTime      String?           @map("start_time") @db.VarChar(20)
+  endTime        String?           @map("end_time") @db.VarChar(20)
+  description    String?           @db.Text
   source         CalendarSource    @default(admin_custom)
   createdById    String?           @map("created_by_id") @db.Uuid
   createdAt      DateTime?         @default(now()) @map("created_at") @db.Timestamp(6)
@@ -2015,8 +2018,8 @@ model SchoolCalendar {
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   createdBy    User?        @relation("CalendarCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
-  @@unique([schoolId, date], name: "unique_calendar_date_per_school")
   @@index([schoolId, academicYearId])
+  @@index([schoolId, date])
   @@index([date])
   @@map("school_calendar")
 }

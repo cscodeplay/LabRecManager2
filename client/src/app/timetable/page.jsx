@@ -166,10 +166,11 @@ export default function TimetablePage() {
             const now = new Date();
             const res = await calendarAPI.getEvents({
                 month: now.getMonth() + 1,
-                year: now.getFullYear()
+                year: now.getFullYear(),
+                holidaysOnly: true
             });
             const upcoming = (res.data.data.events || [])
-                .filter(e => (e.isHoliday || e.eventType === 'holiday') && new Date(e.date) >= new Date(now.getFullYear(), now.getMonth(), now.getDate()))
+                .filter(e => e.isHoliday && new Date(e.date) >= new Date(now.getFullYear(), now.getMonth(), now.getDate()))
                 .slice(0, 3);
             setUpcomingHolidays(upcoming);
         } catch { /* quiet */ }
@@ -180,11 +181,11 @@ export default function TimetablePage() {
             if (weekDays.length === 0) return;
             const startDate = weekDays[0].dateStr;
             const endDate = weekDays[weekDays.length - 1].dateStr;
-            const res = await calendarAPI.getEvents({ startDate, endDate });
+            const res = await calendarAPI.getEvents({ startDate, endDate, holidaysOnly: true });
             const events = res.data?.data?.events || [];
             const hMap = {};
             events.forEach(e => {
-                if (e.isHoliday || e.eventType === 'holiday') {
+                if (e.isHoliday) {
                     const dateKey = new Date(e.date).toISOString().split('T')[0];
                     hMap[dateKey] = e;
                 }

@@ -142,17 +142,17 @@ export default function AdminTimetablePage() {
         });
     }, [weekOffset]);
 
-    // Load School Calendar Holidays
+    // Load School Calendar Holidays (strictly holidays only)
     const loadCalendarHolidays = useCallback(async () => {
         try {
             if (weekDays.length === 0) return;
             const startDate = weekDays[0].dateStr;
             const endDate = weekDays[weekDays.length - 1].dateStr;
-            const res = await calendarAPI.getEvents({ startDate, endDate });
+            const res = await calendarAPI.getEvents({ startDate, endDate, holidaysOnly: true });
             const events = res.data?.data?.events || [];
             const hMap = {};
             events.forEach(e => {
-                if (e.isHoliday || e.eventType === 'holiday') {
+                if (e.isHoliday) {
                     const dateKey = new Date(e.date).toISOString().split('T')[0];
                     hMap[dateKey] = e;
                 }

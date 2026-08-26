@@ -523,7 +523,7 @@ router.get('/teacher/:teacherId', authenticate, asyncHandler(async (req, res) =>
  * @access  Private
  */
 router.get('/calendar', authenticate, asyncHandler(async (req, res) => {
-    const { month, year, academicYearId } = req.query;
+    const { month, year, academicYearId, startDate: qStartDate, endDate: qEndDate, holidaysOnly } = req.query;
     const schoolId = req.user.schoolId;
 
     let where = { schoolId };
@@ -532,7 +532,13 @@ router.get('/calendar', authenticate, asyncHandler(async (req, res) => {
         where.academicYearId = academicYearId;
     }
 
-    if (month && year) {
+    if (holidaysOnly === 'true' || holidaysOnly === true) {
+        where.isHoliday = true;
+    }
+
+    if (qStartDate && qEndDate) {
+        where.date = { gte: new Date(qStartDate), lte: new Date(qEndDate) };
+    } else if (month && year) {
         const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
         const endDate = new Date(parseInt(year), parseInt(month), 0);
         where.date = { gte: startDate, lte: endDate };
@@ -540,7 +546,7 @@ router.get('/calendar', authenticate, asyncHandler(async (req, res) => {
 
     const events = await prisma.schoolCalendar.findMany({
         where,
-        orderBy: { date: 'asc' },
+        orderBy: [{ date: 'asc' }, { startTime: 'asc' }, { createdAt: 'asc' }],
         include: {
             createdBy: { select: { id: true, firstName: true, lastName: true } }
         }
@@ -551,26 +557,63 @@ router.get('/calendar', authenticate, asyncHandler(async (req, res) => {
 
 /**
  * @route   POST /api/calendar
- * @desc    Add a holiday/event
+ * @desc    Add a holiday or timed event
  * @access  Private (Admin, Principal)
  */
 router.post('/calendar', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
-    const { date, title, titleHindi, type, isHoliday, source, academicYearId } = req.body;
+    const { date, title, titleHindi, type, isHoliday, startTime, endTime, description, source, academicYearId } = req.body;
     const schoolId = req.user.schoolId;
 
     if (!date || !title || !academicYearId) {
         return res.status(400).json({ success: false, message: 'date, title, and academicYearId are required' });
     }
 
+    const dateObj = new Date(date);
+    const holidayFlag = isHoliday !== undefined ? Boolean(isHoliday) : true;
+
+    // Requirement: There can be at most one holiday per day. If adding a holiday and one already exists, update it.
+    if (holidayFlag) {
+        const existingHoliday = await prisma.schoolCalendar.findFirst({
+            where: { schoolId, date: dateObj, isHoliday: true }
+        });
+
+        if (existingHoliday) {
+            const updated = await prisma.schoolCalendar.update({
+                where: { id: existingHoliday.id },
+                data: {
+                    title,
+                    titleHindi: titleHindi || null,
+                    type: type || 'gazetted_holiday',
+                    isHoliday: true,
+                    startTime: null,
+                    endTime: null,
+                    description: description || null,
+                    source: source || 'admin_custom',
+                    createdById: req.user.id
+                }
+            });
+            return res.status(200).json({
+                success: true,
+                message: 'Holiday updated for this date',
+                messageHindi: 'इस तिथि के लिए अवकाश अपडेट किया गया',
+                data: { event: updated, updated: true }
+            });
+        }
+    }
+
+    // Multiple events can be scheduled at different times within a day
     const event = await prisma.schoolCalendar.create({
         data: {
             schoolId,
             academicYearId,
-            date: new Date(date),
+            date: dateObj,
             title,
             titleHindi: titleHindi || null,
-            type: type || 'custom',
-            isHoliday: isHoliday !== undefined ? isHoliday : true,
+            type: type || (holidayFlag ? 'gazetted_holiday' : 'event'),
+            isHoliday: holidayFlag,
+            startTime: startTime || null,
+            endTime: endTime || null,
+            description: description || null,
             source: source || 'admin_custom',
             createdById: req.user.id
         }
@@ -578,8 +621,8 @@ router.post('/calendar', authenticate, authorize('admin', 'principal'), asyncHan
 
     res.status(201).json({
         success: true,
-        message: 'Calendar event added',
-        messageHindi: 'कैलेंडर इवेंट जोड़ा गया',
+        message: holidayFlag ? 'Holiday added' : 'Event scheduled',
+        messageHindi: holidayFlag ? 'अवकाश जोड़ा गया' : 'इवेंट शेड्यूल किया गया',
         data: { event }
     });
 }));
@@ -590,7 +633,34 @@ router.post('/calendar', authenticate, authorize('admin', 'principal'), asyncHan
  * @access  Private (Admin, Principal)
  */
 router.put('/calendar/:id', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
-    const { title, titleHindi, type, isHoliday, date } = req.body;
+    const { title, titleHindi, type, isHoliday, date, startTime, endTime, description } = req.body;
+    const schoolId = req.user.schoolId;
+
+    const existing = await prisma.schoolCalendar.findUnique({
+        where: { id: req.params.id }
+    });
+
+    if (!existing) {
+        return res.status(404).json({ success: false, message: 'Calendar event not found' });
+    }
+
+    const targetDate = date ? new Date(date) : existing.date;
+    const newIsHoliday = isHoliday !== undefined ? Boolean(isHoliday) : existing.isHoliday;
+
+    // If changing/setting as holiday, ensure there isn't another conflicting holiday on the target date
+    if (newIsHoliday) {
+        const otherHoliday = await prisma.schoolCalendar.findFirst({
+            where: {
+                schoolId,
+                date: targetDate,
+                isHoliday: true,
+                id: { not: req.params.id }
+            }
+        });
+        if (otherHoliday) {
+            await prisma.schoolCalendar.delete({ where: { id: otherHoliday.id } });
+        }
+    }
 
     const event = await prisma.schoolCalendar.update({
         where: { id: req.params.id },
@@ -598,12 +668,15 @@ router.put('/calendar/:id', authenticate, authorize('admin', 'principal'), async
             ...(title && { title }),
             ...(titleHindi !== undefined && { titleHindi }),
             ...(type && { type }),
-            ...(isHoliday !== undefined && { isHoliday }),
-            ...(date && { date: new Date(date) })
+            isHoliday: newIsHoliday,
+            ...(date && { date: targetDate }),
+            startTime: startTime !== undefined ? (startTime || null) : undefined,
+            endTime: endTime !== undefined ? (endTime || null) : undefined,
+            description: description !== undefined ? (description || null) : undefined
         }
     });
 
-    res.json({ success: true, message: 'Event updated', data: { event } });
+    res.json({ success: true, message: newIsHoliday ? 'Holiday updated' : 'Event updated', data: { event } });
 }));
 
 /**
@@ -612,8 +685,14 @@ router.put('/calendar/:id', authenticate, authorize('admin', 'principal'), async
  * @access  Private (Admin, Principal)
  */
 router.delete('/calendar/:id', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const existing = await prisma.schoolCalendar.findUnique({
+        where: { id: req.params.id }
+    });
+    if (!existing) {
+        return res.status(404).json({ success: false, message: 'Calendar entry not found' });
+    }
     await prisma.schoolCalendar.delete({ where: { id: req.params.id } });
-    res.json({ success: true, message: 'Event removed' });
+    res.json({ success: true, message: existing.isHoliday ? 'Holiday deleted' : 'Event deleted' });
 }));
 
 /**
@@ -657,26 +736,30 @@ router.post('/calendar/seed-punjab', authenticate, authorize('admin'), asyncHand
     let seededCount = 0;
     for (const h of punjabHolidays) {
         try {
-            await prisma.schoolCalendar.upsert({
-                where: {
-                    unique_calendar_date_per_school: {
-                        schoolId,
-                        date: new Date(h.date)
-                    }
-                },
-                create: {
-                    schoolId,
-                    academicYearId,
-                    date: new Date(h.date),
-                    title: h.title,
-                    titleHindi: h.titleHindi,
-                    type: 'gazetted_holiday',
-                    isHoliday: true,
-                    source: 'punjab_govt',
-                    createdById: req.user.id
-                },
-                update: {} // Don't update if already exists
+            const dateObj = new Date(h.date);
+            const existing = await prisma.schoolCalendar.findFirst({
+                where: { schoolId, date: dateObj, isHoliday: true }
             });
+            if (existing) {
+                await prisma.schoolCalendar.update({
+                    where: { id: existing.id },
+                    data: { title: h.title, titleHindi: h.titleHindi, type: 'gazetted_holiday', isHoliday: true, source: 'punjab_govt' }
+                });
+            } else {
+                await prisma.schoolCalendar.create({
+                    data: {
+                        schoolId,
+                        academicYearId,
+                        date: dateObj,
+                        title: h.title,
+                        titleHindi: h.titleHindi,
+                        type: 'gazetted_holiday',
+                        isHoliday: true,
+                        source: 'punjab_govt',
+                        createdById: req.user.id
+                    }
+                });
+            }
             seededCount++;
         } catch (e) {
             console.warn(`Skipping holiday ${h.title}: ${e.message}`);
@@ -733,33 +816,63 @@ router.post('/calendar/bulk', authenticate, authorize('admin', 'principal'), asy
                 continue;
             }
 
-            const upserted = await prisma.schoolCalendar.upsert({
-                where: {
-                    unique_calendar_date_per_school: {
-                        schoolId,
-                        date: dateObj
-                    }
-                },
-                create: {
-                    schoolId,
-                    academicYearId: targetYearId,
-                    date: dateObj,
-                    title: item.title,
-                    titleHindi: item.titleHindi || item.titlePunjabi || null,
-                    type: item.type || 'gazetted_holiday',
-                    isHoliday: item.isHoliday !== undefined ? item.isHoliday : true,
-                    source: item.source || 'admin_custom',
-                    createdById: req.user.id
-                },
-                update: {
-                    title: item.title,
-                    titleHindi: item.titleHindi || item.titlePunjabi || undefined,
-                    type: item.type || undefined,
-                    isHoliday: item.isHoliday !== undefined ? item.isHoliday : undefined,
-                    source: item.source || undefined
+            const isHol = item.isHoliday !== undefined ? Boolean(item.isHoliday) : true;
+
+            if (isHol) {
+                const existing = await prisma.schoolCalendar.findFirst({
+                    where: { schoolId, date: dateObj, isHoliday: true }
+                });
+                if (existing) {
+                    const updated = await prisma.schoolCalendar.update({
+                        where: { id: existing.id },
+                        data: {
+                            title: item.title,
+                            titleHindi: item.titleHindi || item.titlePunjabi || undefined,
+                            type: item.type || 'gazetted_holiday',
+                            isHoliday: true,
+                            startTime: null,
+                            endTime: null,
+                            source: item.source || 'admin_custom'
+                        }
+                    });
+                    results.push(updated);
+                } else {
+                    const created = await prisma.schoolCalendar.create({
+                        data: {
+                            schoolId,
+                            academicYearId: targetYearId,
+                            date: dateObj,
+                            title: item.title,
+                            titleHindi: item.titleHindi || item.titlePunjabi || null,
+                            type: item.type || 'gazetted_holiday',
+                            isHoliday: true,
+                            startTime: null,
+                            endTime: null,
+                            source: item.source || 'admin_custom',
+                            createdById: req.user.id
+                        }
+                    });
+                    results.push(created);
                 }
-            });
-            results.push(upserted);
+            } else {
+                const created = await prisma.schoolCalendar.create({
+                    data: {
+                        schoolId,
+                        academicYearId: targetYearId,
+                        date: dateObj,
+                        title: item.title,
+                        titleHindi: item.titleHindi || item.titlePunjabi || null,
+                        type: item.type || 'event',
+                        isHoliday: false,
+                        startTime: item.startTime || null,
+                        endTime: item.endTime || null,
+                        description: item.description || null,
+                        source: item.source || 'admin_custom',
+                        createdById: req.user.id
+                    }
+                });
+                results.push(created);
+            }
             imported++;
         } catch (err) {
             console.error('Failed to import calendar event:', item, err.message);
@@ -834,31 +947,38 @@ router.post('/calendar/seed-weekends', authenticate, authorize('admin', 'princip
             const dateStr = current.toISOString().split('T')[0];
             const title = isSunday ? 'Sunday' : 'Second Saturday';
             const titleHindi = isSunday ? 'ਐਤਵਾਰ / रविवार' : 'ਦੂਜਾ ਸ਼ਨੀਵਾਰ / दूसरा शनिवार';
+            const dateObj = new Date(dateStr);
 
             try {
-                await prisma.schoolCalendar.upsert({
-                    where: {
-                        unique_calendar_date_per_school: {
-                            schoolId,
-                            date: new Date(dateStr)
-                        }
-                    },
-                    create: {
-                        schoolId,
-                        academicYearId: targetYearId,
-                        date: new Date(dateStr),
-                        title,
-                        titleHindi,
-                        type: 'gazetted_holiday',
-                        isHoliday: true,
-                        source: 'admin_custom',
-                        createdById: req.user.id
-                    },
-                    update: {
-                        isHoliday: true,
-                        type: 'gazetted_holiday'
-                    }
+                const existing = await prisma.schoolCalendar.findFirst({
+                    where: { schoolId, date: dateObj, isHoliday: true }
                 });
+
+                if (existing) {
+                    await prisma.schoolCalendar.update({
+                        where: { id: existing.id },
+                        data: {
+                            title,
+                            titleHindi,
+                            type: 'gazetted_holiday',
+                            isHoliday: true
+                        }
+                    });
+                } else {
+                    await prisma.schoolCalendar.create({
+                        data: {
+                            schoolId,
+                            academicYearId: targetYearId,
+                            date: dateObj,
+                            title,
+                            titleHindi,
+                            type: 'gazetted_holiday',
+                            isHoliday: true,
+                            source: 'admin_custom',
+                            createdById: req.user.id
+                        }
+                    });
+                }
 
                 if (isSunday) sundaysCount++;
                 if (isSecondSaturday) secondSaturdaysCount++;

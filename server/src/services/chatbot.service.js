@@ -1478,29 +1478,36 @@ Return JSON ONLY with this exact format:
                             const titleHindi = isSunday ? 'ਐਤਵਾਰ / रविवार' : 'ਦੂਜਾ ਸ਼ਨੀਵਾਰ / दूसरा शनिवार';
 
                             try {
-                                await prisma.schoolCalendar.upsert({
-                                    where: {
-                                        unique_calendar_date_per_school: {
-                                            schoolId,
-                                            date: new Date(dateStr)
-                                        }
-                                    },
-                                    create: {
-                                        schoolId,
-                                        academicYearId: targetAcademicYearId,
-                                        date: new Date(dateStr),
-                                        title,
-                                        titleHindi,
-                                        type: 'gazetted_holiday',
-                                        isHoliday: true,
-                                        source: 'admin_custom',
-                                        createdById: userId
-                                    },
-                                    update: {
-                                        isHoliday: true,
-                                        type: 'gazetted_holiday'
-                                    }
+                                const dateObj = new Date(dateStr);
+                                const existing = await prisma.schoolCalendar.findFirst({
+                                    where: { schoolId, date: dateObj, isHoliday: true }
                                 });
+
+                                if (existing) {
+                                    await prisma.schoolCalendar.update({
+                                        where: { id: existing.id },
+                                        data: {
+                                            title,
+                                            titleHindi,
+                                            type: 'gazetted_holiday',
+                                            isHoliday: true
+                                        }
+                                    });
+                                } else {
+                                    await prisma.schoolCalendar.create({
+                                        data: {
+                                            schoolId,
+                                            academicYearId: targetAcademicYearId,
+                                            date: dateObj,
+                                            title,
+                                            titleHindi,
+                                            type: 'gazetted_holiday',
+                                            isHoliday: true,
+                                            source: 'admin_custom',
+                                            createdById: userId
+                                        }
+                                    });
+                                }
 
                                 if (isSunday) sundaysCount++;
                                 if (isSecondSaturday) secondSaturdaysCount++;
