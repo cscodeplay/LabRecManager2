@@ -573,29 +573,32 @@ export default function AdminTimetablePage() {
             // 1. Locally update period structure immediately
             setPeriodStructure(updatedPeriods);
 
-            // 2. Persist updated timings to timetable in DB if timetable exists
-            if (timetable?.id) {
-                await api.put(`/timetable/${timetable.id}/period-timings`, {
-                    periodTimings: updatedPeriods
-                });
+            // 2. Persist updated timings to timetable in DB (auto-creates timetable if needed)
+            const targetId = timetable?.id || selectedClassId;
+            const res = await api.put(`/timetable/${targetId}/period-timings`, {
+                classId: selectedClassId,
+                periodTimings: updatedPeriods
+            });
 
-                // Also update individual slots locally and in state
-                const updatedSlots = { ...slots };
-                DAYS.forEach(d => {
-                    if (updatedSlots[d]) {
-                        updatedPeriods.forEach(p => {
-                            if (updatedSlots[d][p.periodNumber]) {
-                                updatedSlots[d][p.periodNumber] = {
-                                    ...updatedSlots[d][p.periodNumber],
-                                    startTime: p.startTime,
-                                    endTime: p.endTime
-                                };
-                            }
-                        });
+            if (res.data?.data?.timetable) {
+                setTimetable(res.data.data.timetable);
+            }
+
+            // Also update individual slots locally and in state
+            const updatedSlots = { ...slots };
+            DAYS.forEach(d => {
+                if (!updatedSlots[d]) updatedSlots[d] = {};
+                updatedPeriods.forEach(p => {
+                    if (updatedSlots[d][p.periodNumber]) {
+                        updatedSlots[d][p.periodNumber] = {
+                            ...updatedSlots[d][p.periodNumber],
+                            startTime: p.startTime,
+                            endTime: p.endTime
+                        };
                     }
                 });
-                setSlots(updatedSlots);
-            }
+            });
+            setSlots(updatedSlots);
 
             toast.success(
                 autoAdjustSubsequent
@@ -603,6 +606,9 @@ export default function AdminTimetablePage() {
                     : 'Period timing updated successfully!'
             );
             setShowPeriodModal(false);
+            if (selectedClassId) {
+                loadTimetable(selectedClassId);
+            }
         } catch (err) {
             console.error('Failed to update period timings:', err);
             toast.error('Failed to update period timings');
@@ -622,28 +628,26 @@ export default function AdminTimetablePage() {
         if (!ok) return;
         setSaving(true);
         try {
-            const slotsToDelete = [];
-            DAYS.forEach(d => {
-                const s = slots[d]?.[periodNumber];
-                if(s) slotsToDelete.push(s);
-            });
-            
-            for(const s of slotsToDelete) {
-                await timetableAPI.deleteSlot(s.id);
-            }
-            
             const newStructure = periodStructure.filter(p => p.periodNumber !== periodNumber);
             setPeriodStructure(newStructure);
             
-            if (timetable?.id) {
-                await api.put(`/timetable/${timetable.id}/period-timings`, {
-                    periodTimings: newStructure
-                }).catch(() => {});
+            const targetId = timetable?.id || selectedClassId;
+            const res = await api.put(`/timetable/${targetId}/period-timings`, {
+                classId: selectedClassId,
+                periodTimings: newStructure,
+                removePeriodNumber: periodNumber
+            });
+
+            if (res.data?.data?.timetable) {
+                setTimetable(res.data.data.timetable);
             }
 
             toast.success(`Period ${periodNumber} removed`);
-            loadTimetable(selectedClassId);
+            if (selectedClassId) {
+                loadTimetable(selectedClassId);
+            }
         } catch(e) {
+            console.error('Failed to remove period:', e);
             toast.error('Failed to remove period');
         } finally {
             setSaving(false);
@@ -671,17 +675,27 @@ export default function AdminTimetablePage() {
         const updatedStructure = [...periodStructure, newPeriod];
         setPeriodStructure(updatedStructure);
         
-        if (timetable?.id) {
-            try {
-                await api.put(`/timetable/${timetable.id}/period-timings`, {
-                    periodTimings: updatedStructure
-                });
-            } catch (err) {
-                console.warn('Could not sync new period structure with backend:', err);
-            }
-        }
+        setSaving(true);
+        try {
+            const targetId = timetable?.id || selectedClassId;
+            const res = await api.put(`/timetable/${targetId}/period-timings`, {
+                classId: selectedClassId,
+                periodTimings: updatedStructure
+            });
 
-        toast.success(`Period ${nextPeriodNo} added (${startTime}–${endTime}) without overlap!`);
+            if (res.data?.data?.timetable) {
+                setTimetable(res.data.data.timetable);
+            }
+            toast.success(`Period ${nextPeriodNo} added (${startTime}–${endTime}) without overlap!`);
+            if (selectedClassId) {
+                loadTimetable(selectedClassId);
+            }
+        } catch (err) {
+            console.error('Could not sync new period structure with backend:', err);
+            toast.error('Failed to save new period to server');
+        } finally {
+            setSaving(false);
+        }
     };
 
     // Drag and Drop implementation

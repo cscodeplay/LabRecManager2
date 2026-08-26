@@ -163,16 +163,35 @@ router.put('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(a
  */
 router.post('/:id/slots', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
     const { dayOfWeek, periodNumber, startTime, endTime, subjectId, instructorId, roomNumber, slotType } = req.body;
+    const timetableId = req.params.id;
 
     if (!dayOfWeek || !periodNumber || !startTime || !endTime) {
         return res.status(400).json({ success: false, message: 'dayOfWeek, periodNumber, startTime, and endTime are required' });
     }
 
-    const slot = await prisma.timetableSlot.create({
-        data: {
-            timetableId: req.params.id,
-            dayOfWeek,
-            periodNumber,
+    const pNum = parseInt(periodNumber, 10);
+    const day = dayOfWeek.toLowerCase();
+
+    const slot = await prisma.timetableSlot.upsert({
+        where: {
+            unique_slot_per_day_period: {
+                timetableId,
+                dayOfWeek: day,
+                periodNumber: pNum
+            }
+        },
+        update: {
+            startTime,
+            endTime,
+            subjectId: subjectId || null,
+            instructorId: instructorId || null,
+            roomNumber: roomNumber || null,
+            slotType: slotType || 'lecture'
+        },
+        create: {
+            timetableId,
+            dayOfWeek: day,
+            periodNumber: pNum,
             startTime,
             endTime,
             subjectId: subjectId || null,
@@ -186,7 +205,7 @@ router.post('/:id/slots', authenticate, authorize('admin', 'principal'), asyncHa
         }
     });
 
-    res.status(201).json({ success: true, message: 'Slot added', data: { slot } });
+    res.status(201).json({ success: true, message: 'Slot saved', data: { slot } });
 }));
 
 /**
@@ -250,55 +269,154 @@ router.post('/:id/slots/bulk', authenticate, authorize('admin', 'principal'), as
         })
     );
 
-    res.status(201).json({
-        success: true,
-        message: `${results.length} slots applied successfully`,
-        data: { count: results.length, slots: results }
-    });
+    res.status(201).json({ success: true, message: `${results.length} slots created/updated`, data: { count: results.length } });
 }));
 
 /**
  * @route   PUT /api/timetable/:id/period-timings
- * @desc    Bulk update timings for specific period numbers across a timetable or day
+ * @desc    Bulk update timings for specific period numbers across a timetable or day (auto-creates timetable/slots if needed)
  * @access  Private (Admin, Principal)
  */
 router.put('/:id/period-timings', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
-    const { periodTimings, dayOfWeek } = req.body;
-    const timetableId = req.params.id;
+    const { periodTimings, dayOfWeek, classId: bodyClassId, removePeriodNumber } = req.body;
+    const rawId = req.params.id;
+    const schoolId = req.user.schoolId;
 
     if (!periodTimings || !Array.isArray(periodTimings) || periodTimings.length === 0) {
         return res.status(400).json({ success: false, message: 'periodTimings array is required' });
     }
 
-    const updates = [];
+    // 1. Resolve Timetable
+    let timetable = null;
+    if (rawId && rawId.length === 36) {
+        timetable = await prisma.timetable.findFirst({
+            where: {
+                schoolId,
+                OR: [
+                    { id: rawId },
+                    { classId: rawId, isActive: true }
+                ]
+            }
+        });
+    }
+
+    if (!timetable && bodyClassId) {
+        timetable = await prisma.timetable.findFirst({
+            where: { schoolId, classId: bodyClassId, isActive: true }
+        });
+    }
+
+    if (!timetable) {
+        const targetClassId = bodyClassId || (rawId && rawId.length === 36 ? rawId : null);
+        if (!targetClassId) {
+            return res.status(400).json({ success: false, message: 'Class ID or Timetable ID is required' });
+        }
+
+        const targetClass = await prisma.class.findFirst({
+            where: { id: targetClassId, schoolId }
+        });
+        if (!targetClass) {
+            return res.status(404).json({ success: false, message: 'Class not found' });
+        }
+
+        let academicYearId = req.headers['x-academic-session'];
+        if (!academicYearId) {
+            const curYear = await prisma.academicYear.findFirst({ where: { schoolId, isCurrent: true } });
+            academicYearId = curYear?.id;
+        }
+        if (!academicYearId) {
+            const anyYear = await prisma.academicYear.findFirst({ where: { schoolId }, orderBy: { startDate: 'desc' } });
+            academicYearId = anyYear?.id;
+        }
+        if (!academicYearId) {
+            return res.status(400).json({ success: false, message: 'No academic year configured for school' });
+        }
+
+        // Deactivate previous active timetable for this class and year if any
+        await prisma.timetable.updateMany({
+            where: { classId: targetClassId, academicYearId, isActive: true },
+            data: { isActive: false }
+        });
+
+        timetable = await prisma.timetable.create({
+            data: {
+                schoolId,
+                classId: targetClassId,
+                academicYearId,
+                name: `${targetClass.name} Timetable`,
+                effectiveFrom: new Date(),
+                isActive: true
+            }
+        });
+    }
+
+    // 2. Handle removal of a period if specified
+    if (removePeriodNumber) {
+        await prisma.timetableSlot.deleteMany({
+            where: {
+                timetableId: timetable.id,
+                periodNumber: parseInt(removePeriodNumber, 10)
+            }
+        });
+    }
+
+    // 3. Upsert slots for all periods across all days
+    const ALL_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const daysToProcess = dayOfWeek && dayOfWeek !== 'all' ? [dayOfWeek.toLowerCase()] : ALL_DAYS;
+
     for (const pt of periodTimings) {
         const pNum = parseInt(pt.periodNumber, 10);
         if (!pNum || !pt.startTime || !pt.endTime) continue;
 
-        const whereClause = {
-            timetableId,
-            periodNumber: pNum,
-            ...(dayOfWeek && dayOfWeek !== 'all' && { dayOfWeek: dayOfWeek.toLowerCase() })
-        };
-
-        updates.push(
-            prisma.timetableSlot.updateMany({
-                where: whereClause,
-                data: {
+        for (const day of daysToProcess) {
+            await prisma.timetableSlot.upsert({
+                where: {
+                    unique_slot_per_day_period: {
+                        timetableId: timetable.id,
+                        dayOfWeek: day,
+                        periodNumber: pNum
+                    }
+                },
+                update: {
                     startTime: pt.startTime,
                     endTime: pt.endTime,
                     ...(pt.slotType && { slotType: pt.slotType })
+                },
+                create: {
+                    timetableId: timetable.id,
+                    dayOfWeek: day,
+                    periodNumber: pNum,
+                    startTime: pt.startTime,
+                    endTime: pt.endTime,
+                    slotType: pt.slotType || 'lecture'
                 }
-            })
-        );
+            });
+        }
     }
 
-    await prisma.$transaction(updates);
+    // 4. Fetch full updated timetable
+    const fullTimetable = await prisma.timetable.findUnique({
+        where: { id: timetable.id },
+        include: {
+            class: { select: { id: true, name: true, gradeLevel: true, section: true } },
+            academicYear: { select: { id: true, yearLabel: true } },
+            slots: {
+                orderBy: [{ dayOfWeek: 'asc' }, { periodNumber: 'asc' }],
+                include: {
+                    subject: { select: { id: true, name: true, nameHindi: true, code: true } },
+                    instructor: { select: { id: true, firstName: true, lastName: true, email: true } }
+                }
+            }
+        }
+    });
 
     res.json({
         success: true,
-        message: 'Period timings updated successfully',
-        data: { updatedPeriodsCount: periodTimings.length }
+        message: 'Period timings updated and synced successfully across all days',
+        data: {
+            timetable: fullTimetable,
+            updatedPeriodsCount: periodTimings.length
+        }
     });
 }));
 
