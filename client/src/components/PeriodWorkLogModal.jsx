@@ -202,6 +202,13 @@ export default function PeriodWorkLogModal({
                         <span className="font-semibold text-slate-800 dark:text-slate-200">
                             {subjectName}
                         </span>
+                        <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] uppercase ${
+                            (slot?.slotType || period?.slotType) === 'lab' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' :
+                            (slot?.slotType || period?.slotType) === 'break_period' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' :
+                            'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                        }`}>
+                            {(slot?.slotType || period?.slotType) === 'break_period' ? 'Break' : (slot?.slotType || period?.slotType || 'lecture')}
+                        </span>
                     </div>
 
                     <div className="flex items-center gap-4 text-slate-600 dark:text-slate-400">

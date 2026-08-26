@@ -599,6 +599,9 @@ export const timetableAPI = {
     
     // Teacher schedule
     getTeacherSchedule: (teacherId) => api.get(`/timetable/teacher/${teacherId}`),
+
+    // Period timings
+    updatePeriodTimings: (timetableId, data) => api.put(`/timetable/${timetableId}/period-timings`, data),
 };
 
 // Calendar API

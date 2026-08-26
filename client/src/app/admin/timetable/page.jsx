@@ -857,7 +857,7 @@ export default function AdminTimetablePage() {
                     </div>
 
                     {/* Week Navigation & Timetable Info */}
-                    {viewMode === 'class' && timetable && (
+                    {((viewMode === 'class' && timetable) || (viewMode === 'instructor' && selectedInstructorId && instructorSchedule)) && (
                         <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 text-sm text-slate-600 dark:text-slate-400">
                             <div className="flex items-center gap-2">
                                 <button
@@ -887,12 +887,22 @@ export default function AdminTimetablePage() {
                             </div>
 
                             <div className="flex items-center gap-4">
-                                <span className="flex items-center gap-1 font-semibold text-slate-800 dark:text-slate-200">
-                                    <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                    {timetable.name}
-                                </span>
-                                <span>From: {formatDate(timetable.effectiveFrom)}</span>
-                                {timetable.effectiveTo && <span>To: {formatDate(timetable.effectiveTo)}</span>}
+                                {viewMode === 'class' && timetable && (
+                                    <>
+                                        <span className="flex items-center gap-1 font-semibold text-slate-800 dark:text-slate-200">
+                                            <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                            {timetable.name}
+                                        </span>
+                                        <span>From: {formatDate(timetable.effectiveFrom)}</span>
+                                        {timetable.effectiveTo && <span>To: {formatDate(timetable.effectiveTo)}</span>}
+                                    </>
+                                )}
+                                {viewMode === 'instructor' && selectedInstructorId && (
+                                    <span className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-200">
+                                        <User className="w-4 h-4 text-primary-500" />
+                                        Instructor: {instructors.find(i => i.id === selectedInstructorId)?.firstName} {instructors.find(i => i.id === selectedInstructorId)?.lastName}
+                                    </span>
+                                )}
                             </div>
                         </div>
                     )}
@@ -1010,12 +1020,12 @@ export default function AdminTimetablePage() {
                                                                         {/* Slot Content */}
                                                                         <div className="relative z-10 flex flex-col justify-between h-full" onClick={() => handleSlotClick(day, period)}>
                                                                             <div>
-                                                                                {/* Header Row: Live badge & Log work button */}
+                                                                                {/* Header Row: Live badge & Slot status */}
                                                                                 <div className="flex items-center justify-between gap-1">
                                                                                     {timeStatus === 'current' && !holiday && (
-                                                                                        <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full bg-emerald-600 text-white animate-pulse">
+                                                                                        <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-xs animate-pulse">
                                                                                             <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                                                                                            LIVE ({progressPercent}%)
+                                                                                            LIVE ({progressPercent}% Elapsed)
                                                                                         </span>
                                                                                     )}
                                                                                     {hasLoggedWork && (
@@ -1023,15 +1033,6 @@ export default function AdminTimetablePage() {
                                                                                             <Check className="w-2.5 h-2.5" /> Logged
                                                                                         </span>
                                                                                     )}
-                                                                                    {/* Plus icon to log work done */}
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        onClick={(e) => handleOpenWorkLogModal(e, day, period, slot)}
-                                                                                        className="opacity-0 group-hover:opacity-100 p-1 rounded-md bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 text-slate-600 hover:text-primary-600 hover:bg-primary-50 transition ml-auto"
-                                                                                        title="Log Work Done / Class Activity"
-                                                                                    >
-                                                                                        <Plus className="w-3.5 h-3.5" />
-                                                                                    </button>
                                                                                 </div>
 
                                                                                 {slot ? (
@@ -1061,6 +1062,13 @@ export default function AdminTimetablePage() {
                                                                                         <span className="text-[9px]">Add</span>
                                                                                     </div>
                                                                                 )}
+                                                                            </div>
+
+                                                                            {/* Period Timings in Bottom-Right Corner */}
+                                                                            <div className="text-right mt-1 pt-1">
+                                                                                <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 bg-white/70 dark:bg-slate-900/70 px-1 py-0.2 rounded">
+                                                                                    {slot?.startTime || period.startTime}–{slot?.endTime || period.endTime}
+                                                                                </span>
                                                                             </div>
                                                                         </div>
                                                                     </div>
@@ -1147,52 +1155,187 @@ export default function AdminTimetablePage() {
                         )}
 
                         {/* =========================================
-                            INSTRUCTOR VIEW (Read Only)
+                            INSTRUCTOR VIEW (Weekly Calendar with Nav & Live In-Progress)
                         ========================================= */}
                         {viewMode === 'instructor' && selectedInstructorId && instructorSchedule && (
                             <div className="card overflow-hidden mt-6">
                                 <div className="overflow-x-auto">
-                                    <table className="w-full border-collapse min-w-[900px]">
+                                    <table className="w-full border-collapse min-w-[950px]">
                                         <thead>
-                                            <tr className="bg-gradient-to-r from-blue-600 to-indigo-600">
-                                                <th className="px-3 py-3 text-left text-sm font-semibold text-white w-24">Period</th>
-                                                {DAYS.map(day => (
-                                                    <th key={day} className="px-3 py-3 text-center text-sm font-semibold text-white">
-                                                        {DAY_LABELS_FULL[day]}
-                                                    </th>
-                                                ))}
+                                            <tr className="bg-gradient-to-r from-blue-600 via-indigo-600 to-primary-600 text-white">
+                                                <th className="px-3 py-3 text-left text-sm font-semibold w-24">Period</th>
+                                                {weekDays.map(dayObj => {
+                                                    const holiday = calendarHolidays[dayObj.dateStr];
+                                                    return (
+                                                        <th key={dayObj.dayKey} className={`px-3 py-2 text-center text-sm font-semibold transition ${dayObj.isToday ? 'bg-white/10 ring-2 ring-white/30' : ''}`}>
+                                                            <div className="flex flex-col items-center">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span>{dayObj.fullDateDisplay}</span>
+                                                                    {dayObj.isToday && (
+                                                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-400 text-slate-950 font-extrabold uppercase">
+                                                                            Today
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                {holiday && (
+                                                                    <div className="mt-1 px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-bold flex items-center gap-1 truncate max-w-[130px]" title={holiday.title}>
+                                                                        <PartyPopper className="w-3 h-3 flex-shrink-0" />
+                                                                        <span className="truncate">{holiday.title || 'Holiday'}</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </th>
+                                                    );
+                                                })}
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {periodStructure.map((period, index) => (
-                                                <tr key={index} className="border-b border-slate-100 dark:border-slate-800">
+                                                <tr key={index} className={`border-b border-slate-100 dark:border-slate-800 ${period.slotType === 'break_period' ? 'bg-amber-50/20 dark:bg-amber-900/5' : ''}`}>
                                                     <td className="px-3 py-2 border-r border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
-                                                        <div className="text-xs font-semibold">P{period.periodNumber}</div>
-                                                        <div className="text-[10px] text-slate-500">{period.startTime}-{period.endTime}</div>
+                                                        <div className="text-xs font-bold text-slate-900 dark:text-slate-100">P{period.periodNumber}</div>
+                                                        <div className="text-[10px] text-slate-500 font-mono">{period.startTime}–{period.endTime}</div>
                                                     </td>
-                                                    {DAYS.map(day => {
+                                                    {weekDays.map(dayObj => {
+                                                        const day = dayObj.dayKey;
                                                         const slot = instructorSchedule[day]?.find(s => s.periodNumber === period.periodNumber);
+                                                        const holiday = calendarHolidays[dayObj.dateStr];
+                                                        const { status: timeStatus, progressPercent } = getPeriodTimeStatus(period, dayObj);
+                                                        const isLive = timeStatus === 'current' && !holiday;
+                                                        const isPast = timeStatus === 'past' && !holiday;
+                                                        const workKey = `${slot?.id || period.periodNumber}_${dayObj.dateStr}`;
+                                                        const loggedWork = loggedWorkMap[workKey];
+                                                        const slotType = slot?.slotType || period.slotType || 'lecture';
+
+                                                        let cellClass = "w-full min-h-[96px] rounded-xl px-2.5 py-2 text-left transition-all border relative overflow-hidden flex flex-col justify-between group ";
+                                                        if (holiday) {
+                                                            cellClass += "bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-200 ";
+                                                        } else if (isLive) {
+                                                            cellClass += "border-emerald-500 ring-2 ring-emerald-500/40 bg-gradient-to-br from-emerald-50 to-teal-50/70 dark:from-emerald-950/40 dark:to-teal-950/30 shadow-lg ";
+                                                        } else if (isPast) {
+                                                            cellClass += "bg-slate-100/80 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/80 opacity-80 hover:opacity-100 ";
+                                                        } else if (slot) {
+                                                            cellClass += getSlotColor(slot.slotType) + " hover:shadow-md ";
+                                                        } else {
+                                                            cellClass += "bg-slate-50/60 dark:bg-slate-800/30 border-dashed border-slate-200 dark:border-slate-700 ";
+                                                        }
+
                                                         return (
-                                                            <td key={day} className="px-1 py-1 border-r border-slate-100 dark:border-slate-800">
-                                                                {slot ? (
-                                                                    <div className={`w-full min-h-[60px] rounded-lg px-2 py-1.5 border shadow-sm ${getSlotColor(slot.slotType)}`}>
-                                                                        <div className="text-xs font-bold truncate">
-                                                                            {slot.timetable?.class?.name || `Class ${slot.timetable?.class?.gradeLevel}`}
+                                                            <td key={day} className="px-1 py-1 border-r border-slate-100 dark:border-slate-800 align-top">
+                                                                <div className={cellClass}>
+                                                                    {/* Live fluid background bar */}
+                                                                    {isLive && (
+                                                                        <div
+                                                                            className="absolute inset-0 bg-emerald-400/20 dark:bg-emerald-500/20 pointer-events-none transition-all duration-1000 ease-linear"
+                                                                            style={{ width: `${progressPercent}%` }}
+                                                                        />
+                                                                    )}
+
+                                                                    {/* Main Slot info */}
+                                                                    <div className="relative z-10 w-full">
+                                                                        {/* Top row: Live badge & Slot Type */}
+                                                                        <div className="flex items-center justify-between gap-1 mb-1">
+                                                                            {isLive ? (
+                                                                                <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-xs animate-pulse">
+                                                                                    <Activity className="w-3 h-3 animate-spin" />
+                                                                                    LIVE NOW
+                                                                                </span>
+                                                                            ) : isPast && slot ? (
+                                                                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                                                                    Done
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="text-[9px] font-bold uppercase tracking-wider opacity-75">
+                                                                                    {slotType === 'break_period' ? 'Break' : slotType}
+                                                                                </span>
+                                                                            )}
+
+                                                                            {/* Slot Type Badge */}
+                                                                            {slot && (
+                                                                                <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-md uppercase ${
+                                                                                    slot.slotType === 'lab' ? 'bg-purple-200/80 text-purple-900 dark:bg-purple-900/60 dark:text-purple-200' :
+                                                                                    slot.slotType === 'break_period' ? 'bg-amber-200/80 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200' :
+                                                                                    'bg-blue-200/80 text-blue-900 dark:bg-blue-900/60 dark:text-blue-200'
+                                                                                }`}>
+                                                                                    {slot.slotType === 'break_period' ? 'Break' : slot.slotType || 'Lecture'}
+                                                                                </span>
+                                                                            )}
                                                                         </div>
-                                                                        <div className="text-[10px] font-medium mt-0.5 truncate opacity-90">
-                                                                            {slot.subject?.name || slot.slotType}
-                                                                        </div>
-                                                                        {slot.roomNumber && (
-                                                                            <div className="text-[10px] opacity-75 truncate mt-1">
-                                                                                Room {slot.roomNumber}
+
+                                                                        {/* Live Progress Display (Requirement 2: Rendered a little larger) */}
+                                                                        {isLive && (
+                                                                            <div className="my-1.5 p-1.5 bg-emerald-600/10 dark:bg-emerald-400/10 rounded-lg border border-emerald-500/30">
+                                                                                <div className="flex items-center justify-between text-[11px] font-black text-emerald-800 dark:text-emerald-300">
+                                                                                    <span>{slot?.startTime || period.startTime}–{slot?.endTime || period.endTime}</span>
+                                                                                    <span className="text-xs font-black text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-1.5 py-0.2 rounded">
+                                                                                        {progressPercent}% Elapsed
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="w-full bg-emerald-200 dark:bg-emerald-900 rounded-full h-2 mt-1 overflow-hidden">
+                                                                                    <div className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {slot ? (
+                                                                            <>
+                                                                                <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                                                                                    {slot.timetable?.class?.name || `Class ${slot.timetable?.class?.gradeLevel || ''}`}
+                                                                                </div>
+                                                                                <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 mt-0.5 truncate">
+                                                                                    {slot.subject?.name || slot.slotType}
+                                                                                </div>
+                                                                                {slot.roomNumber && (
+                                                                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                                                                                        Room {slot.roomNumber}
+                                                                                    </div>
+                                                                                )}
+                                                                            </>
+                                                                        ) : holiday ? (
+                                                                            <div className="text-[11px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1 mt-1">
+                                                                                <PartyPopper className="w-3.5 h-3.5" />
+                                                                                <span className="truncate">{holiday.title || 'Holiday'}</span>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="text-xs text-slate-400 text-center py-2">
+                                                                                Free Period
                                                                             </div>
                                                                         )}
                                                                     </div>
-                                                                ) : (
-                                                                    <div className="w-full h-full min-h-[60px] bg-slate-50 dark:bg-slate-800/30 rounded-lg flex items-center justify-center border border-dashed border-slate-200 dark:border-slate-700">
-                                                                        <span className="text-xs text-slate-400">Free</span>
+
+                                                                    {/* Bottom Row: Task Performed Action Button (Requirement 4) & Period Timings at Bottom-Right (Requirement 3) */}
+                                                                    <div className="relative z-10 mt-2 pt-1 border-t border-black/5 dark:border-white/5 flex items-center justify-between gap-1 min-h-[22px]">
+                                                                        {slot && slot.slotType !== 'break_period' && (
+                                                                            <div>
+                                                                                {loggedWork ? (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={(e) => handleOpenWorkLogModal(e, day, period, slot)}
+                                                                                        className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded flex items-center gap-1 hover:bg-emerald-200 transition"
+                                                                                        title="View/Edit Logged Task"
+                                                                                    >
+                                                                                        <Check className="w-3 h-3 text-emerald-600" />
+                                                                                        <span className="max-w-[70px] truncate">{loggedWork.topicsCovered || 'Task Done'}</span>
+                                                                                    </button>
+                                                                                ) : (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={(e) => handleOpenWorkLogModal(e, day, period, slot)}
+                                                                                        className="text-[10px] font-bold text-primary-700 dark:text-primary-300 bg-white/90 dark:bg-slate-900/90 hover:bg-primary-50 border border-primary-200 dark:border-primary-800 rounded px-1.5 py-0.5 flex items-center gap-0.5 transition shadow-2xs"
+                                                                                        title="Record task performed for this class"
+                                                                                    >
+                                                                                        <Plus className="w-2.5 h-2.5 text-primary-600" /> Task Performed
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Period Timings in Bottom-Right Corner (Requirement 3) */}
+                                                                        <div className="ml-auto text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 bg-white/70 dark:bg-slate-900/70 px-1 py-0.2 rounded pointer-events-none">
+                                                                            {slot?.startTime || period.startTime}–{slot?.endTime || period.endTime}
+                                                                        </div>
                                                                     </div>
-                                                                )}
+                                                                </div>
                                                             </td>
                                                         );
                                                     })}

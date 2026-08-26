@@ -258,6 +258,51 @@ router.post('/:id/slots/bulk', authenticate, authorize('admin', 'principal'), as
 }));
 
 /**
+ * @route   PUT /api/timetable/:id/period-timings
+ * @desc    Bulk update timings for specific period numbers across a timetable or day
+ * @access  Private (Admin, Principal)
+ */
+router.put('/:id/period-timings', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { periodTimings, dayOfWeek } = req.body;
+    const timetableId = req.params.id;
+
+    if (!periodTimings || !Array.isArray(periodTimings) || periodTimings.length === 0) {
+        return res.status(400).json({ success: false, message: 'periodTimings array is required' });
+    }
+
+    const updates = [];
+    for (const pt of periodTimings) {
+        const pNum = parseInt(pt.periodNumber, 10);
+        if (!pNum || !pt.startTime || !pt.endTime) continue;
+
+        const whereClause = {
+            timetableId,
+            periodNumber: pNum,
+            ...(dayOfWeek && dayOfWeek !== 'all' && { dayOfWeek: dayOfWeek.toLowerCase() })
+        };
+
+        updates.push(
+            prisma.timetableSlot.updateMany({
+                where: whereClause,
+                data: {
+                    startTime: pt.startTime,
+                    endTime: pt.endTime,
+                    ...(pt.slotType && { slotType: pt.slotType })
+                }
+            })
+        );
+    }
+
+    await prisma.$transaction(updates);
+
+    res.json({
+        success: true,
+        message: 'Period timings updated successfully',
+        data: { updatedPeriodsCount: periodTimings.length }
+    });
+}));
+
+/**
  * @route   PUT /api/timetable/slots/:slotId
  * @desc    Update a slot (change teacher/subject/time)
  * @access  Private (Admin, Principal)

@@ -62,6 +62,7 @@ export default function TimetablePage() {
         dateStr: ''
     });
     const [loggedWorkMap, setLoggedWorkMap] = useState({});
+    const [teacherSchedule, setTeacherSchedule] = useState(null);
 
     const isInstructorOrAdmin = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'principal';
 
@@ -92,6 +93,32 @@ export default function TimetablePage() {
         });
     }, [weekOffset]);
 
+    const getPeriodTimeStatus = (period, dayObj) => {
+        if (!dayObj?.isToday) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            if (dayObj?.dateStr && dayObj.dateStr < todayStr) return { status: 'past', progressPercent: 0 };
+            return { status: 'future', progressPercent: 0 };
+        }
+
+        const now = new Date();
+        const currentMins = now.getHours() * 60 + now.getMinutes();
+        const [sh, sm] = (period.startTime || '08:00').split(':').map(Number);
+        const [eh, em] = (period.endTime || '08:40').split(':').map(Number);
+        const startMins = sh * 60 + sm;
+        const endMins = eh * 60 + em;
+
+        if (currentMins >= endMins) {
+            return { status: 'past', progressPercent: 100 };
+        }
+        if (currentMins >= startMins && currentMins < endMins) {
+            const total = Math.max(endMins - startMins, 1);
+            const elapsed = currentMins - startMins;
+            const progressPercent = Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+            return { status: 'current', progressPercent };
+        }
+        return { status: 'future', progressPercent: 0 };
+    };
+
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!isAuthenticated) { router.push('/login'); return; }
@@ -120,6 +147,12 @@ export default function TimetablePage() {
             setLiveData(res.data.data);
             if (res.data.data?.currentPeriod) {
                 setElapsedSeconds(res.data.data.currentPeriod.elapsed * 60);
+            }
+            if (user?.role === 'instructor' && user?.id) {
+                try {
+                    const schedRes = await timetableAPI.getTeacherSchedule(user.id);
+                    setTeacherSchedule(schedRes.data.data?.schedule || null);
+                } catch {}
             }
         } catch (error) {
             console.error('Error loading live data:', error);
@@ -504,7 +537,7 @@ export default function TimetablePage() {
                 {activeTab === 'week' && (
                     <div className="card overflow-hidden">
                         <div className="overflow-x-auto">
-                            <table className="w-full border-collapse min-w-[850px]">
+                            <table className="w-full border-collapse min-w-[950px]">
                                 <thead>
                                     <tr className="bg-gradient-to-r from-primary-600 to-indigo-600 text-white">
                                         <th className="px-3 py-3 text-left text-sm font-semibold w-24">Period</th>
@@ -538,36 +571,131 @@ export default function TimetablePage() {
                                         <tr key={period.periodNumber} className="border-b border-slate-100 dark:border-slate-800">
                                             <td className="px-3 py-2 border-r border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
                                                 <div className="text-xs font-bold text-slate-800 dark:text-slate-200">P{period.periodNumber}</div>
-                                                <div className="text-[10px] text-slate-500 font-mono">{period.startTime}-{period.endTime}</div>
+                                                <div className="text-[10px] text-slate-500 font-mono">{period.startTime}–{period.endTime}</div>
                                             </td>
                                             {weekDays.map(dayObj => {
+                                                const day = dayObj.dayKey;
                                                 const holiday = calendarHolidays[dayObj.dateStr];
-                                                const daySlot = dayObj.isToday ? allSlots.find(s => s.periodNumber === period.periodNumber) : null;
+                                                const daySlot = teacherSchedule
+                                                    ? teacherSchedule[day]?.find(s => s.periodNumber === period.periodNumber)
+                                                    : (dayObj.isToday ? allSlots.find(s => s.periodNumber === period.periodNumber) : null);
+
+                                                const { status: timeStatus, progressPercent: cellProgress } = getPeriodTimeStatus(period, dayObj);
+                                                const isLive = timeStatus === 'current' && !holiday;
+                                                const isPast = timeStatus === 'past' && !holiday;
+                                                const workKey = `${daySlot?.id || period.periodNumber}_${dayObj.dateStr}`;
+                                                const loggedWork = loggedWorkMap[workKey];
+                                                const slotType = daySlot?.slotType || period.slotType || 'lecture';
+
+                                                let cellClass = "min-h-[90px] p-2 rounded-xl border relative overflow-hidden flex flex-col justify-between transition-all group ";
+                                                if (holiday) {
+                                                    cellClass += "bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-200 ";
+                                                } else if (isLive) {
+                                                    cellClass += "border-emerald-500 ring-2 ring-emerald-500/40 bg-gradient-to-br from-emerald-50 to-teal-50/70 dark:from-emerald-950/40 dark:to-teal-950/30 shadow-md ";
+                                                } else if (isPast) {
+                                                    cellClass += "bg-slate-100/80 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/80 opacity-80 hover:opacity-100 ";
+                                                } else if (daySlot) {
+                                                    cellClass += "bg-blue-50/60 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:shadow-md ";
+                                                } else {
+                                                    cellClass += "bg-slate-50/50 dark:bg-slate-800/30 border border-dashed border-slate-200 dark:border-slate-700 ";
+                                                }
 
                                                 return (
                                                     <td key={dayObj.dayKey} className="px-1 py-1 border-r border-slate-100 dark:border-slate-800 align-top">
-                                                        {holiday ? (
-                                                            <div className="min-h-[55px] p-2 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-lg flex items-center justify-center text-center">
-                                                                <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300">
-                                                                    🎉 {holiday.title || 'School Holiday'}
-                                                                </span>
-                                                            </div>
-                                                        ) : daySlot ? (
-                                                            <div className="min-h-[55px] p-2 bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
-                                                                <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                                                                    {daySlot.subject?.name || daySlot.slotType}
-                                                                </div>
-                                                                {daySlot.instructor && (
-                                                                    <div className="text-[10px] text-slate-500 truncate mt-0.5">
-                                                                        {daySlot.instructor.firstName} {daySlot.instructor.lastName?.[0]}.
+                                                        <div className={cellClass}>
+                                                            {/* Live background progress */}
+                                                            {isLive && (
+                                                                <div
+                                                                    className="absolute inset-0 bg-emerald-400/20 dark:bg-emerald-500/20 pointer-events-none transition-all duration-1000 ease-linear"
+                                                                    style={{ width: `${cellProgress}%` }}
+                                                                />
+                                                            )}
+
+                                                            <div className="relative z-10 w-full">
+                                                                {holiday ? (
+                                                                    <div className="text-center py-2">
+                                                                        <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 flex items-center justify-center gap-1">
+                                                                            <PartyPopper className="w-3 h-3" />
+                                                                            {holiday.title || 'School Holiday'}
+                                                                        </span>
+                                                                    </div>
+                                                                ) : daySlot ? (
+                                                                    <div>
+                                                                        <div className="flex items-center justify-between gap-1 mb-1">
+                                                                            {isLive ? (
+                                                                                <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-1.5 py-0.2 rounded-full bg-emerald-600 text-white animate-pulse">
+                                                                                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                                                                                    LIVE ({cellProgress}%)
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="text-[9px] font-bold uppercase opacity-75">
+                                                                                    {slotType === 'break_period' ? 'Break' : slotType}
+                                                                                </span>
+                                                                            )}
+
+                                                                            <span className={`text-[8px] font-extrabold px-1.5 py-0.2 rounded uppercase ${
+                                                                                daySlot.slotType === 'lab' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' :
+                                                                                daySlot.slotType === 'break_period' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' :
+                                                                                'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                                                            }`}>
+                                                                                {daySlot.slotType === 'break_period' ? 'Break' : daySlot.slotType || 'Lecture'}
+                                                                            </span>
+                                                                        </div>
+
+                                                                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                                                            {daySlot.timetable?.class?.name || daySlot.subject?.name || daySlot.slotType}
+                                                                        </div>
+                                                                        {daySlot.subject && daySlot.timetable?.class && (
+                                                                            <div className="text-[10px] text-slate-600 dark:text-slate-400 truncate">
+                                                                                {daySlot.subject.name}
+                                                                            </div>
+                                                                        )}
+                                                                        {daySlot.instructor && (
+                                                                            <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                                                                                {daySlot.instructor.firstName} {daySlot.instructor.lastName?.[0]}.
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex items-center justify-center py-2">
+                                                                        <span className="text-[10px] text-slate-400">Free</span>
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                        ) : (
-                                                            <div className="min-h-[55px] p-2 bg-slate-50/50 dark:bg-slate-800/30 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg flex items-center justify-center">
-                                                                <span className="text-[10px] text-slate-400">Regular Session</span>
+
+                                                            {/* Bottom row: Instructor Task Performed button + Bottom Right Period Timings */}
+                                                            <div className="relative z-10 mt-1.5 pt-1 border-t border-black/5 dark:border-white/5 flex items-center justify-between gap-1">
+                                                                {isInstructorOrAdmin && daySlot && daySlot.slotType !== 'break_period' && (
+                                                                    <div>
+                                                                        {loggedWork ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(e) => handleOpenWorkLogModal(e, day, period, daySlot)}
+                                                                                className="text-[9px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-1 py-0.2 rounded flex items-center gap-0.5"
+                                                                                title="View Logged Task"
+                                                                            >
+                                                                                <Check className="w-2.5 h-2.5" />
+                                                                                <span className="max-w-[60px] truncate">{loggedWork.topicsCovered || 'Done'}</span>
+                                                                            </button>
+                                                                        ) : (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(e) => handleOpenWorkLogModal(e, day, period, daySlot)}
+                                                                                className="text-[9px] font-bold text-primary-700 dark:text-primary-300 bg-white/90 dark:bg-slate-900/90 hover:bg-primary-50 border border-primary-200 dark:border-primary-800 rounded px-1 py-0.2 flex items-center gap-0.5 transition shadow-2xs"
+                                                                                title="Log Task Performed"
+                                                                            >
+                                                                                <Plus className="w-2.5 h-2.5" /> Task
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Period Timings at Bottom-Right Corner */}
+                                                                <div className="ml-auto text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 bg-white/70 dark:bg-slate-900/70 px-1 py-0.2 rounded pointer-events-none">
+                                                                    {daySlot?.startTime || period.startTime}–{daySlot?.endTime || period.endTime}
+                                                                </div>
                                                             </div>
-                                                        )}
+                                                        </div>
                                                     </td>
                                                 );
                                             })}

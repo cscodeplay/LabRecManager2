@@ -669,7 +669,8 @@ Return JSON ONLY with this exact format:
              /\b(period|lecture|timetable|slot|class\s+slot)\b/i.test(msgLower) &&
              (/\b(mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday|every\s+day|daily|both\s+days)\b/i.test(msgLower))) &&
             !msgLower.includes('assignment') &&
-            !msgLower.includes('meeting')
+            !msgLower.includes('meeting') &&
+            !/\b(period\s*timing|bell\s*timing|bell\s*schedule|timing\s*schedule|period\s*timings|timing\s*with\s*date)\b/i.test(msgLower)
         );
 
         if (isTimetableCreationIntent) {
@@ -742,13 +743,118 @@ Return JSON ONLY with this exact format:
                         calendarAction: null,
                         assignmentAction: null,
                         noteAction: null,
-                        classAction: null,
                         timetableAction,
+                        periodTimingAction: null,
                         provider: 'auto'
                     };
                 }
             } catch (err) {
                 console.error('[ChatBot] Timetable slot creation intent error:', err);
+            }
+        }
+
+        // Intent detection: Period Timings Extraction from uploaded timing image / timing document / prompt
+        const combinedText = (documentContext ? `${documentContext}\n${message}` : message);
+        const combinedLower = combinedText.toLowerCase();
+        const isPeriodTimingIntent = (
+            (userRole === 'admin' || userRole === 'principal' || userRole === 'instructor') &&
+            (/\b(period\s*timing|bell\s*timing|bell\s*schedule|timing\s*schedule|period\s*timings|timing\s*with\s*date|school\s*timings|period\s*hours|timing\s*chart)\b/i.test(combinedLower) ||
+             (/\b(timing|timings|schedule)\b/i.test(combinedLower) && /\b(period\s*1|period\s*2|p1|p2|08:|09:|10:)/i.test(combinedLower))) &&
+            !msgLower.includes('assignment')
+        );
+
+        if (isPeriodTimingIntent) {
+            try {
+                console.log('[ChatBot] Period timing intent detected from prompt/document:', message);
+
+                // Extract date or day
+                let extractedDateStr = null;
+                let extractedDayOfWeek = 'all';
+
+                const dateMatch = combinedText.match(/\b(\d{4}-\d{2}-\d{2})\b/) ||
+                                  combinedText.match(/\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/) ||
+                                  combinedText.match(/\b(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*\d{2,4}?)\b/i);
+                if (dateMatch) {
+                    extractedDateStr = dateMatch[1];
+                }
+
+                const dayMatch = combinedText.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|mon|tue|wed|thu|fri|sat)\b/i);
+                if (dayMatch) {
+                    const rawDay = dayMatch[1].toLowerCase();
+                    if (rawDay.startsWith('mon')) extractedDayOfWeek = 'monday';
+                    else if (rawDay.startsWith('tue')) extractedDayOfWeek = 'tuesday';
+                    else if (rawDay.startsWith('wed')) extractedDayOfWeek = 'wednesday';
+                    else if (rawDay.startsWith('thu')) extractedDayOfWeek = 'thursday';
+                    else if (rawDay.startsWith('fri')) extractedDayOfWeek = 'friday';
+                    else if (rawDay.startsWith('sat')) extractedDayOfWeek = 'saturday';
+                }
+
+                // Parse period timings
+                const periods = [];
+                const regex1 = /(?:period|lecture|p|slot)\s*#?\s*(\d+)[^\d\n:]*?(\d{1,2}:\d{2})\s*(?:to|-|–|—)\s*(\d{1,2}:\d{2})(?:[^\n]*?(break|lab|assembly|lecture|sports|free))?/gi;
+                let m;
+                while ((m = regex1.exec(combinedText)) !== null) {
+                    const pNum = parseInt(m[1], 10);
+                    const startTime = m[2].padStart(5, '0');
+                    const endTime = m[3].padStart(5, '0');
+                    const rawType = (m[4] || '').toLowerCase();
+                    let slotType = 'lecture';
+                    if (rawType.includes('break')) slotType = 'break_period';
+                    else if (rawType.includes('lab')) slotType = 'lab';
+                    else if (rawType.includes('assembly')) slotType = 'assembly';
+                    else if (rawType.includes('sports')) slotType = 'sports';
+
+                    if (!periods.some(p => p.periodNumber === pNum)) {
+                        periods.push({ periodNumber: pNum, startTime, endTime, slotType });
+                    }
+                }
+
+                if (periods.length === 0) {
+                    const timeRangeRegex = /(\d{1,2}:\d{2})\s*(?:to|-|–|—)\s*(\d{1,2}:\d{2})/g;
+                    let count = 1;
+                    let tm;
+                    while ((tm = timeRangeRegex.exec(combinedText)) !== null) {
+                        const startTime = tm[1].padStart(5, '0');
+                        const endTime = tm[2].padStart(5, '0');
+                        const slotType = count === 4 ? 'break_period' : 'lecture';
+                        periods.push({ periodNumber: count, startTime, endTime, slotType });
+                        count++;
+                    }
+                }
+
+                periods.sort((a, b) => a.periodNumber - b.periodNumber);
+
+                if (periods.length > 0) {
+                    const periodTimingAction = {
+                        isDraft: true,
+                        isConfirmed: false,
+                        isCancelled: false,
+                        dateStr: extractedDateStr,
+                        dayOfWeek: extractedDayOfWeek,
+                        isAllDays: extractedDayOfWeek === 'all',
+                        periods
+                    };
+
+                    const periodsSummary = periods.map(p => `• **Period ${p.periodNumber}**: \`${p.startTime} – ${p.endTime}\` ${p.slotType === 'break_period' ? '*(Break)*' : ''}`).join('\n');
+
+                    return {
+                        message: `⏰ **Period Timings Extracted! (Pending Confirmation)**\n\nI have parsed **${periods.length} period timings**${extractedDateStr ? ` for **${extractedDateStr}**` : extractedDayOfWeek !== 'all' ? ` for **${extractedDayOfWeek.toUpperCase()}**` : ' *(All Week)*'}:\n\n${periodsSummary}\n\nPlease review or edit the period timings below and click **Confirm & Apply Timings**:`,
+                        sql: null,
+                        executionResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        meetingAction: null,
+                        calendarAction: null,
+                        assignmentAction: null,
+                        noteAction: null,
+                        classAction: null,
+                        timetableAction: null,
+                        periodTimingAction,
+                        provider: 'auto'
+                    };
+                }
+            } catch (err) {
+                console.error('[ChatBot] Period timing intent error:', err);
             }
         }
 

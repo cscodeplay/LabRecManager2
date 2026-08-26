@@ -3241,6 +3241,254 @@ function TimetableActionCard({ action }) {
     );
 }
 
+/* ─── Period Timing Action Card ─── */
+function PeriodTimingActionCard({ action }) {
+    const [periods, setPeriods] = useState(Array.isArray(action?.periods) ? action.periods : []);
+    const [isEditing, setIsEditing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
+    const dayOfWeek = action?.dayOfWeek || 'all';
+    const dateStr = action?.dateStr || '';
+
+    useEffect(() => {
+        if (action?.periods) {
+            setPeriods(action.periods);
+            setIsConfirmed(action.isConfirmed || false);
+            setIsCancelled(action.isCancelled || false);
+        }
+    }, [action]);
+
+    const handlePeriodChange = (idx, field, value) => {
+        setPeriods(prev => {
+            const copy = [...prev];
+            copy[idx] = { ...copy[idx], [field]: value };
+            return copy;
+        });
+    };
+
+    const handleAddPeriod = () => {
+        const last = periods[periods.length - 1];
+        const nextNum = (last?.periodNumber || 0) + 1;
+        setPeriods(prev => [
+            ...prev,
+            {
+                periodNumber: nextNum,
+                startTime: '13:00',
+                endTime: '13:40',
+                slotType: 'lecture'
+            }
+        ]);
+        setIsEditing(true);
+    };
+
+    const handleRemovePeriod = (idx) => {
+        setPeriods(prev => prev.filter((_, i) => i !== idx));
+    };
+
+    const handleConfirm = async () => {
+        if (periods.length === 0) {
+            toast.error('No period timings to apply');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            // Find active timetable(s)
+            const allTt = await timetableAPI.getAll().catch(() => null);
+            const timetables = allTt?.data?.data?.timetables || [];
+            if (timetables.length === 0) {
+                toast.error('No active timetables found to apply timings.');
+                return;
+            }
+
+            for (const tt of timetables) {
+                await timetableAPI.updatePeriodTimings(tt.id, {
+                    periodTimings: periods,
+                    dayOfWeek: dayOfWeek === 'all' ? undefined : dayOfWeek
+                });
+            }
+
+            toast.success(`Period timings applied to ${timetables.length} timetable(s)!`, { icon: '⏰' });
+            setIsConfirmed(true);
+            setIsEditing(false);
+        } catch (err) {
+            console.error('Failed to update period timings:', err);
+            toast.error(err.response?.data?.message || 'Failed to update period timings');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleCancel = () => {
+        setIsCancelled(true);
+        setIsEditing(false);
+        toast('Period timings draft cancelled', { icon: '🚫' });
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Period Timings Draft Cancelled</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(false)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                    >
+                        <Undo2 className="w-3 h-3" /> Restore Draft
+                    </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                    The {periods.length} extracted period timing(s) were cancelled.
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-2.5 rounded-2xl border border-amber-200 bg-gradient-to-b from-amber-50/90 via-white to-orange-50/50 shadow-sm overflow-hidden text-[12px] animate-in fade-in">
+            {/* Header */}
+            <div className="px-3.5 py-2 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2 font-semibold text-xs tracking-tight">
+                    <Clock className="w-4 h-4 text-amber-100" />
+                    <span>{isConfirmed ? 'Period Timings Applied' : 'Extracted Period Timings'}</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 text-white">
+                        {dateStr || (dayOfWeek !== 'all' ? dayOfWeek.toUpperCase() : 'All Week')}
+                    </span>
+                </div>
+                {isConfirmed ? (
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-300 text-emerald-950 flex items-center gap-1">
+                        <Check className="w-2.5 h-2.5" /> Applied ({periods.length} Periods)
+                    </span>
+                ) : (
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-300 text-amber-950 flex items-center gap-1">
+                        <Clock className="w-2.5 h-2.5" /> {periods.length} Periods Extracted
+                    </span>
+                )}
+            </div>
+
+            {/* Timings List */}
+            <div className="p-3 space-y-2.5">
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {periods.map((p, idx) => (
+                        <div key={idx} className="p-2.5 bg-white rounded-xl border border-amber-100 shadow-2xs flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                                <span className="w-8 h-8 rounded-lg bg-amber-100 text-amber-900 font-extrabold flex items-center justify-center text-xs">
+                                    P{p.periodNumber}
+                                </span>
+                                {isEditing && !isConfirmed ? (
+                                    <div className="flex items-center gap-1.5">
+                                        <input
+                                            type="time"
+                                            value={p.startTime}
+                                            onChange={(e) => handlePeriodChange(idx, 'startTime', e.target.value)}
+                                            className="px-1.5 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-mono"
+                                        />
+                                        <span className="text-slate-400 font-bold">–</span>
+                                        <input
+                                            type="time"
+                                            value={p.endTime}
+                                            onChange={(e) => handlePeriodChange(idx, 'endTime', e.target.value)}
+                                            className="px-1.5 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-mono"
+                                        />
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <div className="font-mono font-bold text-slate-800 text-[13px]">
+                                            {p.startTime} – {p.endTime}
+                                        </div>
+                                        <span className="text-[10px] text-slate-500 capitalize">
+                                            {p.slotType === 'break_period' ? '☕ Break' : p.slotType || 'Lecture'}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${p.slotType === 'break_period' ? 'bg-amber-100 text-amber-800' : 'bg-blue-50 text-blue-700'}`}>
+                                    {p.slotType === 'break_period' ? 'Break' : 'Lecture'}
+                                </span>
+                                {isEditing && !isConfirmed && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRemovePeriod(idx)}
+                                        className="text-slate-300 hover:text-red-500 p-1 transition"
+                                        title="Remove Period"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Footer Actions */}
+                {isConfirmed ? (
+                    <div className="pt-2 border-t border-amber-100 flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Timetable period timings updated
+                        </span>
+                        <a
+                            href="/admin/timetable"
+                            className="text-[11px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 hover:underline"
+                        >
+                            <ExternalLink className="w-3 h-3" /> View Timetable Grid
+                        </a>
+                    </div>
+                ) : (
+                    <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(!isEditing)}
+                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                            >
+                                <Edit3 className="w-3 h-3" /> {isEditing ? 'Done' : 'Edit Timings'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleAddPeriod}
+                                className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                            >
+                                <Plus className="w-3 h-3" /> Add Period
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleCancel}
+                                className="px-2 py-1.5 text-slate-400 hover:text-red-600 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                            >
+                                <XCircle className="w-3 h-3" /> Cancel
+                            </button>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            disabled={isSaving || periods.length === 0}
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white text-[11px] font-bold rounded-lg shadow-sm shadow-amber-500/20 transition flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                            {isSaving ? (
+                                <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Applying Timings...
+                                </>
+                            ) : (
+                                <>
+                                    <CheckCircle2 className="w-3.5 h-3.5" /> Confirm & Apply Timings
+                                </>
+                            )}
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 /* ═══════════════════════════════════════════════════════
    MAIN FLOATING CHATBOT COMPONENT
    ═══════════════════════════════════════════════════════ */
@@ -3372,6 +3620,7 @@ export default function FloatingChatbot() {
                         noteAction: d.noteAction,
                         classAction: d.classAction,
                         timetableAction: d.timetableAction,
+                        periodTimingAction: d.periodTimingAction,
                         model: d.model, 
                         provider: d.provider, 
                         timestamp: d.timestamp 
@@ -3652,6 +3901,7 @@ export default function FloatingChatbot() {
                                     {msg.noteAction && <NoteActionCard action={msg.noteAction} />}
                                     {msg.classAction && <ClassActionCard action={msg.classAction} />}
                                     {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
+                                    {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
                                     {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
                                 </div>
                             </div>
