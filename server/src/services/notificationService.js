@@ -5,10 +5,33 @@
 const prisma = require('../config/database');
 
 /**
- * Create a notification for a single user
+ * Create a notification for a single user (deduplicates unread notifications to avoid clutter)
  */
 async function createNotification({ userId, title, message, type, referenceType, referenceId, actionUrl }) {
     try {
+        // Prevent duplicate unread clutter for same reference/topic in close succession
+        if (referenceId) {
+            const existing = await prisma.notification.findFirst({
+                where: {
+                    userId,
+                    reference_id: referenceId,
+                    type: type || 'info',
+                    is_read: false
+                }
+            });
+            if (existing) {
+                return await prisma.notification.update({
+                    where: { id: existing.id },
+                    data: {
+                        title,
+                        message,
+                        action_url: actionUrl || existing.action_url,
+                        createdAt: new Date()
+                    }
+                });
+            }
+        }
+
         const notification = await prisma.notification.create({
             data: {
                 userId,

@@ -4894,9 +4894,11 @@ export default function Whiteboard({
                     >
                     <canvas
                         ref={canvasRef}
+                        id="main-whiteboard-canvas"
+                        data-whiteboard-canvas="true"
                         width={canvasWidth}
                         height={canvasHeight}
-                        className="absolute inset-0 touch-none pointer-events-none select-none"
+                        className="whiteboard-canvas absolute inset-0 touch-none pointer-events-none select-none"
                         style={{
                             zIndex: 50,
                             backgroundColor: 'transparent',

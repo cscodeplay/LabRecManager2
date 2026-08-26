@@ -743,25 +743,206 @@ export default function MeetingRoomDetailPage() {
         }
 
         try {
-            // Create a combined stream with local video and potentially remote audio
             const recordStream = new MediaStream();
 
-            // Add local video and audio tracks
-            localStreamRef.current.getTracks().forEach(track => {
-                recordStream.addTrack(track);
-            });
+            // 1. Studio-Quality Multi-Track Audio Filter & Noise Suppression
+            try {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (AudioContextClass) {
+                    const audioCtx = new AudioContextClass();
+                    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+                    const audioDest = audioCtx.createMediaStreamDestination();
 
-            // Add remote audio if available
-            if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
-                const remoteAudioTracks = remoteVideoRef.current.srcObject.getAudioTracks();
-                remoteAudioTracks.forEach(track => {
-                    recordStream.addTrack(track.clone());
-                });
+                    // Highpass (85Hz) & Lowpass (7500Hz) filters to cut room rumble and high frequency hiss
+                    const highpass = audioCtx.createBiquadFilter();
+                    highpass.type = 'highpass';
+                    highpass.frequency.setValueAtTime(85, audioCtx.currentTime);
+                    highpass.Q.setValueAtTime(0.7, audioCtx.currentTime);
+
+                    const lowpass = audioCtx.createBiquadFilter();
+                    lowpass.type = 'lowpass';
+                    lowpass.frequency.setValueAtTime(7500, audioCtx.currentTime);
+                    lowpass.Q.setValueAtTime(0.7, audioCtx.currentTime);
+
+                    const compressor = audioCtx.createDynamicsCompressor();
+                    compressor.threshold.setValueAtTime(-45, audioCtx.currentTime);
+                    compressor.knee.setValueAtTime(30, audioCtx.currentTime);
+                    compressor.ratio.setValueAtTime(10, audioCtx.currentTime);
+                    compressor.attack.setValueAtTime(0.003, audioCtx.currentTime);
+                    compressor.release.setValueAtTime(0.25, audioCtx.currentTime);
+
+                    highpass.connect(lowpass);
+                    lowpass.connect(compressor);
+                    compressor.connect(audioDest);
+
+                    // Mix local audio
+                    if (localStreamRef.current.getAudioTracks().length > 0) {
+                        const localAudio = localStreamRef.current.getAudioTracks()[0];
+                        if (localAudio && localAudio.readyState === 'live') {
+                            const localSrc = audioCtx.createMediaStreamSource(new MediaStream([localAudio]));
+                            const localGain = audioCtx.createGain();
+                            localGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+                            localSrc.connect(localGain);
+                            localGain.connect(highpass);
+                        }
+                    }
+
+                    // Mix remote audio
+                    if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
+                        const remoteTracks = remoteVideoRef.current.srcObject.getAudioTracks();
+                        remoteTracks.forEach(track => {
+                            if (track && track.readyState === 'live') {
+                                try {
+                                    const remoteSrc = audioCtx.createMediaStreamSource(new MediaStream([track]));
+                                    const remoteGain = audioCtx.createGain();
+                                    remoteGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+                                    remoteSrc.connect(remoteGain);
+                                    remoteGain.connect(highpass);
+                                } catch (e) {}
+                            }
+                        });
+                    }
+
+                    const mixedAudio = audioDest.stream.getAudioTracks()[0];
+                    if (mixedAudio) recordStream.addTrack(mixedAudio);
+                }
+            } catch (audioErr) {
+                console.warn('WebAudio mixer fallback:', audioErr);
+                localStreamRef.current.getAudioTracks().forEach(t => recordStream.addTrack(t.clone()));
             }
 
-            const options = { mimeType: 'video/webm;codecs=vp9,opus' };
+            // 2. Continuous 1280x720 30FPS Stage Video Compositor
+            const canvas = document.createElement('canvas');
+            canvas.width = 1280;
+            canvas.height = 720;
+            const ctx = canvas.getContext('2d', { alpha: false });
+            let frame = 0;
+
+            const drawRoundedRect = (c, x, y, width, height, radius) => {
+                c.beginPath();
+                c.moveTo(x + radius, y);
+                c.lineTo(x + width - radius, y);
+                c.quadraticCurveTo(x + width, y, x + width, y + radius);
+                c.lineTo(x + width, y + height - radius);
+                c.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+                c.lineTo(x + radius, y + height);
+                c.quadraticCurveTo(x, y + height, x, y + height - radius);
+                c.lineTo(x, y + radius);
+                c.quadraticCurveTo(x, y, x + radius, y);
+                c.closePath();
+            };
+
+            const draw = () => {
+                frame++;
+                ctx.fillStyle = '#090d16';
+                ctx.fillRect(0, 0, 1280, 720);
+
+                // Check for whiteboard canvas
+                const wbCanvas = document.querySelector('#main-whiteboard-canvas') ||
+                                 document.querySelector('canvas.whiteboard-canvas') ||
+                                 document.querySelector('#whiteboard-container canvas') ||
+                                 document.querySelector('canvas');
+
+                const isWhiteboardMode = document.querySelector('.whiteboard-container') ||
+                                         document.querySelector('[data-active-space="whiteboard"]');
+
+                if (isWhiteboardMode && wbCanvas && wbCanvas.width > 0 && wbCanvas.height > 0) {
+                    ctx.fillStyle = '#ffffff';
+                    drawRoundedRect(ctx, 16, 56, 1248, 648, 16);
+                    ctx.fill();
+                    try {
+                        ctx.save();
+                        drawRoundedRect(ctx, 16, 56, 1248, 648, 16);
+                        ctx.clip();
+                        ctx.drawImage(wbCanvas, 16, 56, 1248, 648);
+                        ctx.restore();
+                    } catch (e) {}
+                } else {
+                    // Two-panel or single-panel participant layout (Local + Remote)
+                    const hasRemote = remoteVideoRef.current && remoteVideoRef.current.srcObject;
+                    if (hasRemote) {
+                        // 2 Columns (Local Left, Remote Right)
+                        const w = 604, h = 648;
+                        // Local
+                        ctx.fillStyle = '#1e293b';
+                        drawRoundedRect(ctx, 16, 56, w, h, 16);
+                        ctx.fill();
+                        const localVid = document.querySelector('video:not(.hidden)');
+                        if (localVid && localVid.readyState >= 2) {
+                            try {
+                                ctx.save();
+                                drawRoundedRect(ctx, 16, 56, w, h, 16);
+                                ctx.clip();
+                                ctx.drawImage(localVid, 16, 56, w, h);
+                                ctx.restore();
+                            } catch (e) {}
+                        }
+
+                        // Remote
+                        drawRoundedRect(ctx, 640, 56, w, h, 16);
+                        ctx.fill();
+                        if (remoteVideoRef.current && remoteVideoRef.current.readyState >= 2) {
+                            try {
+                                ctx.save();
+                                drawRoundedRect(ctx, 640, 56, w, h, 16);
+                                ctx.clip();
+                                ctx.drawImage(remoteVideoRef.current, 640, 56, w, h);
+                                ctx.restore();
+                            } catch (e) {}
+                        }
+                    } else {
+                        // Single Local Full View
+                        const w = 1248, h = 648;
+                        ctx.fillStyle = '#1e293b';
+                        drawRoundedRect(ctx, 16, 56, w, h, 16);
+                        ctx.fill();
+                        const localVid = document.querySelector('video:not(.hidden)');
+                        if (localVid && localVid.readyState >= 2) {
+                            try {
+                                ctx.save();
+                                drawRoundedRect(ctx, 16, 56, w, h, 16);
+                                ctx.clip();
+                                ctx.drawImage(localVid, 16, 56, w, h);
+                                ctx.restore();
+                            } catch (e) {}
+                        }
+                    }
+                }
+
+                // Top Header Overlay
+                ctx.fillStyle = 'rgba(9, 13, 22, 0.9)';
+                ctx.fillRect(0, 0, 1280, 48);
+
+                const recPulse = Math.sin(frame * 0.08) > 0;
+                ctx.fillStyle = recPulse ? '#ef4444' : '#991b1b';
+                ctx.beginPath();
+                ctx.arc(28, 24, 6, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 14px system-ui, sans-serif';
+                ctx.textAlign = 'left';
+                const curTime = recordingTimeRef.current || 0;
+                const mins = String(Math.floor(curTime / 60)).padStart(2, '0');
+                const secs = String(curTime % 60).padStart(2, '0');
+                ctx.fillText(`REC  ${mins}:${secs}`, 42, 29);
+
+                ctx.fillStyle = '#cbd5e1';
+                ctx.font = 'bold 15px system-ui, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(session?.title || 'Meeting Session', 640, 29);
+            };
+
+            const intervalId = setInterval(draw, 1000 / 30);
+            draw();
+
+            const canvasStream = canvas.captureStream(30);
+            const canvasTrack = canvasStream.getVideoTracks()[0];
+            if (canvasTrack) recordStream.addTrack(canvasTrack);
+
+            const options = { mimeType: 'video/webm;codecs=vp8,opus' };
             if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options.mimeType = 'video/webm;codecs=vp8,opus';
+                options.mimeType = 'video/webm;codecs=vp9,opus';
                 if (!MediaRecorder.isTypeSupported(options.mimeType)) {
                     options.mimeType = 'video/webm';
                 }
@@ -777,6 +958,7 @@ export default function MeetingRoomDetailPage() {
             };
 
             mediaRecorderRef.current.onstop = () => {
+                clearInterval(intervalId);
                 const rawBlob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
                 const durationMs = Math.max((recordingTimeRef.current || recordingTime || 1) * 1000, 1000);
 
@@ -797,13 +979,17 @@ export default function MeetingRoomDetailPage() {
                 }
             };
 
-            mediaRecorderRef.current.start(1000); // Collect data every second
+            mediaRecorderRef.current.start(1000);
             setIsRecording(true);
             setRecordingTime(0);
 
             // Start recording timer
             recordingTimerRef.current = setInterval(() => {
-                setRecordingTime(prev => prev + 1);
+                setRecordingTime(prev => {
+                    const next = prev + 1;
+                    if (recordingTimeRef.current !== undefined) recordingTimeRef.current = next;
+                    return next;
+                });
             }, 1000);
 
             toast.success('Recording started');

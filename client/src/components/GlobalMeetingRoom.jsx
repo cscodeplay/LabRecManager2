@@ -334,6 +334,24 @@ export default function GlobalMeetingRoom() {
     const recordingAudioCtxRef = useRef(null);
     const activeRoomIdRef = useRef(code);
 
+    const activeSpaceRef = useRef(activeSpace);
+    useEffect(() => { activeSpaceRef.current = activeSpace; }, [activeSpace]);
+
+    const remoteParticipantsRef = useRef(remoteParticipants);
+    useEffect(() => { remoteParticipantsRef.current = remoteParticipants; }, [remoteParticipants]);
+
+    const isVideoEnabledRef = useRef(isVideoEnabled);
+    useEffect(() => { isVideoEnabledRef.current = isVideoEnabled; }, [isVideoEnabled]);
+
+    const isAudioEnabledRef = useRef(isAudioEnabled);
+    useEffect(() => { isAudioEnabledRef.current = isAudioEnabled; }, [isAudioEnabled]);
+
+    const micLevelRef = useRef(micLevel);
+    useEffect(() => { micLevelRef.current = micLevel; }, [micLevel]);
+
+    const isLocalSpeakingRef = useRef(isLocalSpeaking);
+    useEffect(() => { isLocalSpeakingRef.current = isLocalSpeaking; }, [isLocalSpeaking]);
+
     const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'principal' || user?.role === 'lab_assistant';
 
     // Sync initial drawing permission with role
@@ -1541,7 +1559,9 @@ export default function GlobalMeetingRoom() {
     const createCompositeRecordStream = () => {
         const stream = new MediaStream();
 
-        // 1. Multi-Track Audio Mixing Pipeline via Web Audio API
+        // =====================================================================
+        // 1. ADVANCED NOISE-FREE MULTI-TRACK AUDIO MIXER VIA WEB AUDIO API
+        // =====================================================================
         try {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (AudioContextClass) {
@@ -1552,41 +1572,65 @@ export default function GlobalMeetingRoom() {
                 }
                 const audioDest = audioCtx.createMediaStreamDestination();
 
+                // Highpass Filter (85 Hz, Q=0.7) - removes low-end rumble & AC electrical 50/60Hz hum
+                const highpass = audioCtx.createBiquadFilter();
+                highpass.type = 'highpass';
+                highpass.frequency.setValueAtTime(85, audioCtx.currentTime);
+                highpass.Q.setValueAtTime(0.7, audioCtx.currentTime);
+
+                // Lowpass Filter (7500 Hz, Q=0.7) - removes high-frequency hiss / static
+                const lowpass = audioCtx.createBiquadFilter();
+                lowpass.type = 'lowpass';
+                lowpass.frequency.setValueAtTime(7500, audioCtx.currentTime);
+                lowpass.Q.setValueAtTime(0.7, audioCtx.currentTime);
+
+                // Dynamics Compressor - compresses dynamic range and squashes low level noise floor
+                const compressor = audioCtx.createDynamicsCompressor();
+                compressor.threshold.setValueAtTime(-45, audioCtx.currentTime);
+                compressor.knee.setValueAtTime(30, audioCtx.currentTime);
+                compressor.ratio.setValueAtTime(10, audioCtx.currentTime);
+                compressor.attack.setValueAtTime(0.003, audioCtx.currentTime);
+                compressor.release.setValueAtTime(0.25, audioCtx.currentTime);
+
+                // Connect audio filter chain: highpass -> lowpass -> compressor -> audioDest
+                highpass.connect(lowpass);
+                lowpass.connect(compressor);
+                compressor.connect(audioDest);
+
                 // Mix local microphone audio
                 if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
                     try {
                         const localAudioTrack = localStreamRef.current.getAudioTracks()[0];
-                        const localSource = audioCtx.createMediaStreamSource(new MediaStream([localAudioTrack]));
-                        localSource.connect(audioDest);
+                        if (localAudioTrack && localAudioTrack.readyState === 'live') {
+                            const localSource = audioCtx.createMediaStreamSource(new MediaStream([localAudioTrack]));
+                            const localGain = audioCtx.createGain();
+                            localGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+                            localSource.connect(localGain);
+                            localGain.connect(highpass);
+                        }
                     } catch (e) {
                         console.log('Error mixing local audio track:', e);
                     }
                 }
 
                 // Mix all remote participants' audio
-                remoteParticipants.forEach((p) => {
+                const remotes = remoteParticipantsRef.current || [];
+                remotes.forEach((p) => {
                     if (p.stream && p.stream.getAudioTracks().length > 0) {
                         try {
                             const remoteAudioTrack = p.stream.getAudioTracks()[0];
-                            const remoteSource = audioCtx.createMediaStreamSource(new MediaStream([remoteAudioTrack]));
-                            remoteSource.connect(audioDest);
+                            if (remoteAudioTrack && remoteAudioTrack.readyState === 'live') {
+                                const remoteSource = audioCtx.createMediaStreamSource(new MediaStream([remoteAudioTrack]));
+                                const remoteGain = audioCtx.createGain();
+                                remoteGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+                                remoteSource.connect(remoteGain);
+                                remoteGain.connect(highpass);
+                            }
                         } catch (e) {
                             console.log('Error mixing remote audio track:', e);
                         }
                     }
                 });
-
-                // Inaudible carrier tone (guarantees constant timestamps even during total silence)
-                try {
-                    const osc = audioCtx.createOscillator();
-                    const gain = audioCtx.createGain();
-                    gain.gain.value = 0.00001; // Inaudible
-                    osc.connect(gain);
-                    gain.connect(audioDest);
-                    osc.start();
-                } catch (e) {
-                    console.log('Error creating audio carrier:', e);
-                }
 
                 const mixedAudioTrack = audioDest.stream.getAudioTracks()[0];
                 if (mixedAudioTrack) {
@@ -1600,121 +1644,361 @@ export default function GlobalMeetingRoom() {
             }
         }
 
-        // 2. Video Capture based on active Presentation Space
-        let videoTrackAdded = false;
+        // =====================================================================
+        // 2. REAL-TIME MULTI-SPACE COMPOSITE CANVAS ENGINE (1280x720 30FPS)
+        // Captures Whiteboard, Screen Share, and All Video Feeds dynamically!
+        // =====================================================================
+        const canvas = document.createElement('canvas');
+        canvas.width = 1280;
+        canvas.height = 720;
+        const ctx = canvas.getContext('2d', { alpha: false });
 
-        // Space A: Screen Share active
-        if (activeSpace === 'screen_share' && activeScreenStream && activeScreenStream.getVideoTracks().length > 0) {
-            const screenTrack = activeScreenStream.getVideoTracks()[0];
-            if (screenTrack && screenTrack.readyState === 'live') {
-                stream.addTrack(screenTrack.clone());
-                videoTrackAdded = true;
-            }
-        }
+        let frame = 0;
+        const title = session?.title || session?.questionsAsked?.sessionTitle || session?.submission?.assignment?.title || 'Meeting Session Recording';
+        const roomCode = displayRoomCode || code;
 
-        // Space B: Whiteboard active - capture canvas directly
-        if (!videoTrackAdded && activeSpace === 'whiteboard') {
-            const wbCanvas = document.querySelector('canvas');
-            if (wbCanvas && typeof wbCanvas.captureStream === 'function') {
-                try {
-                    const wbStream = wbCanvas.captureStream(30);
-                    const wbTrack = wbStream.getVideoTracks()[0];
-                    if (wbTrack) {
-                        stream.addTrack(wbTrack);
-                        videoTrackAdded = true;
-                    }
-                } catch (e) {
-                    console.log('Error capturing whiteboard canvas:', e);
-                }
-            }
-        }
+        // Helper: Rounded rectangle drawer
+        const drawRoundedRect = (c, x, y, width, height, radius) => {
+            c.beginPath();
+            c.moveTo(x + radius, y);
+            c.lineTo(x + width - radius, y);
+            c.quadraticCurveTo(x + width, y, x + width, y + radius);
+            c.lineTo(x + width, y + height - radius);
+            c.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            c.lineTo(x + radius, y + height);
+            c.quadraticCurveTo(x, y + height, x, y + height - radius);
+            c.lineTo(x, y + radius);
+            c.quadraticCurveTo(x, y, x + radius, y);
+            c.closePath();
+        };
 
-        // Space C: Local camera video if available
-        if (!videoTrackAdded) {
-            const hasLiveLocalVideo = localStreamRef.current && localStreamRef.current.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
-            if (hasLiveLocalVideo) {
-                const videoTrack = localStreamRef.current.getVideoTracks().find(t => t.enabled && t.readyState === 'live');
-                if (videoTrack) {
-                    stream.addTrack(videoTrack.clone());
-                    videoTrackAdded = true;
-                }
-            }
-        }
+        const draw = () => {
+            frame++;
+            const currentSpace = activeSpaceRef.current || 'vc_tiles';
+            const currentMic = micLevelRef.current || 0;
+            const currentRecTime = recordingTimeRef.current || 0;
 
-        // Space D: Dynamic High-Definition Composite Canvas Fallback (1280x720 30FPS)
-        if (!videoTrackAdded) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 1280;
-            canvas.height = 720;
-            const ctx = canvas.getContext('2d');
+            // 1. Base Background
+            ctx.fillStyle = '#090d16';
+            ctx.fillRect(0, 0, 1280, 720);
 
-            let frame = 0;
-            const title = session?.title || session?.questionsAsked?.sessionTitle || session?.submission?.assignment?.title || 'Meeting Session Recording';
-            const roomCode = displayRoomCode || code;
-
-            const draw = () => {
-                frame++;
-                // Gradient background
-                const grad = ctx.createLinearGradient(0, 0, 1280, 720);
-                grad.addColorStop(0, '#0f172a');
-                grad.addColorStop(1, '#020617');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, 1280, 720);
-
-                // Animated glow circle
-                const pulse = Math.sin(frame * 0.04) * 15;
-                ctx.strokeStyle = '#6366f1';
-                ctx.lineWidth = 4;
-                ctx.beginPath();
-                ctx.arc(640, 320, 90 + pulse, 0, Math.PI * 2);
-                ctx.stroke();
-
-                // Live recording badge
-                ctx.fillStyle = '#ef4444';
-                ctx.beginPath();
-                ctx.arc(580, 120, 8, 0, Math.PI * 2);
+            // 2. Primary Content Rendering (Whiteboard vs Screen Share vs Video Gallery)
+            if (currentSpace === 'whiteboard') {
+                // =============================================================
+                // SPACE A: WHITEBOARD ACTIVE
+                // =============================================================
+                // Crisp Whiteboard board canvas
+                const wbX = 16, wbY = 56, wbW = 1248, wbH = 648;
+                ctx.fillStyle = '#ffffff';
+                drawRoundedRect(ctx, wbX, wbY, wbW, wbH, 16);
                 ctx.fill();
 
+                // Find active whiteboard canvas
+                const wbCanvas = document.querySelector('#main-whiteboard-canvas') ||
+                                 document.querySelector('canvas.whiteboard-canvas') ||
+                                 document.querySelector('#whiteboard-container canvas') ||
+                                 document.querySelector('canvas');
+
+                if (wbCanvas && wbCanvas.width > 0 && wbCanvas.height > 0) {
+                    try {
+                        ctx.save();
+                        drawRoundedRect(ctx, wbX, wbY, wbW, wbH, 16);
+                        ctx.clip();
+                        ctx.drawImage(wbCanvas, wbX, wbY, wbW, wbH);
+                        ctx.restore();
+                    } catch (wbErr) {}
+                } else {
+                    ctx.fillStyle = '#64748b';
+                    ctx.font = 'bold 24px system-ui, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('✏️ Interactive Whiteboard Active', 640, 360);
+                }
+
+                // Border around whiteboard
+                ctx.strokeStyle = '#334155';
+                ctx.lineWidth = 2;
+                drawRoundedRect(ctx, wbX, wbY, wbW, wbH, 16);
+                ctx.stroke();
+
+                // Mini PiP Speaker Webcam in top right corner (220x130)
+                const pipX = 1030, pipY = 66, pipW = 220, pipH = 130;
+                ctx.fillStyle = '#0f172a';
+                drawRoundedRect(ctx, pipX, pipY, pipW, pipH, 12);
+                ctx.fill();
+
+                // Check for live local or remote video element
+                const activeVideoEl = document.querySelector('video[data-participant-video="true"]:not(.hidden)') ||
+                                      document.querySelector('video:not(.hidden)');
+
+                if (activeVideoEl && activeVideoEl.readyState >= 2 && !activeVideoEl.paused) {
+                    try {
+                        ctx.save();
+                        drawRoundedRect(ctx, pipX, pipY, pipW, pipH, 12);
+                        ctx.clip();
+                        ctx.drawImage(activeVideoEl, pipX, pipY, pipW, pipH);
+                        ctx.restore();
+                    } catch (e) {}
+                } else {
+                    // Avatar in PiP
+                    ctx.fillStyle = '#3b82f6';
+                    ctx.beginPath();
+                    ctx.arc(pipX + pipW / 2, pipY + pipH / 2 - 10, 24, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 16px system-ui, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(user?.firstName ? user.firstName[0].toUpperCase() : 'U', pipX + pipW / 2, pipY + pipH / 2 - 4);
+                }
+
+                // PiP border & label
+                ctx.strokeStyle = isLocalSpeakingRef.current ? '#10b981' : '#475569';
+                ctx.lineWidth = isLocalSpeakingRef.current ? 3 : 1.5;
+                drawRoundedRect(ctx, pipX, pipY, pipW, pipH, 12);
+                ctx.stroke();
+
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                drawRoundedRect(ctx, pipX + 6, pipY + pipH - 24, pipW - 12, 18, 6);
+                ctx.fill();
                 ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 20px system-ui, sans-serif';
-                ctx.textAlign = 'left';
-                ctx.fillText('REC • LIVE MEETING', 600, 127);
-
-                // Meeting Title
-                ctx.font = 'bold 36px system-ui, sans-serif';
+                ctx.font = 'bold 10px system-ui, sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText(title, 640, 200);
+                ctx.fillText(user?.firstName ? `${user.firstName} ${user.lastName || ''}` : 'Presenter', pipX + pipW / 2, pipY + pipH - 11);
 
-                // Room ID & Info
-                ctx.fillStyle = '#94a3b8';
-                ctx.font = '20px monospace';
-                ctx.fillText(`Meeting ID: ${roomCode}`, 640, 240);
+            } else if (currentSpace === 'screen_share') {
+                // =============================================================
+                // SPACE B: SCREEN SHARE ACTIVE
+                // =============================================================
+                const ssX = 16, ssY = 56, ssW = 1248, ssH = 648;
+                ctx.fillStyle = '#020617';
+                drawRoundedRect(ctx, ssX, ssY, ssW, ssH, 16);
+                ctx.fill();
 
-                // Waveform Visualizer
+                const screenVideoEl = document.querySelector('video[data-screen-share="true"]') ||
+                                      document.querySelector('video.screen-share-video') ||
+                                      document.querySelector('video');
+
+                let drewScreen = false;
+                if (screenVideoEl && screenVideoEl.readyState >= 2 && !screenVideoEl.paused) {
+                    try {
+                        ctx.save();
+                        drawRoundedRect(ctx, ssX, ssY, ssW, ssH, 16);
+                        ctx.clip();
+                        ctx.drawImage(screenVideoEl, ssX, ssY, ssW, ssH);
+                        ctx.restore();
+                        drewScreen = true;
+                    } catch (e) {}
+                }
+
+                if (!drewScreen) {
+                    ctx.fillStyle = '#818cf8';
+                    ctx.font = 'bold 28px system-ui, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('🖥️ Live Screen Share Presentation', 640, 360);
+                }
+
+                ctx.strokeStyle = '#4f46e5';
+                ctx.lineWidth = 2;
+                drawRoundedRect(ctx, ssX, ssY, ssW, ssH, 16);
+                ctx.stroke();
+
+            } else {
+                // =============================================================
+                // SPACE C: MULTI-PARTICIPANT VIDEO GALLERY (Full Video & Audio)
+                // =============================================================
+                const localUser = {
+                    id: user?.id || 'local',
+                    name: user ? `${user.firstName} ${user.lastName || ''}`.trim() : 'You',
+                    role: user?.role || 'host',
+                    isLocal: true,
+                    isCameraOn: isVideoEnabledRef.current,
+                    isSpeaking: isLocalSpeakingRef.current
+                };
+
+                const remoteList = (remoteParticipantsRef.current || []).map(p => ({
+                    id: p.id || p.userId,
+                    name: p.name || 'Participant',
+                    role: p.role || 'student',
+                    isLocal: false,
+                    isCameraOn: p.isCameraOn !== false,
+                    isSpeaking: p.isSpeaking || false
+                }));
+
+                const allParticipants = [localUser, ...remoteList];
+                const total = allParticipants.length;
+
+                // Compute grid geometry (columns x rows)
+                let cols = 1, rows = 1;
+                if (total === 2) { cols = 2; rows = 1; }
+                else if (total >= 3 && total <= 4) { cols = 2; rows = 2; }
+                else if (total >= 5 && total <= 6) { cols = 3; rows = 2; }
+                else if (total >= 7) { cols = 3; rows = 3; }
+
+                const gridX = 16, gridY = 56, gridW = 1248, gridH = 648;
+                const gap = 12;
+                const cellW = (gridW - (cols - 1) * gap) / cols;
+                const cellH = (gridH - (rows - 1) * gap) / rows;
+
+                allParticipants.forEach((p, idx) => {
+                    if (idx >= cols * rows) return;
+                    const col = idx % cols;
+                    const row = Math.floor(idx / cols);
+                    const tx = gridX + col * (cellW + gap);
+                    const ty = gridY + row * (cellH + gap);
+
+                    // Tile card background
+                    const grad = ctx.createLinearGradient(tx, ty, tx, ty + cellH);
+                    grad.addColorStop(0, '#1e293b');
+                    grad.addColorStop(1, '#0f172a');
+                    ctx.fillStyle = grad;
+                    drawRoundedRect(ctx, tx, ty, cellW, cellH, 16);
+                    ctx.fill();
+
+                    // Find participant video element
+                    let videoEl = null;
+                    if (p.isLocal) {
+                        videoEl = document.querySelector('video[data-is-local="true"]:not(.hidden)') ||
+                                  document.querySelector('video[data-participant-name*="You"]:not(.hidden)');
+                    } else {
+                        videoEl = document.querySelector(`video[data-participant-name="${p.name}"]:not(.hidden)`) ||
+                                  document.querySelector(`video[data-participant-id="${p.id}"]:not(.hidden)`);
+                    }
+
+                    let drewVideo = false;
+                    if (p.isCameraOn && videoEl && videoEl.readyState >= 2 && !videoEl.paused) {
+                        try {
+                            ctx.save();
+                            drawRoundedRect(ctx, tx, ty, cellW, cellH, 16);
+                            ctx.clip();
+                            if (p.isLocal) {
+                                // Mirror local camera
+                                ctx.translate(tx + cellW, ty);
+                                ctx.scale(-1, 1);
+                                ctx.drawImage(videoEl, 0, 0, cellW, cellH);
+                            } else {
+                                ctx.drawImage(videoEl, tx, ty, cellW, cellH);
+                            }
+                            ctx.restore();
+                            drewVideo = true;
+                        } catch (e) {}
+                    }
+
+                    // Avatar fallback when camera is off or not rendering
+                    if (!drewVideo) {
+                        const avatarRadius = Math.min(cellW, cellH) * 0.18;
+                        const centerX = tx + cellW / 2;
+                        const centerY = ty + cellH / 2 - 12;
+
+                        // Glowing speaking halo
+                        if (p.isSpeaking) {
+                            const pulse = Math.sin(frame * 0.1) * 8;
+                            ctx.fillStyle = 'rgba(16, 185, 129, 0.35)';
+                            ctx.beginPath();
+                            ctx.arc(centerX, centerY, avatarRadius + 10 + pulse, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+
+                        // Avatar Circle
+                        const isHost = p.role === 'instructor' || p.role === 'admin' || p.role === 'host';
+                        const avatarGrad = ctx.createLinearGradient(centerX - avatarRadius, centerY - avatarRadius, centerX + avatarRadius, centerY + avatarRadius);
+                        if (isHost) {
+                            avatarGrad.addColorStop(0, '#f59e0b');
+                            avatarGrad.addColorStop(1, '#d97706');
+                        } else {
+                            avatarGrad.addColorStop(0, '#6366f1');
+                            avatarGrad.addColorStop(1, '#3b82f6');
+                        }
+                        ctx.fillStyle = avatarGrad;
+                        ctx.beginPath();
+                        ctx.arc(centerX, centerY, avatarRadius, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // Initials
+                        const initials = p.name ? p.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : 'U';
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = `bold ${Math.round(avatarRadius * 0.8)}px system-ui, sans-serif`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(initials, centerX, centerY);
+                        ctx.textBaseline = 'alphabetic';
+                    }
+
+                    // Active speaker border
+                    ctx.strokeStyle = p.isSpeaking ? '#10b981' : '#334155';
+                    ctx.lineWidth = p.isSpeaking ? 3.5 : 1.5;
+                    drawRoundedRect(ctx, tx, ty, cellW, cellH, 16);
+                    ctx.stroke();
+
+                    // Name Tag Badge in bottom-left
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                    drawRoundedRect(ctx, tx + 10, ty + cellH - 32, Math.min(cellW - 20, 220), 22, 8);
+                    ctx.fill();
+
+                    ctx.fillStyle = p.isSpeaking ? '#10b981' : '#ffffff';
+                    ctx.font = 'bold 12px system-ui, sans-serif';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(`${p.name} ${p.isLocal ? '(You)' : ''}`, tx + 18, ty + cellH - 17);
+                });
+            }
+
+            // =================================================================
+            // 3. TOP RECORDING HEADER OVERLAY
+            // =================================================================
+            ctx.fillStyle = 'rgba(9, 13, 22, 0.9)';
+            ctx.fillRect(0, 0, 1280, 48);
+
+            // Red REC pulsing dot
+            const recPulse = Math.sin(frame * 0.08) > 0;
+            ctx.fillStyle = recPulse ? '#ef4444' : '#991b1b';
+            ctx.beginPath();
+            ctx.arc(28, 24, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            // REC label & timer
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 14px system-ui, sans-serif';
+            ctx.textAlign = 'left';
+            const mins = String(Math.floor(currentRecTime / 60)).padStart(2, '0');
+            const secs = String(currentRecTime % 60).padStart(2, '0');
+            ctx.fillText(`REC  ${mins}:${secs}`, 42, 29);
+
+            // Title
+            ctx.fillStyle = '#cbd5e1';
+            ctx.font = 'bold 15px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(title, 640, 29);
+
+            // Room ID badge in top right
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '13px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(`Room: ${roomCode}`, 1260, 29);
+
+            // =================================================================
+            // 4. BOTTOM AUDIO WAVEFORM VISUALIZER
+            // =================================================================
+            if (currentMic > 0) {
                 ctx.strokeStyle = '#10b981';
-                ctx.lineWidth = 3;
+                ctx.lineWidth = 2.5;
                 ctx.beginPath();
-                for (let x = 340; x <= 940; x += 10) {
-                    const y = 520 + Math.sin(frame * 0.08 + x * 0.03) * (micLevel > 0 ? micLevel * 0.8 : 12);
-                    if (x === 340) ctx.moveTo(x, y);
+                for (let x = 440; x <= 840; x += 8) {
+                    const wave = Math.sin(frame * 0.12 + x * 0.04) * (currentMic * 0.6);
+                    const y = 712 + wave;
+                    if (x === 440) ctx.moveTo(x, y);
                     else ctx.lineTo(x, y);
                 }
                 ctx.stroke();
+            }
+        };
 
-                // Host label
-                ctx.fillStyle = '#cbd5e1';
-                ctx.font = '16px system-ui, sans-serif';
-                ctx.fillText(`Host: ${session?.host ? `${session.host.firstName} ${session.host.lastName}` : (user?.firstName || 'Host')}`, 640, 600);
-            };
+        if (canvasIntervalRef.current) clearInterval(canvasIntervalRef.current);
+        if (canvasAnimRef.current) cancelAnimationFrame(canvasAnimRef.current);
+        canvasIntervalRef.current = setInterval(draw, 1000 / 30);
+        draw();
 
-            if (canvasIntervalRef.current) clearInterval(canvasIntervalRef.current);
-            if (canvasAnimRef.current) cancelAnimationFrame(canvasAnimRef.current);
-            canvasIntervalRef.current = setInterval(draw, 1000 / 30);
-            draw();
-
-            const canvasStream = canvas.captureStream(30);
-            const canvasVideoTrack = canvasStream.getVideoTracks()[0];
-            if (canvasVideoTrack) stream.addTrack(canvasVideoTrack);
+        const canvasStream = canvas.captureStream(30);
+        const canvasVideoTrack = canvasStream.getVideoTracks()[0];
+        if (canvasVideoTrack) {
+            stream.addTrack(canvasVideoTrack);
         }
 
         return stream;

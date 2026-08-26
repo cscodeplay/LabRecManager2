@@ -6,16 +6,24 @@ const { asyncHandler } = require('../middleware/errorHandler');
 
 /**
  * @route   GET /api/notifications
- * @desc    Get user notifications
+ * @desc    Get user notifications (supports priorityOnly filter to avoid clutter)
  * @access  Private
  */
 router.get('/', authenticate, asyncHandler(async (req, res) => {
-    const { limit = 20, offset = 0, unreadOnly } = req.query;
+    const { limit = 30, offset = 0, unreadOnly, priorityOnly } = req.query;
 
     try {
         const where = { userId: req.user.id };
         if (unreadOnly === 'true') {
             where.is_read = false;
+        }
+
+        // Display only necessary / priority notifications if requested
+        if (priorityOnly === 'true') {
+            where.OR = [
+                { type: { in: ['meeting', 'meeting_invite', 'viva', 'assignment', 'grade', 'ticket', 'urgent', 'timetable'] } },
+                { is_read: false }
+            ];
         }
 
         const notifications = await prisma.notification.findMany({
@@ -34,7 +42,9 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 is_read: true,
                 createdAt: true,
                 readAt: true,
-                action_url: true
+                action_url: true,
+                reference_type: true,
+                reference_id: true
             }
         });
 
@@ -57,7 +67,6 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         });
     } catch (error) {
         console.error('Notification query error:', error.message);
-        // Return empty notifications if table/columns not available yet
         res.json({
             success: true,
             data: {
@@ -152,22 +161,56 @@ router.put('/read-all', authenticate, asyncHandler(async (req, res) => {
 }));
 
 /**
+ * @route   DELETE /api/notifications/clear-read
+ * @desc    Delete all read notifications for current user (Declutter)
+ * @access  Private
+ */
+router.delete('/clear-read', authenticate, asyncHandler(async (req, res) => {
+    try {
+        const deleted = await prisma.notification.deleteMany({
+            where: {
+                userId: req.user.id,
+                is_read: true
+            }
+        });
+
+        res.json({
+            success: true,
+            message: `${deleted.count} read notifications cleared`,
+            data: { count: deleted.count }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to clear read notifications'
+        });
+    }
+}));
+
+/**
  * @route   DELETE /api/notifications/:id
  * @desc    Delete a notification
  * @access  Private
  */
 router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
-    await prisma.notification.delete({
-        where: {
-            id: req.params.id,
-            userId: req.user.id
-        }
-    });
+    try {
+        await prisma.notification.delete({
+            where: {
+                id: req.params.id,
+                userId: req.user.id
+            }
+        });
 
-    res.json({
-        success: true,
-        message: 'Notification deleted'
-    });
+        res.json({
+            success: true,
+            message: 'Notification deleted'
+        });
+    } catch (error) {
+        res.status(404).json({
+            success: false,
+            message: 'Notification not found'
+        });
+    }
 }));
 
 module.exports = router;

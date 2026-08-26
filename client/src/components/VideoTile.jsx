@@ -147,6 +147,11 @@ export default function VideoTile({
 
     return (
         <div
+            data-participant-tile="true"
+            data-participant-name={name || 'Participant'}
+            data-is-local={isLocal ? 'true' : 'false'}
+            data-has-video={showVideo ? 'true' : 'false'}
+            data-is-speaking={isSpeaking ? 'true' : 'false'}
             className={`relative bg-slate-900 rounded-2xl overflow-hidden shadow-xl border-2 transition-all duration-200 flex items-center justify-center select-none ${
                 isPinned
                     ? 'border-primary-500 ring-2 ring-primary-500/30'
@@ -159,6 +164,9 @@ export default function VideoTile({
                 autoPlay
                 playsInline
                 muted={isLocal}
+                data-participant-video="true"
+                data-participant-name={name || 'Participant'}
+                data-is-local={isLocal ? 'true' : 'false'}
                 className={`w-full h-full object-cover ${showVideo ? 'block' : 'hidden'} ${
                     isLocal && !isScreenSharing ? 'scale-x-[-1]' : ''
                 }`}
