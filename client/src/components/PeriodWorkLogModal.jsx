@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import {
     BookOpen, Clock, Calendar, User, CheckCircle2,
     AlertCircle, FileText, Sparkles, X, Save,
-    Flag, UserCheck, ArrowRight, Check
+    Flag, UserCheck, ArrowRight, Check,
+    CheckSquare, Plus, Trash2, ListTodo
 } from 'lucide-react';
 import { teachingAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -16,6 +17,33 @@ const ACTIVITY_TYPES = [
     { id: 'substitute', label: 'Substitute Teacher', icon: UserCheck, color: 'bg-teal-50 text-teal-700 border-teal-200' },
     { id: 'cancelled', label: 'Period Cancelled', icon: AlertCircle, color: 'bg-red-50 text-red-700 border-red-200' }
 ];
+
+const LECTURE_TASK_PRESETS = {
+    theory: [
+        'Review previous class topic & check homework',
+        'Explain core theory concepts and definitions',
+        'Demonstrate board examples & solve problems',
+        'Interactive student Q&A and doubt clearing',
+        'Assign practice questions & homework reading'
+    ],
+    lab: [
+        'Lab safety briefing & practical aim introduction',
+        'Live algorithm / circuit / code demonstration',
+        'Supervise individual student execution at workstations',
+        'Inspect code output & conduct mini-viva assessment',
+        'Verify and sign student practical records'
+    ],
+    revision: [
+        'Rapid chapter summary & formula recap',
+        'Solve previous year exam problems on board',
+        'Targeted doubt solving for difficult topics'
+    ],
+    assessment: [
+        'Student roll call & seating arrangement',
+        'Distribute test questions & evaluate lab code',
+        'Collect answer sheets & record marks'
+    ]
+};
 
 export default function PeriodWorkLogModal({
     isOpen,
@@ -40,6 +68,10 @@ export default function PeriodWorkLogModal({
     const [isSaving, setIsSaving] = useState(false);
     const [existingPlanId, setExistingPlanId] = useState(null);
 
+    // Lecture Tasks Checklist State
+    const [tasks, setTasks] = useState([]);
+    const [newTaskText, setNewTaskText] = useState('');
+
     useEffect(() => {
         if (!isOpen) return;
 
@@ -52,6 +84,17 @@ export default function PeriodWorkLogModal({
         setSubstituteTeacherId('');
         setDismissalTime('');
         setExistingPlanId(null);
+        setNewTaskText('');
+
+        // Default initial tasks depending on slot type
+        const defaultPresetKey = (slot?.slotType === 'lab' || period?.slotType === 'lab') ? 'lab' : 'theory';
+        const defaultList = LECTURE_TASK_PRESETS[defaultPresetKey].map((t, idx) => ({
+            id: `task_init_${idx}`,
+            text: t,
+            completed: false,
+            completedAt: null
+        }));
+        setTasks(defaultList);
 
         // Fetch existing lecture plan for this slot and date if available
         if (slot?.id && dateStr) {
@@ -73,22 +116,94 @@ export default function PeriodWorkLogModal({
                 setExistingPlanId(plan.id);
                 setTopicsCovered(plan.description || plan.title || '');
                 setHomework(plan.homeworkDescription || '');
-                setRemarks(plan.notes || '');
-                if (plan.notes?.startsWith('[OTHER ACTIVITY]:')) {
+                
+                let rawNotes = plan.notes || '';
+                
+                // Parse embedded tasks checklist if present
+                if (rawNotes.includes('[LECTURE_TASKS]:')) {
+                    try {
+                        const parts = rawNotes.split('[LECTURE_TASKS]:');
+                        const afterTasks = parts[1];
+                        const jsonEnd = afterTasks.indexOf('\n');
+                        const jsonStr = jsonEnd !== -1 ? afterTasks.substring(0, jsonEnd) : afterTasks;
+                        const parsedTasks = JSON.parse(jsonStr);
+                        if (Array.isArray(parsedTasks) && parsedTasks.length > 0) {
+                            setTasks(parsedTasks);
+                        }
+                        // Clean up notes for remarks textarea
+                        rawNotes = parts[0] + (jsonEnd !== -1 ? afterTasks.substring(jsonEnd + 1) : '');
+                    } catch (err) {
+                        console.warn('Failed to parse lecture tasks JSON:', err);
+                    }
+                }
+
+                if (rawNotes.startsWith('[OTHER ACTIVITY]:')) {
                     setActivityType('other_activity');
-                    setActivityTitle(plan.notes.replace('[OTHER ACTIVITY]:', '').trim());
-                } else if (plan.notes?.startsWith('[EARLY DISMISSAL]:')) {
+                    setActivityTitle(rawNotes.replace('[OTHER ACTIVITY]:', '').split('\n')[0].trim());
+                } else if (rawNotes.startsWith('[EARLY DISMISSAL]:')) {
                     setActivityType('early_leave');
-                    setDismissalTime(plan.notes.replace('[EARLY DISMISSAL]:', '').trim());
-                } else if (plan.notes?.startsWith('[SUBSTITUTE]:')) {
+                    setDismissalTime(rawNotes.replace('[EARLY DISMISSAL]:', '').split('\n')[0].trim());
+                } else if (rawNotes.startsWith('[SUBSTITUTE]:')) {
                     setActivityType('substitute');
                 } else if (plan.status === 'cancelled') {
                     setActivityType('cancelled');
                 }
+
+                // Clean remarks of header tags
+                const cleanRemarks = rawNotes
+                    .replace(/^\[OTHER ACTIVITY\]:[^\n]*\n?/, '')
+                    .replace(/^\[EARLY DISMISSAL\]:[^\n]*\n?/, '')
+                    .replace(/^\[SUBSTITUTE\]:[^\n]*\n?/, '')
+                    .trim();
+                setRemarks(cleanRemarks);
             }
         } catch (e) {
             // Ignore error if teaching plans not yet initialized
         }
+    };
+
+    const handleToggleTask = (taskId) => {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+        setTasks(prev => prev.map(t => {
+            if (t.id === taskId) {
+                const nextCompleted = !t.completed;
+                return {
+                    ...t,
+                    completed: nextCompleted,
+                    completedAt: nextCompleted ? timeStr : null
+                };
+            }
+            return t;
+        }));
+    };
+
+    const handleAddTask = () => {
+        if (!newTaskText.trim()) return;
+        const newTask = {
+            id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            text: newTaskText.trim(),
+            completed: false,
+            completedAt: null
+        };
+        setTasks(prev => [...prev, newTask]);
+        setNewTaskText('');
+    };
+
+    const handleRemoveTask = (taskId) => {
+        setTasks(prev => prev.filter(t => t.id !== taskId));
+    };
+
+    const handleLoadPreset = (presetKey) => {
+        const list = LECTURE_TASK_PRESETS[presetKey] || [];
+        const newTasks = list.map((text, idx) => ({
+            id: `task_${Date.now()}_${idx}`,
+            text,
+            completed: false,
+            completedAt: null
+        }));
+        setTasks(newTasks);
+        toast.success(`Loaded ${list.length} ${presetKey} tasks!`, { icon: '📋' });
     };
 
     if (!isOpen) return null;
@@ -120,9 +235,20 @@ export default function PeriodWorkLogModal({
                 fullNotes = `[SUBSTITUTE]: ${sub ? `${sub.firstName} ${sub.lastName}` : 'Substitute Teacher'}\n${fullNotes}`.trim();
             }
 
+            // Append tasks JSON to notes
+            if (tasks.length > 0) {
+                fullNotes = `[LECTURE_TASKS]:${JSON.stringify(tasks)}\n${fullNotes}`.trim();
+            }
+
+            let finalTopics = topicsCovered.trim();
+            const completedTasks = tasks.filter(t => t.completed);
+            if (!finalTopics && tasks.length > 0) {
+                finalTopics = `${completedTasks.length}/${tasks.length} Tasks Done: ` + tasks.map(t => `${t.text}${t.completed ? ` (✓ ${t.completedAt})` : ''}`).join('; ');
+            }
+
             const payload = {
                 title,
-                description: topicsCovered.trim(),
+                description: finalTopics || topicsCovered.trim(),
                 homeworkDescription: homework.trim(),
                 notes: fullNotes,
                 status: activityType === 'cancelled' ? 'cancelled' : 'completed',
@@ -142,17 +268,20 @@ export default function PeriodWorkLogModal({
                 await teachingAPI.createPlan(payload);
             }
 
-            toast.success('Period work & activity logged successfully!', { icon: '📝' });
+            toast.success('Period work & lecture tasks logged successfully!', { icon: '📝' });
             if (onWorkSaved) {
                 onWorkSaved({
                     slotId: slot?.id,
                     periodNumber: period?.periodNumber || slot?.periodNumber,
                     day,
                     dateStr,
-                    topicsCovered,
+                    topicsCovered: finalTopics,
                     activityType,
                     activityTitle,
-                    hasLoggedWork: true
+                    hasLoggedWork: true,
+                    tasksCount: tasks.length,
+                    completedTasksCount: completedTasks.length,
+                    lastCompletedAt: completedTasks.slice(-1)[0]?.completedAt || null
                 });
             }
             onClose();
@@ -306,6 +435,124 @@ export default function PeriodWorkLogModal({
                             </select>
                         </div>
                     )}
+
+                    {/* Lecture Tasks Checklist (Auto-Stamps Time when Checked) */}
+                    <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                                <CheckSquare className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                <label className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                    Lecture Tasks Checklist
+                                </label>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                    tasks.filter(t => t.completed).length === tasks.length && tasks.length > 0
+                                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300'
+                                        : 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950 dark:text-indigo-300'
+                                }`}>
+                                    {tasks.filter(t => t.completed).length} / {tasks.length} Completed
+                                </span>
+                            </div>
+
+                            {/* Preset Chips */}
+                            <div className="flex items-center gap-1 text-[10px]">
+                                <span className="text-slate-400 font-medium mr-0.5">Presets:</span>
+                                <button
+                                    type="button"
+                                    onClick={() => handleLoadPreset('theory')}
+                                    className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium transition"
+                                >
+                                    Theory
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleLoadPreset('lab')}
+                                    className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium transition"
+                                >
+                                    Lab
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleLoadPreset('revision')}
+                                    className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium transition"
+                                >
+                                    Revision
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Task Items List */}
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                            {tasks.map((t) => (
+                                <div
+                                    key={t.id}
+                                    onClick={() => handleToggleTask(t.id)}
+                                    className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
+                                        t.completed
+                                            ? 'bg-emerald-50/60 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/60'
+                                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                        <input
+                                            type="checkbox"
+                                            checked={t.completed}
+                                            onChange={() => handleToggleTask(t.id)}
+                                            className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 dark:border-slate-600 cursor-pointer"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                        <span className={`text-xs flex-1 truncate ${
+                                            t.completed
+                                                ? 'line-through text-slate-400 dark:text-slate-500 font-normal'
+                                                : 'text-slate-800 dark:text-slate-200 font-medium'
+                                        }`}>
+                                            {t.text}
+                                        </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                        {t.completed && t.completedAt && (
+                                            <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-700 px-2 py-0.5 rounded-full shadow-2xs animate-in fade-in">
+                                                <Clock className="w-3 h-3 text-emerald-600" />
+                                                ✓ {t.completedAt}
+                                            </span>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveTask(t.id)}
+                                            className="p-1 text-slate-400 hover:text-red-500 rounded transition"
+                                            title="Remove Task"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Add Custom Task Row */}
+                        <div className="flex items-center gap-2 pt-1">
+                            <input
+                                type="text"
+                                className="input input-sm flex-1 text-xs bg-white dark:bg-slate-800"
+                                placeholder="Add a new lecture task item..."
+                                value={newTaskText}
+                                onChange={(e) => setNewTaskText(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleAddTask();
+                                    }
+                                }}
+                            />
+                            <button
+                                type="button"
+                                onClick={handleAddTask}
+                                className="btn btn-sm bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs flex items-center gap-1 border border-slate-300 dark:border-slate-600"
+                            >
+                                <Plus className="w-3.5 h-3.5" /> Add
+                            </button>
+                        </div>
+                    </div>
 
                     {/* Topics Covered / Work Done */}
                     <div>

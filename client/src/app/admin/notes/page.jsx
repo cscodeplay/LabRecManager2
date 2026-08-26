@@ -9,7 +9,8 @@ import {
     ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
     Eye, Table, Link2, Image as ImageIcon, Save, CheckCircle2,
     RotateCcw, Sparkles, Copy, ExternalLink, Calendar, Frame, Highlighter,
-    Wand2, ListOrdered, Bot, Zap, Check, Loader2, ArrowRight
+    Wand2, ListOrdered, Bot, Zap, Check, Loader2, ArrowRight,
+    CheckSquare, ListTodo, CheckCircle
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -87,6 +88,11 @@ export default function AdminNotesPage() {
     const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
     const [showModal, setShowModal] = useState(false);
     const [viewingNote, setViewingNote] = useState(null);
+
+    // Checklist Insertion Modal states
+    const [showChecklistModal, setShowChecklistModal] = useState(false);
+    const [checklistItems, setChecklistItems] = useState(['', '', '']);
+    const [checklistPreset, setChecklistPreset] = useState('custom');
 
     // Table Insertion Modal states
     const [showTableModal, setShowTableModal] = useState(false);
@@ -474,6 +480,172 @@ export default function AdminNotesPage() {
         }
     };
 
+    // Insert Interactive Checklist into Quill Editor
+    const CHECKLIST_PRESET_TEMPLATES = {
+        daily_admin: [
+            'Review pending lab equipment repair requests',
+            'Verify instructor timetable work logs',
+            'Inspect student attendance in theory & lab sessions',
+            'Approve pending procurement items & invoices',
+            'Review academic notices and circulars'
+        ],
+        lab_inspection: [
+            'Verify all student PCs powering on properly',
+            'Check lab network switch and internet connectivity',
+            'Test lab projector, whiteboard, and audio sync',
+            'Inspect fire safety equipment & emergency exits',
+            'Verify lab consumables and inventory stock'
+        ],
+        meeting_actions: [
+            'Circulate meeting agenda & minutes to department',
+            'Follow up on assigned syllabus coverage milestones',
+            'Schedule viva voce examination sessions',
+            'Submit monthly department summary report'
+        ],
+        academic_audit: [
+            'Check lab record book completions and teacher signatures',
+            'Audit assignment grading turnaround times',
+            'Review student feedback reports',
+            'Update lab software licenses and compilers'
+        ]
+    };
+
+    const handleInsertChecklist = (customList) => {
+        if (!quillRef.current) return;
+        const itemsToUse = (customList || checklistItems).filter(item => item && item.trim());
+        if (itemsToUse.length === 0) {
+            toast.error('Please add at least one checklist item');
+            return;
+        }
+
+        let checklistHtml = '<ul class="notes-checklist space-y-2 my-3 pl-0 list-none">';
+        itemsToUse.forEach(itemText => {
+            const cleanText = itemText.trim();
+            checklistHtml += `<li class="note-checklist-item flex items-start gap-2.5 p-2 rounded-lg hover:bg-slate-50 border border-slate-100 transition" data-checked="false"><input type="checkbox" class="note-check-box mt-0.5 w-4 h-4 rounded text-primary-600 border-slate-300 focus:ring-primary-500 cursor-pointer" /><span class="task-text text-sm text-slate-800 flex-1">${cleanText}</span></li>`;
+        });
+        checklistHtml += '</ul><p><br></p>';
+
+        const editor = quillRef.current.getEditor();
+        const range = editor.getSelection(true) || { index: editor.getLength(), length: 0 };
+        editor.clipboard.dangerouslyPasteHTML(range.index, checklistHtml);
+        setShowChecklistModal(false);
+        setChecklistItems(['', '', '']);
+        setChecklistPreset('custom');
+        toast.success(`Inserted checklist with ${itemsToUse.length} items!`, { icon: '☑️' });
+    };
+
+    // Toggle checklist checkbox state and auto-stamp/clear timestamp
+    const toggleCheckboxInHtml = (html, checkboxIndex, isChecked, timeBadgeText) => {
+        if (typeof window === 'undefined' || !html) return html;
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const allBoxes = doc.querySelectorAll('input[type="checkbox"]');
+            if (allBoxes[checkboxIndex]) {
+                const box = allBoxes[checkboxIndex];
+                const parentLi = box.closest('li') || box.closest('p') || box.parentElement;
+                if (isChecked) {
+                    box.setAttribute('checked', 'true');
+                    if (parentLi) {
+                        parentLi.setAttribute('data-checked', 'true');
+                        const textSpan = parentLi.querySelector('.task-text') || parentLi.querySelector('span');
+                        if (textSpan) {
+                            textSpan.classList.add('line-through', 'text-slate-400');
+                        }
+                        const oldTime = parentLi.querySelector('.task-time');
+                        if (oldTime) oldTime.remove();
+
+                        const timeSpan = doc.createElement('span');
+                        timeSpan.className = 'task-time inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-emerald-700 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full ml-auto whitespace-nowrap';
+                        timeSpan.textContent = timeBadgeText;
+                        parentLi.appendChild(timeSpan);
+                    }
+                } else {
+                    box.removeAttribute('checked');
+                    if (parentLi) {
+                        parentLi.setAttribute('data-checked', 'false');
+                        const textSpan = parentLi.querySelector('.task-text') || parentLi.querySelector('span');
+                        if (textSpan) {
+                            textSpan.classList.remove('line-through', 'text-slate-400');
+                        }
+                        const oldTime = parentLi.querySelector('.task-time');
+                        if (oldTime) oldTime.remove();
+                    }
+                }
+                return doc.body.innerHTML;
+            }
+        } catch (e) {
+            console.error('Error toggling checklist in HTML:', e);
+        }
+        return html;
+    };
+
+    // Interactive checkbox click handler for View Modal and cards
+    const handleNoteContentClick = async (e, targetNote) => {
+        const target = e.target;
+        if (target && target.type === 'checkbox') {
+            e.stopPropagation();
+            const noteToUpdate = targetNote || viewingNote;
+            if (!noteToUpdate) return;
+
+            const isChecked = target.checked;
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+            const dateStr = now.toLocaleDateString([], { day: 'numeric', month: 'short' });
+            const timeBadge = `✓ ${timeStr}, ${dateStr}`;
+
+            const container = e.currentTarget;
+            const allCheckboxes = Array.from(container.querySelectorAll('input[type="checkbox"]'));
+            const index = allCheckboxes.indexOf(target);
+
+            const updatedHtml = toggleCheckboxInHtml(noteToUpdate.content, index, isChecked, timeBadge);
+            const updatedNote = {
+                ...noteToUpdate,
+                content: updatedHtml,
+                updatedAt: new Date().toISOString()
+            };
+
+            // Update UI optimistically
+            if (viewingNote && viewingNote.id === noteToUpdate.id) {
+                setViewingNote(updatedNote);
+            }
+            setNotes(prev => prev.map(n => n.id === noteToUpdate.id ? updatedNote : n));
+
+            try {
+                await api.put(`/admin-notes/${noteToUpdate.id}`, {
+                    title: noteToUpdate.title,
+                    content: updatedHtml
+                });
+                toast.success(
+                    isChecked ? `Task completed! Checked at ${timeStr}` : 'Task marked incomplete',
+                    { icon: isChecked ? '⏱️' : '↩️' }
+                );
+            } catch (err) {
+                console.error('Failed to save checklist update:', err);
+                toast.error('Failed to save checklist status');
+            }
+        }
+    };
+
+    // Helper to calculate checklist stats from HTML
+    const getChecklistSummary = (html) => {
+        if (!html || typeof window === 'undefined') return null;
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const checkboxes = doc.querySelectorAll('input[type="checkbox"]');
+            if (checkboxes.length === 0) return null;
+            const checkedCount = Array.from(checkboxes).filter(b => b.hasAttribute('checked') || b.checked).length;
+            return {
+                total: checkboxes.length,
+                completed: checkedCount,
+                percent: Math.round((checkedCount / checkboxes.length) * 100)
+            };
+        } catch (e) {
+            return null;
+        }
+    };
+
     // ReactQuill custom toolbar modules with font families & sizes
     const quillModules = useMemo(() => ({
         toolbar: {
@@ -485,7 +657,7 @@ export default function AdminNotesPage() {
                 [{ 'color': COLOR_PALETTE }, { 'background': COLOR_PALETTE }],
                 [{ 'script': 'sub' }, { 'script': 'super' }],
                 [{ 'align': [] }],
-                [{ 'list': 'ordered' }, { 'list': 'bullet' }, { 'indent': '-1' }, { 'indent': '+1' }],
+                [{ 'list': 'ordered' }, { 'list': 'bullet' }, { 'list': 'check' }, { 'indent': '-1' }, { 'indent': '+1' }],
                 ['blockquote', 'code-block'],
                 ['link', 'image'],
                 ['clean']
@@ -562,9 +734,12 @@ export default function AdminNotesPage() {
         }
     };
 
-    // Generate highlighted HTML for View Modal
+    // Generate highlighted HTML for View Modal with interactive checkboxes enabled
     const getHighlightedModalContent = (htmlContent, query) => {
-        const cleanHtml = DOMPurify.sanitize(htmlContent || '', { ADD_ATTR: ['target', 'rel'] });
+        const cleanHtml = DOMPurify.sanitize(htmlContent || '', {
+            ADD_TAGS: ['input'],
+            ADD_ATTR: ['target', 'rel', 'type', 'checked', 'data-checked', 'class', 'style', 'data-task-id']
+        });
         if (!query || !query.trim()) return cleanHtml;
 
         const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -788,6 +963,7 @@ export default function AdminNotesPage() {
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                                 {paginatedNotes.map((note) => {
                                     const plainSnippet = note.content?.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || '';
+                                    const checklistSummary = getChecklistSummary(note.content);
                                     return (
                                         <div
                                             key={note.id}
@@ -795,10 +971,20 @@ export default function AdminNotesPage() {
                                             className="card card-hover p-5 cursor-pointer flex flex-col justify-between border-slate-200 hover:border-primary-300 transition group relative"
                                         >
                                             <div>
-                                                <div className="flex items-start justify-between gap-3 mb-2.5">
-                                                    <h3 className="font-bold text-base text-slate-900 group-hover:text-primary-600 transition line-clamp-1">
+                                                <div className="flex items-start justify-between gap-2 mb-2.5">
+                                                    <h3 className="font-bold text-base text-slate-900 group-hover:text-primary-600 transition line-clamp-1 flex-1">
                                                         <HighlightText text={note.title} query={searchQuery} />
                                                     </h3>
+                                                    {checklistSummary && (
+                                                        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
+                                                            checklistSummary.percent === 100
+                                                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                                : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                                        }`}>
+                                                            <CheckSquare className="w-3 h-3" />
+                                                            {checklistSummary.completed}/{checklistSummary.total} done
+                                                        </span>
+                                                    )}
                                                 </div>
 
                                                 {/* Text snippet with yellow search highlight */}
@@ -922,6 +1108,7 @@ export default function AdminNotesPage() {
                                         <tbody className="divide-y divide-slate-100 text-sm">
                                             {paginatedNotes.map((note) => {
                                                 const plainSnippet = note.content?.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || '';
+                                                const checklistSummary = getChecklistSummary(note.content);
                                                 return (
                                                     <tr
                                                         key={note.id}
@@ -929,8 +1116,20 @@ export default function AdminNotesPage() {
                                                         className="hover:bg-primary-50/40 transition cursor-pointer group"
                                                     >
                                                         <td className="px-5 py-3.5 max-w-xs">
-                                                            <div className="font-semibold text-slate-900 group-hover:text-primary-600 transition truncate">
-                                                                <HighlightText text={note.title} query={searchQuery} />
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="font-semibold text-slate-900 group-hover:text-primary-600 transition truncate">
+                                                                    <HighlightText text={note.title} query={searchQuery} />
+                                                                </div>
+                                                                {checklistSummary && (
+                                                                    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border shrink-0 ${
+                                                                        checklistSummary.percent === 100
+                                                                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                                            : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                                                    }`}>
+                                                                        <CheckSquare className="w-2.5 h-2.5" />
+                                                                        {checklistSummary.completed}/{checklistSummary.total}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                             <div className="text-xs text-slate-400 truncate mt-0.5">
                                                                 <HighlightText text={plainSnippet || 'No text preview'} query={searchQuery} />
@@ -1145,8 +1344,20 @@ export default function AdminNotesPage() {
 
                         {/* Content Area with Rich Typography and Table Styling and Highlighted Search Matches */}
                         <div className="p-6 md:p-8 overflow-y-auto flex-1 bg-slate-50/40">
+                            {getChecklistSummary(viewingNote.content) && (
+                                <div className="mb-4 p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-center justify-between gap-3 text-xs text-emerald-900">
+                                    <div className="flex items-center gap-2">
+                                        <CheckSquare className="w-4 h-4 text-emerald-600 shrink-0" />
+                                        <span><strong>Interactive Checklist:</strong> Click any checkbox below to check/uncheck tasks. The exact time of checking will be automatically pasted and saved.</span>
+                                    </div>
+                                    <span className="font-bold px-2.5 py-1 bg-emerald-200/70 text-emerald-800 rounded-lg shrink-0">
+                                        {getChecklistSummary(viewingNote.content).completed} / {getChecklistSummary(viewingNote.content).total} Completed
+                                    </span>
+                                </div>
+                            )}
                             <div
-                                className="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-slate-200 notes-content prose max-w-none"
+                                className="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-slate-200 notes-content prose max-w-none cursor-default"
+                                onClick={(e) => handleNoteContentClick(e, viewingNote)}
                                 dangerouslySetInnerHTML={{
                                     __html: typeof window !== 'undefined'
                                         ? getHighlightedModalContent(viewingNote.content, searchQuery)
@@ -1306,6 +1517,20 @@ export default function AdminNotesPage() {
                                     >
                                         <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
                                         <span>AI Assistant</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setChecklistItems(['', '', '']);
+                                            setChecklistPreset('custom');
+                                            setShowChecklistModal(true);
+                                        }}
+                                        className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold border border-emerald-200 transition flex items-center gap-1.5 shadow-sm"
+                                        title="Insert interactive checklist items with auto-timestamping"
+                                    >
+                                        <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+                                        <span>Checklist</span>
                                     </button>
 
                                     <button
@@ -1859,6 +2084,183 @@ export default function AdminNotesPage() {
                                 className="btn btn-secondary text-xs"
                             >
                                 Done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Checklist Insertion Modal */}
+            {showChecklistModal && (
+                <div
+                    className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in"
+                    onClick={() => setShowChecklistModal(false)}
+                >
+                    <div
+                        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 border border-slate-100 max-h-[90vh] flex flex-col overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                                    <CheckSquare className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900">Insert Interactive Checklist</h3>
+                                    <p className="text-xs text-slate-500">Checking items automatically stamps and records the completion time</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowChecklistModal(false)}
+                                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4 overflow-y-auto flex-1 pr-1">
+                            {/* Preset Templates */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                    Quick Preset Templates
+                                </label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setChecklistPreset('daily_admin');
+                                            setChecklistItems([...CHECKLIST_PRESET_TEMPLATES.daily_admin]);
+                                        }}
+                                        className={`p-2.5 rounded-xl border text-left text-xs transition ${
+                                            checklistPreset === 'daily_admin'
+                                                ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-semibold ring-1 ring-emerald-200'
+                                                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                                        }`}
+                                    >
+                                        <div className="font-bold">📋 Daily Admin Tasks</div>
+                                        <div className="text-[10px] text-slate-500 mt-0.5">5 routine administrative items</div>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setChecklistPreset('lab_inspection');
+                                            setChecklistItems([...CHECKLIST_PRESET_TEMPLATES.lab_inspection]);
+                                        }}
+                                        className={`p-2.5 rounded-xl border text-left text-xs transition ${
+                                            checklistPreset === 'lab_inspection'
+                                                ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-semibold ring-1 ring-emerald-200'
+                                                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                                        }`}
+                                    >
+                                        <div className="font-bold">🧪 Lab & Safety Inspection</div>
+                                        <div className="text-[10px] text-slate-500 mt-0.5">5 hardware & safety checks</div>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setChecklistPreset('meeting_actions');
+                                            setChecklistItems([...CHECKLIST_PRESET_TEMPLATES.meeting_actions]);
+                                        }}
+                                        className={`p-2.5 rounded-xl border text-left text-xs transition ${
+                                            checklistPreset === 'meeting_actions'
+                                                ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-semibold ring-1 ring-emerald-200'
+                                                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                                        }`}
+                                    >
+                                        <div className="font-bold">🎯 Meeting Action Items</div>
+                                        <div className="text-[10px] text-slate-500 mt-0.5">4 follow-up deliverables</div>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setChecklistPreset('academic_audit');
+                                            setChecklistItems([...CHECKLIST_PRESET_TEMPLATES.academic_audit]);
+                                        }}
+                                        className={`p-2.5 rounded-xl border text-left text-xs transition ${
+                                            checklistPreset === 'academic_audit'
+                                                ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-semibold ring-1 ring-emerald-200'
+                                                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                                        }`}
+                                    >
+                                        <div className="font-bold">📚 Academic Review</div>
+                                        <div className="text-[10px] text-slate-500 mt-0.5">4 curriculum & lab audits</div>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Custom Checklist Items Builder */}
+                            <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="block text-xs font-bold text-slate-700">
+                                        Checklist Items ({checklistItems.filter(Boolean).length})
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setChecklistPreset('custom');
+                                            setChecklistItems(prev => [...prev, '']);
+                                        }}
+                                        className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> Add Another Item
+                                    </button>
+                                </div>
+
+                                <div className="space-y-2">
+                                    {checklistItems.map((itemText, idx) => (
+                                        <div key={idx} className="flex items-center gap-2">
+                                            <div className="w-5 h-5 rounded bg-slate-100 text-slate-500 flex items-center justify-center text-[10px] font-bold shrink-0">
+                                                {idx + 1}
+                                            </div>
+                                            <input
+                                                type="text"
+                                                className="input input-sm flex-1 text-xs"
+                                                placeholder={`Enter task item #${idx + 1}...`}
+                                                value={itemText}
+                                                onChange={(e) => {
+                                                    setChecklistPreset('custom');
+                                                    const newItems = [...checklistItems];
+                                                    newItems[idx] = e.target.value;
+                                                    setChecklistItems(newItems);
+                                                }}
+                                            />
+                                            {checklistItems.length > 1 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const newItems = checklistItems.filter((_, i) => i !== idx);
+                                                        setChecklistItems(newItems.length ? newItems : ['']);
+                                                    }}
+                                                    className="p-1 text-slate-400 hover:text-red-600 rounded"
+                                                    title="Remove Item"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
+                            <button
+                                type="button"
+                                onClick={() => setShowChecklistModal(false)}
+                                className="btn btn-secondary text-xs"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleInsertChecklist()}
+                                className="btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs shadow-md flex items-center gap-1.5"
+                            >
+                                <CheckSquare className="w-3.5 h-3.5" />
+                                Insert Checklist into Note
                             </button>
                         </div>
                     </div>

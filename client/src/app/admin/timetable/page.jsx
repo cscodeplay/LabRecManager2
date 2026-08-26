@@ -1315,7 +1315,11 @@ export default function AdminTimetablePage() {
                                                                                         title="View/Edit Logged Task"
                                                                                     >
                                                                                         <Check className="w-3 h-3 text-emerald-600" />
-                                                                                        <span className="max-w-[70px] truncate">{loggedWork.topicsCovered || 'Task Done'}</span>
+                                                                                        <span className="max-w-[85px] truncate">
+                                                                                            {loggedWork.completedTasksCount !== undefined && loggedWork.tasksCount
+                                                                                                ? `Tasks (${loggedWork.completedTasksCount}/${loggedWork.tasksCount})`
+                                                                                                : loggedWork.topicsCovered || 'Task Done'}
+                                                                                        </span>
                                                                                     </button>
                                                                                 ) : (
                                                                                     <button

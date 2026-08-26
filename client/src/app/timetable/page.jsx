@@ -676,7 +676,11 @@ export default function TimetablePage() {
                                                                                 title="View Logged Task"
                                                                             >
                                                                                 <Check className="w-2.5 h-2.5" />
-                                                                                <span className="max-w-[60px] truncate">{loggedWork.topicsCovered || 'Done'}</span>
+                                                                                <span className="max-w-[75px] truncate">
+                                                                                    {loggedWork.completedTasksCount !== undefined && loggedWork.tasksCount
+                                                                                        ? `Tasks (${loggedWork.completedTasksCount}/${loggedWork.tasksCount})`
+                                                                                        : loggedWork.topicsCovered || 'Done'}
+                                                                                </span>
                                                                             </button>
                                                                         ) : (
                                                                             <button

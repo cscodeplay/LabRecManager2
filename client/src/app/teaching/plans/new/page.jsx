@@ -7,8 +7,30 @@ import { useTranslation } from 'react-i18next';
 import api, { teachingAPI, timetableAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
-import { Calendar, Save, ArrowLeft } from 'lucide-react';
+import { Calendar, Save, ArrowLeft, CheckSquare, Plus, Trash2, Clock } from 'lucide-react';
 import Link from 'next/link';
+
+const LECTURE_TASK_PRESETS = {
+    theory: [
+        'Review previous class topic & check homework',
+        'Explain core theory concepts and definitions',
+        'Demonstrate board examples & solve problems',
+        'Interactive student Q&A and doubt clearing',
+        'Assign practice questions & homework reading'
+    ],
+    lab: [
+        'Lab safety briefing & practical aim introduction',
+        'Live algorithm / circuit / code demonstration',
+        'Supervise individual student execution at workstations',
+        'Inspect code output & conduct mini-viva assessment',
+        'Verify and sign student practical records'
+    ],
+    revision: [
+        'Rapid chapter summary & formula recap',
+        'Solve previous year exam problems on board',
+        'Targeted doubt solving for difficult topics'
+    ]
+};
 
 export default function CreateLecturePlan() {
     const router = useRouter();
@@ -21,6 +43,13 @@ export default function CreateLecturePlan() {
     // Form data
     const [classes, setClasses] = useState([]);
     const [subjects, setSubjects] = useState([]);
+    const [checklistTasks, setChecklistTasks] = useState([
+        'Review previous class topic & check homework',
+        'Explain core theory concepts and definitions',
+        'Demonstrate board examples & solve problems',
+        'Interactive student Q&A and doubt clearing'
+    ]);
+    const [newTaskInput, setNewTaskInput] = useState('');
     
     const [formData, setFormData] = useState({
         classId: '',
@@ -78,7 +107,22 @@ export default function CreateLecturePlan() {
 
         setLoading(true);
         try {
-            await teachingAPI.createPlan(formData);
+            let finalNotes = formData.notes || '';
+            const validTasks = checklistTasks.filter(t => t.trim());
+            if (validTasks.length > 0) {
+                const structuredTasks = validTasks.map((t, idx) => ({
+                    id: `task_${Date.now()}_${idx}`,
+                    text: t.trim(),
+                    completed: false,
+                    completedAt: null
+                }));
+                finalNotes = `[LECTURE_TASKS]:${JSON.stringify(structuredTasks)}\n${finalNotes}`.trim();
+            }
+
+            await teachingAPI.createPlan({
+                ...formData,
+                notes: finalNotes
+            });
             toast.success('Lecture plan created successfully!');
             router.push('/teaching/plans');
         } catch (error) {
@@ -233,6 +277,102 @@ export default function CreateLecturePlan() {
                                     placeholder="Brief overview of what will be covered..."
                                     className="input resize-none h-24"
                                 />
+                            </div>
+
+                            {/* Lecture Tasks Checklist Builder */}
+                            <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <div className="flex items-center gap-2">
+                                        <CheckSquare className="w-4 h-4 text-emerald-600" />
+                                        <label className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                            Lecture Delivery Checklist Tasks ({checklistTasks.length})
+                                        </label>
+                                    </div>
+                                    <div className="flex items-center gap-1 text-[10px]">
+                                        <span className="text-slate-400 font-medium mr-0.5">Presets:</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setChecklistTasks([...LECTURE_TASK_PRESETS.theory])}
+                                            className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium transition"
+                                        >
+                                            Theory
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setChecklistTasks([...LECTURE_TASK_PRESETS.lab])}
+                                            className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium transition"
+                                        >
+                                            Lab
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setChecklistTasks([...LECTURE_TASK_PRESETS.revision])}
+                                            className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium transition"
+                                        >
+                                            Revision
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                    {checklistTasks.map((taskText, idx) => (
+                                        <div key={idx} className="flex items-center gap-2">
+                                            <div className="w-5 h-5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-[10px] font-bold shrink-0">
+                                                {idx + 1}
+                                            </div>
+                                            <input
+                                                type="text"
+                                                className="input input-sm flex-1 text-xs bg-white dark:bg-slate-800"
+                                                value={taskText}
+                                                onChange={(e) => {
+                                                    const updated = [...checklistTasks];
+                                                    updated[idx] = e.target.value;
+                                                    setChecklistTasks(updated);
+                                                }}
+                                                placeholder={`Lecture task #${idx + 1}...`}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setChecklistTasks(checklistTasks.filter((_, i) => i !== idx))}
+                                                className="p-1 text-slate-400 hover:text-red-500 rounded"
+                                                title="Delete Task"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="flex items-center gap-2 pt-1">
+                                    <input
+                                        type="text"
+                                        className="input input-sm flex-1 text-xs bg-white dark:bg-slate-800"
+                                        placeholder="Add a new checklist task..."
+                                        value={newTaskInput}
+                                        onChange={(e) => setNewTaskInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                if (newTaskInput.trim()) {
+                                                    setChecklistTasks(prev => [...prev, newTaskInput.trim()]);
+                                                    setNewTaskInput('');
+                                                }
+                                            }
+                                        }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (newTaskInput.trim()) {
+                                                setChecklistTasks(prev => [...prev, newTaskInput.trim()]);
+                                                setNewTaskInput('');
+                                            }
+                                        }}
+                                        className="btn btn-sm bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-xs flex items-center gap-1 border border-slate-300 dark:border-slate-600"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> Add Task
+                                    </button>
+                                </div>
                             </div>
                         </div>
 

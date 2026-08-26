@@ -7,9 +7,30 @@ import { useRouter } from 'next/navigation';
 import api, { teachingAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
-import { BookMarked, Search, Plus, Calendar, Clock, Video, FileText, ArrowRight, Play, Eye } from 'lucide-react';
+import { BookMarked, Search, Plus, Calendar, Clock, Video, FileText, ArrowRight, Play, Eye, CheckSquare } from 'lucide-react';
 import { formatDate } from '@/lib/dateUtils';
 import Link from 'next/link';
+
+const parsePlanTasks = (notes) => {
+    if (!notes || !notes.includes('[LECTURE_TASKS]:')) return null;
+    try {
+        const parts = notes.split('[LECTURE_TASKS]:');
+        const after = parts[1];
+        const jsonEnd = after.indexOf('\n');
+        const jsonStr = jsonEnd !== -1 ? after.substring(0, jsonEnd) : after;
+        const tasks = JSON.parse(jsonStr);
+        if (Array.isArray(tasks) && tasks.length > 0) {
+            const completed = tasks.filter(t => t.completed).length;
+            return {
+                tasks,
+                completed,
+                total: tasks.length,
+                lastCompletedAt: tasks.filter(t => t.completed && t.completedAt).slice(-1)[0]?.completedAt
+            };
+        }
+    } catch (e) {}
+    return null;
+};
 
 export default function LecturePlansPage() {
     const router = useRouter();
@@ -151,6 +172,15 @@ export default function LecturePlansPage() {
                                             <Clock className="w-4 h-4 text-slate-400" />
                                             {plan.scheduledDuration} min • {plan.lectureType}
                                         </div>
+                                        {parsePlanTasks(plan.notes) && (
+                                            <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                                                <CheckSquare className="w-4 h-4 text-emerald-600" />
+                                                <span>
+                                                    {parsePlanTasks(plan.notes).completed}/{parsePlanTasks(plan.notes).total} Tasks Done
+                                                    {parsePlanTasks(plan.notes).lastCompletedAt ? ` (at ${parsePlanTasks(plan.notes).lastCompletedAt})` : ''}
+                                                </span>
+                                            </div>
+                                        )}
                                         <div className="flex items-center gap-2">
                                             <FileText className="w-4 h-4 text-slate-400" />
                                             {plan.resources?.length || 0} resources attached
