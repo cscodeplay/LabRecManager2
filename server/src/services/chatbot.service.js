@@ -250,13 +250,14 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
 - When listing equipment or computers across labs, use LEFT JOIN on labs (e.g. \`FROM labs l LEFT JOIN lab_items li ON l.id = li.lab_id AND (li.item_type ILIKE '%pc%' OR li.item_type ILIKE '%computer%')\`) so all labs are shown in the result even if some labs currently have no items registered yet.
 - Use COUNT(DISTINCT ...) when counting unique entities.
 - Always handle case-insensitivity with ILIKE or LOWER().
-7. **CHART DATA**: When the user explicitly asks for a chart (e.g. pie chart), include this block:
+7. **CHART & GRAPH GENERATION (ONLY WHEN EXPLICITLY REQUESTED)**:
+- BY DEFAULT, DO NOT output a \`\`\`chart block. Present data strictly in clean card / table format via SQL execution.
+- ONLY when the user explicitly requests a "chart", "graph", "plot", or "visualize" (e.g. "show in a pie chart", "bar graph of students", "plot submission trends"), include this block:
    \`\`\`chart
-   {"type":"composed","title":"Chart Title","data":[]}
+   {"type":"bar","title":"Chart Title","data":[]}
    \`\`\`
    - Keep "data" as an empty array []. The system will automatically inject the SQL results into it.
    - Supported chart types: "pie", "doughnut", "bar", "line", "area", "composed".
-   - For "composed" charts, the first metric will be rendered as a Bar, and the rest as Lines. Use this for complex multi-metric comparisons.
 8. **REPORT GENERATION**: When the user asks to generate, export, or download a report (e.g. "generate PDF report for XII NM-A girls", "export Excel report of student groups"), include this tag:
    <!--REPORT_ACTION:{"entities":["students","groups"],"filters":{"gender":"female","classId":""},"format":"pdf"}:END_REPORT-->
    Supported entities: "students", "classes", "groups", "assignments", "lab_pcs". Supported formats: "pdf", "xlsx", "csv".
@@ -2254,16 +2255,21 @@ ${queryResult.error}\n\nFailed Query:\
             }
         }
 
-        // Extract chart data
+        // Check if user explicitly asked for a chart or graph
+        const isChartExplicitlyRequested = /\b(chart|graph|plot|visualize|visualization|pie|bar\s*chart|line\s*chart|area\s*chart|donut\s*chart|doughnut|histogram)\b/i.test(msgLower);
+
+        // Extract chart data ONLY IF explicitly requested by the user
         let chartData = null;
         const chartMatch = aiText.match(/```chart\n?([\s\S]*?)```/);
         if (chartMatch) {
-            try { chartData = JSON.parse(chartMatch[1].trim()); } catch (e) { console.warn('[ChatBot] Chart parse failed:', e.message); }
+            if (isChartExplicitlyRequested) {
+                try { chartData = JSON.parse(chartMatch[1].trim()); } catch (e) { console.warn('[ChatBot] Chart parse failed:', e.message); }
+            }
             aiText = aiText.replace(/```chart\n?[\s\S]*?```/g, '').trim();
         }
 
-        // If we have query results that can be visualized
-        if (queryResult?.success && queryResult.rows?.length >= 1) {
+        // If user explicitly asked for a chart/graph and we have query results to visualize
+        if (isChartExplicitlyRequested && queryResult?.success && queryResult.rows?.length >= 1) {
             const autoChart = this.autoGenerateChart(queryResult);
             if (autoChart) {
                 if (chartData) {
@@ -2276,10 +2282,12 @@ ${queryResult.error}\n\nFailed Query:\
                     }
                     if (!chartData.title || chartData.title === 'Chart Title') chartData.title = autoChart.title;
                     if (!chartData.colors) chartData.colors = autoChart.colors;
-                } else if (queryResult.rows.length >= 2) {
+                } else {
                     chartData = autoChart;
                 }
             }
+        } else {
+            chartData = null;
         }
 
         if (!aiText && queryResult?.success) {
