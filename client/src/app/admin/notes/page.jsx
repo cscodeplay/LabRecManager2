@@ -18,6 +18,8 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
 import DOMPurify from 'dompurify';
+import AICardCopilot from '@/components/AICardCopilot';
+import VoiceInputButton from '@/components/VoiceInputButton';
 import { formatDate, formatDateTime, formatTime, formatRelativeTime } from '@/lib/dateUtils';
 
 const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
@@ -1484,11 +1486,53 @@ export default function AdminNotesPage() {
 
                         {/* Form Body */}
                         <form onSubmit={handleSubmit} className="p-5 overflow-y-auto flex-1 flex flex-col gap-4">
+                            {/* AI Note & Checklist Copilot Card */}
+                            <AICardCopilot
+                                type="notes_checklist"
+                                context={{
+                                    title: formData.title,
+                                    content: formData.content,
+                                    rawText: formData.content?.replace(/<[^>]+>/g, '') || ''
+                                }}
+                                onInsert={(aiData) => {
+                                    if (!aiData) return;
+                                    if (aiData.title && (!formData.title || formData.title.trim() === '')) {
+                                        setFormData(prev => ({ ...prev, title: aiData.title }));
+                                    }
+                                    let insertionHtml = '';
+                                    if (aiData.summary) {
+                                        insertionHtml += `<p><strong>${aiData.summary}</strong></p><br/>`;
+                                    }
+                                    if (aiData.checklist && aiData.checklist.length > 0) {
+                                        insertionHtml += `<p><strong>Checklist Items:</strong></p><ul>` +
+                                            aiData.checklist.map(item =>
+                                                `<li><span class="checklist-item-interactive" data-checked="false" data-timestamp="" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 6px; font-weight: 500;"><span class="checklist-box" style="display: inline-block; width: 14px; height: 14px; border: 1.5px solid #64748b; border-radius: 3px; background: transparent; vertical-align: middle;"></span> ${item.text} <span style="font-size: 10px; color: #94a3b8; font-weight: normal;">[${item.priority || 'Task'}]</span></span></li>`
+                                            ).join('') + `</ul><p></p>`;
+                                    }
+                                    if (insertionHtml) {
+                                        const updated = (formData.content && formData.content !== '<p><br></p>' ? `${formData.content}<br/>` : '') + insertionHtml;
+                                        setFormData(prev => ({ ...prev, content: updated }));
+                                        setSaveStatus('unsaved');
+                                    }
+                                }}
+                            />
+
                             {/* Title Field */}
                             <div>
-                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                                    Note Title <span className="text-red-500">*</span>
-                                </label>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                                        Note Title <span className="text-red-500">*</span>
+                                    </label>
+                                    <VoiceInputButton
+                                        onTranscript={(text) => {
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                title: (prev.title ? `${prev.title} ${text}` : text).trim()
+                                            }));
+                                            setSaveStatus('unsaved');
+                                        }}
+                                    />
+                                </div>
                                 <input
                                     type="text"
                                     required

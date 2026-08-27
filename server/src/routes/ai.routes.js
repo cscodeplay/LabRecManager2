@@ -359,4 +359,67 @@ router.post('/generate-timetable-slots', authenticate, authorize('admin', 'princ
     });
 }));
 
+/**
+ * @route   POST /api/ai/card-assist
+ * @desc    General purpose contextual Card AI copilot (Read -> Edit -> Insert)
+ * @access  Private
+ */
+router.post('/card-assist', authenticate, asyncHandler(async (req, res) => {
+    const { type, prompt = '', context = {}, refinement = '', provider = 'groq' } = req.body;
+
+    if (!type) {
+        return res.status(400).json({ success: false, message: 'Assist type is required' });
+    }
+
+    try {
+        const result = await aiService.executeCardAssist({
+            type,
+            prompt,
+            context,
+            refinement,
+            provider
+        });
+
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (err) {
+        console.error(`[AI Route] Card assist error (${type}):`, err.message);
+        res.status(500).json({
+            success: false,
+            message: err.message || 'AI assist failed'
+        });
+    }
+}));
+
+/**
+ * @route   POST /api/ai/voice-command
+ * @desc    Parse natural language voice commands into structured actions
+ * @access  Private
+ */
+router.post('/voice-command', authenticate, asyncHandler(async (req, res) => {
+    const { speechText, context = {} } = req.body;
+
+    if (!speechText || !speechText.trim()) {
+        return res.status(400).json({ success: false, message: 'speechText is required' });
+    }
+
+    try {
+        const result = await aiService.executeVoiceCommand(speechText, context);
+
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (err) {
+        console.error('[AI Route] Voice command error:', err.message);
+        res.status(500).json({
+            success: false,
+            message: err.message || 'Voice command interpretation failed'
+        });
+    }
+}));
+
 module.exports = router;
+

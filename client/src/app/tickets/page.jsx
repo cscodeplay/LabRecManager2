@@ -8,6 +8,8 @@ import {
     Ticket, Plus, Filter, Search, Clock, CheckCircle2, AlertCircle,
     MessageSquare, User, Monitor, Building2, ChevronRight, X, Send
 } from 'lucide-react';
+import AICardCopilot from '@/components/AICardCopilot';
+import VoiceInputButton from '@/components/VoiceInputButton';
 
 const statusColors = {
     open: 'bg-blue-100 text-blue-700',
@@ -380,24 +382,34 @@ export default function TicketsPage() {
                         </div>
                         <form onSubmit={handleCreate} className="p-4 space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Title *</label>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="block text-sm font-medium text-slate-700">Title *</label>
+                                    <VoiceInputButton
+                                        onTranscript={(text) => setForm(p => ({ ...p, title: (p.title ? `${p.title} ${text}` : text).trim() }))}
+                                    />
+                                </div>
                                 <input
                                     type="text"
                                     value={form.title}
                                     onChange={(e) => setForm({ ...form, title: e.target.value })}
                                     placeholder="Brief summary of the issue"
-                                            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                                     required
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Description *</label>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="block text-sm font-medium text-slate-700">Description *</label>
+                                    <VoiceInputButton
+                                        onTranscript={(text) => setForm(p => ({ ...p, description: (p.description ? `${p.description} ${text}` : text).trim() }))}
+                                    />
+                                </div>
                                 <textarea
                                     value={form.description}
                                     onChange={(e) => setForm({ ...form, description: e.target.value })}
                                     placeholder="Detailed description of the issue..."
                                     rows={3}
-                                            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                                     required
                                 />
                             </div>
@@ -634,6 +646,28 @@ export default function TicketsPage() {
 
                                 {/* Comments */}
                                 <div>
+                                    {/* AI Ticket Resolution Copilot */}
+                                    {selectedTicket.status !== 'closed' && (
+                                        <AICardCopilot
+                                            type="ticket_reply"
+                                            context={{
+                                                ticketNumber: selectedTicket.ticketNumber,
+                                                title: selectedTicket.title,
+                                                description: selectedTicket.description,
+                                                category: selectedTicket.category,
+                                                priority: selectedTicket.priority,
+                                                labName: selectedTicket.lab?.name,
+                                                itemName: selectedTicket.item?.itemType ? `${selectedTicket.item.itemType} - ${selectedTicket.item.itemNumber}` : undefined,
+                                                userName: `${selectedTicket.user?.firstName || ''} ${selectedTicket.user?.lastName || ''}`.trim()
+                                            }}
+                                            onInsert={(aiData) => {
+                                                if (aiData?.draftReply) {
+                                                    setNewComment(aiData.draftReply);
+                                                }
+                                            }}
+                                        />
+                                    )}
+
                                     <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
                                         <MessageSquare size={18} />
                                         Comments ({selectedTicket.comments?.length || 0})
@@ -662,14 +696,17 @@ export default function TicketsPage() {
 
                                     {/* Add Comment */}
                                     {selectedTicket.status !== 'closed' && (
-                                        <div className="flex gap-2 mt-3">
+                                        <div className="flex gap-2 mt-3 items-center">
                                             <input
                                                 type="text"
                                                 value={newComment}
                                                 onChange={(e) => setNewComment(e.target.value)}
                                                 onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
-                                                placeholder="Add a comment..."
+                                                placeholder="Add a comment or paste AI reply..."
                                                 className="flex-1 px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                            />
+                                            <VoiceInputButton
+                                                onTranscript={(text) => setNewComment(p => (p ? `${p} ${text}` : text).trim())}
                                             />
                                             <button
                                                 onClick={handleAddComment}

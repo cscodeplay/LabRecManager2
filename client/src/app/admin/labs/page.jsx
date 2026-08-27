@@ -8,6 +8,8 @@ import { useAuthStore } from '@/lib/store';
 import { labsAPI, usersAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import AICardCopilot from '@/components/AICardCopilot';
+import VoiceInputButton from '@/components/VoiceInputButton';
 import { formatDate, formatDateTime } from '@/lib/dateUtils';
 
 const ITEM_TYPE_ICONS = {
@@ -232,6 +234,22 @@ export default function LabsPage() {
             </header>
 
             <main className="max-w-7xl mx-auto px-4 py-6">
+                {/* AI Lab Health & Maintenance Copilot */}
+                <AICardCopilot
+                    type="lab_maintenance"
+                    context={{
+                        labsCount: labs.length,
+                        totalItems: labs.reduce((sum, l) => sum + (l.items?.length || 0), 0),
+                        labNames: labs.map(l => `${l.name} (${l.items?.length || 0} systems)`).join(', ')
+                    }}
+                    onInsert={(aiData) => {
+                        if (aiData?.summary || aiData?.recommendedActionPlan) {
+                            navigator.clipboard.writeText(`Lab Health Summary:\n${aiData.summary || ''}\n\nAction Plan:\n${aiData.recommendedActionPlan || ''}`);
+                            toast.success('Maintenance report copied to clipboard!');
+                        }
+                    }}
+                />
+
                 {/* Search */}
                 <div className="card p-4 mb-6">
                     <div className="relative">

@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { procurementAPI, uploadAPI } from '@/lib/api';
+import AICardCopilot from '@/components/AICardCopilot';
+import VoiceInputButton from '@/components/VoiceInputButton';
 import toast from 'react-hot-toast';
 import { formatDate } from '@/lib/dateUtils';
 
@@ -2073,6 +2075,26 @@ export default function ProcurementPage() {
                             </div>
                         </div>
                         <div className="p-6">
+                            {!isCreatingNew && (
+                                <AICardCopilot
+                                    type="procurement_po"
+                                    context={{
+                                        title: requestDetail?.request?.title,
+                                        purpose: requestDetail?.request?.purpose,
+                                        status: requestDetail?.request?.status,
+                                        items: requestDetail?.request?.items?.map(i => `${i.itemName} (Qty: ${i.quantity})`).join(', '),
+                                        quotationsCount: requestDetail?.comparison?.length || 0,
+                                        lowestQuote: requestDetail?.comparison?.[0]?.totalAmount
+                                    }}
+                                    onInsert={(aiData) => {
+                                        if (aiData?.poDraft) {
+                                            navigator.clipboard.writeText(aiData.poDraft);
+                                            toast.success('PO draft generated & copied to clipboard!');
+                                        }
+                                    }}
+                                />
+                            )}
+
                             {!isCreatingNew && requestDetail?.request?.purpose && (
                                 <p className="text-slate-600 mb-4">{requestDetail.request.purpose}</p>
                             )}

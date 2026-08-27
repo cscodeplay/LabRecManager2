@@ -7,6 +7,8 @@ import { useTranslation } from 'react-i18next';
 import api, { teachingAPI, timetableAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import AICardCopilot from '@/components/AICardCopilot';
+import VoiceInputButton from '@/components/VoiceInputButton';
 import { Calendar, Save, ArrowLeft, CheckSquare, Plus, Trash2, Clock } from 'lucide-react';
 import Link from 'next/link';
 
@@ -133,6 +135,30 @@ export default function CreateLecturePlan() {
         }
     };
 
+    const selectedClassObj = classes.find(c => c.id === formData.classId);
+    const selectedSubjectObj = subjects.find(s => s.id === formData.subjectId);
+
+    const handleAICardInsert = (aiData) => {
+        if (!aiData) return;
+        setFormData(prev => ({
+            ...prev,
+            title: aiData.topic || aiData.title || prev.title,
+            description: aiData.aim || aiData.description || prev.description,
+            notes: `Objectives:\n${aiData.learningObjectives || ''}\n\nTeaching Aids:\n${aiData.teachingAids || ''}\n\nInteractive Activity:\n${aiData.interactiveActivity || ''}\n\nAssessment Questions:\n${aiData.assessmentQuestions || ''}`,
+            homeworkDescription: aiData.homework || prev.homeworkDescription
+        }));
+
+        if (aiData.assessmentQuestions) {
+            const questionsList = aiData.assessmentQuestions
+                .split('\n')
+                .map(q => q.replace(/^\d+\.\s*/, '').trim())
+                .filter(Boolean);
+            if (questionsList.length > 0) {
+                setChecklistTasks(prev => [...new Set([...prev, ...questionsList])]);
+            }
+        }
+    };
+
     if (!_hasHydrated || fetchingFormData) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
@@ -149,6 +175,19 @@ export default function CreateLecturePlan() {
             />
 
             <main className="max-w-3xl mx-auto px-4 py-8">
+                {/* AI Copilot Card */}
+                <AICardCopilot
+                    type="lesson_plan"
+                    context={{
+                        subjectName: selectedSubjectObj?.name,
+                        className: selectedClassObj?.name,
+                        topic: formData.title,
+                        aim: formData.description,
+                        durationMinutes: formData.scheduledDuration
+                    }}
+                    onInsert={handleAICardInsert}
+                />
+
                 <div className="card p-6 md:p-8 bg-white dark:bg-slate-800 border">
                     <form onSubmit={handleSubmit} className="space-y-6">
                         {/* Course selection */}
@@ -242,7 +281,13 @@ export default function CreateLecturePlan() {
                                     />
                                 </div>
                                 <div className="md:col-span-3">
-                                    <label className="label">Title (English) <span className="text-red-500">*</span></label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="label">Title (English) <span className="text-red-500">*</span></label>
+                                        <VoiceInputButton
+                                            onTranscript={(text) => setFormData(p => ({ ...p, title: (p.title ? `${p.title} ${text}` : text).trim() }))}
+                                            lang="en-IN"
+                                        />
+                                    </div>
                                     <input 
                                         type="text" 
                                         name="title" 
@@ -256,7 +301,13 @@ export default function CreateLecturePlan() {
                             </div>
 
                             <div>
-                                <label className="label">Title (Hindi) - Optional</label>
+                                <div className="flex items-center justify-between">
+                                    <label className="label">Title (Hindi) - Optional</label>
+                                    <VoiceInputButton
+                                        onTranscript={(text) => setFormData(p => ({ ...p, titleHindi: (p.titleHindi ? `${p.titleHindi} ${text}` : text).trim() }))}
+                                        lang="hi-IN"
+                                    />
+                                </div>
                                 <input 
                                     type="text" 
                                     name="titleHindi" 
@@ -269,7 +320,13 @@ export default function CreateLecturePlan() {
                             </div>
 
                             <div>
-                                <label className="label">Overview / Description</label>
+                                <div className="flex items-center justify-between">
+                                    <label className="label">Overview / Description</label>
+                                    <VoiceInputButton
+                                        onTranscript={(text) => setFormData(p => ({ ...p, description: (p.description ? `${p.description} ${text}` : text).trim() }))}
+                                        lang="en-IN"
+                                    />
+                                </div>
                                 <textarea 
                                     name="description" 
                                     value={formData.description} 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu } from 'lucide-react';
+import { Menu, Mic } from 'lucide-react';
 import Sidebar from './Sidebar';
 import NotificationBell from './NotificationBell';
 import ProfileDropdown from './ProfileDropdown';
@@ -10,6 +10,7 @@ import SessionSelector, { ReadOnlyBanner } from './SessionSelector';
 import { DatabaseStatusBadge } from './DatabaseStatus';
 import FloatingChatbot from './FloatingChatbot';
 import GlobalSearch from './GlobalSearch';
+import VoiceHUD from './VoiceHUD';
 import { useAuthStore } from '@/lib/store';
 
 export default function AppLayout({ children }) {
@@ -19,6 +20,19 @@ export default function AppLayout({ children }) {
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [voiceHudOpen, setVoiceHudOpen] = useState(false);
+
+    // Global keyboard shortcut for Voice HUD (Ctrl+Shift+V / Cmd+Shift+V)
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
+                e.preventDefault();
+                setVoiceHudOpen(prev => !prev);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     // Don't show layout on login/register pages
     const isAuthPage = pathname === '/login' || pathname === '/register';
@@ -72,7 +86,7 @@ export default function AppLayout({ children }) {
                 {/* Top Header */}
                 <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200">
                     <div className="px-4 h-16 flex items-center justify-between gap-4">
-                        {/* Left side - Mobile menu & Collapsible Floating Global Search */}
+                        {/* Left side - Mobile menu, Collapsible Floating Global Search & Voice Mic Button */}
                         <div className="flex items-center gap-3 flex-1">
                             {/* Mobile menu button */}
                             <button
@@ -84,6 +98,17 @@ export default function AppLayout({ children }) {
 
                             {/* Collapsible Floating Global Search */}
                             <GlobalSearch />
+
+                            {/* Global Voice Assistant Mic Button */}
+                            <button
+                                type="button"
+                                onClick={() => setVoiceHudOpen(true)}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-600 border border-slate-200 text-xs font-medium transition shadow-sm"
+                                title="Voice AI Assistant (Ctrl+Shift+V)"
+                            >
+                                <Mic className="w-3.5 h-3.5 text-rose-500" />
+                                <span className="hidden sm:inline">Voice AI</span>
+                            </button>
                         </div>
 
                         {/* Right side - Session, Status, Notifications, Profile */}
@@ -105,9 +130,13 @@ export default function AppLayout({ children }) {
                 </main>
             </div>
 
+            {/* Global Voice Interaction HUD */}
+            <VoiceHUD isOpen={voiceHudOpen} onClose={() => setVoiceHudOpen(false)} />
+
             {/* AI Chatbot floating widget — admin/principal only */}
             <FloatingChatbot />
         </div>
     );
 }
+
 

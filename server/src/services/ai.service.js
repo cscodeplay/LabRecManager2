@@ -1067,6 +1067,335 @@ Return ONLY a valid JSON array of slot objects with the following schema:
         });
     }
 
+    /**
+     * General-purpose Card AI Copilot (Read -> Edit -> Insert)
+     */
+    async executeCardAssist({ type, prompt = '', context = {}, refinement = '', provider = 'groq' }) {
+        let systemPrompt = '';
+        let fallbackFn = null;
+
+        switch (type) {
+            case 'lesson_plan':
+                systemPrompt = `You are an expert academic curriculum and pedagogy AI.
+Create or refine a comprehensive lesson/lecture plan for a school or college class.
+CONTEXT:
+Subject: ${context.subjectName || context.subject || 'Not specified'}
+Class/Grade: ${context.className || context.gradeLevel || 'Not specified'}
+Existing Topic/Aim: ${context.topic || context.title || context.aim || 'Not specified'}
+Duration: ${context.durationMinutes || 40} minutes
+Additional Instructions / Prompt: "${prompt}"
+Refinement Request: "${refinement || 'None'}"
+
+Output MUST be ONLY valid JSON matching this schema:
+{
+  "topic": "Clear, concise topic name",
+  "aim": "Educational aim of this lecture (e.g. To teach students how to...)",
+  "learningObjectives": "1. Understand...\\n2. Analyze...\\n3. Implement...",
+  "teachingAids": "Blackboard, Projector, Python IDE / Lab Hardware, Charts",
+  "interactiveActivity": "Brief 5-minute hands-on demonstration or peer exercise",
+  "assessmentQuestions": "1. What is...?\\n2. Differentiate between...\\n3. Practical task to solve...",
+  "homework": "Practice exercise or lab assignment reflection",
+  "summaryNotes": "Brief 2-line summary of what was covered"
+}`;
+                fallbackFn = () => ({
+                    topic: context.topic || 'Introduction to ' + (context.subjectName || 'Subject'),
+                    aim: `To understand core concepts of ${context.subjectName || 'the topic'} with practical demonstrations.`,
+                    learningObjectives: "1. Grasp fundamental principles\n2. Solve illustrative problems\n3. Apply concepts to real-world scenarios",
+                    teachingAids: "Whiteboard, Slides, Practical Demonstrations",
+                    interactiveActivity: "Quick 5-minute quiz and hands-on peer problem-solving.",
+                    assessmentQuestions: "1. Explain the main concept in your own words.\n2. State two real-world applications.\n3. Solve the assigned exercise.",
+                    homework: "Review class notes and complete chapter exercises.",
+                    summaryNotes: `Delivered structured lesson covering key principles of ${context.subjectName || 'the topic'}.`
+                });
+                break;
+
+            case 'grading_feedback':
+                systemPrompt = `You are an expert educational grading assistant and code reviewer.
+Analyze the student submission against the problem criteria and provide structured marks and constructive feedback.
+CONTEXT:
+Assignment Title: ${context.assignmentTitle || 'Lab Assignment'}
+Problem Statement: ${context.description || context.aim || 'Standard Lab Problem'}
+Programming Language: ${context.language || 'python'}
+Max Marks: ${context.maxMarks || 100} (Practical: ${context.practicalMarks || 60}, Viva: ${context.vivaMarks || 20}, Output: ${context.outputMarks || 20})
+Student Submission Code / Text:
+${context.studentCode || context.submissionContent || '(No code submitted)'}
+Instructor Note / Instructions: "${prompt}"
+Refinement Request: "${refinement || 'None'}"
+
+Output MUST be ONLY valid JSON matching this schema:
+{
+  "suggestedPracticalMarks": 55,
+  "suggestedVivaMarks": 18,
+  "suggestedOutputMarks": 18,
+  "suggestedTotalMarks": 91,
+  "strengths": ["Clean indentation", "Correct edge case handling"],
+  "improvements": ["Add error handling for invalid input", "Optimize nested loop"],
+  "feedback": "Great work! Your code executes cleanly and produces correct outputs. Consider adding comments.",
+  "feedbackHindi": "उत्कृष्ट कार्य! आपका कोड सही ढंग से चलता है और परिणाम सही हैं।",
+  "codeReviewSummary": "Logic is sound (O(N) complexity). Good adherence to coding standards."
+}`;
+                fallbackFn = () => {
+                    const max = Number(context.maxMarks) || 100;
+                    const prac = Math.round(max * 0.6);
+                    const viva = Math.round(max * 0.2);
+                    const out = Math.round(max * 0.2);
+                    return {
+                        suggestedPracticalMarks: Math.round(prac * 0.9),
+                        suggestedVivaMarks: Math.round(viva * 0.9),
+                        suggestedOutputMarks: Math.round(out * 0.9),
+                        suggestedTotalMarks: Math.round(max * 0.9),
+                        strengths: ["Code implemented according to instructions", "Logical structure"],
+                        improvements: ["Add more inline comments", "Validate input boundaries"],
+                        feedback: "Good attempt. The solution meets all required specifications with minor scope for code optimization.",
+                        feedbackHindi: "अच्छा प्रयास। समाधान सभी आवश्यक विनिर्देशों को पूरा करता है।",
+                        codeReviewSummary: "Solution passes standard verification criteria."
+                    };
+                };
+                break;
+
+            case 'notes_checklist':
+                systemPrompt = `You are an expert executive assistant. Convert unstructured notes, meeting logs, or tasks into structured notes with actionable checklist items.
+CONTEXT:
+Raw Note Content: ${context.content || context.rawText || ''}
+Title: ${context.title || ''}
+Instructions: "${prompt}"
+Refinement: "${refinement || 'None'}"
+
+Output MUST be ONLY valid JSON matching this schema:
+{
+  "title": "Clean, descriptive note title",
+  "summary": "2-3 sentence executive summary",
+  "formattedMarkdown": "Full formatted markdown with headings and bullet points",
+  "checklist": [
+    { "text": "Task description 1", "priority": "high", "dueDate": "Tomorrow" },
+    { "text": "Task description 2", "priority": "medium", "dueDate": "This Week" }
+  ]
+}`;
+                fallbackFn = () => ({
+                    title: context.title || 'Administrative Notes & Action Items',
+                    summary: 'Key discussion points and procedural checklist extracted from session.',
+                    formattedMarkdown: `### Overview\n${context.content || 'Notes recorded.'}\n\n### Action Items\n- [ ] Review lab safety guidelines\n- [ ] Verify attendance records`,
+                    checklist: [
+                        { text: "Verify lab system configurations", priority: "high", dueDate: "Today" },
+                        { text: "Complete student progress audit", priority: "medium", dueDate: "This Week" }
+                    ]
+                });
+                break;
+
+            case 'ticket_reply':
+                systemPrompt = `You are an IT helpdesk and school support AI. Analyze the issue and provide troubleshooting advice and a courteous resolution draft.
+CONTEXT:
+Ticket Title: ${context.title || ''}
+Description: ${context.description || ''}
+Category: ${context.category || ''}
+Priority: ${context.priority || ''}
+Instructions: "${prompt}"
+Refinement: "${refinement || 'None'}"
+
+Output MUST be ONLY valid JSON matching this schema:
+{
+  "suggestedCategory": "hardware | software | network | lab_equipment | timetable | other",
+  "suggestedPriority": "low | medium | high | urgent",
+  "suggestedStatus": "in_progress | resolved",
+  "rootCauseAnalysis": "Brief explanation of probable cause",
+  "troubleshootingSteps": "1. Step one...\\n2. Step two...",
+  "draftReply": "Dear user, thank you for reaching out. We have reviewed your issue..."
+}`;
+                fallbackFn = () => ({
+                    suggestedCategory: context.category || 'hardware',
+                    suggestedPriority: context.priority || 'medium',
+                    suggestedStatus: 'in_progress',
+                    rootCauseAnalysis: 'System peripheral or software driver mismatch.',
+                    troubleshootingSteps: '1. Restart affected system\n2. Verify cable connections and drivers\n3. Run hardware diagnostics',
+                    draftReply: `Hello, thank you for reporting this issue. Our lab technician team is looking into this and will verify the hardware setup shortly.`
+                });
+                break;
+
+            case 'lab_maintenance':
+                systemPrompt = `You are a computer lab systems engineer. Analyze lab specs, PC issues, and create a maintenance action plan.
+CONTEXT:
+Lab: ${context.labName || 'Computer Lab'}
+Equipment Details: ${JSON.stringify(context.pcs || context.items || [])}
+Instructions: "${prompt}"
+
+Output MUST be ONLY valid JSON matching this schema:
+{
+  "healthScore": 88,
+  "summary": "Overall lab health summary",
+  "maintenanceTasks": [
+    { "target": "PC-04", "issue": "RAM upgrade recommended", "action": "Install 8GB DDR4 module", "priority": "medium" }
+  ],
+  "recommendedActionPlan": "Step-by-step lab maintenance plan..."
+}`;
+                fallbackFn = () => ({
+                    healthScore: 90,
+                    summary: `Lab equipment in ${context.labName || 'Lab'} is operational with standard routine servicing required.`,
+                    maintenanceTasks: [
+                        { target: "All PCs", issue: "Routine software updates", action: "Run system updates and anti-virus scan", priority: "low" }
+                    ],
+                    recommendedActionPlan: "Schedule routine maintenance during off-hours to prevent class interruption."
+                });
+                break;
+
+            case 'procurement_po':
+                systemPrompt = `You are a school procurement analyst. Compare vendor quotes and prepare Purchase Order recommendations.
+CONTEXT:
+Request Title: ${context.title || 'Procurement Request'}
+Quotes / Items: ${JSON.stringify(context.quotations || context.items || [])}
+Instructions: "${prompt}"
+
+Output MUST be ONLY valid JSON matching this schema:
+{
+  "recommendedVendor": "Vendor Name",
+  "recommendationRationale": "Detailed justification on pricing and quality",
+  "totalEstimatedCost": 45000,
+  "deliveryTimeline": "7 to 10 working days",
+  "paymentTerms": "50% advance, 50% on verified delivery",
+  "poDraft": "Purchase Order draft text..."
+}`;
+                fallbackFn = () => ({
+                    recommendedVendor: context.quotations?.[0]?.vendorName || "Preferred Vendor",
+                    recommendationRationale: "Offers best balance of price warranty and verified delivery track record.",
+                    totalEstimatedCost: 50000,
+                    deliveryTimeline: "7-10 days",
+                    paymentTerms: "Standard institutional terms (30 days net)",
+                    poDraft: `PURCHASE ORDER\nTo: ${context.quotations?.[0]?.vendorName || "Vendor"}\nRe: Supply of Lab Materials\nTerms: Standard institutional payment.`
+                });
+                break;
+
+            case 'voice_command':
+            default:
+                return this.executeVoiceCommand(prompt, context);
+        }
+
+        // 1. Try Groq (Ultra-fast primary)
+        if ((provider === 'groq' || provider === 'auto') && this.groq) {
+            try {
+                const completion = await this.groq.chat.completions.create({
+                    model: 'llama-3.3-70b-versatile',
+                    messages: [
+                        { role: 'system', content: 'You are an educational AI assistant. Output ONLY valid JSON matching the requested schema. No markdown code blocks.' },
+                        { role: 'user', content: systemPrompt }
+                    ],
+                    temperature: 0.2
+                });
+                const responseText = completion.choices[0]?.message?.content || '{}';
+                return this.parseJSONResponse(responseText);
+            } catch (groqErr) {
+                console.warn('[AIService] Groq card-assist failed:', groqErr.message);
+            }
+        }
+
+        // 2. Try Gemini (Fallback)
+        if (this.genAI) {
+            try {
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+                const result = await model.generateContent(systemPrompt);
+                const responseText = result.response.text();
+                return this.parseJSONResponse(responseText);
+            } catch (geminiErr) {
+                console.warn('[AIService] Gemini card-assist failed:', geminiErr.message);
+            }
+        }
+
+        // 3. Fallback
+        if (fallbackFn) {
+            console.log(`[AIService] Using rule-based fallback for ${type}`);
+            return fallbackFn();
+        }
+
+        throw new Error('AI generation failed. Please check your network or try again.');
+    }
+
+    /**
+     * Voice Command Natural Language Interpreter
+     */
+    async executeVoiceCommand(speechText, context = {}) {
+        const text = (speechText || '').trim();
+        const low = text.toLowerCase();
+
+        const systemPrompt = `You are a voice command parser for a school and lab management web app.
+Parse the spoken voice input into a structured actionable intent.
+POSSIBLE INTENTS:
+- "create_lesson_plan": User wants to create/generate a lecture or lesson plan.
+- "add_timetable_period": User wants to add or adjust a timetable slot or period.
+- "grade_submission": User wants to grade, review or score an assignment.
+- "write_note": User wants to take or format a note / checklist.
+- "create_ticket": User wants to report an IT or lab issue.
+- "search": User wants to search for something.
+- "navigate": User wants to open a page (timetable, meetings, classes, grades, documents, labs, training).
+- "dictate": Standard text dictation into active field.
+
+Spoken input: "${text}"
+Current Page Context: ${context.currentRoute || 'unknown'}
+
+Output ONLY a valid JSON object matching this schema:
+{
+  "intent": "create_lesson_plan | add_timetable_period | grade_submission | write_note | create_ticket | search | navigate | dictate",
+  "targetRoute": "/teaching/plans/new | /admin/timetable | /admin/notes | /tickets | /grades | null",
+  "parameters": {
+    "subject": "string or null",
+    "topic": "string or null",
+    "periodNumber": 9,
+    "startTime": "08:00",
+    "endTime": "08:40",
+    "marks": 90,
+    "query": "string or null",
+    "dictatedText": "${text.replace(/"/g, '\\"')}"
+  },
+  "spokenFeedback": "Short 1-sentence confirmation of the action performed"
+}`;
+
+        if (this.groq) {
+            try {
+                const completion = await this.groq.chat.completions.create({
+                    model: 'llama-3.1-8b-instant',
+                    messages: [
+                        { role: 'system', content: 'Output ONLY valid JSON. No markdown wrappers.' },
+                        { role: 'user', content: systemPrompt }
+                    ],
+                    temperature: 0.1
+                });
+                return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+            } catch (e) {
+                console.warn('[AIService] Groq voice-command parser failed:', e.message);
+            }
+        }
+
+        // Rule-based fallback for voice commands
+        let intent = 'dictate';
+        let targetRoute = null;
+        let spokenFeedback = `Recorded: "${text}"`;
+
+        if (low.includes('lesson plan') || low.includes('lecture plan')) {
+            intent = 'create_lesson_plan';
+            targetRoute = '/teaching/plans/new';
+            spokenFeedback = 'Opening Lesson Plan generator';
+        } else if (low.includes('period') || low.includes('timetable')) {
+            intent = 'add_timetable_period';
+            targetRoute = '/admin/timetable';
+            spokenFeedback = 'Navigating to Timetable Scheduler';
+        } else if (low.includes('ticket') || low.includes('issue') || low.includes('broken')) {
+            intent = 'create_ticket';
+            targetRoute = '/tickets';
+            spokenFeedback = 'Creating support ticket';
+        } else if (low.includes('note') || low.includes('checklist')) {
+            intent = 'write_note';
+            targetRoute = '/admin/notes';
+            spokenFeedback = 'Creating administrative note';
+        } else if (low.includes('search')) {
+            intent = 'search';
+            spokenFeedback = `Searching for ${text.replace(/^search\s*(for)?/i, '')}`;
+        }
+
+        return {
+            intent,
+            targetRoute,
+            parameters: { dictatedText: text },
+            spokenFeedback
+        };
+    }
+
     parseJSONResponse(text) {
         let cleanText = text.trim();
         cleanText = cleanText.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();

@@ -11,6 +11,8 @@ import {
 import { useAuthStore } from '@/lib/store';
 import { submissionsAPI, gradesAPI, compilerAPI } from '@/lib/api';
 import InteractiveTerminal from '@/components/InteractiveTerminal';
+import AICardCopilot from '@/components/AICardCopilot';
+import VoiceInputButton from '@/components/VoiceInputButton';
 import toast from 'react-hot-toast';
 
 // Helper to get component max marks breakdown dynamically
@@ -305,19 +307,46 @@ export default function SubmissionDetailPage() {
 
                         {/* Grading Form (for instructors) */}
                         {canGrade && (
-                            <div className="card p-6">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h2 className="text-lg font-semibold text-slate-900">Grade Submission</h2>
-                                    {!showGradeForm && (
-                                        <button
-                                            onClick={() => setShowGradeForm(true)}
-                                            className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
-                                            title="Grade Now"
-                                        >
-                                            <Award className="w-5 h-5" />
-                                        </button>
-                                    )}
-                                </div>
+                            <>
+                                {/* AI Grading & Code Review Copilot */}
+                                <AICardCopilot
+                                    type="grading_feedback"
+                                    context={{
+                                        assignmentTitle: submission.assignment?.title,
+                                        description: submission.assignment?.description,
+                                        aim: submission.assignment?.aim,
+                                        language: submission.assignment?.programmingLanguage || 'python',
+                                        studentName: submission.student ? `${submission.student.firstName} ${submission.student.lastName || ''}`.trim() : 'Student',
+                                        studentCode: submission.codeContent,
+                                        submissionContent: submission.outputContent || submission.observations,
+                                        maxMarks: marksBreakdown.maxTotal,
+                                        practicalMarks: marksBreakdown.maxPractical,
+                                        vivaMarks: marksBreakdown.maxViva,
+                                        outputMarks: marksBreakdown.maxOutput
+                                    }}
+                                    onInsert={(aiData) => {
+                                        setShowGradeForm(true);
+                                        if (aiData.suggestedPracticalMarks !== undefined) setValue('practicalMarks', aiData.suggestedPracticalMarks);
+                                        if (aiData.suggestedVivaMarks !== undefined) setValue('vivaMarks', aiData.suggestedVivaMarks);
+                                        if (aiData.suggestedOutputMarks !== undefined) setValue('outputMarks', aiData.suggestedOutputMarks);
+                                        if (aiData.feedback) setValue('feedback', aiData.feedback);
+                                        if (aiData.feedbackHindi) setValue('feedbackHindi', aiData.feedbackHindi);
+                                    }}
+                                />
+
+                                <div className="card p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h2 className="text-lg font-semibold text-slate-900">Grade Submission</h2>
+                                        {!showGradeForm && (
+                                            <button
+                                                onClick={() => setShowGradeForm(true)}
+                                                className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
+                                                title="Grade Now"
+                                            >
+                                                <Award className="w-5 h-5" />
+                                            </button>
+                                        )}
+                                    </div>
 
                                 {showGradeForm && (() => {
                                     const { maxPractical, maxOutput, maxViva, maxTotal } = getAssignmentMarksBreakdown(submission.assignment);
@@ -388,7 +417,15 @@ export default function SubmissionDetailPage() {
                                             </div>
 
                                         <div>
-                                            <label className="label">Code Feedback</label>
+                                            <div className="flex items-center justify-between">
+                                                <label className="label">Code Feedback</label>
+                                                <VoiceInputButton
+                                                    onTranscript={(text) => {
+                                                        const cur = getValues('codeFeedback') || '';
+                                                        setValue('codeFeedback', (cur ? `${cur} ${text}` : text).trim());
+                                                    }}
+                                                />
+                                            </div>
                                             <textarea
                                                 className="input min-h-[80px]"
                                                 placeholder="Feedback on the code quality, logic, etc."
@@ -397,7 +434,15 @@ export default function SubmissionDetailPage() {
                                         </div>
 
                                         <div>
-                                            <label className="label">Output Feedback</label>
+                                            <div className="flex items-center justify-between">
+                                                <label className="label">Output Feedback</label>
+                                                <VoiceInputButton
+                                                    onTranscript={(text) => {
+                                                        const cur = getValues('outputFeedback') || '';
+                                                        setValue('outputFeedback', (cur ? `${cur} ${text}` : text).trim());
+                                                    }}
+                                                />
+                                            </div>
                                             <textarea
                                                 className="input min-h-[80px]"
                                                 placeholder="Feedback on the output correctness"
@@ -406,11 +451,19 @@ export default function SubmissionDetailPage() {
                                         </div>
 
                                         <div>
-                                            <label className="label">General Remarks</label>
+                                            <div className="flex items-center justify-between">
+                                                <label className="label">General Remarks</label>
+                                                <VoiceInputButton
+                                                    onTranscript={(text) => {
+                                                        const cur = getValues('remarks') || '';
+                                                        setValue('remarks', (cur ? `${cur} ${text}` : text).trim());
+                                                    }}
+                                                />
+                                            </div>
                                             <textarea
                                                 className="input min-h-[80px]"
-                                                placeholder="Overall comments and suggestions"
-                                                {...register('generalRemarks')}
+                                                placeholder="General remarks on overall performance..."
+                                                {...register('remarks')}
                                             />
                                         </div>
 
@@ -444,6 +497,7 @@ export default function SubmissionDetailPage() {
                                     );
                                 })()}
                             </div>
+                            </>
                         )}
                     </div>
 
