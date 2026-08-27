@@ -44,7 +44,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     // Safe ILIKE filter
     const textFilter = { contains: query, mode: 'insensitive' };
 
-    // Concurrently execute searches across domains
+    // Concurrently execute searches across all 10 domains with robust error handling
     const [
         meetings,
         assignments,
@@ -63,16 +63,13 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 schoolId,
                 OR: [
                     { title: textFilter },
-                    { description: textFilter },
                     { meetingLink: textFilter }
-                ],
-                deletedAt: null
+                ]
             },
-            take: 6,
+            take: 8,
             select: {
                 id: true,
                 title: true,
-                description: true,
                 type: true,
                 status: true,
                 mode: true,
@@ -80,7 +77,10 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 host: { select: { firstName: true, lastName: true } }
             },
             orderBy: { scheduledAt: 'desc' }
-        }).catch(() => []),
+        }).catch(err => {
+            console.error('[Search] Meetings error:', err.message);
+            return [];
+        }),
 
         // 2. Assignments
         prisma.assignment.findMany({
@@ -88,93 +88,112 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 schoolId,
                 OR: [
                     { title: textFilter },
-                    { description: textFilter }
-                ],
-                deletedAt: null
+                    { titleHindi: textFilter },
+                    { description: textFilter },
+                    { aim: textFilter }
+                ]
             },
-            take: 6,
+            take: 8,
             select: {
                 id: true,
                 title: true,
+                titleHindi: true,
                 description: true,
-                type: true,
-                dueDate: true,
+                assignmentType: true,
+                due_date: true,
                 subject: { select: { name: true, code: true } }
             },
             orderBy: { createdAt: 'desc' }
-        }).catch(() => []),
+        }).catch(err => {
+            console.error('[Search] Assignments error:', err.message);
+            return [];
+        }),
 
         // 3. Documents
         prisma.document.findMany({
             where: {
                 schoolId,
+                deletedAt: null,
                 OR: [
-                    { title: textFilter },
+                    { name: textFilter },
+                    { fileName: textFilter },
                     { description: textFilter },
-                    { originalName: textFilter },
-                    { tags: { has: query } }
-                ],
-                isDeleted: false
+                    { category: textFilter }
+                ]
             },
-            take: 6,
+            take: 8,
             select: {
                 id: true,
-                title: true,
+                name: true,
+                fileName: true,
                 description: true,
-                originalName: true,
+                category: true,
                 fileType: true,
                 fileSize: true,
                 folder: { select: { name: true } },
                 createdAt: true
             },
             orderBy: { createdAt: 'desc' }
-        }).catch(() => []),
+        }).catch(err => {
+            console.error('[Search] Documents error:', err.message);
+            return [];
+        }),
 
         // 4. Notes (Admin Notes)
         (isSchoolAdmin || isInstructor) ? prisma.adminNote.findMany({
             where: {
-                schoolId,
+                author: { schoolId },
                 OR: [
                     { title: textFilter },
-                    { content: textFilter }
+                    { content: textFilter },
+                    { category: textFilter }
                 ]
             },
-            take: 6,
+            take: 8,
             select: {
                 id: true,
                 title: true,
                 content: true,
-                color: true,
+                category: true,
                 updatedAt: true
             },
             orderBy: { updatedAt: 'desc' }
-        }).catch(() => []) : Promise.resolve([]),
+        }).catch(err => {
+            console.error('[Search] Notes error:', err.message);
+            return [];
+        }) : Promise.resolve([]),
 
         // 5. Users (Students, Instructors, Admins)
         (isSchoolAdmin || isInstructor) ? prisma.user.findMany({
             where: {
                 schoolId,
+                isActive: true,
                 OR: [
                     { firstName: textFilter },
+                    { firstNameHindi: textFilter },
                     { lastName: textFilter },
+                    { lastNameHindi: textFilter },
                     { email: textFilter },
                     { studentId: textFilter },
                     { admissionNumber: textFilter }
                 ]
             },
-            take: 6,
+            take: 8,
             select: {
                 id: true,
                 firstName: true,
                 lastName: true,
                 email: true,
                 role: true,
-                avatar: true,
+                profileImageUrl: true,
                 studentId: true,
                 admissionNumber: true
             },
             orderBy: { firstName: 'asc' }
-        }).catch(() => []) : Promise.resolve([]),
+        }).catch(err => {
+            console.error('[Search] Users error:', err.message);
+            return [];
+        }) : Promise.resolve([]),
 
         // 6. Classes
         prisma.class.findMany({
@@ -182,19 +201,25 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 schoolId,
                 OR: [
                     { name: textFilter },
-                    { gradeLevel: textFilter },
-                    { section: textFilter }
+                    { nameHindi: textFilter },
+                    { section: textFilter },
+                    { stream: textFilter }
                 ]
             },
-            take: 6,
+            take: 8,
             select: {
                 id: true,
                 name: true,
+                nameHindi: true,
                 gradeLevel: true,
-                section: true
+                section: true,
+                stream: true
             },
             orderBy: { name: 'asc' }
-        }).catch(() => []),
+        }).catch(err => {
+            console.error('[Search] Classes error:', err.message);
+            return [];
+        }),
 
         // 7. Training Modules
         prisma.trainingModule.findMany({
@@ -202,62 +227,78 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 schoolId,
                 OR: [
                     { title: textFilter },
-                    { description: textFilter }
+                    { titleHindi: textFilter },
+                    { description: textFilter },
+                    { language: textFilter }
                 ]
             },
-            take: 6,
+            take: 8,
             select: {
                 id: true,
                 title: true,
+                titleHindi: true,
                 description: true,
-                category: true,
-                points: true
+                language: true,
+                totalUnits: true,
+                totalExercises: true
             },
             orderBy: { title: 'asc' }
-        }).catch(() => []),
+        }).catch(err => {
+            console.error('[Search] Training error:', err.message);
+            return [];
+        }),
 
         // 8. Tickets
         prisma.ticket.findMany({
             where: {
-                schoolId,
+                createdBy: { schoolId },
                 OR: [
                     { title: textFilter },
-                    { description: textFilter }
+                    { description: textFilter },
+                    { ticketNumber: textFilter }
                 ]
             },
-            take: 6,
+            take: 8,
             select: {
                 id: true,
+                ticketNumber: true,
                 title: true,
                 description: true,
-                status: true,
+                category: true,
                 priority: true,
+                status: true,
                 createdAt: true
             },
             orderBy: { createdAt: 'desc' }
-        }).catch(() => []),
+        }).catch(err => {
+            console.error('[Search] Tickets error:', err.message);
+            return [];
+        }),
 
-        // 9. Labs & Items
+        // 9. Labs & Rooms
         (isSchoolAdmin || isInstructor) ? prisma.lab.findMany({
             where: {
                 schoolId,
                 OR: [
                     { name: textFilter },
-                    { code: textFilter },
-                    { roomNumber: textFilter },
-                    { description: textFilter }
+                    { nameHindi: textFilter },
+                    { roomNumber: textFilter }
                 ]
             },
-            take: 6,
+            take: 8,
             select: {
                 id: true,
                 name: true,
-                code: true,
+                nameHindi: true,
                 roomNumber: true,
-                building: true
+                capacity: true,
+                status: true
             },
             orderBy: { name: 'asc' }
-        }).catch(() => []) : Promise.resolve([]),
+        }).catch(err => {
+            console.error('[Search] Labs error:', err.message);
+            return [];
+        }) : Promise.resolve([]),
 
         // 10. Teaching / Lecture Plans
         (isSchoolAdmin || isInstructor) ? prisma.lecturePlan.findMany({
@@ -265,14 +306,16 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 schoolId,
                 OR: [
                     { title: textFilter },
+                    { titleHindi: textFilter },
                     { description: textFilter },
                     { notes: textFilter }
                 ]
             },
-            take: 6,
+            take: 8,
             select: {
                 id: true,
                 title: true,
+                titleHindi: true,
                 description: true,
                 scheduledDate: true,
                 lectureType: true,
@@ -280,7 +323,10 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 subject: { select: { name: true } }
             },
             orderBy: { scheduledDate: 'desc' }
-        }).catch(() => []) : Promise.resolve([])
+        }).catch(err => {
+            console.error('[Search] Plans error:', err.message);
+            return [];
+        }) : Promise.resolve([])
     ]);
 
     const totalResults =
