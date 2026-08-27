@@ -85,7 +85,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+            const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
             let lastGeminiError = null;
             for (const modelName of geminiModels) {
                 try {
@@ -167,7 +167,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+            const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
             let lastGeminiError = null;
             for (const modelName of geminiModels) {
                 try {
@@ -249,7 +249,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+            const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -325,7 +325,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+            const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -395,7 +395,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+            const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -483,7 +483,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+            const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -689,7 +689,7 @@ FORMATTING RULES:
         // 1. Try Gemini first
         if (this.genAI) {
             try {
-                const modelNames = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest', 'gemini-1.5-flash'];
+                const modelNames = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
                 for (const modelName of modelNames) {
                     try {
                         const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -816,7 +816,7 @@ Return ONLY a valid JSON array of slot objects with the following schema:
         if (this.genAI) {
             try {
                 console.log('[AIService] Generating timetable slots via Gemini...');
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
                 const result = await model.generateContent(systemPrompt);
                 const responseText = result.response.text();
                 const parsed = this.parseJSONResponse(responseText);
@@ -1289,7 +1289,7 @@ Output MUST be ONLY valid JSON matching this schema:
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
             try {
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
                 const result = await model.generateContent(systemPrompt);
                 const responseText = result.response.text();
                 return this.parseJSONResponse(responseText);

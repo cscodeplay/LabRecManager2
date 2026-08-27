@@ -33,7 +33,7 @@ class ChatbotService {
         const geminiKey = process.env.GEMINI_API_KEY;
         if (geminiKey) {
             const genAI = new GoogleGenerativeAI(geminiKey);
-            const geminiModelNames = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+            const geminiModelNames = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
             this.geminiModels = geminiModelNames.map(name => ({
                 name, instance: genAI.getGenerativeModel({ model: name })
             }));
@@ -317,7 +317,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     // ═══ GROQ CALL ═══
     async callGroq(messages) {
         if (!this.groqClient) throw new Error('Groq not configured');
-        const groqModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
+        const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound', 'qwen/qwen3.6-27b'];
         let lastError = null;
 
         for (const model of groqModels) {
@@ -2094,10 +2094,10 @@ ${documentContext || message}
         } else if (provider === 'github' && this.githubToken) {
             providers = [tryGitHub, tryGemini, tryGroq, trySambaNova];
         } else {
-            // Auto order based on what is available
+            // Auto order: Gemini first (1M context + handles full DB schema without 413 error), Groq fallback
             const available = [];
-            if (this.groqClient) available.push(tryGroq);
             if (this.geminiModels.length) available.push(tryGemini);
+            if (this.groqClient) available.push(tryGroq);
             if (this.sambaNovaKey) available.push(trySambaNova);
             if (this.githubToken) available.push(tryGitHub);
             providers = available;
