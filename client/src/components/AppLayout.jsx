@@ -86,7 +86,7 @@ export default function AppLayout({ children }) {
                 {/* Top Header */}
                 <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200">
                     <div className="px-4 h-16 flex items-center justify-between gap-4">
-                        {/* Left side - Mobile menu, Collapsible Floating Global Search & Voice Mic Button */}
+                        {/* Left side - Mobile menu & Voice Mic Button */}
                         <div className="flex items-center gap-3 flex-1">
                             {/* Mobile menu button */}
                             <button
@@ -95,9 +95,6 @@ export default function AppLayout({ children }) {
                             >
                                 <Menu className="w-5 h-5 text-slate-600" />
                             </button>
-
-                            {/* Collapsible Floating Global Search */}
-                            <GlobalSearch />
 
                             {/* Global Voice Assistant Mic Button */}
                             <button
@@ -129,6 +126,9 @@ export default function AppLayout({ children }) {
                     {children}
                 </main>
             </div>
+
+            {/* Keyboard-Invoked Global Search Dialog (⌘K / Ctrl+K) */}
+            <GlobalSearch />
 
             {/* Global Voice Interaction HUD */}
             <VoiceHUD isOpen={voiceHudOpen} onClose={() => setVoiceHudOpen(false)} />

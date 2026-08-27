@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
     Search, X, Video, FileText, Folder, BookOpen, Users,
@@ -26,10 +27,15 @@ const CATEGORIES = [
 
 export default function GlobalSearch() {
     const router = useRouter();
+    const [mounted, setMounted] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [activeCategory, setActiveCategory] = useState('all');
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
     const [results, setResults] = useState({
         meetings: [],
         assignments: [],
@@ -309,11 +315,11 @@ export default function GlobalSearch() {
     };
 
     // The top search bar has been removed as requested; only the modal invoked by Cmd+K / Ctrl+K renders.
-    if (!isOpen) return null;
+    if (!isOpen || !mounted) return null;
 
-    return (
+    return createPortal(
         <div
-            className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-md flex items-start justify-center pt-10 sm:pt-16 px-3 sm:px-4 animate-in fade-in duration-150"
+            className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-start justify-center pt-10 sm:pt-16 px-3 sm:px-4 animate-in fade-in duration-150"
             onClick={() => setIsOpen(false)}
         >
             <div
@@ -500,6 +506,7 @@ export default function GlobalSearch() {
                     </span>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

@@ -655,10 +655,153 @@ Return JSON ONLY with this exact format:
                     assignmentAction: null,
                     noteAction: null,
                     classAction,
+                    userAction: null,
                     provider: 'auto'
                 };
             } catch (err) {
                 console.error('[ChatBot] Class creation intent error:', err);
+            }
+        }
+
+        // Intent detection: User Creation (e.g. "create student Rahul Sharma email rahul@school.com in class 11 Non-Medical A", "add instructor Dr. Vikas email vikas@school.com", "create user admin Rohit")
+        const isUserCreationIntent = (
+            (userRole === 'admin' || userRole === 'principal' || userRole === 'instructor') &&
+            (/\b(create|add|register|setup|new|enroll)\s+(a\s+|an\s+)?(user|student|instructor|teacher|faculty|admin|lab\s*assistant)\b/i.test(msgLower) ||
+             /\b(student|instructor|user)\s+(creation|create|add|registration)\b/i.test(msgLower) ||
+             /^(create|add|register)\s+(student|user|instructor|teacher)\b/i.test(msgLower.trim()) ||
+             msgLower.includes('ਵਿਦਿਆਰਥੀ ਬਣਾਓ') || msgLower.includes('ਨਵਾਂ ਯੂਜ਼ਰ') ||
+             msgLower.includes('छात्र जोड़ें') || msgLower.includes('नया यूजर')) &&
+            !msgLower.includes('assignment') &&
+            !msgLower.includes('meeting') &&
+            !msgLower.includes('document')
+        );
+
+        if (isUserCreationIntent) {
+            try {
+                console.log('[ChatBot] User creation intent detected:', message);
+
+                const classes = await prisma.class.findMany({
+                    select: { id: true, name: true, gradeLevel: true, section: true }
+                }).catch(() => []);
+
+                // Detect role
+                let role = 'student';
+                if (/\b(instructor|teacher|faculty|prof|professor)\b/i.test(message)) {
+                    role = 'instructor';
+                } else if (/\b(admin|administrator|principal)\b/i.test(message)) {
+                    role = 'admin';
+                } else if (/\b(lab\s*assistant|technician)\b/i.test(message)) {
+                    role = 'lab_assistant';
+                }
+
+                // Match Class if mentioned
+                let targetClassId = null;
+                let targetClassName = null;
+                for (const c of classes) {
+                    if (msgLower.includes(c.name.toLowerCase()) || msgLower.includes(`class ${c.name.toLowerCase()}`)) {
+                        targetClassId = c.id;
+                        targetClassName = c.name;
+                        break;
+                    }
+                }
+
+                // AI LLM extraction for high precision
+                const userExtractPrompt = `Extract user creation details from the user prompt:
+Prompt: "${message}"
+
+Available Classes: ${classes.map(c => `${c.id}: ${c.name}`).join(', ')}
+
+Return JSON ONLY in this format:
+{
+  "firstName": "string",
+  "lastName": "string",
+  "email": "string or empty",
+  "role": "student" | "instructor" | "admin" | "lab_assistant",
+  "admissionNumber": "string or empty",
+  "phone": "string or empty",
+  "matchedClassId": "string or null",
+  "matchedClassName": "string or null"
+}`;
+
+                let extracted = null;
+                if (this.groqClient) {
+                    try {
+                        const res = await this.groqClient.chat.completions.create({
+                            model: 'llama-3.3-70b-versatile',
+                            messages: [{ role: 'user', content: userExtractPrompt }],
+                            temperature: 0.1,
+                            response_format: { type: 'json_object' }
+                        });
+                        const raw = res.choices[0]?.message?.content || '';
+                        extracted = JSON.parse(raw);
+                    } catch (e) {
+                        console.warn('[ChatBot] Groq user parsing fallback to rule-based:', e.message);
+                    }
+                }
+
+                let firstName = extracted?.firstName || '';
+                let lastName = extracted?.lastName || '';
+                let email = extracted?.email || '';
+                let admissionNumber = extracted?.admissionNumber || '';
+                let phone = extracted?.phone || '';
+                if (extracted?.role) role = extracted.role;
+                if (extracted?.matchedClassId) targetClassId = extracted.matchedClassId;
+                if (extracted?.matchedClassName) targetClassName = extracted.matchedClassName;
+
+                // Fallback rule-based name extraction if LLM didn't extract names
+                if (!firstName) {
+                    const emailMatch = message.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+                    if (emailMatch) email = emailMatch[1];
+
+                    const nameMatch = message.match(/(?:create|add|register)\s+(?:student|user|instructor|teacher|admin)?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i);
+                    if (nameMatch) {
+                        const parts = nameMatch[1].trim().split(/\s+/);
+                        firstName = parts[0];
+                        lastName = parts.slice(1).join(' ');
+                    }
+                }
+
+                if (!firstName) firstName = 'New';
+                if (!lastName) lastName = role === 'student' ? 'Student' : (role === 'instructor' ? 'Instructor' : 'User');
+                if (!email) {
+                    const cleanFirst = firstName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const cleanLast = lastName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    email = `${cleanFirst}.${cleanLast}${Math.floor(100 + Math.random() * 900)}@school.edu`;
+                }
+
+                const userAction = {
+                    isDraft: true,
+                    isConfirmed: false,
+                    isCancelled: false,
+                    firstName,
+                    lastName,
+                    email,
+                    role,
+                    phone,
+                    admissionNumber,
+                    classId: targetClassId,
+                    className: targetClassName || (classes.find(c => c.id === targetClassId)?.name || null),
+                    password: 'Welcome123!'
+                };
+
+                return {
+                    message: `👤 **User Draft Created! (Pending Confirmation)**\n\nI have prepared the draft for **${firstName} ${lastName}** (${role.toUpperCase()}${userAction.className ? ` • Class: ${userAction.className}` : ''}):\n- **Email**: \`${email}\`\n- **Role**: \`${role}\`\n\nPlease review or edit the details in the confirmation card below and click **Confirm & Create User**:`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    meetingAction: null,
+                    calendarAction: null,
+                    assignmentAction: null,
+                    noteAction: null,
+                    classAction: null,
+                    timetableAction: null,
+                    periodTimingAction: null,
+                    userAction,
+                    provider: 'auto'
+                };
+            } catch (err) {
+                console.error('[ChatBot] User creation intent error:', err);
             }
         }
 
@@ -850,6 +993,7 @@ Return JSON ONLY with this exact format:
                         classAction: null,
                         timetableAction: null,
                         periodTimingAction,
+                        userAction: null,
                         provider: 'auto'
                     };
                 }

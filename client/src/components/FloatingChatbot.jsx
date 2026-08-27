@@ -13,7 +13,8 @@ import {
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
-import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI, classesAPI, timetableAPI } from '@/lib/api';
+import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI, classesAPI, timetableAPI, usersAPI } from '@/lib/api';
+import VoiceInputButton from './VoiceInputButton';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
@@ -2596,6 +2597,302 @@ function CalendarActionCard({ action }) {
     );
 }
 
+/* ─── User Creation Action Card ─── */
+function UserActionCard({ action }) {
+    const [isEditing, setIsEditing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
+    const [createdUser, setCreatedUser] = useState(null);
+    const [availableClasses, setAvailableClasses] = useState([]);
+
+    // Form state
+    const [firstName, setFirstName] = useState(action?.firstName || '');
+    const [lastName, setLastName] = useState(action?.lastName || '');
+    const [email, setEmail] = useState(action?.email || '');
+    const [role, setRole] = useState(action?.role || 'student');
+    const [admissionNumber, setAdmissionNumber] = useState(action?.admissionNumber || '');
+    const [phone, setPhone] = useState(action?.phone || '');
+    const [classId, setClassId] = useState(action?.classId || '');
+    const [password, setPassword] = useState(action?.password || 'Welcome123!');
+
+    useEffect(() => {
+        if (action) {
+            setFirstName(action.firstName || '');
+            setLastName(action.lastName || '');
+            setEmail(action.email || '');
+            setRole(action.role || 'student');
+            setAdmissionNumber(action.admissionNumber || '');
+            setPhone(action.phone || '');
+            setClassId(action.classId || '');
+            setPassword(action.password || 'Welcome123!');
+            setIsConfirmed(action.isConfirmed || false);
+            setIsCancelled(action.isCancelled || false);
+        }
+    }, [action]);
+
+    useEffect(() => {
+        classesAPI.getAll({ limit: 100 })
+            .then(res => {
+                const list = res.data?.data?.classes || res.data?.classes || [];
+                setAvailableClasses(list);
+            })
+            .catch(() => {});
+    }, []);
+
+    const handleConfirm = async () => {
+        if (!firstName.trim()) {
+            toast.error('First name is required');
+            return;
+        }
+        if (!email.trim()) {
+            toast.error('Email is required');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const res = await usersAPI.create({
+                firstName: firstName.trim(),
+                lastName: lastName.trim() || 'User',
+                email: email.trim().toLowerCase(),
+                role,
+                phone: phone.trim() || undefined,
+                admissionNumber: admissionNumber.trim() || undefined,
+                studentId: admissionNumber.trim() || undefined,
+                classId: classId || undefined,
+                password: password || 'Welcome123!'
+            });
+
+            const newUser = res.data?.data?.user || res.data?.user;
+            setCreatedUser(newUser);
+            setIsConfirmed(true);
+            setIsEditing(false);
+            toast.success(res.data?.message || `User "${firstName} ${lastName}" created successfully!`, { icon: '👤' });
+        } catch (err) {
+            console.error('Failed to create user:', err);
+            toast.error(err.response?.data?.message || err.response?.data?.errors?.[0]?.msg || 'Failed to create user');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 text-xs flex items-center justify-between">
+                <span className="flex items-center gap-1.5"><XCircle className="w-4 h-4 text-slate-400" /> User creation draft discarded</span>
+                <button onClick={() => setIsCancelled(false)} className="text-indigo-600 hover:underline font-medium">Restore</button>
+            </div>
+        );
+    }
+
+    const selectedClass = availableClasses.find(c => c.id === classId);
+
+    return (
+        <div className="mt-3 rounded-xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/70 via-white to-violet-50/50 shadow-sm overflow-hidden text-xs">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <User className="w-4 h-4" />
+                    <span className="font-semibold text-[13px]">
+                        {isConfirmed ? 'User Created Successfully' : 'Draft User Details'}
+                    </span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30">
+                    {role}
+                </span>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-3.5 space-y-3">
+                {isEditing ? (
+                    <div className="space-y-2.5">
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">First Name *</label>
+                                <input
+                                    type="text"
+                                    value={firstName}
+                                    onChange={(e) => setFirstName(e.target.value)}
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                    placeholder="e.g. Rahul"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Last Name</label>
+                                <input
+                                    type="text"
+                                    value={lastName}
+                                    onChange={(e) => setLastName(e.target.value)}
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                    placeholder="e.g. Sharma"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Email Address *</label>
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                placeholder="rahul@school.com"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Role</label>
+                                <select
+                                    value={role}
+                                    onChange={(e) => setRole(e.target.value)}
+                                    className="w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none bg-white"
+                                >
+                                    <option value="student">Student</option>
+                                    <option value="instructor">Instructor</option>
+                                    <option value="admin">Admin</option>
+                                    <option value="lab_assistant">Lab Assistant</option>
+                                </select>
+                            </div>
+                            {role === 'student' && (
+                                <div>
+                                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Enroll in Class</label>
+                                    <select
+                                        value={classId}
+                                        onChange={(e) => setClassId(e.target.value)}
+                                        className="w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none bg-white"
+                                    >
+                                        <option value="">-- Select Class --</option>
+                                        {availableClasses.map(c => (
+                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Admission / Student ID</label>
+                                <input
+                                    type="text"
+                                    value={admissionNumber}
+                                    onChange={(e) => setAdmissionNumber(e.target.value)}
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                    placeholder="e.g. ADM-2026-01"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Default Password</label>
+                                <input
+                                    type="text"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                    placeholder="Welcome123!"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(false)}
+                                className="px-2.5 py-1 rounded-md text-slate-600 hover:bg-slate-100 font-medium"
+                            >
+                                Done Editing
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <div className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                                    <span>{firstName} {lastName}</span>
+                                </div>
+                                <div className="text-slate-500 text-xs mt-0.5 flex items-center gap-1 font-mono">
+                                    <span>{email}</span>
+                                </div>
+                            </div>
+                            {!isConfirmed && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditing(true)}
+                                    className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition"
+                                    title="Edit User Details"
+                                >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Role</span>
+                                <span className="font-semibold text-slate-700 capitalize">{role}</span>
+                            </div>
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Class</span>
+                                <span className="font-semibold text-slate-700">{selectedClass?.name || action?.className || 'None'}</span>
+                            </div>
+                            {admissionNumber && (
+                                <div className="bg-slate-100/70 p-2 rounded-lg">
+                                    <span className="text-[10px] text-slate-500 block">Admission / ID</span>
+                                    <span className="font-semibold text-slate-700">{admissionNumber}</span>
+                                </div>
+                            )}
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Initial Password</span>
+                                <span className="font-mono text-slate-700">{password}</span>
+                            </div>
+                        </div>
+
+                        {/* Confirmation State */}
+                        {isConfirmed && (
+                            <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
+                                <span className="flex items-center gap-1.5 font-medium">
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                    User created and ready in system!
+                                </span>
+                                <a
+                                    href="/users"
+                                    className="text-emerald-700 hover:underline font-bold flex items-center gap-1"
+                                >
+                                    View Users <ExternalLink className="w-3 h-3" />
+                                </a>
+                            </div>
+                        )}
+
+                        {/* Action Buttons */}
+                        {!isConfirmed && (
+                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsCancelled(true)}
+                                    className="px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 font-medium transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleConfirm}
+                                    disabled={isSaving}
+                                    className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-1.5 shadow-sm transition disabled:opacity-50"
+                                >
+                                    {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                    <span>Confirm & Create User</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 /* ─── Class Creation Action Card ─── */
 function ClassActionCard({ action }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -3870,96 +4167,103 @@ export default function FloatingChatbot() {
                                 </div>
                             </div>
                         )}
-                        {messages.map((msg, i) => (
-                            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[90%] ${msg.role === 'user'
-                                    ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-2xl rounded-br-sm px-3.5 py-2.5 shadow-md shadow-indigo-500/15'
-                                    : `rounded-2xl rounded-bl-sm px-3.5 py-3 shadow-sm ${msg.isError
-                                        ? 'bg-red-50 border border-red-200'
-                                        : 'bg-white border border-slate-200'}`
-                                    }`}>
-                                    {msg.role === 'assistant' && (
-                                        <div className="flex items-center gap-1.5 mb-1.5">
-                                            <div className="w-5 h-5 rounded-md bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
-                                                <Bot className="w-3 h-3 text-white" />
-                                            </div>
-                                            <span className="text-[10px] text-slate-400">
-                                                {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                                            </span>
+                        {messages.map((msg, idx) => (
+                            <div
+                                key={idx}
+                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                            >
+                                        <div
+                                            className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-xs shadow-xs ${
+                                                msg.role === 'user'
+                                                    ? 'bg-indigo-600 text-white rounded-br-xs'
+                                                    : msg.isError
+                                                    ? 'bg-red-50 text-red-800 border border-red-200 rounded-bl-xs'
+                                                    : 'bg-white text-slate-800 border border-slate-200 rounded-bl-xs'
+                                            }`}
+                                        >
+                                            {msg.role === 'user' ? (
+                                                <p className="text-[13px] whitespace-pre-wrap">{msg.content}</p>
+                                            ) : (
+                                                <RenderMessage content={msg.content} hasQueryResult={Boolean(msg.queryResult || msg.sql)} />
+                                            )}
+                                            {msg.queryResult && <SQLResult sql={msg.sql} result={msg.queryResult} onRerun={() => handleRerunSQL(msg.sql)} />}
+                                            {msg.chartData && <ChatChart chartData={msg.chartData} />}
+                                            {msg.reportAction && <ReportActionCard action={msg.reportAction} />}
+                                            {msg.meetingAction && <MeetingActionCard action={msg.meetingAction} />}
+                                            {msg.calendarAction && <CalendarActionCard action={msg.calendarAction} />}
+                                            {msg.assignmentAction && <AssignmentActionCard action={msg.assignmentAction} />}
+                                            {msg.noteAction && <NoteActionCard action={msg.noteAction} />}
+                                            {msg.classAction && <ClassActionCard action={msg.classAction} />}
+                                            {msg.userAction && <UserActionCard action={msg.userAction} />}
+                                            {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
+                                            {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
+                                            {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
                                         </div>
-                                    )}
-                                    {msg.role === 'user'
-                                        ? <p className="text-[13px] whitespace-pre-wrap">{msg.content}</p>
-                                        : <RenderMessage content={msg.content} hasQueryResult={Boolean(msg.queryResult || msg.sql)} />
-                                    }
-                                    {msg.queryResult && <SQLResult sql={msg.sql} result={msg.queryResult} onRerun={() => handleRerunSQL(msg.sql)} />}
-                                    {msg.chartData && <ChatChart chartData={msg.chartData} />}
-                                    {msg.reportAction && <ReportActionCard action={msg.reportAction} />}
-                                    {msg.meetingAction && <MeetingActionCard action={msg.meetingAction} />}
-                                    {msg.calendarAction && <CalendarActionCard action={msg.calendarAction} />}
-                                    {msg.assignmentAction && <AssignmentActionCard action={msg.assignmentAction} />}
-                                    {msg.noteAction && <NoteActionCard action={msg.noteAction} />}
-                                    {msg.classAction && <ClassActionCard action={msg.classAction} />}
-                                    {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
-                                    {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
-                                    {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
-                                </div>
-                            </div>
-                        ))}
-
-                        {isLoading && (
-                            <div className="flex justify-start">
-                                <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-3.5 py-3 shadow-sm">
-                                    <div className="flex items-center gap-2">
-                                        <Loader2 className="w-3.5 h-3.5 text-indigo-500 animate-spin" />
-                                        <div className="flex gap-1">
-                                            <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                            <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                            <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                                        </div>
-                                        <span className="text-[11px] text-slate-400">Thinking...</span>
                                     </div>
-                                </div>
-                            </div>
-                        )}
-
-                        <div ref={messagesEndRef} />
-
-                        {/* Suggestions on empty */}
-                        {messages.length <= 1 && !isLoading && (
-                            <div className="grid grid-cols-1 gap-1.5 mt-2">
-                                {suggestions.map((s, i) => (
-                                    <button key={i} onClick={() => setInput(s)}
-                                        className="text-left px-3 py-2 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 hover:shadow-sm transition text-[12px] text-slate-600 hover:text-indigo-600">
-                                        <Sparkles className="w-3 h-3 inline mr-1.5 text-indigo-400" />{s}
-                                    </button>
                                 ))}
-                            </div>
-                        )}
-                    </div>
-                    </>
-                    )}
 
-                    {/* Input bar */}
-                    <div className="flex items-end gap-2 px-3 py-2.5 bg-white border-t border-slate-200 flex-shrink-0">
-                        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".txt,.csv,.json,.pdf,.md,.sql,.log,.png,.jpg,.jpeg,.webp,.bmp" />
-                        <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
-                            className="flex-shrink-0 w-8 h-8 rounded-lg bg-violet-50 border border-violet-200 flex items-center justify-center text-violet-500 hover:bg-violet-100 transition disabled:opacity-50" title="Upload document, holiday PDF or image">
-                            {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                        </button>
-                        <textarea ref={inputRef} value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                            placeholder="Ask anything, upload holiday PDF/image, or request SQL..."
-                            rows={1}
-                            className="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[13px] resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-                            style={{ minHeight: '36px', maxHeight: '80px' }}
-                        />
-                        <button onClick={handleSend} disabled={!input.trim() || isLoading}
-                            className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center hover:from-indigo-600 hover:to-violet-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-indigo-500/20">
-                            {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                        </button>
-                    </div>
+                                {isLoading && (
+                                    <div className="flex justify-start">
+                                        <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-3.5 py-3 shadow-sm">
+                                            <div className="flex items-center gap-2">
+                                                <Loader2 className="w-3.5 h-3.5 text-indigo-500 animate-spin" />
+                                                <div className="flex gap-1">
+                                                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                </div>
+                                                <span className="text-[11px] text-slate-400">Thinking...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div ref={messagesEndRef} />
+
+                                {/* Suggestions on empty */}
+                                {messages.length <= 1 && !isLoading && (
+                                    <div className="grid grid-cols-1 gap-1.5 mt-2">
+                                        {suggestions.map((s, i) => (
+                                            <button key={i} onClick={() => setInput(s)}
+                                                className="text-left px-3 py-2 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 hover:shadow-sm transition text-[12px] text-slate-600 hover:text-indigo-600">
+                                                <Sparkles className="w-3 h-3 inline mr-1.5 text-indigo-400" />{s}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Input bar */}
+                            <div className="flex items-end gap-2 px-3 py-2.5 bg-white border-t border-slate-200 flex-shrink-0">
+                                <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".txt,.csv,.json,.pdf,.md,.sql,.log,.png,.jpg,.jpeg,.webp,.bmp" />
+                                <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
+                                    className="flex-shrink-0 w-8 h-8 rounded-lg bg-violet-50 border border-violet-200 flex items-center justify-center text-violet-500 hover:bg-violet-100 transition disabled:opacity-50" title="Upload document, holiday PDF or image">
+                                    {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                                </button>
+                                
+                                <VoiceInputButton
+                                    onTranscript={(text) => {
+                                        setInput(prev => (prev ? `${prev} ${text}` : text).trim());
+                                    }}
+                                    className="flex-shrink-0 w-8 h-8 rounded-lg bg-rose-50 border border-rose-200 text-rose-500 hover:bg-rose-100 transition shadow-2xs"
+                                    title="Speak voice command (e.g. 'create class 12 commerce c')"
+                                />
+
+                                <textarea ref={inputRef} value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                                    placeholder="Type or speak commands (e.g. 'create class 12 commerce c')..."
+                                    rows={1}
+                                    className="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[13px] resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                                    style={{ minHeight: '36px', maxHeight: '80px' }}
+                                />
+                                <button onClick={handleSend} disabled={!input.trim() || isLoading}
+                                    className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center hover:from-indigo-600 hover:to-violet-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-indigo-500/20">
+                                    {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                                </button>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
         </>
