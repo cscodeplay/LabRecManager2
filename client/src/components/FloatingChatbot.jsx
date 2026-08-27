@@ -4019,43 +4019,43 @@ export default function FloatingChatbot() {
                     style={{ backdropFilter: 'blur(20px)' }}>
 
                     {/* Header */}
-                    <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white flex-shrink-0">
-                        <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
-                                <Bot className="w-4.5 h-4.5" />
+                    <div className="flex items-center justify-between px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white flex-shrink-0 gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <div className="w-7 h-7 rounded-lg bg-white/20 backdrop-blur flex items-center justify-center flex-shrink-0">
+                                <Bot className="w-4 h-4" />
                             </div>
-                            <div>
-                                <h3 className="font-semibold text-sm leading-none flex items-center gap-2">
+                            <div className="min-w-0 flex items-center gap-1.5">
+                                <h3 className="font-bold text-xs sm:text-sm leading-none truncate">
                                     LIA
-                                    <select 
-                                        value={preferredModel}
-                                        onChange={(e) => setPreferredModel(e.target.value)}
-                                        className="bg-white/10 border border-white/20 text-white text-[10px] rounded px-1 py-0.5 outline-none focus:bg-white/20 ml-2"
-                                    >
-                                        <option value="auto" className="text-black">Auto (Fastest)</option>
-                                        <option value="groq" className="text-black">Llama 3.3 (Groq)</option>
-                                        <option value="gemini" className="text-black">Gemini 3.6 (Google)</option>
-                                        <option value="sambanova" className="text-black">Llama 3.2 Vision (SambaNova)</option>
-                                        <option value="github" className="text-black">GPT-4o (GitHub)</option>
-                                    </select>
                                 </h3>
+                                <select 
+                                    value={preferredModel}
+                                    onChange={(e) => setPreferredModel(e.target.value)}
+                                    className="bg-white/15 border border-white/25 text-white text-[10px] rounded px-1.5 py-0.5 outline-none focus:bg-white/25 max-w-[100px] truncate"
+                                >
+                                    <option value="auto" className="text-black">Auto</option>
+                                    <option value="groq" className="text-black">Groq (Llama)</option>
+                                    <option value="gemini" className="text-black">Gemini</option>
+                                    <option value="sambanova" className="text-black">SambaNova</option>
+                                    <option value="github" className="text-black">GPT-4o</option>
+                                </select>
                             </div>
                         </div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1 flex-shrink-0">
                             <button onClick={() => setShowHelp(true)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title="Prompt Guide">
-                                <HelpCircle className="w-4 h-4" />
+                                <HelpCircle className="w-3.5 h-3.5" />
                             </button>
                             <button onClick={() => setShowHistory(!showHistory)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title="Chat History">
-                                <History className="w-4 h-4" />
+                                <History className="w-3.5 h-3.5" />
                             </button>
                             <button onClick={clearChat} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title="New Chat">
-                                <FilePlus className="w-4 h-4" />
+                                <FilePlus className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setIsExpanded(!isExpanded)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90 hidden sm:flex">
-                                {isExpanded ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+                            <button onClick={() => setIsExpanded(!isExpanded)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title={isExpanded ? "Restore Size" : "Maximize"}>
+                                {isExpanded ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
                             </button>
-                            <button onClick={() => setIsOpen(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90">
-                                <X className="w-5 h-5" />
+                            <button onClick={() => setIsOpen(false)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/80 hover:text-white transition text-white flex-shrink-0 ml-0.5" title="Close Chat">
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
                     </div>

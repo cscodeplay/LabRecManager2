@@ -25,6 +25,35 @@ const CATEGORIES = [
     { key: 'plans', label: 'Lecture Plans' }
 ];
 
+function HighlightText({ text, query }) {
+    if (!text) return null;
+    if (!query || !query.trim()) return <>{text}</>;
+
+    const words = query.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return <>{text}</>;
+
+    const regexPattern = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    const parts = String(text).split(new RegExp(`(${regexPattern})`, 'gi'));
+
+    return (
+        <>
+            {parts.map((part, i) => {
+                const isMatch = words.some(w => w.toLowerCase() === part.toLowerCase());
+                return isMatch ? (
+                    <mark
+                        key={i}
+                        className="bg-yellow-300 dark:bg-yellow-400/90 text-slate-950 font-extrabold px-1 py-0.5 rounded shadow-2xs mx-0.5"
+                    >
+                        {part}
+                    </mark>
+                ) : (
+                    part
+                );
+            })}
+        </>
+    );
+}
+
 export default function GlobalSearch() {
     const router = useRouter();
     const [mounted, setMounted] = useState(false);
@@ -463,7 +492,7 @@ export default function GlobalSearch() {
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2">
                                             <span className="text-xs sm:text-sm font-bold truncate">
-                                                {item.title}
+                                                <HighlightText text={item.title} query={query} />
                                             </span>
                                             <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase flex-shrink-0 ${item.badgeColor}`}>
                                                 {item.badge}
@@ -471,7 +500,7 @@ export default function GlobalSearch() {
                                         </div>
                                         {item.subtitle && (
                                             <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                                                {item.subtitle}
+                                                <HighlightText text={item.subtitle} query={query} />
                                             </p>
                                         )}
                                     </div>
