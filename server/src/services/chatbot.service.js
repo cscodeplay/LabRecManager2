@@ -119,7 +119,7 @@ class ChatbotService {
                 enums.forEach(en => { schemaText += `  ${en.enum_name}: [${en.values.join(', ')}]\n`; });
             }
             
-            // Fetch distinct values for common categorization columns to help AI avoid hallucinations
+            // Fetch distinct values for common categorization columns in parallel to minimize latency
             const catCols = [
                 { table: 'lab_items', col: 'item_type' },
                 { table: 'tickets', col: 'status' },
@@ -128,14 +128,18 @@ class ChatbotService {
                 { table: 'procurement_requests', col: 'status' },
                 { table: 'users', col: 'role' }
             ];
+            const distinctResults = await Promise.allSettled(
+                catCols.map(({ table, col }) =>
+                    prisma.$queryRawUnsafe(`SELECT DISTINCT ${col} FROM ${table} WHERE ${col} IS NOT NULL LIMIT 15`)
+                        .then(vals => ({ table, col, vals }))
+                )
+            );
             schemaText += '\nDISTINCT VALUES IN DB:\n';
-            for (const {table, col} of catCols) {
-                try {
-                    const vals = await prisma.$queryRawUnsafe(`SELECT DISTINCT ${col} FROM ${table} WHERE ${col} IS NOT NULL LIMIT 15`);
-                    if (vals.length > 0) {
-                        schemaText += `  ${table}.${col}: [${vals.map(v => `'${v[col]}'`).join(', ')}]\n`;
-                    }
-                } catch(e) { /* Ignore if table/col doesn't exist yet */ }
+            for (const res of distinctResults) {
+                if (res.status === 'fulfilled' && res.value?.vals?.length > 0) {
+                    const { table, col, vals } = res.value;
+                    schemaText += `  ${table}.${col}: [${vals.map(v => `'${v[col]}'`).join(', ')}]\n`;
+                }
             }
 
             return schemaText;
@@ -304,13 +308,8 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 return { text, model: name, provider: 'gemini' };
             } catch (err) {
                 lastError = err;
-                const is429 = err.message?.includes('429') || err.message?.includes('quota');
-                console.warn(`[ChatBot] Gemini ${name} failed: ${err.message.substring(0, 80)}`);
-                if (is429 && i < this.geminiModels.length - 1) {
-                    await new Promise(r => setTimeout(r, 1000));
-                    continue;
-                }
-                break;
+                console.warn(`[ChatBot] Gemini ${name} failed: ${err.message?.substring(0, 80)}`);
+                continue;
             }
         }
         throw lastError || new Error('All Gemini models failed');
@@ -319,7 +318,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     // ═══ GROQ CALL ═══
     async callGroq(messages) {
         if (!this.groqClient) throw new Error('Groq not configured');
-        const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound', 'qwen/qwen3.6-27b'];
+        const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'];
         let lastError = null;
 
         for (const model of groqModels) {
@@ -337,13 +336,8 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 };
             } catch (err) {
                 lastError = err;
-                const isRateLimit = err.status === 429 || err.status === 413;
                 console.warn(`[ChatBot] Groq ${model} failed (${err.status}): ${err.message?.substring(0, 80)}`);
-                if (isRateLimit && model === groqModels[0]) {
-                    await new Promise(r => setTimeout(r, 1000));
-                    continue;
-                }
-                break;
+                continue;
             }
         }
         throw lastError || new Error('All Groq models failed');
