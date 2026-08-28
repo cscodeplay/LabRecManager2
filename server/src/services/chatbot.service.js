@@ -226,6 +226,7 @@ RESPONSE FORMAT RULES:
 
 SQL BEST PRACTICES:
 - ALL id columns are UUIDs. NEVER use integers for IDs (e.g. lab_id = 1 is WRONG). Always JOIN to the related table and filter by name instead.
+- FOREIGN KEY school_id: When inserting or creating records in \`labs\`, \`classes\`, \`users\`, \`procurement_requests\`, \`training_modules\`, \`documents\`, etc., NEVER invent a dummy or random UUID for \`school_id\`. ALWAYS use \`(SELECT id FROM schools LIMIT 1)\` for \`school_id\` to satisfy the foreign key constraint \`labs_school_id_fkey\`!
 - NO COLUMN class_id ON assignments: The assignments table does NOT have a class_id column! To filter assignments by class, JOIN assignment_targets on assignment_targets.assignment_id = assignments.id and filter by assignment_targets.target_class_id.
 - NO COLUMN class_id ON users: Students are linked to classes via class_enrollments (JOIN class_enrollments ON users.id = class_enrollments.student_id WHERE class_enrollments.class_id = ...).
 - CLASS TABLE NAME: The class table in Postgres is named classes (or student_classes).
@@ -239,8 +240,8 @@ The database uses specific short values in item_type and other columns. Users wi
   "projector", "projectors", "LCD projector" → item_type ILIKE '%projector%'
   "monitor", "monitors", "screen", "screens", "display" → item_type ILIKE '%monitor%'
   "UPS", "ups", "battery backup" → item_type ILIKE '%ups%'
-  "lab 1", "computer lab 1", "comp lab 1", "CL1" → labs.name ILIKE '%Computer Lab 1%'
-  "lab 2", "computer lab 2", "comp lab 2", "CL2" → labs.name ILIKE '%Computer Lab 2%'
+  "lab 1", "computer lab 1", "comp lab 1", "CL1" → labs.name ILIKE '%Lab%1%'
+  "lab 2", "computer lab 2", "comp lab 2", "CL2" → labs.name ILIKE '%Lab%2%'
 NEVER search for the user's exact word if it doesn't match a known DB value. ALWAYS map it first using the dictionary above or the DISTINCT VALUES list below.
 
 - For IN clauses on text, ALWAYS use LOWER(column) IN ('val1', 'val2') and ensure the values are lowercase. Do NOT rely on exact casing.
@@ -2600,6 +2601,16 @@ ${documentContext || message}
             }
         } else {
             executedSQL = sqlMatch[1].trim();
+        }
+
+        if (executedSQL) {
+            executedSQL = executedSQL
+                .replace(/<!--[\s\S]*?-->/g, '')
+                .replace(/<!--EXEC_SQL:/g, '')
+                .replace(/:END_SQL-->/g, '')
+                .replace(/^```(?:sql)?\s*/i, '')
+                .replace(/\s*```$/i, '')
+                .trim();
         }
 
         if (executedSQL) {
