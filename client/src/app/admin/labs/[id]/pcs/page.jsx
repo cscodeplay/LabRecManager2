@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Monitor, Plus, Edit2, Trash2, X, ArrowLeft, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, PlusCircle, Eye, Download, Upload, FileSpreadsheet, Calendar, Shield, Image, Search, QrCode, CheckSquare, Square, Wrench, AlertTriangle, RefreshCw, History, ArrowRightLeft, Camera, Network, Volume2, Laptop, Tablet } from 'lucide-react';
+import { Monitor, Plus, Edit2, Trash2, X, ArrowLeft, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, PlusCircle, Eye, Download, Upload, FileSpreadsheet, Calendar, Shield, Image, Search, QrCode, CheckSquare, Square, Wrench, AlertTriangle, RefreshCw, History, ArrowRightLeft, Camera, Network, Volume2, Laptop, Tablet, Zap, Server, Tv, Headphones, ScanLine, Cable } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { labsAPI, filesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -12,15 +12,22 @@ import { formatDate } from '@/lib/dateUtils';
 
 const ITEM_TYPES = {
     pc: { label: 'Computer', icon: Monitor, color: 'blue', specFields: ['processor', 'ram', 'storage', 'os', 'monitor'] },
+    ups: { label: 'UPS / Power Backup', icon: Zap, color: 'amber', specFields: ['capacity', 'batteryType', 'backupTime', 'linkedDesktop'] },
     laptop: { label: 'Laptop', icon: Laptop, color: 'sky', specFields: ['processor', 'ram', 'storage', 'os', 'screenSize', 'battery'] },
     tablet: { label: 'Tablet', icon: Tablet, color: 'teal', specFields: ['processor', 'ram', 'storage', 'os', 'screenSize', 'battery'] },
+    server: { label: 'Server / Rack', icon: Server, color: 'indigo', specFields: ['processor', 'ram', 'storage', 'os', 'formFactor'] },
+    interactive_panel: { label: 'Interactive Panel (IFPD)', icon: Tv, color: 'violet', specFields: ['screenSize', 'resolution', 'os', 'touchPoints'] },
     printer: { label: 'Printer', icon: Printer, color: 'purple', specFields: ['printType', 'paperSize', 'connectivity'] },
+    scanner: { label: 'Scanner', icon: ScanLine, color: 'rose', specFields: ['scanType', 'resolution', 'connectivity'] },
     router: { label: 'WiFi Router', icon: Wifi, color: 'green', specFields: ['speed', 'frequency', 'ports'] },
-    speaker: { label: 'Speaker', icon: Speaker, color: 'amber', specFields: ['power', 'channels'] },
-    projector: { label: 'Projector', icon: Projector, color: 'red', specFields: ['resolution', 'lumens', 'connectivity'] },
-    smart_camera: { label: 'Smart Camera', icon: Camera, color: 'indigo', specFields: ['resolution', 'nightVision', 'storageType', 'connectivity', 'poe'] },
     network_switch: { label: 'Network Switch', icon: Network, color: 'cyan', specFields: ['ports', 'speed', 'managedType', 'poe', 'rackMountable'] },
+    smart_camera: { label: 'Smart Camera', icon: Camera, color: 'indigo', specFields: ['resolution', 'nightVision', 'storageType', 'connectivity', 'poe'] },
+    projector: { label: 'Projector', icon: Projector, color: 'red', specFields: ['resolution', 'lumens', 'connectivity'] },
     soundbar: { label: 'Soundbar', icon: Volume2, color: 'orange', specFields: ['power', 'channels', 'connectivity', 'bluetooth', 'subwoofer'] },
+    speaker: { label: 'Speaker', icon: Speaker, color: 'amber', specFields: ['power', 'channels'] },
+    headphone: { label: 'Headphones / Headset', icon: Headphones, color: 'pink', specFields: ['connectivity', 'hasMic'] },
+    barcode_scanner: { label: 'Barcode Scanner', icon: QrCode, color: 'emerald', specFields: ['scanType', 'connectivity'] },
+    cable: { label: 'Cable & Accessories', icon: Cable, color: 'slate', specFields: ['cableType', 'length'] },
     chair: { label: 'Chair', icon: Armchair, color: 'slate', specFields: ['material', 'color'] },
     table: { label: 'Table', icon: Table, color: 'emerald', specFields: ['material', 'dimensions', 'color'] },
     other: { label: 'Other', icon: Package, color: 'gray', specFields: [] }
@@ -30,18 +37,19 @@ const SPEC_LABELS = {
     // Computer & Laptop
     processor: 'Processor', ram: 'RAM', storage: 'Storage', os: 'OS', monitor: 'Monitor Size',
     screenSize: 'Screen Size', battery: 'Battery',
-    // Printer
-    printType: 'Print Type', paperSize: 'Paper Size', connectivity: 'Connectivity',
-    // Router
-    speed: 'Speed', frequency: 'Frequency', ports: 'Ports',
-    // Speaker & Soundbar
-    power: 'Power', channels: 'Channels', bluetooth: 'Bluetooth', subwoofer: 'Subwoofer',
-    // Projector
-    resolution: 'Resolution', lumens: 'Lumens',
-    // Smart Camera
-    nightVision: 'Night Vision', storageType: 'Storage Type', poe: 'PoE Support',
-    // Network Switch
-    managedType: 'Managed Type', rackMountable: 'Rack Mountable',
+    // UPS & Power
+    capacity: 'Capacity (VA/Watts)', batteryType: 'Battery Type', backupTime: 'Backup Time', linkedDesktop: 'Linked Desktop / PC',
+    // Server & Interactive Panel
+    formFactor: 'Form Factor', touchPoints: 'Touch Points',
+    // Printer & Scanner
+    printType: 'Print Type', paperSize: 'Paper Size', connectivity: 'Connectivity', scanType: 'Scan Type',
+    // Router & Network
+    speed: 'Speed', frequency: 'Frequency', ports: 'Ports', managedType: 'Managed Type', rackMountable: 'Rack Mountable',
+    // Audio & Accessories
+    power: 'Power', channels: 'Channels', bluetooth: 'Bluetooth', subwoofer: 'Subwoofer', hasMic: 'Built-in Mic',
+    cableType: 'Cable Type', length: 'Length (Meters)',
+    // Projector & Camera
+    resolution: 'Resolution', lumens: 'Lumens', nightVision: 'Night Vision', storageType: 'Storage Type', poe: 'PoE Support',
     // Furniture
     material: 'Material', dimensions: 'Dimensions', color: 'Color'
 };

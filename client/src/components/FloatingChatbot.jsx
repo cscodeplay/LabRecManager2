@@ -10,7 +10,7 @@ import {
     XCircle, CalendarPlus, Undo2, BookOpen, StickyNote, GraduationCap, CheckSquare,
     LayoutGrid, Table as TableIcon, Inbox, Layers, Laptop, Server, HardDrive,
     Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket,
-    ShoppingBag, Code, Terminal, Award, Package
+    ShoppingBag, Code, Terminal, Award, Package, Zap, Wifi, Network, Headphones, ScanLine, Cable, Camera
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
@@ -120,13 +120,22 @@ function SQLCardItem({ row, cols }) {
         const strCols = cols.join(' ').toLowerCase();
         const itemType = String(row.item_type || row.type || row.category || '').toLowerCase();
         
+        if (itemType.includes('ups') || itemType.includes('battery') || itemType.includes('power')) {
+            return <Zap className="w-4 h-4 text-amber-500 shrink-0" />;
+        }
         if (itemType.includes('pc') || itemType.includes('comp') || itemType.includes('desktop') || strCols.includes('total_computers')) {
             return <Laptop className="w-4 h-4 text-blue-500 shrink-0" />;
         }
         if (itemType.includes('printer')) return <Printer className="w-4 h-4 text-amber-500 shrink-0" />;
+        if (itemType.includes('scanner')) return <ScanLine className="w-4 h-4 text-rose-500 shrink-0" />;
         if (itemType.includes('monitor') || itemType.includes('screen') || itemType.includes('display')) return <Monitor className="w-4 h-4 text-cyan-500 shrink-0" />;
         if (itemType.includes('server')) return <Server className="w-4 h-4 text-indigo-500 shrink-0" />;
-        if (itemType.includes('projector')) return <Tv className="w-4 h-4 text-purple-500 shrink-0" />;
+        if (itemType.includes('projector') || itemType.includes('panel') || itemType.includes('ifpd')) return <Tv className="w-4 h-4 text-purple-500 shrink-0" />;
+        if (itemType.includes('router') || itemType.includes('wifi')) return <Wifi className="w-4 h-4 text-green-500 shrink-0" />;
+        if (itemType.includes('switch') || itemType.includes('network')) return <Network className="w-4 h-4 text-cyan-500 shrink-0" />;
+        if (itemType.includes('camera')) return <Camera className="w-4 h-4 text-indigo-500 shrink-0" />;
+        if (itemType.includes('headphone') || itemType.includes('audio') || itemType.includes('speaker') || itemType.includes('soundbar')) return <Headphones className="w-4 h-4 text-pink-500 shrink-0" />;
+        if (itemType.includes('cable')) return <Cable className="w-4 h-4 text-slate-500 shrink-0" />;
         if (strCols.includes('lab') || strCols.includes('room')) return <Building2 className="w-4 h-4 text-indigo-500 shrink-0" />;
         if (strCols.includes('student') || strCols.includes('user') || strCols.includes('first_name')) return <User className="w-4 h-4 text-violet-500 shrink-0" />;
         if (strCols.includes('assignment') || strCols.includes('class') || strCols.includes('subject')) return <BookOpen className="w-4 h-4 text-emerald-500 shrink-0" />;
