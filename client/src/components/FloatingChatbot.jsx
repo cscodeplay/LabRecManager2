@@ -2877,22 +2877,24 @@ function UserActionCard({ action }) {
 
                         {/* Action Buttons */}
                         {!isConfirmed && (
-                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                                 <button
                                     type="button"
                                     onClick={() => setIsCancelled(true)}
-                                    className="px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 font-medium transition"
+                                    title="Cancel / Discard Draft"
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
                                 >
-                                    Cancel
+                                    <X className="w-4 h-4" />
                                 </button>
                                 <button
                                     type="button"
                                     onClick={handleConfirm}
                                     disabled={isSaving}
-                                    className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-1.5 shadow-sm transition disabled:opacity-50"
+                                    title="Confirm & Register User"
+                                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-1.5 shadow-sm transition disabled:opacity-50 text-xs"
                                 >
                                     {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                                    <span>Confirm & Create User</span>
+                                    <span>Confirm</span>
                                 </button>
                             </div>
                         )}
@@ -3299,18 +3301,20 @@ function TicketActionCard({ action }) {
                         <button
                             type="button"
                             onClick={() => setIsCancelled(true)}
-                            className="px-2.5 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 font-medium transition"
+                            title="Cancel / Discard Draft"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
                         >
-                            Cancel
+                            <X className="w-4 h-4" />
                         </button>
                         <button
                             type="button"
                             onClick={handleConfirm}
                             disabled={loading}
-                            className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-rose-500/20 transition disabled:opacity-50"
+                            title="Confirm & Create Ticket"
+                            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-rose-500/20 transition disabled:opacity-50 text-xs"
                         >
                             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                            Confirm & Create Ticket
+                            <span>Confirm</span>
                         </button>
                     </div>
                 )}
@@ -3617,18 +3621,20 @@ function ProcurementActionCard({ action }) {
                         <button
                             type="button"
                             onClick={() => setIsCancelled(true)}
-                            className="px-2.5 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 font-medium transition"
+                            title="Cancel / Discard Draft"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
                         >
-                            Cancel
+                            <X className="w-4 h-4" />
                         </button>
                         <button
                             type="button"
                             onClick={handleConfirm}
                             disabled={loading}
-                            className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-emerald-500/20 transition disabled:opacity-50"
+                            title="Confirm & Create Procurement Case"
+                            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-emerald-500/20 transition disabled:opacity-50 text-xs"
                         >
                             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                            Confirm & Create Procurement Case
+                            <span>Confirm</span>
                         </button>
                     </div>
                 )}
@@ -3879,18 +3885,20 @@ function TrainingActionCard({ action }) {
                         <button
                             type="button"
                             onClick={() => setIsCancelled(true)}
-                            className="px-2.5 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 font-medium transition"
+                            title="Cancel / Discard Draft"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
                         >
-                            Cancel
+                            <X className="w-4 h-4" />
                         </button>
                         <button
                             type="button"
                             onClick={handleConfirm}
                             disabled={loading}
-                            className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-700 hover:to-indigo-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-blue-500/20 transition disabled:opacity-50"
+                            title="Confirm & Create Training Module"
+                            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-700 hover:to-indigo-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-blue-500/20 transition disabled:opacity-50 text-xs"
                         >
                             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                            Confirm & Create Training Module
+                            <span>Confirm</span>
                         </button>
                     </div>
                 )}
@@ -4157,17 +4165,19 @@ function ClassActionCard({ action }) {
                             <div className="flex items-center gap-1.5">
                                 <button
                                     type="button"
-                                    onClick={() => setIsEditing(!isEditing)}
-                                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                                    onClick={handleCancel}
+                                    title="Cancel / Discard Draft"
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
                                 >
-                                    <Edit3 className="w-3 h-3" /> {isEditing ? 'Done' : 'Edit Details'}
+                                    <X className="w-4 h-4" />
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={handleCancel}
-                                    className="px-2 py-1.5 text-slate-400 hover:text-red-600 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                                    onClick={() => setIsEditing(!isEditing)}
+                                    title={isEditing ? 'Done Editing' : 'Edit Class Details'}
+                                    className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
                                 >
-                                    <XCircle className="w-3 h-3" /> Cancel
+                                    <Edit3 className="w-3.5 h-3.5" />
                                 </button>
                             </div>
 
@@ -4175,17 +4185,11 @@ function ClassActionCard({ action }) {
                                 type="button"
                                 onClick={handleConfirm}
                                 disabled={isSaving}
-                                className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white text-[11px] font-bold rounded-lg shadow-sm shadow-indigo-500/20 transition flex items-center gap-1.5 disabled:opacity-50"
+                                title="Confirm & Create Class"
+                                className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white text-xs font-semibold rounded-lg shadow-sm shadow-indigo-500/20 transition flex items-center gap-1.5 disabled:opacity-50"
                             >
-                                {isSaving ? (
-                                    <>
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Creating Class...
-                                    </>
-                                ) : (
-                                    <>
-                                        <CheckCircle2 className="w-3.5 h-3.5" /> Confirm & Create Class
-                                    </>
-                                )}
+                                {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                <span>Confirm</span>
                             </button>
                         </div>
                     </>
@@ -4500,24 +4504,27 @@ function TimetableActionCard({ action }) {
                         <div className="flex items-center gap-1.5">
                             <button
                                 type="button"
-                                onClick={() => setIsEditing(!isEditing)}
-                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                                onClick={handleCancel}
+                                title="Cancel / Discard Draft"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
                             >
-                                <Edit3 className="w-3 h-3" /> {isEditing ? 'Done' : 'Edit Slots'}
+                                <X className="w-4 h-4" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(!isEditing)}
+                                title={isEditing ? 'Done Editing' : 'Edit Slots'}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
+                            >
+                                <Edit3 className="w-3.5 h-3.5" />
                             </button>
                             <button
                                 type="button"
                                 onClick={handleAddSlot}
-                                className="px-2 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                                title="Add Time Slot"
+                                className="p-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg transition"
                             >
-                                <Plus className="w-3 h-3" /> Add Slot
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleCancel}
-                                className="px-2 py-1.5 text-slate-400 hover:text-red-600 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
-                            >
-                                <XCircle className="w-3 h-3" /> Cancel
+                                <Plus className="w-3.5 h-3.5" />
                             </button>
                         </div>
 
@@ -4525,17 +4532,11 @@ function TimetableActionCard({ action }) {
                             type="button"
                             onClick={handleConfirm}
                             disabled={isSaving || slots.length === 0}
-                            className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-[11px] font-bold rounded-lg shadow-sm shadow-purple-500/20 transition flex items-center gap-1.5 disabled:opacity-50"
+                            title="Confirm & Apply Timetable"
+                            className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm shadow-purple-500/20 transition flex items-center gap-1.5 disabled:opacity-50"
                         >
-                            {isSaving ? (
-                                <>
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Applying Slots...
-                                </>
-                            ) : (
-                                <>
-                                    <CheckCircle2 className="w-3.5 h-3.5" /> Confirm & Apply to Timetable
-                                </>
-                            )}
+                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            <span>Confirm</span>
                         </button>
                     </div>
                 )}
@@ -4748,24 +4749,27 @@ function PeriodTimingActionCard({ action }) {
                         <div className="flex items-center gap-1.5">
                             <button
                                 type="button"
-                                onClick={() => setIsEditing(!isEditing)}
-                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                                onClick={handleCancel}
+                                title="Cancel / Discard Draft"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
                             >
-                                <Edit3 className="w-3 h-3" /> {isEditing ? 'Done' : 'Edit Timings'}
+                                <X className="w-4 h-4" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(!isEditing)}
+                                title={isEditing ? 'Done Editing' : 'Edit Timings'}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
+                            >
+                                <Edit3 className="w-3.5 h-3.5" />
                             </button>
                             <button
                                 type="button"
                                 onClick={handleAddPeriod}
-                                className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
+                                title="Add Period"
+                                className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg transition"
                             >
-                                <Plus className="w-3 h-3" /> Add Period
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleCancel}
-                                className="px-2 py-1.5 text-slate-400 hover:text-red-600 text-[11px] font-bold rounded-lg transition flex items-center gap-1"
-                            >
-                                <XCircle className="w-3 h-3" /> Cancel
+                                <Plus className="w-3.5 h-3.5" />
                             </button>
                         </div>
 
@@ -4773,17 +4777,11 @@ function PeriodTimingActionCard({ action }) {
                             type="button"
                             onClick={handleConfirm}
                             disabled={isSaving || periods.length === 0}
-                            className="px-3.5 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white text-[11px] font-bold rounded-lg shadow-sm shadow-amber-500/20 transition flex items-center gap-1.5 disabled:opacity-50"
+                            title="Confirm & Apply Timings"
+                            className="px-3 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white text-xs font-semibold rounded-lg shadow-sm shadow-amber-500/20 transition flex items-center gap-1.5 disabled:opacity-50"
                         >
-                            {isSaving ? (
-                                <>
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Applying Timings...
-                                </>
-                            ) : (
-                                <>
-                                    <CheckCircle2 className="w-3.5 h-3.5" /> Confirm & Apply Timings
-                                </>
-                            )}
+                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            <span>Confirm</span>
                         </button>
                     </div>
                 )}

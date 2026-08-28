@@ -395,7 +395,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             throw new Error('No AI provider configured. Set GEMINI_API_KEY or GROQ_API_KEY.');
         }
 
-        const { conversationHistory = [], documentContext = '', userId, userRole, academicYearId } = options;
+        const { conversationHistory = [], documentContext = '', userId, userRole, schoolId, academicYearId } = options;
 
         const msgLower = (message || '').toLowerCase();
 
@@ -985,6 +985,86 @@ Return JSON ONLY in this format:
                 };
             } catch (err) {
                 console.error('[ChatBot] Ticket creation intent error:', err);
+            }
+        }
+
+        // Intent detection: Display / Show / List Vendors
+        const isVendorQueryIntent = (
+            (/\b(show|display|list|get|fetch|view|all|find)\s+(the\s+)?(vendors|suppliers|dealers|vendor\s+list)\b/i.test(msgLower) ||
+             /^(vendors|all vendors|vendor list|list of vendors)\b/i.test(msgLower.trim()) ||
+             msgLower.includes('ਵੈਂਡਰ') || msgLower.includes('ਵਿਕਰੇਤਾ') || msgLower.includes('विक्रेता')) &&
+            !msgLower.includes('create') && !msgLower.includes('add') && !msgLower.includes('new') && !msgLower.includes('insert')
+        );
+
+        if (isVendorQueryIntent) {
+            try {
+                const vendors = await prisma.vendor.findMany({
+                    where: schoolId ? { schoolId } : {},
+                    include: {
+                        _count: { select: { quotations: true } }
+                    },
+                    orderBy: { name: 'asc' }
+                });
+
+                const sql = schoolId 
+                    ? `SELECT name, contact_person, phone, email, address, gstin, is_local FROM vendors WHERE school_id = '${schoolId}' ORDER BY name ASC;`
+                    : `SELECT name, contact_person, phone, email, address, gstin, is_local FROM vendors ORDER BY name ASC;`;
+
+                const queryResult = {
+                    success: true,
+                    rows: vendors.map(v => ({
+                        Name: v.name,
+                        'Contact Person': v.contactPerson || 'N/A',
+                        Phone: v.phone || 'N/A',
+                        Email: v.email || 'N/A',
+                        Address: v.address || 'N/A',
+                        GSTIN: v.gstin || 'N/A',
+                        'Local/Outstation': v.isLocal ? 'Local Vendor' : 'Outstation',
+                        Quotations: v._count?.quotations || 0
+                    })),
+                    rowCount: vendors.length,
+                    fields: [
+                        { name: 'Name' },
+                        { name: 'Contact Person' },
+                        { name: 'Phone' },
+                        { name: 'Email' },
+                        { name: 'Address' },
+                        { name: 'GSTIN' },
+                        { name: 'Local/Outstation' },
+                        { name: 'Quotations' }
+                    ],
+                    command: 'SELECT'
+                };
+
+                let messageText = `🏪 **Registered Vendors Directory** (${vendors.length} ${vendors.length === 1 ? 'vendor' : 'vendors'} found):\n\n`;
+                if (vendors.length === 0) {
+                    messageText += `No vendors are currently registered in the system. You can add new vendors in the **Procurement** module or instruct me to add one!`;
+                } else {
+                    messageText += vendors.map((v, i) => 
+                        `${i + 1}. **${v.name}** ${v.isLocal ? '*(Local Vendor)*' : '*(Outstation Vendor)*'}\n` +
+                        `   • 👤 **Contact Person:** ${v.contactPerson || 'N/A'}\n` +
+                        `   • 📞 **Phone:** \`${v.phone || 'N/A'}\` | ✉️ **Email:** ${v.email || 'N/A'}\n` +
+                        `   • 🏢 **GSTIN:** \`${v.gstin || 'N/A'}\`\n` +
+                        `   • 📍 **Address:** ${v.address || 'N/A'}`
+                    ).join('\n\n');
+                }
+
+                return {
+                    message: messageText,
+                    sql,
+                    queryResult,
+                    chartData: null,
+                    reportAction: null,
+                    userAction: null,
+                    ticketAction: null,
+                    procurementAction: null,
+                    trainingAction: null,
+                    timetableAction: null,
+                    periodTimingAction: null,
+                    provider: 'database'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Vendor query intent error:', err);
             }
         }
 
@@ -2716,8 +2796,9 @@ ${queryResult.error}\n\nFailed Query:\
             chartData = null;
         }
 
-        if (!aiText && queryResult?.success) {
-            aiText = `Here is the information retrieved from the database (${queryResult.rows?.length || 0} ${queryResult.rows?.length === 1 ? 'record' : 'records'}):`;
+        const visibleText = aiText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        if (!visibleText && queryResult?.success) {
+            aiText = `${aiText}\n\nHere is the information retrieved from the database (${queryResult.rows?.length || 0} ${queryResult.rows?.length === 1 ? 'record' : 'records'}):`;
         }
 
         return {
