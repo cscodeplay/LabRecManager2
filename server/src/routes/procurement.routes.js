@@ -200,7 +200,7 @@ router.get('/requests/:id', authenticate, asyncHandler(async (req, res) => {
  * @route   POST /api/procurement/requests
  * @desc    Create procurement request with items
  */
-router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
     try {
         const { title, description, purpose, department, budgetCode, memoVideNo, items } = req.body;
         console.log('Creating request:', { title, purpose, department, itemCount: items?.length, schoolId: req.user.schoolId });

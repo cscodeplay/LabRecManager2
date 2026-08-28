@@ -953,12 +953,248 @@ Return JSON ONLY in this format:
                     classAction: null,
                     userAction: null,
                     ticketAction,
+                    procurementAction: null,
+                    trainingAction: null,
                     timetableAction: null,
                     periodTimingAction: null,
                     provider: 'auto'
                 };
             } catch (err) {
                 console.error('[ChatBot] Ticket creation intent error:', err);
+            }
+        }
+
+        // Intent detection: Procurement Case / Requisition Drafting (e.g. "Prepare procurement case for 30 CAT-6 LAN cables and 5 Gigabit switches for Lab 2 with estimated budget 35,000", "create procurement request for 20 PCs")
+        const isProcurementCreationIntent = (
+            (userRole === 'admin' || userRole === 'principal' || userRole === 'instructor' || userRole === 'lab_assistant') &&
+            (/\b(prepare|create|draft|raise|new|make|setup)\s+(a\s+|an\s+)?(procurement\s*case|procurement\s*request|purchase\s*requisition|procurement|requisition|purchase\s*order\s*request|purchase\s*proposal)\b/i.test(msgLower) ||
+             /\b(procurement\s*case|procurement\s*request|purchase\s*requisition)\s+(draft|prepare|create|setup|new)\b/i.test(msgLower) ||
+             /^procurement\s*:\s*/i.test(msgLower.trim()) ||
+             msgLower.includes('ਖਰੀਦ ਕੇਸ') || msgLower.includes('ਪ੍ਰੋਕਿਊਰਮੈਂਟ') || msgLower.includes('खरीद प्रस्ताव') || msgLower.includes('प्रोक्योरमेंट')) &&
+            !msgLower.includes('show procurement') &&
+            !msgLower.includes('list procurement') &&
+            !msgLower.includes('search procurement') &&
+            !msgLower.includes('view procurement') &&
+            !msgLower.includes('status of procurement')
+        );
+
+        if (isProcurementCreationIntent) {
+            try {
+                console.log('[ChatBot] Procurement creation intent detected:', message);
+
+                const labs = await prisma.lab.findMany({ select: { id: true, name: true, roomNumber: true } }).catch(() => []);
+
+                // 1. Extract Title
+                let title = '';
+                const quotedMatch = message.match(/['"“](.*?)['"”]/);
+                if (quotedMatch && quotedMatch[1].trim()) {
+                    title = quotedMatch[1].trim();
+                } else {
+                    const titleMatch = message.match(/(?:prepare|create|draft|raise|new|make|setup)\s+(?:a\s+|an\s+)?(?:procurement\s*case|procurement\s*request|purchase\s*requisition|procurement|requisition|purchase\s*proposal)?\s*(?:for|about|titled|name|named|:)?\s*([^,.\n]+)/i);
+                    if (titleMatch && titleMatch[1]) {
+                        title = titleMatch[1]
+                            .replace(/\b(for\s+lab\s+.*|in\s+lab\s+.*|with\s+budget\s+.*|estimated\s+.*|budget\s+.*)\b/i, '')
+                            .trim();
+                    }
+                }
+                if (!title || title.length < 3) {
+                    title = 'Lab Hardware & Networking Procurement';
+                }
+                title = title.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+                // 2. Extract Budget / Estimated Total
+                let estimatedTotal = 0;
+                const budgetMatch = message.match(/(?:budget|cost|amount|estimate|estimated\s+budget|total)\s*(?:of|is|:)?\s*(?:₹|rs\.?|inr)?\s*([\d,]+)/i) ||
+                                    message.match(/(?:₹|rs\.?)\s*([\d,]+)/i);
+                if (budgetMatch) {
+                    estimatedTotal = parseFloat(budgetMatch[1].replace(/,/g, ''));
+                }
+
+                // 3. Match Lab
+                let matchedLab = null;
+                for (const l of labs) {
+                    if (msgLower.includes(l.name.toLowerCase()) || (l.roomNumber && msgLower.includes(l.roomNumber.toLowerCase()))) {
+                        matchedLab = l;
+                        break;
+                    }
+                }
+
+                // 4. Extract Items with Quantities
+                let items = [];
+                const itemPatterns = message.matchAll(/(\d+)\s+([A-Za-z0-9\s\-]+?)(?=(?:,\s*\d+|\s+and\s+\d+|\s+for\s+lab|\s+with\s+budget|\s*$))/gi);
+                for (const match of itemPatterns) {
+                    const qty = parseInt(match[1], 10);
+                    let name = match[2].trim().replace(/^and\s+/i, '').replace(/,\s*$/, '');
+                    if (name.length > 2 && !/^(days|hours|minutes|months|years|weeks|students|classes|pcs)$/i.test(name)) {
+                        items.push({
+                            itemName: name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+                            quantity: qty,
+                            unit: 'pcs',
+                            estimatedUnitPrice: estimatedTotal && items.length === 0 ? Math.round(estimatedTotal / qty) : null,
+                            specifications: matchedLab ? `For ${matchedLab.name}` : ''
+                        });
+                    }
+                }
+
+                if (items.length === 0) {
+                    items.push({
+                        itemName: title,
+                        quantity: 1,
+                        unit: 'set',
+                        estimatedUnitPrice: estimatedTotal || null,
+                        specifications: matchedLab ? `For ${matchedLab.name}` : ''
+                    });
+                }
+
+                if (!estimatedTotal) {
+                    estimatedTotal = items.reduce((acc, it) => acc + ((it.estimatedUnitPrice || 0) * (it.quantity || 1)), 0);
+                }
+
+                const department = matchedLab ? `${matchedLab.name} / IT Department` : 'Computer Science & Lab Department';
+                const purpose = `Procurement of essential lab equipment and supplies for ${matchedLab ? matchedLab.name : 'academic lab sessions and practical exams'}.`;
+
+                const procurementAction = {
+                    isDraft: true,
+                    isConfirmed: false,
+                    isCancelled: false,
+                    title,
+                    purpose,
+                    department,
+                    budgetCode: 'LAB-ACAD-2026',
+                    estimatedTotal: estimatedTotal || 0,
+                    labId: matchedLab?.id || null,
+                    labName: matchedLab?.name || null,
+                    items
+                };
+
+                return {
+                    message: `📦 **Procurement Case Draft Prepared! (Pending Approval)**\n\nI have prepared the procurement requisition proposal **"${title}"**.\n\n- 🏢 **Department:** ${department}\n- 💰 **Estimated Budget:** ₹${estimatedTotal ? estimatedTotal.toLocaleString('en-IN') : 'To be estimated'}\n- 📋 **Items Breakdown (${items.length}):**\n${items.map(it => `  • **${it.quantity} ${it.unit}** × ${it.itemName}`).join('\n')}\n\nPlease review the procurement details below and click **Confirm & Create Procurement Case** or edit items:`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    meetingAction: null,
+                    calendarAction: null,
+                    assignmentAction: null,
+                    noteAction: null,
+                    classAction: null,
+                    userAction: null,
+                    ticketAction: null,
+                    procurementAction,
+                    trainingAction: null,
+                    timetableAction: null,
+                    periodTimingAction: null,
+                    provider: 'auto'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Procurement creation intent error:', err);
+            }
+        }
+
+        // Intent detection: Training Module / Coding Competition Drafting (e.g. "Create training module 'Python Data Structures & Algorithms' for class 12 with 3 coding exercises on Stacks, Queues, and Binary Search Trees")
+        const isTrainingCreationIntent = (
+            (userRole === 'admin' || userRole === 'principal' || userRole === 'instructor') &&
+            (/\b(create|add|make|draft|new|setup)\s+(a\s+|an\s+)?(training\s*module|coding\s*module|competition\s*module|training\s*course|learning\s*module|practice\s*module)\b/i.test(msgLower) ||
+             /\b(training\s*module|coding\s*module|training\s*course)\s+(creation|create|add|draft)\b/i.test(msgLower) ||
+             /^(create|add|make)\s+training\s+module\b/i.test(msgLower.trim()) ||
+             msgLower.includes('ਟ੍ਰੇਨਿੰਗ ਮਾਡਿਊਲ') || msgLower.includes('ਕੋਡਿੰਗ ਮਾਡਿਊਲ') ||
+             msgLower.includes('ट्रेनिंग मॉड्यूल') || msgLower.includes('कोडिंग मॉड्यूल')) &&
+            !msgLower.includes('show training') &&
+            !msgLower.includes('list training') &&
+            !msgLower.includes('view training') &&
+            !msgLower.includes('progress')
+        );
+
+        if (isTrainingCreationIntent) {
+            try {
+                console.log('[ChatBot] Training creation intent detected:', message);
+
+                // 1. Extract Title
+                let title = '';
+                const quotedMatch = message.match(/['"“](.*?)['"”]/);
+                if (quotedMatch && quotedMatch[1].trim()) {
+                    title = quotedMatch[1].trim();
+                } else {
+                    const titleMatch = message.match(/(?:create|add|make|draft|new|setup)\s+(?:a\s+|an\s+)?(?:training\s*module|coding\s*module|competition\s*module|training\s*course|learning\s*module|practice\s*module)?\s*(?:for|titled|name|named|:)?\s*([^,.\n]+)/i);
+                    if (titleMatch && titleMatch[1]) {
+                        title = titleMatch[1]
+                            .replace(/\b(for\s+class\s+.*|in\s+python|in\s+cpp|in\s+java|in\s+c\+\+|with\s+\d+\s+.*)\b/i, '')
+                            .trim();
+                    }
+                }
+                if (!title || title.length < 3) {
+                    title = 'Interactive Coding & Problem Solving';
+                }
+                title = title.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+                // 2. Detect Language
+                let language = 'python';
+                if (/\b(cpp|c\+\+|cplusplus)\b/i.test(message)) {
+                    language = 'cpp';
+                } else if (/\b(java)\b/i.test(message) && !/javascript/i.test(message)) {
+                    language = 'java';
+                } else if (/\b(javascript|js|web|html|react)\b/i.test(message)) {
+                    language = 'javascript';
+                } else if (/\b(sql|database|db)\b/i.test(message)) {
+                    language = 'sql';
+                }
+
+                // 3. Detect Class Level
+                let classLevel = 11;
+                const classMatch = message.match(/\b(?:class|grade)\s*(1[0-2]|[1-9])\b/i);
+                if (classMatch) {
+                    classLevel = parseInt(classMatch[1], 10);
+                }
+
+                // 4. Extract Proposed Units
+                const units = [];
+                if (/stack|queue|linked\s*list|tree|recursion|sort|search|array|string|graph|loop/i.test(message)) {
+                    if (/stack/i.test(message)) units.push({ title: 'Unit 1: Stacks Implementation & Operations', unitNumber: 1, expectedHours: 2 });
+                    if (/queue/i.test(message)) units.push({ title: 'Unit 2: Queues & Circular Queues', unitNumber: 2, expectedHours: 2 });
+                    if (/linked\s*list/i.test(message)) units.push({ title: 'Unit 3: Singly & Doubly Linked Lists', unitNumber: 3, expectedHours: 3 });
+                    if (/tree|bst/i.test(message)) units.push({ title: 'Unit 4: Binary Search Trees & Traversal', unitNumber: 4, expectedHours: 3 });
+                    if (/sort|search/i.test(message)) units.push({ title: 'Unit 5: Searching & Sorting Algorithms', unitNumber: units.length + 1, expectedHours: 2 });
+                }
+                if (units.length === 0) {
+                    units.push({ title: 'Unit 1: Core Fundamentals & Syntax', unitNumber: 1, expectedHours: 2 });
+                    units.push({ title: 'Unit 2: Problem Solving & Algorithms', unitNumber: 2, expectedHours: 3 });
+                }
+
+                const description = `Hands-on training module on ${title} with practical coding exercises, automated test cases, and Socratic AI feedback designed for Class ${classLevel}.`;
+
+                const trainingAction = {
+                    isDraft: true,
+                    isConfirmed: false,
+                    isCancelled: false,
+                    title,
+                    description,
+                    language,
+                    classLevel,
+                    boardAligned: 'CBSE',
+                    units
+                };
+
+                return {
+                    message: `🎓 **Training Module Draft Prepared! (Pending Confirmation)**\n\nI have generated the curriculum draft for **"${title}"**.\n\n- 💻 **Programming Language:** \`${language.toUpperCase()}\`\n- 🏫 **Target Class:** Class ${classLevel} (CBSE Aligned)\n- 📚 **Curriculum Units (${units.length}):**\n${units.map(u => `  • ${u.title} (${u.expectedHours} hrs)`).join('\n')}\n\nPlease review the training module details below and click **Confirm & Create Training Module** to open the interactive builder:`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    meetingAction: null,
+                    calendarAction: null,
+                    assignmentAction: null,
+                    noteAction: null,
+                    classAction: null,
+                    userAction: null,
+                    ticketAction: null,
+                    procurementAction: null,
+                    trainingAction,
+                    timetableAction: null,
+                    periodTimingAction: null,
+                    provider: 'auto'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Training creation intent error:', err);
             }
         }
 

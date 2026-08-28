@@ -9,11 +9,12 @@ import {
     Calendar, Clock, Video, Users, CheckCircle, ExternalLink, Edit3, Save, Link2,
     XCircle, CalendarPlus, Undo2, BookOpen, StickyNote, GraduationCap, CheckSquare,
     LayoutGrid, Table as TableIcon, Inbox, Layers, Laptop, Server, HardDrive,
-    Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket
+    Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket,
+    ShoppingBag, Code, Terminal, Award, Package
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
-import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI, classesAPI, timetableAPI, usersAPI, ticketsAPI, labsAPI } from '@/lib/api';
+import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI, classesAPI, timetableAPI, usersAPI, ticketsAPI, labsAPI, procurementAPI, trainingAPI } from '@/lib/api';
 import VoiceInputButton from './VoiceInputButton';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -3176,6 +3177,586 @@ function TicketActionCard({ action }) {
     );
 }
 
+/* ─── Procurement Case Action Card ─── */
+function ProcurementActionCard({ action }) {
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [createdRequest, setCreatedRequest] = useState(null);
+
+    const [title, setTitle] = useState(action?.title || 'Lab Equipment Procurement');
+    const [purpose, setPurpose] = useState(action?.purpose || '');
+    const [department, setDepartment] = useState(action?.department || 'Computer Science & Lab Department');
+    const [budgetCode, setBudgetCode] = useState(action?.budgetCode || 'LAB-ACAD-2026');
+    const [items, setItems] = useState(action?.items || [{ itemName: 'Item 1', quantity: 1, unit: 'pcs', estimatedUnitPrice: 0 }]);
+
+    const totalEstimate = items.reduce((acc, it) => acc + ((parseFloat(it.estimatedUnitPrice) || 0) * (parseInt(it.quantity) || 1)), 0);
+
+    const handleAddItem = () => {
+        setItems([...items, { itemName: '', quantity: 1, unit: 'pcs', estimatedUnitPrice: 0 }]);
+    };
+
+    const handleRemoveItem = (index) => {
+        setItems(items.filter((_, i) => i !== index));
+    };
+
+    const handleItemChange = (index, field, val) => {
+        const copy = [...items];
+        copy[index] = { ...copy[index], [field]: val };
+        setItems(copy);
+    };
+
+    const handleConfirm = async () => {
+        if (!title.trim()) {
+            toast.error('Procurement title is required');
+            return;
+        }
+        if (items.length === 0 || !items.some(it => it.itemName.trim())) {
+            toast.error('At least one valid item is required');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const validItems = items.filter(it => it.itemName.trim()).map(it => ({
+                itemName: it.itemName.trim(),
+                quantity: parseInt(it.quantity) || 1,
+                unit: it.unit || 'pcs',
+                estimatedUnitPrice: parseFloat(it.estimatedUnitPrice) || null,
+                specifications: it.specifications || null
+            }));
+
+            const payload = {
+                title: title.trim(),
+                purpose: purpose.trim() || title.trim(),
+                department: department.trim(),
+                budgetCode: budgetCode.trim(),
+                items: validItems
+            };
+
+            const res = await procurementAPI.createRequest(payload);
+            if (res.data?.success) {
+                setIsConfirmed(true);
+                setCreatedRequest(res.data.data);
+                toast.success('Procurement case created successfully!');
+            } else {
+                toast.error(res.data?.message || 'Failed to create procurement case');
+            }
+        } catch (err) {
+            console.error('Error creating procurement request:', err);
+            toast.error(err.response?.data?.message || err.message || 'Error creating procurement case');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 text-xs flex items-center justify-between">
+                <span className="flex items-center gap-1.5"><XCircle className="w-4 h-4 text-slate-400" /> Procurement case draft discarded</span>
+                <button onClick={() => setIsCancelled(false)} className="text-indigo-600 hover:underline font-medium">Restore</button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-3 rounded-xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/70 via-white to-teal-50/50 shadow-sm overflow-hidden text-xs">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <ShoppingBag className="w-4 h-4" />
+                    <span className="font-semibold text-[13px]">
+                        {isConfirmed ? 'Procurement Case Registered' : 'Draft Procurement Case'}
+                    </span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30">
+                    {department}
+                </span>
+            </div>
+
+            {/* Body */}
+            <div className="p-3.5 space-y-3">
+                {isEditing ? (
+                    <div className="space-y-2.5">
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Procurement Title *</label>
+                            <input
+                                type="text"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                                placeholder="e.g. Procurement of LAN Cables and Gigabit Switches"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Department</label>
+                                <input
+                                    type="text"
+                                    value={department}
+                                    onChange={(e) => setDepartment(e.target.value)}
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Budget Code</label>
+                                <input
+                                    type="text"
+                                    value={budgetCode}
+                                    onChange={(e) => setBudgetCode(e.target.value)}
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Purpose & Justification</label>
+                            <textarea
+                                value={purpose}
+                                onChange={(e) => setPurpose(e.target.value)}
+                                rows={2}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none resize-none"
+                                placeholder="State the reason for requisition..."
+                            />
+                        </div>
+
+                        {/* Items Editor */}
+                        <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                                <label className="text-[10px] font-semibold text-slate-600">Requisition Items ({items.length})</label>
+                                <button
+                                    type="button"
+                                    onClick={handleAddItem}
+                                    className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-0.5"
+                                >
+                                    <Plus className="w-3 h-3" /> Add Item
+                                </button>
+                            </div>
+                            {items.map((it, idx) => (
+                                <div key={idx} className="flex items-center gap-1.5 p-1.5 rounded-lg bg-slate-50 border border-slate-200">
+                                    <input
+                                        type="text"
+                                        value={it.itemName}
+                                        onChange={(e) => handleItemChange(idx, 'itemName', e.target.value)}
+                                        placeholder="Item name"
+                                        className="flex-1 px-2 py-1 bg-white border border-slate-300 rounded text-xs"
+                                    />
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={it.quantity}
+                                        onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
+                                        className="w-14 px-1.5 py-1 bg-white border border-slate-300 rounded text-xs text-center"
+                                        placeholder="Qty"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={it.unit}
+                                        onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
+                                        className="w-14 px-1.5 py-1 bg-white border border-slate-300 rounded text-xs text-center"
+                                        placeholder="Unit"
+                                    />
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={it.estimatedUnitPrice || ''}
+                                        onChange={(e) => handleItemChange(idx, 'estimatedUnitPrice', e.target.value)}
+                                        className="w-20 px-1.5 py-1 bg-white border border-slate-300 rounded text-xs text-right"
+                                        placeholder="₹ Price"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRemoveItem(idx)}
+                                        className="text-slate-400 hover:text-rose-500 p-1"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(false)}
+                                className="px-2.5 py-1 rounded-md text-slate-600 hover:bg-slate-100 font-medium"
+                            >
+                                Done Editing
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <div className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                                    <span>{title}</span>
+                                </div>
+                                <div className="text-slate-500 text-xs mt-0.5">
+                                    <span>{purpose || 'Standard academic lab procurement requisition.'}</span>
+                                </div>
+                            </div>
+                            {!isConfirmed && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditing(true)}
+                                    className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition"
+                                    title="Edit Procurement Details"
+                                >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="bg-slate-100/70 p-2.5 rounded-lg space-y-1.5">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                                <span>Requested Items ({items.length})</span>
+                                <span className="text-emerald-700 font-semibold">
+                                    {totalEstimate > 0 ? `Est. Total: ₹${totalEstimate.toLocaleString('en-IN')}` : ''}
+                                </span>
+                            </div>
+                            <div className="divide-y divide-slate-200/80">
+                                {items.map((it, idx) => (
+                                    <div key={idx} className="py-1 flex items-center justify-between text-[11px]">
+                                        <span className="font-medium text-slate-700">
+                                            {it.quantity} {it.unit || 'pcs'} × {it.itemName}
+                                        </span>
+                                        {it.estimatedUnitPrice ? (
+                                            <span className="font-mono text-slate-600">
+                                                ₹{(parseFloat(it.estimatedUnitPrice) * (parseInt(it.quantity) || 1)).toLocaleString('en-IN')}
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Department</span>
+                                <span className="font-semibold text-slate-700">{department}</span>
+                            </div>
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Estimated Budget</span>
+                                <span className="font-bold text-emerald-700">
+                                    ₹{totalEstimate ? totalEstimate.toLocaleString('en-IN') : (action?.estimatedTotal ? parseFloat(action.estimatedTotal).toLocaleString('en-IN') : 'TBD')}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Confirmed State */}
+                {isConfirmed && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-in fade-in">
+                        <div className="flex items-center gap-2 text-emerald-800 font-bold">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>Procurement Request Created!</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-700">
+                            Requisition has been saved in draft status. You can now invite vendor quotations and print purchase proposals.
+                        </p>
+                        <div className="pt-1 flex items-center gap-2">
+                            <a
+                                href="/admin/procurement"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-100/80 hover:bg-emerald-200 px-2.5 py-1 rounded-lg transition"
+                            >
+                                <ShoppingBag className="w-3 h-3" /> View Procurement Dashboard
+                            </a>
+                        </div>
+                    </div>
+                )}
+
+                {/* Footer Action Buttons */}
+                {!isConfirmed && !isEditing && (
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                        <button
+                            type="button"
+                            onClick={() => setIsCancelled(true)}
+                            className="px-2.5 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 font-medium transition"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            disabled={loading}
+                            className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-emerald-500/20 transition disabled:opacity-50"
+                        >
+                            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            Confirm & Create Procurement Case
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/* ─── Training Module & Competition Action Card ─── */
+function TrainingActionCard({ action }) {
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [createdModule, setCreatedModule] = useState(null);
+
+    const [title, setTitle] = useState(action?.title || 'Python Data Structures & Algorithms');
+    const [description, setDescription] = useState(action?.description || '');
+    const [language, setLanguage] = useState(action?.language || 'python');
+    const [classLevel, setClassLevel] = useState(action?.classLevel || 11);
+    const [boardAligned, setBoardAligned] = useState(action?.boardAligned || 'CBSE');
+    const [units, setUnits] = useState(action?.units || []);
+
+    const handleConfirm = async () => {
+        if (!title.trim()) {
+            toast.error('Module title is required');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const payload = {
+                title: title.trim(),
+                description: description.trim() || title.trim(),
+                language,
+                classLevel: classLevel ? parseInt(classLevel) : null,
+                boardAligned
+            };
+
+            const res = await trainingAPI.createModule(payload);
+            if (res.data?.success && res.data.data?.module) {
+                const newMod = res.data.data.module;
+                setIsConfirmed(true);
+                setCreatedModule(newMod);
+
+                // Auto-create proposed units if provided
+                if (units.length > 0) {
+                    for (let i = 0; i < units.length; i++) {
+                        const u = units[i];
+                        await trainingAPI.createUnit(newMod.id, {
+                            title: u.title,
+                            unitNumber: u.unitNumber || (i + 1),
+                            expectedHours: u.expectedHours || 2,
+                            unlockThreshold: 75,
+                            sequenceOrder: i + 1
+                        }).catch(() => {});
+                    }
+                }
+
+                toast.success(`Training Module "${title}" created successfully!`);
+            } else {
+                toast.error(res.data?.message || 'Failed to create training module');
+            }
+        } catch (err) {
+            console.error('Error creating training module:', err);
+            toast.error(err.response?.data?.message || err.message || 'Error creating training module');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 text-xs flex items-center justify-between">
+                <span className="flex items-center gap-1.5"><XCircle className="w-4 h-4 text-slate-400" /> Training module draft discarded</span>
+                <button onClick={() => setIsCancelled(false)} className="text-indigo-600 hover:underline font-medium">Restore</button>
+            </div>
+        );
+    }
+
+    const languageBadges = {
+        python: 'bg-yellow-50 text-yellow-800 border-yellow-200',
+        cpp: 'bg-blue-50 text-blue-800 border-blue-200',
+        java: 'bg-orange-50 text-orange-800 border-orange-200',
+        javascript: 'bg-amber-50 text-amber-800 border-amber-200',
+        sql: 'bg-indigo-50 text-indigo-800 border-indigo-200'
+    };
+
+    return (
+        <div className="mt-3 rounded-xl border border-cyan-200/90 bg-gradient-to-br from-cyan-50/70 via-white to-blue-50/50 shadow-sm overflow-hidden text-xs">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <GraduationCap className="w-4 h-4" />
+                    <span className="font-semibold text-[13px]">
+                        {isConfirmed ? 'Training Module Created' : 'Draft Training Module'}
+                    </span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30">
+                    {language}
+                </span>
+            </div>
+
+            {/* Body */}
+            <div className="p-3.5 space-y-3">
+                {isEditing ? (
+                    <div className="space-y-2.5">
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Module Title *</label>
+                            <input
+                                type="text"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+                                placeholder="e.g. Python Data Structures & Algorithms"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Language</label>
+                                <select
+                                    value={language}
+                                    onChange={(e) => setLanguage(e.target.value)}
+                                    className="w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-cyan-500 focus:outline-none bg-white"
+                                >
+                                    <option value="python">Python</option>
+                                    <option value="cpp">C++</option>
+                                    <option value="java">Java</option>
+                                    <option value="javascript">JavaScript</option>
+                                    <option value="sql">SQL</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Target Class</label>
+                                <select
+                                    value={classLevel}
+                                    onChange={(e) => setClassLevel(e.target.value)}
+                                    className="w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-cyan-500 focus:outline-none bg-white"
+                                >
+                                    <option value="11">Class 11</option>
+                                    <option value="12">Class 12</option>
+                                    <option value="10">Class 10</option>
+                                    <option value="9">Class 9</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Description & Pedagogy</label>
+                            <textarea
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                rows={2}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-cyan-500 focus:outline-none resize-none"
+                                placeholder="Curriculum overview and goals..."
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(false)}
+                                className="px-2.5 py-1 rounded-md text-slate-600 hover:bg-slate-100 font-medium"
+                            >
+                                Done Editing
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <div className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                                    <span>{title}</span>
+                                </div>
+                                <div className="text-slate-500 text-xs mt-0.5">
+                                    <span>{description || 'Interactive student training course with Socratic AI feedback.'}</span>
+                                </div>
+                            </div>
+                            {!isConfirmed && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditing(true)}
+                                    className="p-1 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition"
+                                    title="Edit Module Details"
+                                >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Programming Language</span>
+                                <span className={`font-semibold capitalize px-1.5 py-0.5 rounded border inline-block text-[11px] ${languageBadges[language] || ''}`}>
+                                    {language}
+                                </span>
+                            </div>
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Target Class & Alignment</span>
+                                <span className="font-semibold text-slate-700">Class {classLevel} ({boardAligned || 'CBSE'})</span>
+                            </div>
+                        </div>
+
+                        {units.length > 0 && (
+                            <div className="bg-slate-100/70 p-2.5 rounded-lg space-y-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                                    Structured Units ({units.length})
+                                </span>
+                                <div className="space-y-1">
+                                    {units.map((u, idx) => (
+                                        <div key={idx} className="flex items-center justify-between text-[11px] text-slate-700 font-medium">
+                                            <span>• {u.title}</span>
+                                            <span className="text-slate-500 text-[10px]">{u.expectedHours} hrs</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Confirmed State */}
+                {isConfirmed && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-in fade-in">
+                        <div className="flex items-center gap-2 text-emerald-800 font-bold">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>Training Module Created!</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-700">
+                            The training curriculum has been registered. You can now build coding exercises and automated test cases.
+                        </p>
+                        <div className="pt-1 flex items-center gap-2">
+                            <a
+                                href={createdModule?.id ? `/admin/training/${createdModule.id}/builder` : '/admin/training'}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-cyan-800 hover:text-cyan-900 bg-cyan-100/80 hover:bg-cyan-200 px-2.5 py-1 rounded-lg transition"
+                            >
+                                <Code className="w-3 h-3" /> Open Exercise Builder
+                            </a>
+                        </div>
+                    </div>
+                )}
+
+                {/* Footer Action Buttons */}
+                {!isConfirmed && !isEditing && (
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                        <button
+                            type="button"
+                            onClick={() => setIsCancelled(true)}
+                            className="px-2.5 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 font-medium transition"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            disabled={loading}
+                            className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-700 hover:to-indigo-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-blue-500/20 transition disabled:opacity-50"
+                        >
+                            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            Confirm & Create Training Module
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 /* ─── Class Creation Action Card ─── */
 function ClassActionCard({ action }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -4199,6 +4780,10 @@ export default function FloatingChatbot() {
                         assignmentAction: d.assignmentAction,
                         noteAction: d.noteAction,
                         classAction: d.classAction,
+                        userAction: d.userAction,
+                        ticketAction: d.ticketAction,
+                        procurementAction: d.procurementAction,
+                        trainingAction: d.trainingAction,
                         timetableAction: d.timetableAction,
                         periodTimingAction: d.periodTimingAction,
                         model: d.model, 
@@ -4260,12 +4845,56 @@ export default function FloatingChatbot() {
         setShowHistory(false);
     };
 
-    const suggestions = [
-        "How many students enrolled?",
-        "Top 5 classes by submissions",
-        "Active instructors count",
-        "Pending procurement requests",
+    const [activePromptCategory, setActivePromptCategory] = useState(0);
+
+    const instructorPromptCategories = [
+        {
+            title: "🏢 Lab & Hardware",
+            icon: Monitor,
+            prompts: [
+                "List all computers in Computer Lab 1 with RAM and processor",
+                "Which lab computers have open tickets or faults?",
+                "Show lab inventory with total cost and purchase dates",
+                "List equipment shift requests pending approval"
+            ]
+        },
+        {
+            title: "📦 Procurement Cases",
+            icon: ShoppingBag,
+            prompts: [
+                "Prepare procurement case for 30 CAT-6 LAN cables and 5 Gigabit switches for Lab 2 with estimated budget 35,000",
+                "Prepare procurement request for 15 Core i7 PCs and 2 Laser Printers",
+                "Show status of active procurement requests and vendor quotes"
+            ]
+        },
+        {
+            title: "🎓 Student Training & Modules",
+            icon: GraduationCap,
+            prompts: [
+                "Create training module 'Python Data Structures & Algorithms' for class 12 with exercises on Stacks and Queues",
+                "Create training module 'Web Development with JavaScript' for class 11",
+                "Show student training progress and mastery analytics for Class 11 Non-Medical A"
+            ]
+        },
+        {
+            title: "🎫 Maintenance & Tickets",
+            icon: Ticket,
+            prompts: [
+                "Create ticket 'Power Rail Failure' for Computer Lab 2",
+                "Log maintenance ticket for broken monitor on PC-05 in Lab 1"
+            ]
+        },
+        {
+            title: "📊 Reports & Audits",
+            icon: FileText,
+            prompts: [
+                "Generate PDF report of lab attendance and coding submissions for Class 11",
+                "Export Excel report of faulty lab equipment across all labs"
+            ]
+        }
     ];
+
+    const suggestions = instructorPromptCategories[activePromptCategory]?.prompts || [];
 
     // ── Sizing ──
     const panelClass = isExpanded
@@ -4479,6 +5108,8 @@ export default function FloatingChatbot() {
                                             {msg.classAction && <ClassActionCard action={msg.classAction} />}
                                             {msg.userAction && <UserActionCard action={msg.userAction} />}
                                             {msg.ticketAction && <TicketActionCard action={msg.ticketAction} />}
+                                            {msg.procurementAction && <ProcurementActionCard action={msg.procurementAction} />}
+                                            {msg.trainingAction && <TrainingActionCard action={msg.trainingAction} />}
                                             {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
                                             {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
                                             {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
@@ -4504,15 +5135,45 @@ export default function FloatingChatbot() {
 
                                 <div ref={messagesEndRef} />
 
-                                {/* Suggestions on empty */}
+                                {/* Senior Lab Instructor Prompts & Action Hub */}
                                 {messages.length <= 1 && !isLoading && (
-                                    <div className="grid grid-cols-1 gap-1.5 mt-2">
-                                        {suggestions.map((s, i) => (
-                                            <button key={i} onClick={() => setInput(s)}
-                                                className="text-left px-3 py-2 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 hover:shadow-sm transition text-[12px] text-slate-600 hover:text-indigo-600">
-                                                <Sparkles className="w-3 h-3 inline mr-1.5 text-indigo-400" />{s}
-                                            </button>
-                                        ))}
+                                    <div className="mt-2 space-y-2">
+                                        {/* Category Tabs */}
+                                        <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
+                                            {instructorPromptCategories.map((cat, idx) => {
+                                                const Icon = cat.icon;
+                                                const isActive = activePromptCategory === idx;
+                                                return (
+                                                    <button
+                                                        key={idx}
+                                                        type="button"
+                                                        onClick={() => setActivePromptCategory(idx)}
+                                                        className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition border ${
+                                                            isActive
+                                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                                                : 'bg-slate-100/80 hover:bg-slate-200/80 text-slate-600 border-slate-200'
+                                                        }`}
+                                                    >
+                                                        <Icon className="w-3 h-3" />
+                                                        <span>{cat.title}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Prompts list for active category */}
+                                        <div className="grid grid-cols-1 gap-1.5">
+                                            {suggestions.map((s, i) => (
+                                                <button
+                                                    key={i}
+                                                    onClick={() => setInput(s)}
+                                                    className="text-left px-3 py-2 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 hover:shadow-xs transition text-[12px] text-slate-700 hover:text-indigo-700 flex items-start gap-2"
+                                                >
+                                                    <Sparkles className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-indigo-500" />
+                                                    <span className="leading-snug">{s}</span>
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                             </div>
