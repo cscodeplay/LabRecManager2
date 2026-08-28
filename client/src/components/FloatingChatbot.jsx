@@ -9,11 +9,11 @@ import {
     Calendar, Clock, Video, Users, CheckCircle, ExternalLink, Edit3, Save, Link2,
     XCircle, CalendarPlus, Undo2, BookOpen, StickyNote, GraduationCap, CheckSquare,
     LayoutGrid, Table as TableIcon, Inbox, Layers, Laptop, Server, HardDrive,
-    Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2
+    Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
-import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI, classesAPI, timetableAPI, usersAPI } from '@/lib/api';
+import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI, classesAPI, timetableAPI, usersAPI, ticketsAPI, labsAPI } from '@/lib/api';
 import VoiceInputButton from './VoiceInputButton';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -2893,6 +2893,289 @@ function UserActionCard({ action }) {
     );
 }
 
+/* ─── Ticket / Issue Creation Action Card ─── */
+function TicketActionCard({ action }) {
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [createdTicket, setCreatedTicket] = useState(null);
+
+    const [title, setTitle] = useState(action?.title || 'Power Rail Failure');
+    const [description, setDescription] = useState(action?.description || '');
+    const [category, setCategory] = useState(action?.category || 'hardware_issue');
+    const [priority, setPriority] = useState(action?.priority || 'medium');
+    const [date, setDate] = useState(action?.date ? new Date(action.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+    const [labId, setLabId] = useState(action?.labId || '');
+    const [availableLabs, setAvailableLabs] = useState([]);
+
+    useEffect(() => {
+        labsAPI.getAll()
+            .then(res => {
+                if (res.data?.success && res.data.data) {
+                    setAvailableLabs(res.data.data);
+                }
+            })
+            .catch(() => {});
+    }, []);
+
+    const handleConfirm = async () => {
+        if (!title.trim()) {
+            toast.error('Ticket title is required');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const payload = {
+                title: title.trim(),
+                description: description.trim() || title.trim(),
+                category,
+                priority,
+                labId: labId || null
+            };
+
+            const res = await ticketsAPI.create(payload);
+            if (res.data?.success) {
+                setIsConfirmed(true);
+                setCreatedTicket(res.data.data);
+                toast.success(`Ticket ${res.data.data?.ticketNumber || ''} created successfully!`);
+            } else {
+                toast.error(res.data?.message || 'Failed to create ticket');
+            }
+        } catch (err) {
+            console.error('Error creating ticket:', err);
+            toast.error(err.response?.data?.message || err.message || 'Error creating ticket');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 text-xs flex items-center justify-between">
+                <span className="flex items-center gap-1.5"><XCircle className="w-4 h-4 text-slate-400" /> Ticket creation draft discarded</span>
+                <button onClick={() => setIsCancelled(false)} className="text-indigo-600 hover:underline font-medium">Restore</button>
+            </div>
+        );
+    }
+
+    const selectedLab = availableLabs.find(l => l.id === labId);
+
+    const categoryLabels = {
+        hardware_issue: '🔧 Hardware Issue',
+        software_issue: '💻 Software Issue',
+        maintenance_request: '🛠️ Maintenance Request',
+        general_complaint: '📝 General Complaint',
+        other: '📋 Other'
+    };
+
+    const priorityBadges = {
+        low: 'bg-slate-100 text-slate-700 border-slate-200',
+        medium: 'bg-blue-50 text-blue-700 border-blue-200',
+        high: 'bg-orange-50 text-orange-700 border-orange-200',
+        critical: 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
+    };
+
+    return (
+        <div className="mt-3 rounded-xl border border-rose-200/90 bg-gradient-to-br from-rose-50/70 via-white to-amber-50/50 shadow-sm overflow-hidden text-xs">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-rose-600 via-pink-600 to-amber-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <Ticket className="w-4 h-4" />
+                    <span className="font-semibold text-[13px]">
+                        {isConfirmed ? 'Ticket Created' : 'Draft Support Ticket'}
+                    </span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30">
+                    {priority}
+                </span>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-3.5 space-y-3">
+                {isEditing ? (
+                    <div className="space-y-2.5">
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Ticket Title *</label>
+                            <input
+                                type="text"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-rose-500 focus:outline-none"
+                                placeholder="e.g. Power rail failure"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Category</label>
+                                <select
+                                    value={category}
+                                    onChange={(e) => setCategory(e.target.value)}
+                                    className="w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-rose-500 focus:outline-none bg-white"
+                                >
+                                    <option value="hardware_issue">Hardware Issue</option>
+                                    <option value="software_issue">Software Issue</option>
+                                    <option value="maintenance_request">Maintenance Request</option>
+                                    <option value="general_complaint">General Complaint</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Priority</label>
+                                <select
+                                    value={priority}
+                                    onChange={(e) => setPriority(e.target.value)}
+                                    className="w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-rose-500 focus:outline-none bg-white"
+                                >
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                    <option value="critical">Critical / Emergency</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Assign to Lab</label>
+                                <select
+                                    value={labId}
+                                    onChange={(e) => setLabId(e.target.value)}
+                                    className="w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-rose-500 focus:outline-none bg-white"
+                                >
+                                    <option value="">-- General / No Lab --</option>
+                                    {availableLabs.map(l => (
+                                        <option key={l.id} value={l.id}>{l.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Reported Date</label>
+                                <input
+                                    type="date"
+                                    value={date}
+                                    onChange={(e) => setDate(e.target.value)}
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-rose-500 focus:outline-none"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Description</label>
+                            <textarea
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                rows={2}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-rose-500 focus:outline-none resize-none"
+                                placeholder="Describe the fault or incident..."
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(false)}
+                                className="px-2.5 py-1 rounded-md text-slate-600 hover:bg-slate-100 font-medium"
+                            >
+                                Done Editing
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <div className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                                    <span>{title}</span>
+                                </div>
+                                <div className="text-slate-500 text-xs mt-0.5 flex items-center gap-1">
+                                    <span>{description || 'No additional description provided.'}</span>
+                                </div>
+                            </div>
+                            {!isConfirmed && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditing(true)}
+                                    className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                                    title="Edit Ticket Details"
+                                >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Category</span>
+                                <span className="font-semibold text-slate-700">{categoryLabels[category] || category}</span>
+                            </div>
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Priority</span>
+                                <span className={`font-semibold capitalize px-1.5 py-0.5 rounded border inline-block text-[11px] ${priorityBadges[priority] || ''}`}>
+                                    {priority}
+                                </span>
+                            </div>
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Location / Lab</span>
+                                <span className="font-semibold text-slate-700">{selectedLab?.name || action?.labName || 'General / Campus'}</span>
+                            </div>
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Reported Date</span>
+                                <span className="font-medium text-slate-700">{date}</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Confirmed State banner */}
+                {isConfirmed && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-in fade-in">
+                        <div className="flex items-center gap-2 text-emerald-800 font-bold">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>Ticket #{createdTicket?.ticketNumber || 'TKT-CREATED'} Created!</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-700">
+                            Support ticket has been logged and queued for the IT / Maintenance team.
+                        </p>
+                        <div className="pt-1 flex items-center gap-2">
+                            <a
+                                href="/tickets"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-100/80 hover:bg-emerald-200 px-2.5 py-1 rounded-lg transition"
+                            >
+                                <Ticket className="w-3 h-3" /> View All Tickets
+                            </a>
+                        </div>
+                    </div>
+                )}
+
+                {/* Footer Action Buttons */}
+                {!isConfirmed && !isEditing && (
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                        <button
+                            type="button"
+                            onClick={() => setIsCancelled(true)}
+                            className="px-2.5 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 font-medium transition"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            disabled={loading}
+                            className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-rose-500/20 transition disabled:opacity-50"
+                        >
+                            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            Confirm & Create Ticket
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 /* ─── Class Creation Action Card ─── */
 function ClassActionCard({ action }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -4195,6 +4478,7 @@ export default function FloatingChatbot() {
                                             {msg.noteAction && <NoteActionCard action={msg.noteAction} />}
                                             {msg.classAction && <ClassActionCard action={msg.classAction} />}
                                             {msg.userAction && <UserActionCard action={msg.userAction} />}
+                                            {msg.ticketAction && <TicketActionCard action={msg.ticketAction} />}
                                             {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
                                             {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
                                             {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}

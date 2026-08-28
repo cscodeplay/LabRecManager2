@@ -806,6 +806,162 @@ Return JSON ONLY in this format:
             }
         }
 
+        // Intent detection: Ticket / Issue Creation (e.g. "create ticket 'power rail failure' on date 22-08-2026", "raise ticket broken monitor in Lab 1", "add support ticket for AC not working")
+        const isTicketCreationIntent = (
+            (/\b(create|raise|open|log|add|report|new|submit|file)\s+(a\s+|an\s+)?(ticket|support\s*ticket|issue|complaint|fault|incident)\b/i.test(msgLower) ||
+             /\b(ticket|support\s*ticket|complaint|issue)\s+(creation|create|add|raise|log|report|submit)\b/i.test(msgLower) ||
+             /^(create|raise|log|add)\s+ticket\b/i.test(msgLower.trim()) ||
+             /^ticket\s*:\s*/i.test(msgLower.trim()) ||
+             msgLower.includes('ਟਿਕਟ ਬਣਾਓ') || msgLower.includes('ਟਿਕਟ ਦਰਜ') ||
+             msgLower.includes('ਸ਼ਿਕਾਇਤ ਦਰਜ') || msgLower.includes('शिकायत दर्ज') || msgLower.includes('टिकट बनाएं') ||
+             (msgLower.includes('ticket') && (msgLower.includes('failure') || msgLower.includes('issue') || msgLower.includes('broken') || msgLower.includes('not working') || msgLower.includes('fault')))) &&
+            !msgLower.includes('show ticket') &&
+            !msgLower.includes('list ticket') &&
+            !msgLower.includes('search ticket') &&
+            !msgLower.includes('get ticket') &&
+            !msgLower.includes('view ticket') &&
+            !msgLower.includes('display ticket') &&
+            !msgLower.includes('how many ticket')
+        );
+
+        if (isTicketCreationIntent) {
+            try {
+                console.log('[ChatBot] Ticket creation intent detected:', message);
+
+                const [labs, items] = await Promise.all([
+                    prisma.lab.findMany({ select: { id: true, name: true, roomNumber: true } }).catch(() => []),
+                    prisma.labItem.findMany({ select: { id: true, name: true, itemType: true, labId: true } }).catch(() => [])
+                ]);
+
+                // 1. Extract Title:
+                let title = '';
+                const quotedMatch = message.match(/['"“](.*?)['"”]/);
+                if (quotedMatch && quotedMatch[1].trim()) {
+                    title = quotedMatch[1].trim();
+                } else {
+                    const titleMatch = message.match(/(?:create|raise|open|log|add|report|new|submit|file)\s+(?:a\s+|an\s+)?(?:ticket|support\s*ticket|issue|complaint|fault|incident)?\s*(?:for|about|on|regarding|titled|name|named|:)?\s*([^,.\n]+)/i);
+                    if (titleMatch && titleMatch[1]) {
+                        title = titleMatch[1]
+                            .replace(/\b(on\s+date\s+.*|date\s+.*|in\s+lab\s+.*|priority\s+.*|category\s+.*)\b/i, '')
+                            .trim();
+                    }
+                }
+
+                if (!title || title.length < 2) {
+                    title = 'Hardware / Facility Issue';
+                }
+
+                // Capitalize Title nicely
+                title = title.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+                // 2. Extract Date:
+                let targetDate = new Date();
+                const dmyMatch = message.match(/\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})\b/);
+                const ymdMatch = message.match(/\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b/);
+                if (dmyMatch) {
+                    const day = parseInt(dmyMatch[1], 10);
+                    const month = parseInt(dmyMatch[2], 10) - 1;
+                    const year = parseInt(dmyMatch[3], 10);
+                    targetDate = new Date(year, month, day, 10, 0, 0);
+                } else if (ymdMatch) {
+                    const year = parseInt(ymdMatch[1], 10);
+                    const month = parseInt(ymdMatch[2], 10) - 1;
+                    const day = parseInt(ymdMatch[3], 10);
+                    targetDate = new Date(year, month, day, 10, 0, 0);
+                }
+
+                // 3. Detect Category:
+                let category = 'other';
+                if (/power|rail|wire|cable|cpu|ram|monitor|screen|keyboard|mouse|printer|switch|motherboard|ups|supply|hardware|component|pc|computer|device/i.test(message)) {
+                    category = 'hardware_issue';
+                } else if (/software|os|windows|linux|install|error|crash|virus|bug|compiler|driver|app/i.test(message)) {
+                    category = 'software_issue';
+                } else if (/clean|service|maintenance|replace|ac|light|bulb|furniture|chair|table|water|fan/i.test(message)) {
+                    category = 'maintenance_request';
+                } else if (/noise|slow|student|discipline|complaint|staff/i.test(message)) {
+                    category = 'general_complaint';
+                }
+
+                // 4. Detect Priority:
+                let priority = 'medium';
+                if (/critical|emergency|blast|smoke|fire|severe|immediate|danger|failure|down/i.test(message)) {
+                    priority = 'critical';
+                } else if (/urgent|high|asap|important/i.test(message)) {
+                    priority = 'high';
+                } else if (/low|minor|whenever|trivial/i.test(message)) {
+                    priority = 'low';
+                }
+
+                // 5. Match Lab:
+                let matchedLab = null;
+                for (const l of labs) {
+                    if (msgLower.includes(l.name.toLowerCase()) || (l.roomNumber && msgLower.includes(l.roomNumber.toLowerCase()))) {
+                        matchedLab = l;
+                        break;
+                    }
+                }
+
+                // 6. Match Item:
+                let matchedItem = null;
+                for (const it of items) {
+                    if (msgLower.includes(it.name.toLowerCase())) {
+                        matchedItem = it;
+                        if (!matchedLab && it.labId) {
+                            matchedLab = labs.find(l => l.id === it.labId) || null;
+                        }
+                        break;
+                    }
+                }
+
+                // 7. Generate Description:
+                let description = `${title}. Reported on ${targetDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}.`;
+                if (matchedLab) description += ` Location: ${matchedLab.name}.`;
+
+                const ticketAction = {
+                    isDraft: true,
+                    isConfirmed: false,
+                    isCancelled: false,
+                    title,
+                    description,
+                    category,
+                    priority,
+                    date: targetDate.toISOString(),
+                    labId: matchedLab?.id || null,
+                    labName: matchedLab?.name || null,
+                    itemId: matchedItem?.id || null,
+                    itemName: matchedItem?.name || null
+                };
+
+                const categoryLabel = {
+                    hardware_issue: 'Hardware Issue',
+                    software_issue: 'Software Issue',
+                    maintenance_request: 'Maintenance Request',
+                    general_complaint: 'General Complaint',
+                    other: 'Other'
+                }[category] || category;
+
+                return {
+                    message: `🎫 **Ticket Draft Prepared! (Pending Confirmation)**\n\nI have generated the draft for support ticket **"${title}"**.\n\n- 🏷️ **Category:** \`${categoryLabel}\`\n- ⚡ **Priority:** \`${priority.toUpperCase()}\`\n- 📅 **Reported Date:** ${targetDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}\n${matchedLab ? `- 🏢 **Lab:** ${matchedLab.name}\n` : ''}\nPlease review the details in the confirmation card below and click **Confirm & Create Ticket** or **Cancel**:`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    meetingAction: null,
+                    calendarAction: null,
+                    assignmentAction: null,
+                    noteAction: null,
+                    classAction: null,
+                    userAction: null,
+                    ticketAction,
+                    timetableAction: null,
+                    periodTimingAction: null,
+                    provider: 'auto'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Ticket creation intent error:', err);
+            }
+        }
+
         // Intent detection: Timetable Slot Scheduling (e.g. "Create 7th lecture for mon and 9th for Tue of computer science by instructor Charanpreet Singh", "set period 2 on monday for class 12 Medical A")
         const isTimetableCreationIntent = (
             (userRole === 'admin' || userRole === 'principal' || userRole === 'instructor') &&
