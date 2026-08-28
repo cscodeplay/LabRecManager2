@@ -2644,8 +2644,8 @@ function UserActionCard({ action }) {
     useEffect(() => {
         classesAPI.getAll({ limit: 100 })
             .then(res => {
-                const list = res.data?.data?.classes || res.data?.classes || [];
-                setAvailableClasses(list);
+                const list = res.data?.data?.classes || res.data?.classes || (Array.isArray(res.data?.data) ? res.data.data : []);
+                setAvailableClasses(Array.isArray(list) ? list : []);
             })
             .catch(() => {});
     }, []);
@@ -2696,7 +2696,7 @@ function UserActionCard({ action }) {
         );
     }
 
-    const selectedClass = availableClasses.find(c => c.id === classId);
+    const selectedClass = (Array.isArray(availableClasses) ? availableClasses : []).find(c => c.id === classId);
 
     return (
         <div className="mt-3 rounded-xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/70 via-white to-violet-50/50 shadow-sm overflow-hidden text-xs">
@@ -2922,9 +2922,8 @@ function TicketActionCard({ action }) {
     useEffect(() => {
         labsAPI.getAll()
             .then(res => {
-                if (res.data?.success && res.data.data) {
-                    setAvailableLabs(res.data.data);
-                }
+                const list = res.data?.data?.labs || res.data?.labs || (Array.isArray(res.data?.data) ? res.data.data : []);
+                setAvailableLabs(Array.isArray(list) ? list : []);
             })
             .catch(() => {});
     }, []);
@@ -2970,7 +2969,7 @@ function TicketActionCard({ action }) {
         );
     }
 
-    const selectedLab = availableLabs.find(l => l.id === labId);
+    const selectedLab = (Array.isArray(availableLabs) ? availableLabs : []).find(l => l.id === labId);
 
     const categoryLabels = {
         hardware_issue: '🔧 Hardware Issue',
@@ -4703,12 +4702,12 @@ export default function FloatingChatbot() {
         try {
             const res = await api.get('/admin/chatbot/sessions');
             if (res.data.success) {
-                const loadedSessions = res.data.data;
+                const loadedSessions = Array.isArray(res.data.data) ? res.data.data : (res.data.data?.sessions || []);
                 setSessions(loadedSessions);
                 
                 // If we have a saved session ID, restore its messages
                 if (currentSessionId && messages.length === 1) {
-                    const activeSession = loadedSessions.find(s => s.id === currentSessionId);
+                    const activeSession = (Array.isArray(loadedSessions) ? loadedSessions : []).find(s => s.id === currentSessionId);
                     if (activeSession && activeSession.metadata?.messages) {
                         setMessages(activeSession.metadata.messages);
                     }
