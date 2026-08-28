@@ -6,10 +6,32 @@ import { toast } from 'react-hot-toast';
 import { formatDate, formatDateTime, formatRelativeTime } from '@/lib/dateUtils';
 import {
     Ticket, Plus, Filter, Search, Clock, CheckCircle2, AlertCircle,
-    MessageSquare, User, Monitor, Building2, ChevronRight, X, Send
+    MessageSquare, User, Monitor, Building2, ChevronRight, X, Send,
+    Zap, Laptop, Server, Tv, Printer, Radio, Wifi, Copy, Check
 } from 'lucide-react';
 import AICardCopilot from '@/components/AICardCopilot';
 import VoiceInputButton from '@/components/VoiceInputButton';
+
+const ITEM_TYPE_LABELS = {
+    pc: { label: 'Computer / Desktop', icon: '🖥️' },
+    ups: { label: 'UPS / Power Backup', icon: '⚡' },
+    laptop: { label: 'Laptop', icon: '💻' },
+    tablet: { label: 'Tablet', icon: '📱' },
+    server: { label: 'Server / Rack', icon: '🗄️' },
+    interactive_panel: { label: 'Interactive Panel / IFPD', icon: '📺' },
+    printer: { label: 'Printer', icon: '🖨️' },
+    scanner: { label: 'Scanner', icon: '📄' },
+    router: { label: 'WiFi Router', icon: '📶' },
+    network_switch: { label: 'Network Switch', icon: '🌐' },
+    smart_camera: { label: 'Smart Camera', icon: '📹' },
+    projector: { label: 'Projector', icon: '📽️' },
+    soundbar: { label: 'Soundbar', icon: '🔊' },
+    speaker: { label: 'Speaker', icon: '📢' },
+    headphone: { label: 'Headphones', icon: '🎧' },
+    barcode_scanner: { label: 'Barcode Scanner', icon: '🏷️' },
+    cable: { label: 'Cable / Accessories', icon: '🔌' },
+    other: { label: 'Other Equipment', icon: '📦' }
+};
 
 const statusColors = {
     open: 'bg-blue-100 text-blue-700',
@@ -61,6 +83,7 @@ export default function TicketsPage() {
         category: 'hardware_issue',
         priority: 'medium',
         labId: '',
+        itemType: '',
         itemId: '',
         issueTypeId: ''
     });
@@ -82,9 +105,9 @@ export default function TicketsPage() {
         } catch { }
     };
 
-    // Load items when lab changes (for hardware/software issues)
+    // Load items when lab changes (for hardware/software/maintenance issues)
     useEffect(() => {
-        if (form.labId && (form.category === 'hardware_issue' || form.category === 'software_issue')) {
+        if (form.labId && (form.category === 'hardware_issue' || form.category === 'software_issue' || form.category === 'maintenance_request')) {
             loadLabItems(form.labId);
         } else {
             setLabItems([]);
@@ -100,7 +123,7 @@ export default function TicketsPage() {
             if (myTicketsOnly) params.myTickets = 'true';
 
             const res = await ticketsAPI.getAll(params);
-            setTickets(res.data.data.tickets || []);
+            setTickets(res.data?.data?.tickets || res.data?.tickets || []);
         } catch (error) {
             toast.error('Failed to load tickets');
         } finally {
@@ -111,14 +134,15 @@ export default function TicketsPage() {
     const loadLabs = async () => {
         try {
             const res = await labsAPI.getAll();
-            setLabs(res.data.data.labs || []);
+            const list = res.data?.data?.labs || res.data?.labs || (Array.isArray(res.data?.data) ? res.data.data : []);
+            setLabs(Array.isArray(list) ? list : []);
         } catch { }
     };
 
     const loadIssueTypes = async () => {
         try {
             const res = await ticketsAPI.getIssueTypes();
-            setIssueTypes(res.data.data.byCategory || {});
+            setIssueTypes(res.data?.data?.byCategory || res.data?.byCategory || {});
         } catch { }
     };
 
@@ -126,14 +150,11 @@ export default function TicketsPage() {
         setItemsLoading(true);
         try {
             const res = await labsAPI.getItems(labId);
-            const allItems = res.data.data.items || [];
-            // Filter out furniture items for H/W and S/W tickets - only show IT equipment
-            const furnitureTypes = ['chair', 'table', 'desk', 'furniture', 'bench'];
-            const filteredItems = allItems.filter(item =>
-                !furnitureTypes.some(type => item.itemType?.toLowerCase().includes(type))
-            );
-            setLabItems(filteredItems);
-        } catch { }
+            const allItems = res.data?.data?.items || res.data?.items || (Array.isArray(res.data?.data) ? res.data.data : []);
+            setLabItems(Array.isArray(allItems) ? allItems : []);
+        } catch {
+            setLabItems([]);
+        }
         setItemsLoading(false);
     };
 
@@ -164,9 +185,10 @@ export default function TicketsPage() {
             if (form.issueTypeId) data.issueTypeId = form.issueTypeId;
 
             const res = await ticketsAPI.create(data);
-            toast.success(`Ticket ${res.data.data.ticket.ticketNumber} created!`);
+            const tNumber = res.data?.data?.ticket?.ticketNumber || res.data?.ticket?.ticketNumber || 'CREATED';
+            toast.success(`Ticket ${tNumber} created successfully!`);
             setShowCreateModal(false);
-            setForm({ title: '', description: '', category: 'hardware_issue', priority: 'medium', labId: '', itemId: '', issueTypeId: '' });
+            setForm({ title: '', description: '', category: 'hardware_issue', priority: 'medium', labId: '', itemType: '', itemId: '', issueTypeId: '' });
             loadTickets();
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to create ticket');
@@ -341,13 +363,15 @@ export default function TicketsPage() {
                                             {ticket.lab && (
                                                 <span className="flex items-center gap-1">
                                                     <Building2 size={14} />
-                                                    {ticket.lab.name}
+                                                    {ticket.lab.name} {ticket.lab.roomNumber ? `(${ticket.lab.roomNumber})` : ''}
                                                 </span>
                                             )}
                                             {ticket.item && (
-                                                <span className="flex items-center gap-1">
-                                                    <Monitor size={14} />
-                                                    {ticket.item.itemNumber}
+                                                <span className="flex items-center gap-1.5 font-mono text-[11px] bg-slate-100 px-2 py-0.5 rounded text-slate-700 border border-slate-200">
+                                                    <span>{ITEM_TYPE_LABELS[ticket.item.itemType]?.icon || '📦'} {ticket.item.itemNumber}</span>
+                                                    {ticket.item.serialNo && (
+                                                        <span className="text-slate-500 font-semibold">• SN: {ticket.item.serialNo}</span>
+                                                    )}
                                                 </span>
                                             )}
                                             <span className="flex items-center gap-1">
@@ -469,46 +493,122 @@ export default function TicketsPage() {
                                 </div>
                             )}
 
-                            {/* Lab Selection - for hardware/software issues (hidden for students) */}
+                            {/* Lab, Item Type & Serial No. Selection */}
                             {user?.role !== 'student' && (form.category === 'hardware_issue' || form.category === 'software_issue' || form.category === 'maintenance_request') && (
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        Lab {(form.category === 'hardware_issue' || form.category === 'software_issue') ? '*' : '(Optional)'}
-                                    </label>
-                                    <select
-                                        value={form.labId}
-                                        onChange={(e) => setForm({ ...form, labId: e.target.value, itemId: '' })}
-                                                className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
-                                    >
-                                        <option value="">Select a lab...</option>
-                                        {labs.map(lab => (
-                                            <option key={lab.id} value={lab.id}>{lab.name} {lab.roomNumber ? `(${lab.roomNumber})` : ''}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
-
-                            {/* Item Selection - for hardware/software issues (hidden for students) */}
-                            {user?.role !== 'student' && (form.category === 'hardware_issue' || form.category === 'software_issue') && form.labId && (
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Affected PC/Item *</label>
-                                    {itemsLoading ? (
-                                        <div className="text-sm text-slate-500 py-2">Loading items...</div>
-                                    ) : labItems.length === 0 ? (
-                                        <div className="text-sm text-amber-600 py-2">No items found in this lab</div>
-                                    ) : (
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                                            Lab Location {(form.category === 'hardware_issue' || form.category === 'software_issue') ? '*' : '(Optional)'}
+                                        </label>
                                         <select
-                                            value={form.itemId}
-                                            onChange={(e) => setForm({ ...form, itemId: e.target.value })}
-                                                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                            value={form.labId}
+                                            onChange={(e) => setForm({ ...form, labId: e.target.value, itemType: '', itemId: '' })}
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
                                         >
-                                            <option value="">Select item...</option>
-                                            {labItems.map(item => (
-                                                <option key={item.id} value={item.id}>
-                                                    {item.itemType} - {item.itemNumber} {item.brand ? `(${item.brand})` : ''}
-                                                </option>
+                                            <option value="">Select a lab...</option>
+                                            {labs.map(lab => (
+                                                <option key={lab.id} value={lab.id}>{lab.name} {lab.roomNumber ? `(Room ${lab.roomNumber})` : ''}</option>
                                             ))}
                                         </select>
+                                    </div>
+
+                                    {/* Item Type & Serial No. selectors (Active when Lab is chosen) */}
+                                    {form.labId && (
+                                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                {/* 1. Item Type Selector */}
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                                        Filter by Equipment / Item Type
+                                                    </label>
+                                                    <select
+                                                        value={form.itemType}
+                                                        onChange={(e) => setForm({ ...form, itemType: e.target.value, itemId: '' })}
+                                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500"
+                                                    >
+                                                        <option value="">All Item Types ({labItems.length} items)</option>
+                                                        {Array.from(new Set(labItems.map(i => i.itemType))).filter(Boolean).map(type => (
+                                                            <option key={type} value={type}>
+                                                                {ITEM_TYPE_LABELS[type]?.icon || '📦'} {ITEM_TYPE_LABELS[type]?.label || type} ({labItems.filter(i => i.itemType === type).length})
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+
+                                                {/* 2. Serial No. / Item Selector */}
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                                        Serial Number & Hardware Item *
+                                                    </label>
+                                                    {itemsLoading ? (
+                                                        <div className="text-xs text-slate-500 py-2">Loading items...</div>
+                                                    ) : labItems.length === 0 ? (
+                                                        <div className="text-xs text-amber-600 py-2">No items found in this lab</div>
+                                                    ) : (
+                                                        <select
+                                                            value={form.itemId}
+                                                            onChange={(e) => {
+                                                                const selected = labItems.find(i => i.id === e.target.value);
+                                                                setForm({
+                                                                    ...form,
+                                                                    itemId: e.target.value,
+                                                                    itemType: selected ? selected.itemType : form.itemType
+                                                                });
+                                                            }}
+                                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 font-mono"
+                                                        >
+                                                            <option value="">-- Select by Serial No. / Item ID --</option>
+                                                            {labItems
+                                                                .filter(item => !form.itemType || form.itemType === 'all' || item.itemType === form.itemType)
+                                                                .map(item => (
+                                                                    <option key={item.id} value={item.id}>
+                                                                        {item.itemNumber} • SN: {item.serialNo || 'N/A'}{item.brand ? ` (${item.brand} ${item.modelNo || ''})` : ''}
+                                                                    </option>
+                                                                ))}
+                                                        </select>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* 3. Selected Item Preview Card */}
+                                            {form.itemId && (() => {
+                                                const sel = labItems.find(i => i.id === form.itemId);
+                                                if (!sel) return null;
+                                                return (
+                                                    <div className="p-3 bg-white rounded-lg border border-primary-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs animate-in fade-in">
+                                                        <div className="space-y-1">
+                                                            <div className="flex items-center gap-2 font-semibold text-slate-900">
+                                                                <span>{ITEM_TYPE_LABELS[sel.itemType]?.icon || '📦'} {sel.itemNumber}</span>
+                                                                <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] uppercase font-bold">
+                                                                    {sel.itemType}
+                                                                </span>
+                                                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${sel.status === 'faulty' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                                                                    {sel.status}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]">
+                                                                <span>Brand: <strong>{sel.brand || 'Standard'}</strong> {sel.modelNo || ''}</span>
+                                                                {sel.specs?.linked_desktop_item_number && (
+                                                                    <span>Linked PC: <strong>{sel.specs.linked_desktop_item_number}</strong></span>
+                                                                )}
+                                                                {sel.specs?.linked_ups_item_number && (
+                                                                    <span>Linked UPS: <strong>{sel.specs.linked_ups_item_number}</strong></span>
+                                                                )}
+                                                                {sel.specs?.capacity && (
+                                                                    <span>Capacity: <strong>{sel.specs.capacity}</strong></span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 self-start sm:self-center bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200">
+                                                            <span className="text-[10px] text-slate-400 font-bold uppercase">Serial No:</span>
+                                                            <span className="font-mono font-bold text-slate-800 text-xs select-all">
+                                                                {sel.serialNo || 'N/A'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
                                     )}
                                 </div>
                             )}
@@ -613,14 +713,28 @@ export default function TicketsPage() {
                                     </div>
                                     {selectedTicket.lab && (
                                         <div>
-                                            <p className="text-slate-400">Lab</p>
-                                            <p className="font-medium">{selectedTicket.lab.name}</p>
+                                            <p className="text-slate-400">Lab Location</p>
+                                            <p className="font-medium">{selectedTicket.lab.name} {selectedTicket.lab.roomNumber ? `(${selectedTicket.lab.roomNumber})` : ''}</p>
                                         </div>
                                     )}
                                     {selectedTicket.item && (
-                                        <div>
-                                            <p className="text-slate-400">Item</p>
-                                            <p className="font-medium">{selectedTicket.item.itemType} - {selectedTicket.item.itemNumber}</p>
+                                        <div className="col-span-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Affected Hardware Equipment</p>
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-base">{ITEM_TYPE_LABELS[selectedTicket.item.itemType]?.icon || '📦'}</span>
+                                                    <div>
+                                                        <p className="font-bold text-slate-800 text-xs">{selectedTicket.item.itemNumber} ({ITEM_TYPE_LABELS[selectedTicket.item.itemType]?.label || selectedTicket.item.itemType})</p>
+                                                        <p className="text-slate-500 text-[11px]">{selectedTicket.item.brand || ''} {selectedTicket.item.modelNo || ''}</p>
+                                                    </div>
+                                                </div>
+                                                {selectedTicket.item.serialNo && (
+                                                    <div className="flex items-center gap-1.5 bg-white px-2 py-1 rounded border border-slate-200">
+                                                        <span className="text-[10px] text-slate-400 font-bold uppercase">Serial:</span>
+                                                        <span className="font-mono text-slate-800 text-xs font-bold">{selectedTicket.item.serialNo}</span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     )}
                                     {selectedTicket.assignedTo && (

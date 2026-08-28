@@ -2917,7 +2917,11 @@ function TicketActionCard({ action }) {
     const [priority, setPriority] = useState(action?.priority || 'medium');
     const [date, setDate] = useState(action?.date ? new Date(action.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
     const [labId, setLabId] = useState(action?.labId || '');
+    const [itemType, setItemType] = useState(action?.itemType || '');
+    const [itemId, setItemId] = useState(action?.itemId || '');
     const [availableLabs, setAvailableLabs] = useState([]);
+    const [labItems, setLabItems] = useState([]);
+    const [itemsLoading, setItemsLoading] = useState(false);
 
     useEffect(() => {
         labsAPI.getAll()
@@ -2927,6 +2931,35 @@ function TicketActionCard({ action }) {
             })
             .catch(() => {});
     }, []);
+
+    // Load items whenever labId changes
+    useEffect(() => {
+        if (!labId) {
+            setLabItems([]);
+            return;
+        }
+        setItemsLoading(true);
+        labsAPI.getItems(labId)
+            .then(res => {
+                const allItems = res.data?.data?.items || res.data?.items || (Array.isArray(res.data?.data) ? res.data.data : []);
+                const items = Array.isArray(allItems) ? allItems : [];
+                setLabItems(items);
+
+                // Auto-match itemId if not set but action provided serialNo or itemNumber
+                if (!itemId && (action?.serialNo || action?.itemNumber)) {
+                    const match = items.find(it =>
+                        (action.serialNo && it.serialNo?.toLowerCase() === action.serialNo.toLowerCase()) ||
+                        (action.itemNumber && it.itemNumber?.toLowerCase() === action.itemNumber.toLowerCase())
+                    );
+                    if (match) {
+                        setItemId(match.id);
+                        if (!itemType) setItemType(match.itemType);
+                    }
+                }
+            })
+            .catch(() => setLabItems([]))
+            .finally(() => setItemsLoading(false));
+    }, [labId]);
 
     const handleConfirm = async () => {
         if (!title.trim()) {
@@ -2941,7 +2974,8 @@ function TicketActionCard({ action }) {
                 description: description.trim() || title.trim(),
                 category,
                 priority,
-                labId: labId || null
+                labId: labId || null,
+                itemId: itemId || null
             };
 
             const res = await ticketsAPI.create(payload);
@@ -2970,6 +3004,7 @@ function TicketActionCard({ action }) {
     }
 
     const selectedLab = (Array.isArray(availableLabs) ? availableLabs : []).find(l => l.id === labId);
+    const selectedItem = (Array.isArray(labItems) ? labItems : []).find(i => i.id === itemId);
 
     const categoryLabels = {
         hardware_issue: '🔧 Hardware Issue',
@@ -2985,6 +3020,18 @@ function TicketActionCard({ action }) {
         high: 'bg-orange-50 text-orange-700 border-orange-200',
         critical: 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
     };
+
+    const itemTypeIcons = {
+        pc: '🖥️', ups: '⚡', laptop: '💻', tablet: '📱', server: '🗄️',
+        interactive_panel: '📺', printer: '🖨️', scanner: '📄', router: '📶',
+        network_switch: '🌐', smart_camera: '📹', projector: '📽️',
+        soundbar: '🔊', speaker: '📢', headphone: '🎧', barcode_scanner: '🏷️', cable: '🔌', other: '📦'
+    };
+
+    const availableItemTypes = Array.from(new Set(labItems.map(i => i.itemType))).filter(Boolean);
+    const filteredLabItems = itemType && itemType !== 'all'
+        ? labItems.filter(i => i.itemType === itemType)
+        : labItems;
 
     return (
         <div className="mt-3 rounded-xl border border-rose-200/90 bg-gradient-to-br from-rose-50/70 via-white to-amber-50/50 shadow-sm overflow-hidden text-xs">
@@ -3051,12 +3098,16 @@ function TicketActionCard({ action }) {
                                 <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Assign to Lab</label>
                                 <select
                                     value={labId}
-                                    onChange={(e) => setLabId(e.target.value)}
+                                    onChange={(e) => {
+                                        setLabId(e.target.value);
+                                        setItemType('');
+                                        setItemId('');
+                                    }}
                                     className="w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-rose-500 focus:outline-none bg-white"
                                 >
                                     <option value="">-- General / No Lab --</option>
-                                    {availableLabs.map(l => (
-                                        <option key={l.id} value={l.id}>{l.name}</option>
+                                    {(Array.isArray(availableLabs) ? availableLabs : []).map(l => (
+                                        <option key={l.id} value={l.id}>{l.name} {l.roomNumber ? `(${l.roomNumber})` : ''}</option>
                                     ))}
                                 </select>
                             </div>
@@ -3070,6 +3121,71 @@ function TicketActionCard({ action }) {
                                 />
                             </div>
                         </div>
+
+                        {/* Item Type & Serial No. Selector (When Lab is selected) */}
+                        {labId && (
+                            <div className="p-2.5 bg-slate-100/80 rounded-lg space-y-2 border border-slate-200">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Filter by Item Type</label>
+                                        <select
+                                            value={itemType}
+                                            onChange={(e) => {
+                                                setItemType(e.target.value);
+                                                setItemId('');
+                                            }}
+                                            className="w-full px-2 py-1.5 rounded-md border border-slate-300 text-xs focus:ring-1 focus:ring-rose-500 focus:outline-none bg-white"
+                                        >
+                                            <option value="">All Types ({labItems.length} items)</option>
+                                            {availableItemTypes.map(t => (
+                                                <option key={t} value={t}>
+                                                    {itemTypeIcons[t] || '📦'} {t.toUpperCase()} ({labItems.filter(i => i.itemType === t).length})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Serial No. & Item *</label>
+                                        {itemsLoading ? (
+                                            <div className="text-[11px] text-slate-500 py-1">Loading items...</div>
+                                        ) : labItems.length === 0 ? (
+                                            <div className="text-[11px] text-amber-600 py-1">No items found in this lab</div>
+                                        ) : (
+                                            <select
+                                                value={itemId}
+                                                onChange={(e) => {
+                                                    const sel = labItems.find(i => i.id === e.target.value);
+                                                    setItemId(e.target.value);
+                                                    if (sel && !itemType) setItemType(sel.itemType);
+                                                }}
+                                                className="w-full px-2 py-1.5 rounded-md border border-slate-300 text-xs focus:ring-1 focus:ring-rose-500 focus:outline-none bg-white font-mono"
+                                            >
+                                                <option value="">-- Select Serial No. / Item --</option>
+                                                {filteredLabItems.map(it => (
+                                                    <option key={it.id} value={it.id}>
+                                                        {it.itemNumber} • SN: {it.serialNo || 'N/A'} {it.brand ? `(${it.brand})` : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Item Preview */}
+                                {selectedItem && (
+                                    <div className="p-2 bg-white rounded border border-rose-200 text-[11px] flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <span>{itemTypeIcons[selectedItem.itemType] || '📦'}</span>
+                                            <span className="font-bold text-slate-800">{selectedItem.itemNumber}</span>
+                                            <span className="text-slate-500">{selectedItem.brand} {selectedItem.modelNo || ''}</span>
+                                        </div>
+                                        <div className="font-mono font-semibold text-slate-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                                            SN: {selectedItem.serialNo || 'N/A'}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <div>
                             <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Description</label>
@@ -3134,6 +3250,24 @@ function TicketActionCard({ action }) {
                                 <span className="text-[10px] text-slate-500 block">Reported Date</span>
                                 <span className="font-medium text-slate-700">{date}</span>
                             </div>
+
+                            {/* Serial Number & Affected Item Badge if present */}
+                            {(selectedItem || action?.serialNo || action?.itemNumber) && (
+                                <div className="col-span-2 bg-slate-100/90 p-2 rounded-lg border border-slate-200 flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-sm">{itemTypeIcons[selectedItem?.itemType || action?.itemType] || '📦'}</span>
+                                        <div>
+                                            <span className="font-bold text-slate-800 text-[11px] block">
+                                                {selectedItem?.itemNumber || action?.itemNumber || 'Equipment Item'}
+                                                {selectedItem?.brand && <span className="font-normal text-slate-500 ml-1">({selectedItem.brand})</span>}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="font-mono text-[11px] font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
+                                        SN: {selectedItem?.serialNo || action?.serialNo || 'N/A'}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}

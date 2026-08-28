@@ -101,8 +101,8 @@ router.post('/', authenticate, [
             data: ticketData,
             include: {
                 createdBy: { select: { id: true, firstName: true, lastName: true, role: true } },
-                item: { select: { id: true, itemNumber: true, itemType: true } },
-                lab: { select: { id: true, name: true } },
+                item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, serialNo: true, specs: true } },
+                lab: { select: { id: true, name: true, roomNumber: true } },
                 issueType: { select: { id: true, name: true, category: true } }
             }
         });
@@ -195,8 +195,8 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             include: {
                 createdBy: { select: { id: true, firstName: true, lastName: true, role: true } },
                 assignedTo: { select: { id: true, firstName: true, lastName: true } },
-                item: { select: { id: true, itemNumber: true, itemType: true } },
-                lab: { select: { id: true, name: true } },
+                item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, serialNo: true, specs: true } },
+                lab: { select: { id: true, name: true, roomNumber: true } },
                 _count: { select: { comments: true } }
             },
             orderBy: [
@@ -274,7 +274,7 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
             createdBy: { select: { id: true, firstName: true, lastName: true, role: true, email: true } },
             assignedTo: { select: { id: true, firstName: true, lastName: true, role: true } },
             resolvedBy: { select: { id: true, firstName: true, lastName: true } },
-            item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, lab: { select: { id: true, name: true } } } },
+            item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, serialNo: true, specs: true, lab: { select: { id: true, name: true } } } },
             lab: { select: { id: true, name: true, roomNumber: true } },
             comments: {
                 include: {

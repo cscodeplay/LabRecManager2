@@ -825,7 +825,9 @@ Return JSON ONLY in this format:
 
                 const [labs, items] = await Promise.all([
                     prisma.lab.findMany({ select: { id: true, name: true, roomNumber: true } }).catch(() => []),
-                    prisma.labItem.findMany({ select: { id: true, name: true, itemType: true, labId: true } }).catch(() => [])
+                    prisma.labItem.findMany({
+                        select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, serialNo: true, labId: true }
+                    }).catch(() => [])
                 ]);
 
                 // 1. Extract Title:
@@ -890,16 +892,26 @@ Return JSON ONLY in this format:
                 // 5. Match Lab:
                 let matchedLab = null;
                 for (const l of labs) {
-                    if (msgLower.includes(l.name.toLowerCase()) || (l.roomNumber && msgLower.includes(l.roomNumber.toLowerCase()))) {
+                    const lName = l.name.toLowerCase();
+                    const rNum = l.roomNumber ? l.roomNumber.toLowerCase() : '';
+                    if (msgLower.includes(lName) || (rNum && msgLower.includes(rNum))) {
                         matchedLab = l;
                         break;
                     }
+                    if (lName.includes('01') || lName.includes(' 1')) {
+                        if (/lab\s*1\b|lab-1|lab\s*01|computer\s*lab\s*1/i.test(message)) matchedLab = l;
+                    }
+                    if (lName.includes('02') || lName.includes(' 2')) {
+                        if (/lab\s*2\b|lab-2|lab\s*02|computer\s*lab\s*2/i.test(message)) matchedLab = l;
+                    }
                 }
 
-                // 6. Match Item:
+                // 6. Match Item by Serial No, Item Number, or type:
                 let matchedItem = null;
                 for (const it of items) {
-                    if (msgLower.includes(it.name.toLowerCase())) {
+                    const itNum = (it.itemNumber || '').toLowerCase();
+                    const itSer = (it.serialNo || '').toLowerCase();
+                    if ((itNum && msgLower.includes(itNum)) || (itSer && msgLower.includes(itSer))) {
                         matchedItem = it;
                         if (!matchedLab && it.labId) {
                             matchedLab = labs.find(l => l.id === it.labId) || null;
@@ -908,9 +920,24 @@ Return JSON ONLY in this format:
                     }
                 }
 
+                // If no exact item matched, detect item type
+                let detectedItemType = matchedItem?.itemType || null;
+                if (!detectedItemType) {
+                    if (/\bups\b|power\s*backup|battery/i.test(message)) detectedItemType = 'ups';
+                    else if (/\bpc\b|computer|desktop/i.test(message)) detectedItemType = 'pc';
+                    else if (/laptop/i.test(message)) detectedItemType = 'laptop';
+                    else if (/server|rack/i.test(message)) detectedItemType = 'server';
+                    else if (/ifpd|panel|screen|smartboard/i.test(message)) detectedItemType = 'interactive_panel';
+                    else if (/printer/i.test(message)) detectedItemType = 'printer';
+                    else if (/scanner/i.test(message)) detectedItemType = 'scanner';
+                    else if (/switch/i.test(message)) detectedItemType = 'network_switch';
+                    else if (/router|wifi/i.test(message)) detectedItemType = 'router';
+                }
+
                 // 7. Generate Description:
                 let description = `${title}. Reported on ${targetDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}.`;
                 if (matchedLab) description += ` Location: ${matchedLab.name}.`;
+                if (matchedItem) description += ` Equipment: ${matchedItem.itemNumber} (SN: ${matchedItem.serialNo || 'N/A'}).`;
 
                 const ticketAction = {
                     isDraft: true,
@@ -923,8 +950,10 @@ Return JSON ONLY in this format:
                     date: targetDate.toISOString(),
                     labId: matchedLab?.id || null,
                     labName: matchedLab?.name || null,
+                    itemType: detectedItemType,
                     itemId: matchedItem?.id || null,
-                    itemName: matchedItem?.name || null
+                    itemNumber: matchedItem?.itemNumber || null,
+                    serialNo: matchedItem?.serialNo || null
                 };
 
                 const categoryLabel = {
