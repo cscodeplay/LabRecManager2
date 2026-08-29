@@ -10,7 +10,8 @@ import {
     XCircle, CalendarPlus, Undo2, BookOpen, StickyNote, GraduationCap, CheckSquare,
     LayoutGrid, Table as TableIcon, Inbox, Layers, Laptop, Server, HardDrive,
     Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket,
-    ShoppingBag, Code, Terminal, Award, Package, Zap, Wifi, Network, Headphones, ScanLine, Cable, Camera
+    ShoppingBag, Code, Terminal, Award, Package, Zap, Wifi, Network, Headphones, ScanLine, Cable, Camera,
+    Share2, Folder, Truck, ArrowRight
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
