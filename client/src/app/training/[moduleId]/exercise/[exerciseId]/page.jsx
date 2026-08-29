@@ -247,6 +247,15 @@ export default function ExerciseEditorPage() {
         }
     };
 
+    if (!exercise) {
+        return (
+            <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-slate-400 gap-3">
+                <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-sm font-medium">Loading exercise...</span>
+            </div>
+        );
+    }
+
     return (
         <div className="h-screen flex flex-col bg-slate-900 border-t-4 border-indigo-500">
             {/* Top Navigation Bar */}
@@ -256,19 +265,19 @@ export default function ExerciseEditorPage() {
                         <ArrowLeft className="w-5 h-5" />
                     </button>
                     <div className="flex items-center gap-2">
-                        <h1 className="font-semibold text-sm md:text-base truncate max-w-md">{exercise.title}</h1>
+                        <h1 className="font-semibold text-sm md:text-base truncate max-w-md">{exercise?.title || 'Training Exercise'}</h1>
                         {getTypeBadge()}
                     </div>
                     <span className="text-xs bg-slate-700 px-2 py-0.5 rounded text-slate-300 capitalize hidden sm:inline">
-                        {exercise.scaffoldLevel?.replace('_', ' ')}
+                        {exercise?.scaffoldLevel?.replace('_', ' ')}
                     </span>
-                    {exercise.bloomsLevel && (
+                    {exercise?.bloomsLevel && (
                         <span className="text-xs bg-indigo-900/60 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded font-medium hidden md:inline">
                             Bloom: {exercise.bloomsLevel}
                         </span>
                     )}
                     <span className="text-xs bg-indigo-950 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded font-semibold shrink-0">
-                        +{exercise.xpReward || 10} XP
+                        +{exercise?.xpReward || 10} XP
                     </span>
                 </div>
 
