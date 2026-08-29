@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 import {
     FileText, Upload, Award, Video, Users,
-    ChevronRight, TrendingUp, Clock, CheckCircle, BookOpen, Monitor, Pencil, Ticket, GraduationCap, Layers, CalendarDays, Activity
+    ChevronRight, TrendingUp, Clock, CheckCircle, BookOpen, Monitor, Pencil, Ticket, GraduationCap, Layers, CalendarDays, Activity,
+    Truck, ShoppingBag, Folder, StickyNote, Database, BarChart3, Code2, QrCode, Laptop, History, Sparkles, PlusCircle
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { dashboardAPI } from '@/lib/api';
@@ -22,6 +23,54 @@ export default function DashboardPage() {
     const [siteUpdate, setSiteUpdate] = useState(null);
     const [studentProfile, setStudentProfile] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [activeCategory, setActiveCategory] = useState('all');
+
+    const studentShortcuts = [
+        { title: t('dashboard.viewAssignments', 'Assignments'), href: '/assignments', icon: FileText, category: 'academics', color: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100' },
+        { title: t('dashboard.mySubmissions', 'Submissions'), href: '/submissions', icon: Upload, category: 'academics', color: 'text-blue-600 bg-blue-50 group-hover:bg-blue-100' },
+        { title: t('dashboard.viewGrades', 'Grades & Marks'), href: '/grades', icon: Award, category: 'academics', color: 'text-amber-600 bg-amber-50 group-hover:bg-amber-100' },
+        { title: 'Class Timetable', href: '/timetable', icon: CalendarDays, category: 'academics', color: 'text-teal-600 bg-teal-50 group-hover:bg-teal-100' },
+        { title: 'Coding Training', href: '/training', icon: Code2, category: 'academics', color: 'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100' },
+        { title: 'Live Meeting / Viva', href: '/meetings', icon: Video, category: 'live', color: 'text-rose-600 bg-rose-50 group-hover:bg-rose-100' },
+        { title: t('nav.whiteboard', 'Whiteboard'), href: '/whiteboard', icon: Pencil, category: 'live', color: 'text-purple-600 bg-purple-50 group-hover:bg-purple-100' },
+        { title: 'Study Documents', href: '/documents', icon: Folder, category: 'live', color: 'text-sky-600 bg-sky-50 group-hover:bg-sky-100' },
+        { title: t('dashboard.reportIssue', 'Report Issue'), href: '/tickets', icon: Ticket, category: 'ops', color: 'text-orange-600 bg-orange-50 group-hover:bg-orange-100' },
+    ];
+
+    const staffShortcuts = [
+        // Academics & Teaching
+        { title: t('dashboard.createAssignment', 'Create Assignment'), href: '/assignments/create', icon: PlusCircle, category: 'academics', color: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100' },
+        { title: t('dashboard.reviewPending', 'Review Submissions'), href: '/submissions', icon: Clock, category: 'academics', color: 'text-blue-600 bg-blue-50 group-hover:bg-blue-100' },
+        { title: t('dashboard.manageClasses', 'Manage Classes'), href: '/classes', icon: Users, category: 'academics', color: 'text-violet-600 bg-violet-50 group-hover:bg-violet-100' },
+        { title: 'Teaching & Lecture Plans', href: '/teaching/plans', icon: BookOpen, category: 'academics', color: 'text-cyan-600 bg-cyan-50 group-hover:bg-cyan-100' },
+        { title: 'Timetable Schedules', href: '/timetable', icon: CalendarDays, category: 'academics', color: 'text-teal-600 bg-teal-50 group-hover:bg-teal-100' },
+        { title: 'Training & Coding Modules', href: '/training', icon: Code2, category: 'academics', color: 'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100' },
+        { title: 'Grades & Evaluation', href: '/grades', icon: Award, category: 'academics', color: 'text-amber-600 bg-amber-50 group-hover:bg-amber-100' },
+
+        // Lab & Hardware
+        { title: 'Lab Inventory & Hardware', href: '/admin/labs', icon: Monitor, category: 'labs', color: 'text-sky-600 bg-sky-50 group-hover:bg-sky-100' },
+        { title: 'Equipment Shift Requests', href: '/admin/labs/shift-requests', icon: Truck, category: 'labs', color: 'text-cyan-600 bg-cyan-50 group-hover:bg-cyan-100' },
+        { title: 'Hardware Audit Reports', href: '/admin/labs/inventory-reports', icon: BarChart3, category: 'labs', color: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100' },
+        { title: 'Laptop Issuances', href: '/admin/laptop-issuances', icon: Laptop, category: 'labs', color: 'text-blue-600 bg-blue-50 group-hover:bg-blue-100' },
+        { title: 'Barcode & QR Labels', href: '/admin/barcode-generator', icon: QrCode, category: 'labs', color: 'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100' },
+
+        // Live & Collaboration
+        { title: 'Live Meetings & Viva', href: '/meetings', icon: Video, category: 'live', color: 'text-rose-600 bg-rose-50 group-hover:bg-rose-100' },
+        { title: t('nav.whiteboard', 'Interactive Whiteboard'), href: '/whiteboard', icon: Pencil, category: 'live', color: 'text-purple-600 bg-purple-50 group-hover:bg-purple-100' },
+        { title: 'Session Recordings', href: '/admin/recordings', icon: Layers, category: 'live', color: 'text-fuchsia-600 bg-fuchsia-50 group-hover:bg-fuchsia-100' },
+        { title: 'Documents Hub & Share', href: '/documents', icon: Folder, category: 'live', color: 'text-violet-600 bg-violet-50 group-hover:bg-violet-100' },
+
+        // Operations & Admin
+        { title: 'IT & Support Tickets', href: '/tickets', icon: Ticket, category: 'ops', color: 'text-orange-600 bg-orange-50 group-hover:bg-orange-100' },
+        { title: 'Procurement & RFQ', href: '/admin/procurement', icon: ShoppingBag, category: 'ops', color: 'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100' },
+        { title: 'Academic Calendar', href: '/admin/calendar', icon: CalendarDays, category: 'ops', color: 'text-teal-600 bg-teal-50 group-hover:bg-teal-100' },
+        { title: 'Sticky Notes & Memos', href: '/admin/notes', icon: StickyNote, category: 'ops', color: 'text-amber-600 bg-amber-50 group-hover:bg-amber-100' },
+        { title: 'Reports & Certificates', href: '/reports', icon: FileText, category: 'ops', color: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100' },
+        { title: 'Activity Logs & Audit', href: '/activity-logs', icon: History, category: 'ops', color: 'text-slate-600 bg-slate-100 group-hover:bg-slate-200' },
+        ...(user?.role === 'admin' || user?.role === 'principal' ? [
+            { title: 'Database SQL Console', href: '/admin/sql-console', icon: Database, category: 'ops', color: 'text-rose-600 bg-rose-50 group-hover:bg-rose-100' }
+        ] : [])
+    ];
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -103,101 +152,72 @@ export default function DashboardPage() {
                         </div>
                     </div>
 
-                    {/* Quick Actions */}
-                    <div className="card p-5">
-                        <div className="flex items-center gap-2 mb-4">
-                            <Activity className="w-5 h-5 text-slate-700" />
-                            <h3 className="font-semibold text-slate-900">Quick Actions</h3>
+                    {/* Quick Actions & Navigation Hub */}
+                    <div className="card p-5 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                                <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
+                                    <Activity className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-900 text-base">Quick Navigation Hub</h3>
+                                    <p className="text-xs text-slate-500">Fast one-click shortcuts to key modules across ULRMS</p>
+                                </div>
+                            </div>
+                            {user?.role !== 'student' && (
+                                <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+                                    {[
+                                        { id: 'all', label: '⚡ All' },
+                                        { id: 'academics', label: '📚 Academics' },
+                                        { id: 'labs', label: '🏢 Labs & Hardware' },
+                                        { id: 'live', label: '🤝 Live Collaboration' },
+                                        { id: 'ops', label: '⚙️ Operations' }
+                                    ].map(tab => (
+                                        <button
+                                            key={tab.id}
+                                            type="button"
+                                            onClick={() => setActiveCategory(tab.id)}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+                                                activeCategory === tab.id
+                                                    ? 'bg-slate-900 text-white shadow-xs'
+                                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                            }`}
+                                        >
+                                            {tab.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {user?.role === 'student' && (
-                                <>
-                                    <Link href="/assignments" className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-primary-500 hover:bg-primary-50 transition group">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center group-hover:bg-primary-100 group-hover:text-primary-600 transition">
-                                                <FileText className="w-5 h-5 text-slate-600 group-hover:text-primary-600" />
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                            {(user?.role === 'student' ? studentShortcuts : staffShortcuts)
+                                .filter(s => activeCategory === 'all' || s.category === activeCategory)
+                                .map((item, idx) => {
+                                    const Icon = item.icon;
+                                    return (
+                                        <Link
+                                            key={idx}
+                                            href={item.href}
+                                            className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 hover:shadow-xs transition group"
+                                        >
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition ${item.color}`}>
+                                                    <Icon className="w-4 h-4" />
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="font-semibold text-slate-800 text-xs truncate group-hover:text-indigo-700 transition">
+                                                        {item.title}
+                                                    </p>
+                                                    <p className="text-[10px] text-slate-400 font-mono truncate">
+                                                        {item.href}
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <p className="font-medium text-slate-900 text-sm group-hover:text-primary-700">{t('dashboard.viewAssignments')}</p>
-                                            </div>
-                                        </div>
-                                    </Link>
-                                    <Link href="/submissions" className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-primary-500 hover:bg-primary-50 transition group">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center group-hover:bg-primary-100 group-hover:text-primary-600 transition">
-                                                <Upload className="w-5 h-5 text-slate-600 group-hover:text-primary-600" />
-                                            </div>
-                                            <div>
-                                                <p className="font-medium text-slate-900 text-sm group-hover:text-primary-700">{t('dashboard.mySubmissions')}</p>
-                                            </div>
-                                        </div>
-                                    </Link>
-                                    <Link href="/grades" className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-primary-500 hover:bg-primary-50 transition group">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center group-hover:bg-primary-100 group-hover:text-primary-600 transition">
-                                                <Award className="w-5 h-5 text-slate-600 group-hover:text-primary-600" />
-                                            </div>
-                                            <div>
-                                                <p className="font-medium text-slate-900 text-sm group-hover:text-primary-700">{t('dashboard.viewGrades')}</p>
-                                            </div>
-                                        </div>
-                                    </Link>
-                                    <Link href="/tickets" className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-primary-500 hover:bg-primary-50 transition group">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center group-hover:bg-primary-100 group-hover:text-primary-600 transition">
-                                                <Ticket className="w-5 h-5 text-slate-600 group-hover:text-primary-600" />
-                                            </div>
-                                            <div>
-                                                <p className="font-medium text-slate-900 text-sm group-hover:text-primary-700">{t('dashboard.reportIssue')}</p>
-                                            </div>
-                                        </div>
-                                    </Link>
-                                </>
-                            )}
-                            {(user?.role === 'instructor' || user?.role === 'admin') && (
-                                <>
-                                    <Link href="/assignments/create" className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-primary-500 hover:bg-primary-50 transition group">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center group-hover:bg-primary-100 transition">
-                                                <FileText className="w-5 h-5 text-slate-600 group-hover:text-primary-600" />
-                                            </div>
-                                            <div>
-                                                <p className="font-medium text-slate-900 text-sm">{t('dashboard.createAssignment')}</p>
-                                            </div>
-                                        </div>
-                                    </Link>
-                                    <Link href="/submissions" className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-primary-500 hover:bg-primary-50 transition group">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center group-hover:bg-primary-100 transition">
-                                                <Clock className="w-5 h-5 text-slate-600 group-hover:text-primary-600" />
-                                            </div>
-                                            <div>
-                                                <p className="font-medium text-slate-900 text-sm">{t('dashboard.reviewPending')}</p>
-                                            </div>
-                                        </div>
-                                    </Link>
-                                    <Link href="/classes" className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-primary-500 hover:bg-primary-50 transition group">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center group-hover:bg-primary-100 transition">
-                                                <Users className="w-5 h-5 text-slate-600 group-hover:text-primary-600" />
-                                            </div>
-                                            <div>
-                                                <p className="font-medium text-slate-900 text-sm">{t('dashboard.manageClasses')}</p>
-                                            </div>
-                                        </div>
-                                    </Link>
-                                    <Link href="/whiteboard" className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-primary-500 hover:bg-primary-50 transition group">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center group-hover:bg-primary-100 transition">
-                                                <Pencil className="w-5 h-5 text-slate-600 group-hover:text-primary-600" />
-                                            </div>
-                                            <div>
-                                                <p className="font-medium text-slate-900 text-sm">{t('nav.whiteboard')}</p>
-                                            </div>
-                                        </div>
-                                    </Link>
-                                </>
-                            )}
+                                            <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition flex-shrink-0" />
+                                        </Link>
+                                    );
+                                })}
                         </div>
                     </div>
 

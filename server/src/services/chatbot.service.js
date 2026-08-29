@@ -399,109 +399,238 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
         const msgLower = (message || '').toLowerCase();
 
+        // Intent detection: Document Sharing (e.g. "Share 'Physics Lab Manual' with Class 11 Non-Medical A", "Share document with Group A")
         const isDocumentShareIntent = (
             (msgLower.includes('share') || msgLower.includes('send') || msgLower.includes('distribute') || msgLower.includes('give access')) &&
-            (msgLower.includes('document') || msgLower.includes('file') || msgLower.includes('pdf') || msgLower.includes('doc') || msgLower.includes('notes'))
+            (msgLower.includes('document') || msgLower.includes('file') || msgLower.includes('pdf') || msgLower.includes('doc') || msgLower.includes('notes') || msgLower.includes('manual')) &&
+            !msgLower.includes('shared with') && !msgLower.includes('view share')
         );
 
         if (isDocumentShareIntent) {
             try {
-                console.log('[ChatBot] Document share intent detected in chatbot prompt:', message);
+                console.log('[ChatBot] Document share intent detected:', message);
 
                 const [documents, classes, groups, students] = await Promise.all([
-                    prisma.document.findMany({ select: { id: true, name: true } }),
-                    prisma.class.findMany({ select: { id: true, name: true, gradeLevel: true, section: true } }),
-                    prisma.studentGroup.findMany({ select: { id: true, name: true, class: { select: { name: true } } } }),
-                    prisma.user.findMany({ where: { role: 'student' }, select: { id: true, firstName: true, lastName: true, admissionNumber: true } })
+                    prisma.document.findMany({
+                        where: schoolId ? { schoolId } : {},
+                        select: { id: true, name: true, fileType: true, fileSize: true }
+                    }),
+                    prisma.class.findMany({
+                        where: schoolId ? { schoolId } : {},
+                        select: { id: true, name: true, gradeLevel: true, section: true }
+                    }),
+                    prisma.studentGroup.findMany({
+                        where: schoolId ? { class: { schoolId } } : {},
+                        select: { id: true, name: true, class: { select: { name: true } } }
+                    }),
+                    prisma.user.findMany({
+                        where: { role: 'student', ...(schoolId ? { schoolId } : {}) },
+                        select: { id: true, firstName: true, lastName: true, admissionNumber: true }
+                    })
                 ]);
 
-                // AI Target resolution
+                // Resolution
                 const resolution = await aiService.parseDocumentShareTargets(message, { documents, classes, groups, students }, 'groq');
 
-                if (!resolution.matchedDocumentId) {
-                     return {
-                         message: `⚠️ **Document Not Found**\n\nI couldn't identify which document you want to share from your prompt. Please mention the specific document name (e.g., "Share 'Physics Notes' with Class 10A").`,
-                         sql: null,
-                         executionResult: null,
-                         chartData: null,
-                         reportAction: null,
-                         provider: 'groq'
-                     };
+                let matchedDoc = null;
+                if (resolution.matchedDocumentId) {
+                    matchedDoc = documents.find(d => d.id === resolution.matchedDocumentId);
                 }
-
-                const doc = documents.find(d => d.id === resolution.matchedDocumentId);
-                const currentUser = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
-                const fallbackUser = await prisma.user.findFirst({ where: { role: { in: ['admin', 'instructor'] } } });
-                const sharedById = currentUser?.id || fallbackUser?.id;
-
-                let targetSummary = [];
-                let shareCount = 0;
-
-                // Share with Classes
-                if (resolution.matchedClassIds?.length > 0) {
-                    for (const classId of resolution.matchedClassIds) {
-                        await prisma.documentShare.create({
-                            data: { documentId: doc.id, targetType: 'class', targetClassId: classId, sharedById }
-                        });
-                        const c = classes.find(c => c.id === classId);
-                        if (c) targetSummary.push(`Class ${c.name}`);
-                        shareCount++;
+                if (!matchedDoc && documents.length > 0) {
+                    for (const d of documents) {
+                        if (msgLower.includes(d.name.toLowerCase())) {
+                            matchedDoc = d;
+                            break;
+                        }
                     }
+                    if (!matchedDoc) matchedDoc = documents[0];
                 }
 
-                // Share with Groups
-                if (resolution.matchedGroupIds?.length > 0) {
-                    for (const groupId of resolution.matchedGroupIds) {
-                        await prisma.documentShare.create({
-                            data: { documentId: doc.id, targetType: 'group', targetGroupId: groupId, sharedById }
-                        });
-                        const g = groups.find(g => g.id === groupId);
-                        if (g) targetSummary.push(`Group ${g.name}`);
-                        shareCount++;
+                if (matchedDoc) {
+                    const targetClassIds = resolution.matchedClassIds || [];
+                    const targetGroupIds = resolution.matchedGroupIds || [];
+                    const targetStudentIds = resolution.matchedStudentIds || [];
+
+                    if (targetClassIds.length === 0 && targetGroupIds.length === 0 && targetStudentIds.length === 0 && classes.length > 0) {
+                        targetClassIds.push(classes[0].id);
                     }
-                }
 
-                // Share with Students
-                if (resolution.matchedStudentIds?.length > 0) {
-                    for (const studentId of resolution.matchedStudentIds) {
-                        await prisma.documentShare.create({
-                            data: { documentId: doc.id, targetType: 'user', targetUserId: studentId, sharedById }
-                        });
-                        const s = students.find(s => s.id === studentId);
-                        if (s) targetSummary.push(`${s.firstName} ${s.lastName}`);
-                        shareCount++;
-                    }
-                }
-                
-                if (shareCount === 0) {
-                     return {
-                         message: `⚠️ **No Targets Found**\n\nI found the document **${doc.name}**, but I couldn't understand who to share it with. Please specify a class, group, or student name.`,
-                         sql: null,
-                         executionResult: null,
-                         chartData: null,
-                         reportAction: null,
-                         provider: 'groq'
-                     };
-                }
+                    const targetNames = [
+                        ...targetClassIds.map(id => `Class ${classes.find(c => c.id === id)?.name || id}`),
+                        ...targetGroupIds.map(id => `Group ${groups.find(g => g.id === id)?.name || id}`),
+                        ...targetStudentIds.map(id => {
+                            const s = students.find(st => st.id === id);
+                            return s ? `${s.firstName} ${s.lastName}` : id;
+                        })
+                    ];
 
-                return {
-                    message: `✨ **Document Shared Successfully!**\n\nI have shared the document **${doc.name}** with the following targets:\n- ${targetSummary.join('\n- ')}`,
-                    sql: null,
-                    executionResult: null,
-                    chartData: null,
-                    reportAction: null,
-                    provider: 'groq'
-                };
+                    const documentShareAction = {
+                        isDraft: true,
+                        isConfirmed: false,
+                        isCancelled: false,
+                        documentId: matchedDoc.id,
+                        documentName: matchedDoc.name,
+                        fileType: matchedDoc.fileType || 'pdf',
+                        fileSize: matchedDoc.fileSize || 0,
+                        targetClassIds,
+                        targetGroupIds,
+                        targetStudentIds,
+                        targetNames,
+                        availableClasses: classes.map(c => ({ id: c.id, name: c.name })),
+                        availableGroups: groups.map(g => ({ id: g.id, name: g.name, className: g.class?.name })),
+                        availableStudents: students.map(s => ({ id: s.id, name: `${s.firstName} ${s.lastName}`, admissionNumber: s.admissionNumber })),
+                        permission: 'view'
+                    };
+
+                    return {
+                        message: `📤 **Document Share Proposal Prepared!**\n\nI have prepared a sharing card for document **"${matchedDoc.name}"**.\n\n- **Document:** ${matchedDoc.name}\n- **Target Recipients:** ${targetNames.join(', ') || 'Select recipients'}\n- **Permission:** View & Download\n\nReview the recipient list below, adjust targets if necessary, and click **Confirm & Share**:`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        documentShareAction,
+                        provider: 'groq'
+                    };
+                }
             } catch (err) {
-                console.error('[ChatBot] Direct document sharing failed:', err.message);
-                return {
-                    message: `⚠️ **Unable to Auto-Share Document**\n\nReason: ${err.message}\n\nPlease try again or use the manual Share button in Documents.`,
-                    sql: null,
-                    executionResult: null,
-                    chartData: null,
-                    reportAction: null,
-                    provider: 'groq'
-                };
+                console.error('[ChatBot] Document share intent error:', err);
+            }
+        }
+
+        // Intent detection: Equipment Shift Request (e.g. "Shift CLX1-PC-001 to Computer Lab 2", "Transfer PC with serial UD35CS101Z611047 to Lab 2", "Move printer to Lab 1")
+        const isShiftRequestIntent = (
+            (/\b(shift|transfer|move|relocate)\s+(equipment|item|computer|pc|laptop|ups|printer|scanner|switch|router|screen|interactive\s*panel)?\b/i.test(msgLower) ||
+             /\b(create|request|draft)\s+(a\s+)?(shift\s*request|equipment\s*shift)\b/i.test(msgLower) ||
+             msgLower.includes('ਸ਼ਿਫਟ') || msgLower.includes('ਤਬਦੀਲ') || msgLower.includes('स्थानांतरित') || msgLower.includes('शिफ्ट')) &&
+            !msgLower.includes('list shift') && !msgLower.includes('show shift') && !msgLower.includes('view shift')
+        );
+
+        if (isShiftRequestIntent) {
+            try {
+                console.log('[ChatBot] Equipment shift intent detected:', message);
+
+                const [allLabs, allItems] = await Promise.all([
+                    prisma.lab.findMany({
+                        where: schoolId ? { schoolId } : {},
+                        select: { id: true, name: true, roomNumber: true }
+                    }),
+                    prisma.labItem.findMany({
+                        where: schoolId ? { schoolId } : {},
+                        include: {
+                            lab: { select: { id: true, name: true, roomNumber: true } }
+                        }
+                    })
+                ]);
+
+                // 1. Identify destination lab
+                let destinationLab = null;
+                for (const lab of allLabs) {
+                    const lName = lab.name.toLowerCase();
+                    const rNum = (lab.roomNumber || '').toLowerCase();
+                    if (msgLower.includes(lName) || (rNum && msgLower.includes(rNum))) {
+                        if (msgLower.includes(`to ${lName}`) || msgLower.includes(`in ${lName}`) || msgLower.includes(`into ${lName}`) || msgLower.includes(lName)) {
+                            destinationLab = lab;
+                        }
+                    }
+                }
+                if (!destinationLab) {
+                    const labNumMatch = msgLower.match(/\b(to|into|in)\s+lab[\s-]*(\d+)\b/i) || msgLower.match(/\blab[\s-]*(\d+)\b/i);
+                    if (labNumMatch) {
+                        const targetNum = labNumMatch[2] || labNumMatch[1];
+                        destinationLab = allLabs.find(l => l.name.toLowerCase().includes(`lab ${targetNum}`) || l.name.toLowerCase().includes(`lab-${targetNum}`) || l.roomNumber?.includes(targetNum));
+                    }
+                }
+                if (!destinationLab && allLabs.length > 1) {
+                    destinationLab = allLabs[1];
+                }
+
+                // 2. Identify target equipment item (by Serial Number, Item Number, or Item Type)
+                let matchedItem = null;
+
+                // A. Check for exact serial number substring
+                for (const it of allItems) {
+                    if (it.serialNo && msgLower.includes(it.serialNo.toLowerCase())) {
+                        matchedItem = it;
+                        break;
+                    }
+                }
+
+                // B. Check for item number (e.g. CLX1-PC-001, PC-001, CLX-PRN-001)
+                if (!matchedItem) {
+                    for (const it of allItems) {
+                        if (it.itemNumber && msgLower.includes(it.itemNumber.toLowerCase())) {
+                            matchedItem = it;
+                            break;
+                        }
+                    }
+                }
+
+                // C. Check for number pattern e.g. PC-001, PC 1
+                if (!matchedItem) {
+                    const pcMatch = msgLower.match(/\b(pc|computer|ups|printer|laptop|screen)[\s-]*0*(\d+)\b/i);
+                    if (pcMatch) {
+                        const typePrefix = pcMatch[1].toLowerCase();
+                        const num = parseInt(pcMatch[2], 10);
+                        matchedItem = allItems.find(it => {
+                            const itNum = it.itemNumber.toLowerCase();
+                            return (itNum.includes(typePrefix) || it.itemType?.toLowerCase().includes(typePrefix)) &&
+                                   (itNum.endsWith(String(num).padStart(3, '0')) || itNum.endsWith(`-${num}`) || itNum.includes(String(num)));
+                        });
+                    }
+                }
+
+                // D. Fallback: match by item type
+                if (!matchedItem) {
+                    for (const it of allItems) {
+                        if (it.itemType && msgLower.includes(it.itemType.toLowerCase())) {
+                            matchedItem = it;
+                            break;
+                        }
+                    }
+                }
+
+                if (!matchedItem && allItems.length > 0) {
+                    matchedItem = allItems[0];
+                }
+
+                // 3. Extract Reason
+                let reason = 'Laboratory reorganization and workstation upgrade';
+                const reasonMatch = message.match(/(?:reason|because|due to|for)\s*[:\-]?\s*([^.,;]+)/i);
+                if (reasonMatch && reasonMatch[1]?.trim()) {
+                    reason = reasonMatch[1].trim();
+                }
+
+                if (matchedItem) {
+                    const shiftAction = {
+                        isDraft: true,
+                        isConfirmed: false,
+                        isCancelled: false,
+                        itemId: matchedItem.id,
+                        itemNumber: matchedItem.itemNumber,
+                        itemType: matchedItem.itemType || 'pc',
+                        serialNo: matchedItem.serialNo || 'N/A',
+                        brand: matchedItem.brand || '',
+                        modelNo: matchedItem.modelNo || '',
+                        fromLabId: matchedItem.labId || (matchedItem.lab?.id) || (allLabs[0]?.id),
+                        fromLabName: matchedItem.lab?.name || 'Current Lab',
+                        toLabId: destinationLab ? destinationLab.id : (allLabs.find(l => l.id !== matchedItem.labId)?.id || allLabs[0]?.id),
+                        toLabName: destinationLab ? destinationLab.name : 'Target Lab',
+                        reason,
+                        allLabs: allLabs.map(l => ({ id: l.id, name: l.name, roomNumber: l.roomNumber }))
+                    };
+
+                    return {
+                        message: `🔄 **Equipment Shift Request Draft Prepared!**\n\nI have prepared a shift request for **${matchedItem.itemNumber}** (\`${matchedItem.serialNo || 'No SN'}\`).\n\n- **Item:** ${matchedItem.itemNumber} (${matchedItem.itemType?.toUpperCase() || 'Hardware'})\n- **From:** ${matchedItem.lab?.name || 'Current Lab'}\n- **To:** ${destinationLab?.name || 'Destination Lab'}\n- **Reason:** ${reason}\n\nReview the details below and click **Confirm** to submit the shift request for admin approval:`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        shiftAction,
+                        provider: 'groq'
+                    };
+                }
+            } catch (err) {
+                console.error('[ChatBot] Shift intent error:', err);
             }
         }
 
@@ -1903,13 +2032,83 @@ Return JSON ONLY in this format:
             }
         }
 
+        // Intent: Note Appending by Serial Number (e.g. "Append 'Checked all UPS batteries' to note #2", "Add 'Meeting postponed to 3 PM' to note 1", "Update note #3: lab cleaned")
+        const isNoteAppendIntent = (
+            (/\b(append|add|attach|update|edit)\s+.*?\s+(to|into|in)\s+(the\s+)?(note|admin\s*note)\s*(#|number|no\.?|id)?\s*(\d+)/i.test(message) ||
+             /\b(note|admin\s*note)\s*(#|number|no\.?|id)?\s*(\d+)\s*[:\-]?\s*(append|add|update)\b/i.test(message) ||
+             /\b(append\s+to\s+note|add\s+to\s+note)\s*(#|number|no\.?|id)?\s*(\d+)/i.test(message) ||
+             message.includes('ਨੋਟ ਵਿੱਚ ਜੋੜੋ') || message.includes('ਨੋਟ ਨੰਬਰ') || message.includes('नोट में जोड़ें') || message.includes('नोट नंबर'))
+        );
+
+        if (isNoteAppendIntent) {
+            try {
+                console.log('[ChatBot] Note append intent detected:', message);
+
+                // 1. Extract note number
+                const numMatch = message.match(/(?:note|admin\s*note)\s*(?:#|number|no\.?|id)?\s*(\d+)/i) ||
+                                 message.match(/(?:#|number|no\.?)\s*(\d+)/i);
+                const noteIndex = numMatch ? parseInt(numMatch[1], 10) : 1;
+
+                // 2. Extract content to append
+                let appendText = message
+                    .replace(/^(please\s+)?(can you\s+)?(append|add|attach|update)\s+/gi, '')
+                    .replace(/\s+(to|into|in)\s+(the\s+)?(note|admin\s*note)\s*(#|number|no\.?|id)?\s*(\d+)\s*$/gi, '')
+                    .replace(/^(note|admin\s*note)\s*(#|number|no\.?|id)?\s*(\d+)\s*[:\-]?\s*(append|add|update)?\s*[:\-]?\s*/gi, '')
+                    .replace(/^['"“]|['"”]$/g, '')
+                    .trim();
+
+                if (!appendText) appendText = 'Updated information added via AI assistant.';
+
+                // 3. Fetch notes from database
+                const notes = await prisma.adminNote.findMany({
+                    where: schoolId ? { author: { schoolId } } : {},
+                    orderBy: { createdAt: 'asc' }
+                });
+
+                if (notes.length > 0) {
+                    const targetNote = (noteIndex >= 1 && noteIndex <= notes.length)
+                        ? notes[noteIndex - 1]
+                        : notes[0];
+
+                    const updatedContent = `${targetNote.content}\n\n• ${appendText}`;
+
+                    const noteAction = {
+                        isDraft: true,
+                        isAppend: true,
+                        noteId: targetNote.id,
+                        noteNumber: noteIndex,
+                        title: targetNote.title,
+                        category: targetNote.category || 'general',
+                        existingContent: targetNote.content,
+                        appendContent: appendText,
+                        content: updatedContent,
+                        isConfirmed: false,
+                        isCancelled: false
+                    };
+
+                    return {
+                        message: `📝 **Note Append Proposal Prepared! (Pending Confirmation)**\n\nI found **Note #${noteIndex}** ("${targetNote.title}").\n\n- **Target Note:** Note #${noteIndex} — *${targetNote.title}*\n- **Text to Append:** "${appendText}"\n\nReview the updated note below and click **Confirm** to save the changes:`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        noteAction,
+                        provider: 'groq'
+                    };
+                }
+            } catch (err) {
+                console.error('[ChatBot] Note append error:', err);
+            }
+        }
+
         // Intent: Note Creation
         const isNoteCreationIntent = (
-            /\b(create|add|save|make|write|take|keep)\s+(a\s+|an\s+)?(note|admin\s*note|sticky\s*note|memo|reminder)\b/i.test(msgLower) ||
-            /\b(note\s*down|take\s*note|make\s*note|save\s*note|create\s*note|add\s*note)\b/i.test(msgLower) ||
-            /^(note|notes|memo|reminder)\s*:/i.test(msgLower.trim()) ||
-            msgLower.includes('ਨੋਟ ਬਣਾਓ') || msgLower.includes('ਨੋਟ ਲਿਖੋ') || msgLower.includes('ਨੋਟ ਸੇਵ') ||
-            msgLower.includes('नोट बनाएं') || msgLower.includes('नोट लिखें') || msgLower.includes('नोट जोड़ें')
+            (/\b(create|add|save|make|write|take|keep)\s+(a\s+|an\s+)?(note|admin\s*note|sticky\s*note|memo|reminder)\b/i.test(msgLower) ||
+             /\b(note\s*down|take\s*note|make\s*note|save\s*note|create\s*note|add\s*note)\b/i.test(msgLower) ||
+             /^(note|notes|memo|reminder)\s*:/i.test(msgLower.trim()) ||
+             msgLower.includes('ਨੋਟ ਬਣਾਓ') || msgLower.includes('ਨੋਟ ਲਿਖੋ') || msgLower.includes('ਨੋਟ ਸੇਵ') ||
+             msgLower.includes('नोट बनाएं') || msgLower.includes('नोट लिखें') || msgLower.includes('नोट जोड़ें')) &&
+            !isNoteAppendIntent
         );
 
         if (isNoteCreationIntent) {
@@ -2937,7 +3136,7 @@ ${queryResult.error}\n\nFailed Query:\
     }
 
     /**
-     * Multimodal OCR / Vision for images and holiday calendar documents with full Indian language support
+     * Multimodal OCR / Vision for all images and scanned documents with full multilingual & hardware recognition support
      */
     async extractMultimodalText(buffer, mimeType, fileName) {
         const base64Data = buffer.toString('base64');
@@ -2945,26 +3144,27 @@ ${queryResult.error}\n\nFailed Query:\
             ? mimeType 
             : (fileName.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg');
 
-        const visionPrompt = `You are an expert multilingual document extractor and OCR specialist for an educational management system.
-Your task is to analyze this document / holiday list / academic calendar image or file and transcribe all information in full detail.
+        const visionPrompt = `You are an expert multimodal document and image analysis assistant for the Lab Record Management System (ULRMS).
+Analyze this uploaded image / document / screenshot in comprehensive detail.
 
-CRITICAL INSTRUCTIONS:
-1. Accurately recognize and transcribe Indian regional languages, especially Punjabi (Gurmukhi script - ਗੁਰਮੁਖੀ) and Hindi (Devanagari script - देवनागरी), alongside English.
-2. If this is a holiday calendar / gazette notification / academic schedule:
-   - Extract every holiday, festival, exam day, vacation, and event.
-   - Extract the Date (Day, Month, Year).
-   - Extract the original name in Punjabi/Hindi (e.g., "ਗੁਰੂ ਨਾਨਕ ਦੇਵ ਜੀ ਪ੍ਰਕਾਸ਼ ਪੁਰਬ", "ਵੈਸਾਖੀ", "ਦੀਵਾਲੀ", "ਹੋਲੀ", "ਗਣਤੰਤਰ ਦਿਵਸ", "ਗਰਮੀਆਂ ਦੀਆਂ ਛੁੱਟੀਆਂ").
-   - Extract the English translation/transliteration (e.g. "Guru Nanak Dev Birthday", "Baisakhi", "Diwali", "Republic Day", "Summer Vacation").
-   - Extract holiday type (Gazetted Holiday, Restricted Holiday, Vacation, Event).
-3. If this is a table, preserve the table structure row by row with dates clearly associated with event names.
-4. Return the complete transcription and clean structured list.`;
+EXTRACTION INSTRUCTIONS:
+1. **Full Text & OCR Transcription**:
+   - Transcribe all visible text, numbers, codes, tables, and serial numbers.
+   - Accurately preserve Indian regional languages including Punjabi (Gurmukhi script - ਗੁਰਮੁਖੀ) and Hindi (Devanagari script - देवनागरी), alongside English.
+2. **Context-Specific Parsing**:
+   - **Holiday / Academic Calendars**: Extract Date, Day, Holiday/Event Name (original Punjabi/Hindi & English translation), and Holiday Type.
+   - **Hardware, Devices & Asset Tags**: Extract Item Type, Brand, Model, Serial Number, MAC Address, Specifications, and Lab/Room markings.
+   - **Invoices, Bills & Quotations**: Extract Vendor Name, GSTIN, Bill/Quotation No, Date, Line Items, Unit Rates, Taxes, and Grand Total.
+   - **Timetables & Class Schedules**: Extract Days, Period Timings, Subjects, Classes, and Instructor names in structured table format.
+   - **Screenshots, Diagrams & Errors**: Transcribe error messages, code snippets, stack traces, and describe interface elements clearly.
+3. Return the complete transcription and clean structured markdown summary.`;
 
         // 1. Try Gemini Vision models
         if (this.geminiModels && this.geminiModels.length > 0) {
             const geminiKey = process.env.GEMINI_API_KEY;
             if (geminiKey) {
                 const genAI = new GoogleGenerativeAI(geminiKey);
-                const visionModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+                const visionModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
                 for (const modelName of visionModels) {
                     try {
                         console.log(`[ChatBot] Running Gemini Vision (${modelName}) on ${fileName}...`);
@@ -2979,8 +3179,8 @@ CRITICAL INSTRUCTIONS:
                             }
                         ]);
                         const text = result?.response?.text() || '';
-                        if (text.trim().length > 20) {
-                            console.log(`[ChatBot] Gemini Vision successfully extracted ${text.length} chars from ${fileName}`);
+                        if (text.trim().length > 10) {
+                            console.log(`[ChatBot] Gemini Vision (${modelName}) successfully extracted ${text.length} chars from ${fileName}`);
                             return text.trim();
                         }
                     } catch (gErr) {
@@ -2990,31 +3190,34 @@ CRITICAL INSTRUCTIONS:
             }
         }
 
-        // 2. Try Groq Vision (llama-3.2-11b-vision-preview)
+        // 2. Try Groq Vision
         if (this.groqClient && effectiveMime.startsWith('image/')) {
-            try {
-                console.log(`[ChatBot] Running Groq Vision on ${fileName}...`);
-                const dataUrl = `data:${effectiveMime};base64,${base64Data}`;
-                const completion = await this.groqClient.chat.completions.create({
-                    model: 'llama-3.2-11b-vision-preview',
-                    messages: [
-                        {
-                            role: 'user',
-                            content: [
-                                { type: 'text', text: visionPrompt },
-                                { type: 'image_url', image_url: { url: dataUrl } }
-                            ]
-                        }
-                    ],
-                    temperature: 0.1
-                });
-                const text = completion.choices[0]?.message?.content || '';
-                if (text.trim().length > 20) {
-                    console.log(`[ChatBot] Groq Vision successfully extracted ${text.length} chars from ${fileName}`);
-                    return text.trim();
+            const groqVisionModels = ['llama-3.2-11b-vision-preview', 'llama-3.2-90b-vision-preview'];
+            for (const modelName of groqVisionModels) {
+                try {
+                    console.log(`[ChatBot] Running Groq Vision (${modelName}) on ${fileName}...`);
+                    const dataUrl = `data:${effectiveMime};base64,${base64Data}`;
+                    const completion = await this.groqClient.chat.completions.create({
+                        model: modelName,
+                        messages: [
+                            {
+                                role: 'user',
+                                content: [
+                                    { type: 'text', text: visionPrompt },
+                                    { type: 'image_url', image_url: { url: dataUrl } }
+                                ]
+                            }
+                        ],
+                        temperature: 0.1
+                    });
+                    const text = completion.choices[0]?.message?.content || '';
+                    if (text.trim().length > 10) {
+                        console.log(`[ChatBot] Groq Vision (${modelName}) successfully extracted ${text.length} chars from ${fileName}`);
+                        return text.trim();
+                    }
+                } catch (grErr) {
+                    console.warn(`[ChatBot] Groq Vision (${modelName}) failed:`, grErr.message);
                 }
-            } catch (grErr) {
-                console.warn('[ChatBot] Groq Vision failed:', grErr.message);
             }
         }
 

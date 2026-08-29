@@ -101,14 +101,14 @@ router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor',
 
 /**
  * @route   POST /api/admin/chatbot/upload
- * @desc    Upload a document for the AI to read
- * @access  Private (Admin only)
+ * @desc    Upload a document or image for the AI to read & analyze
+ * @access  Private (All authenticated users)
  */
-router.post('/upload', authenticate, authorize('admin', 'principal'), upload.single('document'), asyncHandler(async (req, res) => {
+router.post('/upload', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant', 'student'), upload.single('document'), asyncHandler(async (req, res) => {
     if (!req.file) {
         return res.status(400).json({
             success: false,
-            message: 'Please upload a document'
+            message: 'Please upload a document or image'
         });
     }
 
@@ -119,12 +119,18 @@ router.post('/upload', authenticate, authorize('admin', 'principal'), upload.sin
             req.file.originalname
         );
 
+        let imageUrl = null;
+        if (req.file.mimetype.startsWith('image/')) {
+            imageUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+        }
+
         res.json({
             success: true,
             data: {
                 fileName: req.file.originalname,
                 fileSize: req.file.size,
                 mimeType: req.file.mimetype,
+                imageUrl,
                 extractedText: text,
                 charCount: text.length,
                 preview: text.substring(0, 500) + (text.length > 500 ? '...' : '')

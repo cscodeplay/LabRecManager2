@@ -1082,7 +1082,7 @@ router.put('/groups/:groupId/assign-pc', authenticate, authorize('admin', 'princ
  * @desc    Create a new equipment shift request
  * @access  Private (Admin, Lab Assistant)
  */
-router.post('/shift-requests', authenticate, authorize('admin', 'principal', 'lab_assistant'), [
+router.post('/shift-requests', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), [
     body('itemId').isUUID().withMessage('Valid item ID required'),
     body('toLabId').isUUID().withMessage('Valid destination lab ID required'),
     body('reason').trim().notEmpty().withMessage('Reason for shift is required')

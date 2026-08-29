@@ -893,13 +893,29 @@ function ReportActionCard({ action }) {
     );
 }
 
-/* ─── Document badge ─── */
+/* ─── Document / Image badge ─── */
 function DocBadge({ doc, onRemove }) {
+    const isImage = doc.mimeType?.startsWith('image/') || Boolean(doc.imageUrl);
     return (
-        <span className="inline-flex items-center gap-1 px-2 py-1 bg-violet-50 border border-violet-200 rounded text-[10px]">
-            <FileText className="w-3 h-3 text-violet-500" />
-            <span className="text-violet-700 truncate max-w-[100px]">{doc.fileName}</span>
-            <button onClick={onRemove} className="text-violet-400 hover:text-red-500"><X className="w-3 h-3" /></button>
+        <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-violet-50 border border-violet-200 rounded-lg text-[11px] shadow-2xs">
+            {isImage ? (
+                <img
+                    src={doc.imageUrl || '/image-placeholder.png'}
+                    alt={doc.fileName}
+                    className="w-4 h-4 rounded object-cover border border-violet-200"
+                />
+            ) : (
+                <FileText className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
+            )}
+            <span className="text-violet-800 font-medium truncate max-w-[120px]">{doc.fileName}</span>
+            <button
+                type="button"
+                onClick={onRemove}
+                title="Remove attachment"
+                className="text-violet-400 hover:text-red-500 transition p-0.5 rounded"
+            >
+                <X className="w-3 h-3" />
+            </button>
         </span>
     );
 }
@@ -1380,9 +1396,10 @@ function MeetingActionCard({ action, onConfirmed }) {
     );
 }
 
-/* ─── NOTE ACTION CARD (DRAFT MODE, CONFIRM & CANCEL SUPPORT) ─── */
+/* ─── NOTE ACTION CARD (DRAFT & APPEND MODE, CONFIRM & CANCEL SUPPORT) ─── */
 function NoteActionCard({ action }) {
-    const [title, setTitle] = useState(action?.title || 'New Admin Note');
+    const isAppend = action?.isAppend || Boolean(action?.noteId);
+    const [title, setTitle] = useState(action?.title || (isAppend ? `Note #${action?.noteNumber || ''}` : 'New Admin Note'));
     const [content, setContent] = useState(action?.content || '');
     const [category, setCategory] = useState(action?.category || 'general');
     const [isEditing, setIsEditing] = useState(false);
@@ -1392,7 +1409,7 @@ function NoteActionCard({ action }) {
 
     useEffect(() => {
         if (action) {
-            setTitle(action.title || 'New Admin Note');
+            setTitle(action.title || (action.isAppend ? `Note #${action.noteNumber || ''}` : 'New Admin Note'));
             setContent(action.content || '');
             setCategory(action.category || 'general');
             setIsConfirmed(action.isConfirmed || false);
@@ -1408,13 +1425,22 @@ function NoteActionCard({ action }) {
 
         setIsSaving(true);
         try {
-            const res = await api.post('/admin-notes', {
-                title: title.trim(),
-                content: content.trim(),
-                category: category || 'general'
-            });
+            if (action?.noteId) {
+                await api.put(`/admin-notes/${action.noteId}`, {
+                    title: title.trim(),
+                    content: content.trim(),
+                    category: category || 'general'
+                });
+                toast.success(`Note #${action.noteNumber || ''} updated successfully!`);
+            } else {
+                await api.post('/admin-notes', {
+                    title: title.trim(),
+                    content: content.trim(),
+                    category: category || 'general'
+                });
+                toast.success(`Note "${title}" saved successfully!`);
+            }
 
-            toast.success(res.data?.message || `Note "${title}" saved successfully!`);
             setIsConfirmed(true);
             setIsEditing(false);
         } catch (err) {
@@ -1453,7 +1479,7 @@ function NoteActionCard({ action }) {
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 font-semibold text-slate-700">
                         <XCircle className="w-4 h-4 text-slate-400" />
-                        <span>Note Draft Cancelled</span>
+                        <span>Note {isAppend ? 'Update' : 'Draft'} Cancelled</span>
                     </div>
                     <button
                         type="button"
@@ -1464,7 +1490,7 @@ function NoteActionCard({ action }) {
                     </button>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                    The draft note "{title}" was cancelled and not saved.
+                    The {isAppend ? `update for note #${action?.noteNumber || ''}` : `draft note "${title}"`} was cancelled and not saved.
                 </p>
             </div>
         );
@@ -1485,7 +1511,9 @@ function NoteActionCard({ action }) {
                 <div className="flex items-center gap-1.5">
                     <StickyNote className="w-3.5 h-3.5 text-amber-100" />
                     <span className="font-semibold text-xs tracking-tight">
-                        {isConfirmed ? 'Note Saved' : 'Note Draft'}
+                        {isConfirmed 
+                            ? (isAppend ? `Note #${action?.noteNumber || ''} Updated` : 'Note Saved') 
+                            : (isAppend ? `Append to Note #${action?.noteNumber || ''}` : 'Note Draft')}
                     </span>
                 </div>
                 {isConfirmed ? (
@@ -1495,7 +1523,7 @@ function NoteActionCard({ action }) {
                 ) : (
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-950 flex items-center gap-1 shadow-xs">
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-800 animate-ping" />
-                        Draft
+                        {isAppend ? 'Append Draft' : 'Draft'}
                     </span>
                 )}
             </div>
@@ -1533,7 +1561,7 @@ function NoteActionCard({ action }) {
                         <div>
                             <label className="text-[9px] font-semibold text-slate-500 block mb-0.5 uppercase tracking-wider">Note Content</label>
                             <textarea
-                                rows={3}
+                                rows={4}
                                 value={content}
                                 onChange={(e) => setContent(e.target.value)}
                                 placeholder="Note details..."
@@ -1549,9 +1577,21 @@ function NoteActionCard({ action }) {
                             </h4>
                             {getCategoryBadge(category)}
                         </div>
-                        <div className="text-[11px] text-slate-700 whitespace-pre-wrap bg-slate-50/80 p-2 rounded-lg border border-slate-100 max-h-40 overflow-y-auto leading-relaxed">
-                            {content || 'No content'}
-                        </div>
+                        {isAppend && action?.appendContent ? (
+                            <div className="text-[11px] text-slate-700 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100 max-h-48 overflow-y-auto space-y-2">
+                                <div className="text-slate-600 whitespace-pre-wrap">{action.existingContent}</div>
+                                <div className="p-2 rounded-lg bg-amber-50 border border-amber-200/80 text-amber-900 font-medium space-y-1">
+                                    <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                                        <Plus className="w-3 h-3" /> Appended Content:
+                                    </div>
+                                    <p className="whitespace-pre-wrap">{action.appendContent}</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="text-[11px] text-slate-700 whitespace-pre-wrap bg-slate-50/80 p-2 rounded-lg border border-slate-100 max-h-40 overflow-y-auto leading-relaxed">
+                                {content || 'No content'}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -3643,6 +3683,507 @@ function ProcurementActionCard({ action }) {
     );
 }
 
+/* ─── Equipment Shift Request Action Card ─── */
+function ShiftActionCard({ action }) {
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [loading, setLoading] = useState(false);
+
+    const [itemId, setItemId] = useState(action?.itemId || '');
+    const [itemNumber, setItemNumber] = useState(action?.itemNumber || 'CLX-PC-001');
+    const [itemType, setItemType] = useState(action?.itemType || 'pc');
+    const [serialNo, setSerialNo] = useState(action?.serialNo || 'N/A');
+    const [fromLabName, setFromLabName] = useState(action?.fromLabName || 'Source Lab');
+    const [toLabId, setToLabId] = useState(action?.toLabId || '');
+    const [toLabName, setToLabName] = useState(action?.toLabName || 'Destination Lab');
+    const [reason, setReason] = useState(action?.reason || 'Laboratory reorganization and workstation upgrade');
+    const [allLabs, setAllLabs] = useState(action?.allLabs || []);
+
+    useEffect(() => {
+        if (action) {
+            setItemId(action.itemId || '');
+            setItemNumber(action.itemNumber || 'CLX-PC-001');
+            setItemType(action.itemType || 'pc');
+            setSerialNo(action.serialNo || 'N/A');
+            setFromLabName(action.fromLabName || 'Source Lab');
+            setToLabId(action.toLabId || '');
+            setToLabName(action.toLabName || 'Destination Lab');
+            setReason(action.reason || 'Laboratory reorganization and workstation upgrade');
+            setAllLabs(action.allLabs || []);
+            setIsConfirmed(action.isConfirmed || false);
+            setIsCancelled(action.isCancelled || false);
+        }
+    }, [action]);
+
+    const handleConfirm = async () => {
+        if (!itemId || !toLabId) {
+            toast.error('Item and Destination Lab are required');
+            return;
+        }
+        if (!reason.trim()) {
+            toast.error('Reason for shift is required');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const res = await api.post('/labs/shift-requests', {
+                itemId,
+                toLabId,
+                reason: reason.trim()
+            });
+
+            if (res.data?.success) {
+                setIsConfirmed(true);
+                setIsEditing(false);
+                toast.success('Equipment shift request submitted for approval!');
+            } else {
+                toast.error(res.data?.message || 'Failed to create shift request');
+            }
+        } catch (err) {
+            console.error('Error creating shift request:', err);
+            toast.error(err.response?.data?.message || err.message || 'Error submitting shift request');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Shift Request Draft Discarded</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(false)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                    >
+                        <Undo2 className="w-3 h-3" /> Restore Draft
+                    </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                    The shift request for item {itemNumber} was cancelled.
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-2.5 rounded-2xl border border-cyan-200/90 bg-gradient-to-br from-cyan-50/70 via-white to-blue-50/50 shadow-sm overflow-hidden text-xs animate-in fade-in">
+            {/* Header */}
+            <div className="px-3.5 py-2 bg-gradient-to-r from-cyan-600 via-teal-600 to-blue-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2 font-semibold text-xs tracking-tight">
+                    <Truck className="w-4 h-4 text-cyan-100" />
+                    <span>{isConfirmed ? 'Shift Request Submitted' : 'Draft Equipment Shift Request'}</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30">
+                    {itemType.toUpperCase()}
+                </span>
+            </div>
+
+            {/* Body */}
+            <div className="p-3 space-y-2.5">
+                {isEditing && !isConfirmed ? (
+                    <div className="space-y-2.5">
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Item Number</label>
+                                <input
+                                    type="text"
+                                    value={itemNumber}
+                                    disabled
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-100 text-xs font-semibold text-slate-700"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Serial Number</label>
+                                <input
+                                    type="text"
+                                    value={serialNo}
+                                    disabled
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-100 text-xs font-mono text-slate-700"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Destination Lab *</label>
+                            <select
+                                value={toLabId}
+                                onChange={(e) => {
+                                    setToLabId(e.target.value);
+                                    const l = allLabs.find(x => x.id === e.target.value);
+                                    if (l) setToLabName(l.name);
+                                }}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-cyan-500 focus:outline-none bg-white"
+                            >
+                                {allLabs.map(lab => (
+                                    <option key={lab.id} value={lab.id}>{lab.name} {lab.roomNumber ? `(Room ${lab.roomNumber})` : ''}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Reason for Shift *</label>
+                            <textarea
+                                value={reason}
+                                onChange={(e) => setReason(e.target.value)}
+                                rows={2}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-cyan-500 focus:outline-none resize-none"
+                                placeholder="State the reason for relocation..."
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(false)}
+                                title="Done Editing"
+                                className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 font-medium flex items-center gap-1"
+                            >
+                                <Check className="w-3.5 h-3.5 text-cyan-600" />
+                                <span className="text-[11px]">Done</span>
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {/* Equipment Info Box */}
+                        <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                            <div className="flex items-center justify-between">
+                                <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                                    <Monitor className="w-3.5 h-3.5 text-cyan-600" />
+                                    <span>{itemNumber}</span>
+                                    {action?.brand && <span className="text-slate-500 font-normal">({action.brand} {action.modelNo || ''})</span>}
+                                </div>
+                                {!isConfirmed && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsEditing(true)}
+                                        className="p-1 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition"
+                                        title="Edit Destination or Reason"
+                                    >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px]">
+                                <span className="text-slate-500">Serial No:</span>
+                                <code className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-slate-700 font-mono font-bold text-[10px]">
+                                    {serialNo}
+                                </code>
+                            </div>
+                        </div>
+
+                        {/* Shift Movement Flow */}
+                        <div className="p-2 bg-gradient-to-r from-cyan-50 to-blue-50 border border-cyan-200/80 rounded-xl flex items-center justify-between text-xs">
+                            <div className="space-y-0.5">
+                                <span className="text-[9px] uppercase font-bold text-slate-400 block tracking-wider">Source</span>
+                                <span className="font-bold text-slate-800">{fromLabName}</span>
+                            </div>
+                            <div className="flex flex-col items-center px-2">
+                                <span className="text-[9px] font-bold text-cyan-700 uppercase">Transfer</span>
+                                <ArrowRight className="w-4 h-4 text-cyan-600 animate-pulse" />
+                            </div>
+                            <div className="space-y-0.5 text-right">
+                                <span className="text-[9px] uppercase font-bold text-slate-400 block tracking-wider">Destination</span>
+                                <span className="font-bold text-cyan-800">{toLabName}</span>
+                            </div>
+                        </div>
+
+                        {/* Reason Box */}
+                        <div className="p-2 bg-slate-50 rounded-lg text-[11px] text-slate-600">
+                            <span className="font-semibold text-slate-700">Reason:</span> {reason}
+                        </div>
+                    </div>
+                )}
+
+                {/* Confirmed State */}
+                {isConfirmed && (
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-in fade-in">
+                        <div className="flex items-center gap-2 text-emerald-800 font-bold">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>Shift Request Queued for Approval!</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-700">
+                            The transfer of {itemNumber} to {toLabName} has been submitted for admin approval.
+                        </p>
+                        <div className="pt-1 flex items-center gap-2">
+                            <a
+                                href="/admin/labs/shift-requests"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-100/80 hover:bg-emerald-200 px-2.5 py-1 rounded-lg transition"
+                            >
+                                <Truck className="w-3 h-3" /> View Shift Requests
+                            </a>
+                        </div>
+                    </div>
+                )}
+
+                {/* Footer Action Buttons */}
+                {!isConfirmed && !isEditing && (
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                        <button
+                            type="button"
+                            onClick={() => setIsCancelled(true)}
+                            title="Cancel / Discard Draft"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            disabled={loading}
+                            title="Confirm & Submit Shift Request"
+                            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-cyan-500/20 transition disabled:opacity-50 text-xs"
+                        >
+                            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            <span>Confirm Shift</span>
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/* ─── Document Sharing Action Card ─── */
+function DocumentShareActionCard({ action }) {
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [loading, setLoading] = useState(false);
+
+    const [documentId, setDocumentId] = useState(action?.documentId || '');
+    const [documentName, setDocumentName] = useState(action?.documentName || 'Academic Document');
+    const [fileType, setFileType] = useState(action?.fileType || 'pdf');
+    const [targetClassIds, setTargetClassIds] = useState(action?.targetClassIds || []);
+    const [targetGroupIds, setTargetGroupIds] = useState(action?.targetGroupIds || []);
+    const [targetStudentIds, setTargetStudentIds] = useState(action?.targetStudentIds || []);
+    const [targetNames, setTargetNames] = useState(action?.targetNames || []);
+    const [availableClasses, setAvailableClasses] = useState(action?.availableClasses || []);
+    const [permission, setPermission] = useState(action?.permission || 'view');
+
+    useEffect(() => {
+        if (action) {
+            setDocumentId(action.documentId || '');
+            setDocumentName(action.documentName || 'Academic Document');
+            setFileType(action.fileType || 'pdf');
+            setTargetClassIds(action.targetClassIds || []);
+            setTargetGroupIds(action.targetGroupIds || []);
+            setTargetStudentIds(action.targetStudentIds || []);
+            setTargetNames(action.targetNames || []);
+            setAvailableClasses(action.availableClasses || []);
+            setPermission(action.permission || 'view');
+            setIsConfirmed(action.isConfirmed || false);
+            setIsCancelled(action.isCancelled || false);
+        }
+    }, [action]);
+
+    const handleToggleClass = (id) => {
+        setTargetClassIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    };
+
+    const handleConfirm = async () => {
+        if (!documentId) {
+            toast.error('Document ID is required');
+            return;
+        }
+        if (targetClassIds.length === 0 && targetGroupIds.length === 0 && targetStudentIds.length === 0) {
+            toast.error('Please select at least one recipient (Class, Group, or Student)');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const res = await api.post(`/documents/${documentId}/share`, {
+                classIds: targetClassIds,
+                groupIds: targetGroupIds,
+                studentIds: targetStudentIds,
+                permission
+            });
+
+            if (res.data?.success) {
+                setIsConfirmed(true);
+                setIsEditing(false);
+                toast.success('Document shared successfully!');
+            } else {
+                toast.error(res.data?.message || 'Failed to share document');
+            }
+        } catch (err) {
+            console.error('Error sharing document:', err);
+            toast.error(err.response?.data?.message || err.message || 'Error sharing document');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Document Sharing Cancelled</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(false)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                    >
+                        <Undo2 className="w-3 h-3" /> Restore Draft
+                    </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                    Sharing proposal for "{documentName}" was discarded.
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-2.5 rounded-2xl border border-violet-200/90 bg-gradient-to-br from-violet-50/70 via-white to-purple-50/50 shadow-sm overflow-hidden text-xs animate-in fade-in">
+            {/* Header */}
+            <div className="px-3.5 py-2 bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2 font-semibold text-xs tracking-tight">
+                    <Share2 className="w-4 h-4 text-violet-100" />
+                    <span>{isConfirmed ? 'Document Shared' : 'Share Document Proposal'}</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30">
+                    {fileType.toUpperCase()}
+                </span>
+            </div>
+
+            {/* Body */}
+            <div className="p-3 space-y-2.5">
+                {/* Document Information */}
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center flex-shrink-0">
+                            <FileText className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="font-bold text-slate-900 truncate text-xs">{documentName}</div>
+                            <div className="text-[10px] text-slate-500 font-mono">Permission: View & Download</div>
+                        </div>
+                    </div>
+                    {!isConfirmed && (
+                        <button
+                            type="button"
+                            onClick={() => setIsEditing(!isEditing)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition"
+                            title="Edit Target Recipients"
+                        >
+                            <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                </div>
+
+                {isEditing && !isConfirmed ? (
+                    <div className="space-y-2 bg-slate-50/80 p-2.5 rounded-xl border border-slate-200">
+                        <label className="text-[10px] font-semibold text-slate-600 block uppercase tracking-wider">Select Target Classes</label>
+                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                            {availableClasses.map(cls => {
+                                const selected = targetClassIds.includes(cls.id);
+                                return (
+                                    <button
+                                        key={cls.id}
+                                        type="button"
+                                        onClick={() => handleToggleClass(cls.id)}
+                                        className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition ${
+                                            selected
+                                                ? 'bg-violet-600 text-white border-violet-600 shadow-2xs'
+                                                : 'bg-white text-slate-700 border-slate-200 hover:border-violet-300'
+                                        }`}
+                                    >
+                                        Class {cls.name}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <div className="flex justify-end pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(false)}
+                                className="p-1 rounded-lg text-slate-600 hover:bg-slate-200 font-medium flex items-center gap-1"
+                            >
+                                <Check className="w-3.5 h-3.5 text-violet-600" />
+                                <span className="text-[11px]">Done</span>
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Recipients:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                            {targetClassIds.length > 0 && targetClassIds.map(id => {
+                                const c = availableClasses.find(x => x.id === id);
+                                return (
+                                    <span key={id} className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 font-medium text-[11px] border border-violet-200">
+                                        Class {c?.name || id}
+                                    </span>
+                                );
+                            })}
+                            {targetNames.length === 0 && targetClassIds.length === 0 && (
+                                <span className="text-slate-400 italic text-[11px]">No recipients specified</span>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Confirmed State */}
+                {isConfirmed && (
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-in fade-in">
+                        <div className="flex items-center gap-2 text-emerald-800 font-bold">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>Document Shared Successfully!</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-700">
+                            Students and instructors in the selected groups can now access and download "{documentName}".
+                        </p>
+                        <div className="pt-1 flex items-center gap-2">
+                            <a
+                                href="/documents"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-100/80 hover:bg-emerald-200 px-2.5 py-1 rounded-lg transition"
+                            >
+                                <Folder className="w-3 h-3" /> Open Documents
+                            </a>
+                        </div>
+                    </div>
+                )}
+
+                {/* Footer Action Buttons */}
+                {!isConfirmed && !isEditing && (
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                        <button
+                            type="button"
+                            onClick={() => setIsCancelled(true)}
+                            title="Cancel / Discard Draft"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            disabled={loading || (targetClassIds.length === 0 && targetGroupIds.length === 0 && targetStudentIds.length === 0)}
+                            title="Confirm & Share Document"
+                            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-violet-500/20 transition disabled:opacity-50 text-xs"
+                        >
+                            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            <span>Confirm & Share</span>
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 /* ─── Training Module & Competition Action Card ─── */
 function TrainingActionCard({ action }) {
     const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
@@ -4926,6 +5467,8 @@ export default function FloatingChatbot() {
                         trainingAction: d.trainingAction,
                         timetableAction: d.timetableAction,
                         periodTimingAction: d.periodTimingAction,
+                        shiftAction: d.shiftAction,
+                        documentShareAction: d.documentShareAction,
                         model: d.model, 
                         provider: d.provider, 
                         timestamp: d.timestamp 
@@ -4966,13 +5509,18 @@ export default function FloatingChatbot() {
             fd.append('document', file);
             const res = await api.post('/admin/chatbot/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
             if (res.data.success) {
-                setUploadedDocs(prev => [...prev, res.data.data]);
+                const docData = res.data.data;
+                setUploadedDocs(prev => [...prev, docData]);
+                const isImg = docData.mimeType?.startsWith('image/') || Boolean(docData.imageUrl);
                 setMessages(prev => [...prev, {
                     role: 'assistant',
-                    content: `📄 **Loaded:** ${res.data.data.fileName} (${res.data.data.charCount.toLocaleString()} chars).\nAsk me anything about it.`,
+                    content: isImg
+                        ? `🖼️ **Image Loaded & Analyzed:** ${docData.fileName}\n\n*OCR Text / Visual Analysis Preview:*\n> ${docData.preview || 'Ready for queries.'}\n\nYou can now ask me questions or instruct me to create records based on this image.`
+                        : `📄 **Loaded:** ${docData.fileName} (${docData.charCount.toLocaleString()} chars).\nAsk me anything about it.`,
+                    imageUrl: docData.imageUrl || null,
                     timestamp: new Date().toISOString()
                 }]);
-                toast.success('Document loaded');
+                toast.success(isImg ? 'Image analyzed successfully!' : 'Document loaded');
             }
         } catch (err) { toast.error(err.response?.data?.message || err.message); }
         finally { setIsUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
@@ -5224,38 +5772,45 @@ export default function FloatingChatbot() {
                                 key={idx}
                                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                             >
-                                        <div
-                                            className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-xs shadow-xs ${
-                                                msg.role === 'user'
-                                                    ? 'bg-indigo-600 text-white rounded-br-xs'
-                                                    : msg.isError
-                                                    ? 'bg-red-50 text-red-800 border border-red-200 rounded-bl-xs'
-                                                    : 'bg-white text-slate-800 border border-slate-200 rounded-bl-xs'
-                                            }`}
-                                        >
-                                            {msg.role === 'user' ? (
-                                                <p className="text-[13px] whitespace-pre-wrap">{msg.content}</p>
-                                            ) : (
-                                                <RenderMessage content={msg.content} hasQueryResult={Boolean(msg.queryResult || msg.sql)} />
-                                            )}
-                                            {msg.queryResult && <SQLResult sql={msg.sql} result={msg.queryResult} onRerun={() => handleRerunSQL(msg.sql)} />}
-                                            {msg.chartData && <ChatChart chartData={msg.chartData} />}
-                                            {msg.reportAction && <ReportActionCard action={msg.reportAction} />}
-                                            {msg.meetingAction && <MeetingActionCard action={msg.meetingAction} />}
-                                            {msg.calendarAction && <CalendarActionCard action={msg.calendarAction} />}
-                                            {msg.assignmentAction && <AssignmentActionCard action={msg.assignmentAction} />}
-                                            {msg.noteAction && <NoteActionCard action={msg.noteAction} />}
-                                            {msg.classAction && <ClassActionCard action={msg.classAction} />}
-                                            {msg.userAction && <UserActionCard action={msg.userAction} />}
-                                            {msg.ticketAction && <TicketActionCard action={msg.ticketAction} />}
-                                            {msg.procurementAction && <ProcurementActionCard action={msg.procurementAction} />}
-                                            {msg.trainingAction && <TrainingActionCard action={msg.trainingAction} />}
-                                            {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
-                                            {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
-                                            {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
+                                <div
+                                    className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-xs shadow-xs ${
+                                        msg.role === 'user'
+                                            ? 'bg-indigo-600 text-white rounded-br-xs'
+                                            : msg.isError
+                                            ? 'bg-red-50 text-red-800 border border-red-200 rounded-bl-xs'
+                                            : 'bg-white text-slate-800 border border-slate-200 rounded-bl-xs'
+                                    }`}
+                                >
+                                    {msg.role === 'user' ? (
+                                        <p className="text-[13px] whitespace-pre-wrap">{msg.content}</p>
+                                    ) : (
+                                        <RenderMessage content={msg.content} hasQueryResult={Boolean(msg.queryResult || msg.sql)} />
+                                    )}
+                                    {msg.imageUrl && (
+                                        <div className="mt-2 mb-1.5 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 max-w-xs shadow-2xs">
+                                            <img src={msg.imageUrl} alt="Uploaded Image" className="max-h-44 w-full object-contain" />
                                         </div>
-                                    </div>
-                                ))}
+                                    )}
+                                    {msg.queryResult && <SQLResult sql={msg.sql} result={msg.queryResult} onRerun={() => handleRerunSQL(msg.sql)} />}
+                                    {msg.chartData && <ChatChart chartData={msg.chartData} />}
+                                    {msg.reportAction && <ReportActionCard action={msg.reportAction} />}
+                                    {msg.meetingAction && <MeetingActionCard action={msg.meetingAction} />}
+                                    {msg.calendarAction && <CalendarActionCard action={msg.calendarAction} />}
+                                    {msg.assignmentAction && <AssignmentActionCard action={msg.assignmentAction} />}
+                                    {msg.noteAction && <NoteActionCard action={msg.noteAction} />}
+                                    {msg.classAction && <ClassActionCard action={msg.classAction} />}
+                                    {msg.userAction && <UserActionCard action={msg.userAction} />}
+                                    {msg.ticketAction && <TicketActionCard action={msg.ticketAction} />}
+                                    {msg.procurementAction && <ProcurementActionCard action={msg.procurementAction} />}
+                                    {msg.trainingAction && <TrainingActionCard action={msg.trainingAction} />}
+                                    {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
+                                    {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
+                                    {msg.shiftAction && <ShiftActionCard action={msg.shiftAction} />}
+                                    {msg.documentShareAction && <DocumentShareActionCard action={msg.documentShareAction} />}
+                                    {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
+                                </div>
+                            </div>
+                        ))}
 
                                 {isLoading && (
                                     <div className="flex justify-start">
