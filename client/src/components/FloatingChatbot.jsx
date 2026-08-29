@@ -574,8 +574,19 @@ function SQLResult({ sql, result, onRerun }) {
     );
 }
 
-/* ─── Chart component with copy/download ─── */
-const DEFAULT_COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#06b6d4'];
+/* ─── Chart component with solid colors matching image reference ─── */
+const DEFAULT_COLORS = [
+    '#F5B027', // Rich Golden Amber (Image Series 1)
+    '#538D4E', // Forest Sage Green (Image Series 2)
+    '#2563EB', // Royal Blue
+    '#DC2626', // Crimson Red
+    '#7C3AED', // Purple
+    '#0D9488', // Deep Teal
+    '#EA580C', // Burnt Orange
+    '#0284C7', // Sky Blue
+    '#475569', // Slate Gray
+    '#DB2777'  // Rose Pink
+];
 
 function RenderMessage({ content, hasQueryResult }) {
     if (!content) return null;
@@ -687,19 +698,37 @@ function ChatChart({ chartData }) {
 
     const renderChart = () => {
         const option = {
-            tooltip: { trigger: 'axis', textStyle: { fontSize: 11 }, backgroundColor: 'rgba(255, 255, 255, 0.9)' },
-            legend: { data: seriesKeys, bottom: 0, textStyle: { fontSize: 10 } },
-            grid: { left: '3%', right: '4%', bottom: '15%', top: '10%', containLabel: true },
+            backgroundColor: '#ffffff',
+            tooltip: { 
+                trigger: activeType === 'pie' || activeType === 'doughnut' ? 'item' : 'axis', 
+                textStyle: { fontSize: 11, color: '#1e293b' }, 
+                backgroundColor: 'rgba(255, 255, 255, 0.96)',
+                borderColor: '#cbd5e1',
+                borderWidth: 1,
+                shadowBlur: 6,
+                shadowColor: 'rgba(0,0,0,0.06)'
+            },
+            legend: { 
+                data: seriesKeys, 
+                bottom: 2, 
+                icon: 'rect', 
+                itemWidth: 12, 
+                itemHeight: 12, 
+                textStyle: { fontSize: 10.5, fontWeight: '600', color: '#334155' } 
+            },
+            grid: { left: '3%', right: '4%', bottom: '16%', top: '10%', containLabel: true },
             xAxis: activeType === 'pie' || activeType === 'doughnut' ? { show: false } : {
                 type: 'category',
                 data: data.map(d => d.label),
-                axisLabel: { fontSize: 10, interval: 0, rotate: 20 },
-                axisLine: { lineStyle: { color: '#cbd5e1' } }
+                axisLabel: { fontSize: 10, fontWeight: '500', color: '#334155', interval: 0, rotate: data.length > 5 ? 20 : 0 },
+                axisLine: { lineStyle: { color: '#64748b', width: 1.5 } },
+                axisTick: { show: true, alignWithLabel: true }
             },
             yAxis: activeType === 'pie' || activeType === 'doughnut' ? { show: false } : {
                 type: 'value',
-                axisLabel: { fontSize: 10 },
-                splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }
+                axisLabel: { fontSize: 10, fontWeight: '500', color: '#475569' },
+                axisLine: { show: true, lineStyle: { color: '#64748b', width: 1.5 } },
+                splitLine: { lineStyle: { type: 'dashed', color: '#cbd5e1' } }
             },
             color: colors,
             series: []
@@ -711,8 +740,8 @@ function ChatChart({ chartData }) {
                 type: 'pie',
                 radius: activeType === 'doughnut' ? ['40%', '70%'] : '70%',
                 data: data.map(d => ({ name: String(d.label), value: Number(d[seriesKeys[0] || 'value']) || 0 })),
-                label: { show: true, formatter: '{b} ({c})', fontSize: 10 },
-                itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 }
+                label: { show: true, formatter: '{b}: {c}', fontSize: 10, fontWeight: 'bold', color: '#1e293b' },
+                itemStyle: { borderRadius: 3, borderColor: '#fff', borderWidth: 2, opacity: 1 }
             }];
         } else {
             option.series = seriesKeys.map((key, i) => {
@@ -725,24 +754,35 @@ function ChatChart({ chartData }) {
                     name: key,
                     type: sType,
                     stack: activeType === 'area' ? 'Total' : undefined,
+                    barGap: '12%',
+                    barCategoryGap: '35%',
                     areaStyle: activeType === 'area' ? { 
-                        color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: baseColor }, { offset: 1, color: baseColor + '11' }] }
+                        color: baseColor,
+                        opacity: 0.85
                     } : undefined,
                     data: data.map(d => Number(d[key]) || 0),
-                    label: { show: true, position: 'top', formatter: (p) => p.value === 0 ? '' : p.value, fontSize: 9, color: '#64748b' },
-                    smooth: true,
+                    label: { 
+                        show: true, 
+                        position: 'top', 
+                        formatter: (p) => p.value === 0 ? '' : p.value, 
+                        fontSize: 10, 
+                        fontWeight: 'bold', 
+                        color: '#1e293b' 
+                    },
+                    smooth: false,
                     symbolSize: sType === 'line' ? 8 : 0,
                     itemStyle: { 
-                        borderRadius: sType === 'bar' ? [6, 6, 0, 0] : 0,
-                        color: sType === 'bar' ? { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: baseColor }, { offset: 1, color: baseColor + '44' }] } : baseColor
+                        borderRadius: sType === 'bar' ? [3, 3, 0, 0] : 0,
+                        color: baseColor,
+                        opacity: 1
                     },
-                    lineStyle: sType === 'line' ? { width: 3, shadowColor: 'rgba(0,0,0,0.15)', shadowBlur: 10, shadowOffsetY: 5 } : undefined,
+                    lineStyle: sType === 'line' ? { width: 3, color: baseColor } : undefined,
                     animationEasing: 'cubicOut',
-                    animationDuration: 1000
+                    animationDuration: 800
                 };
             });
         }
-        return <ReactECharts ref={echartsRef} option={option} style={{ height: 220, width: '100%' }} opts={{ renderer: 'svg' }} />;
+        return <ReactECharts ref={echartsRef} option={option} style={{ height: 230, width: '100%' }} opts={{ renderer: 'svg' }} />;
     };
 
     return (

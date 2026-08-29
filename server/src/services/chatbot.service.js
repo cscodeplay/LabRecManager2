@@ -3035,7 +3035,7 @@ ${queryResult.error}\n\nFailed Query:\
                 title: `${numCols.join(' and ')} by ${labelCol}`,
                 data,
                 seriesKeys: numCols,
-                colors: ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#06b6d4']
+                colors: ['#F5B027', '#538D4E', '#2563EB', '#DC2626', '#7C3AED', '#0D9488', '#EA580C', '#0284C7', '#475569', '#DB2777']
             };
         }
 
@@ -3062,7 +3062,7 @@ ${queryResult.error}\n\nFailed Query:\
                 title: `${valueCol} by ${groupCol} and ${seriesCol}`,
                 data: Object.values(pivot).slice(0, 20),
                 seriesKeys: Array.from(seriesKeys),
-                colors: ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#06b6d4']
+                colors: ['#F5B027', '#538D4E', '#2563EB', '#DC2626', '#7C3AED', '#0D9488', '#EA580C', '#0284C7', '#475569', '#DB2777']
             };
         }
 
@@ -3079,7 +3079,7 @@ ${queryResult.error}\n\nFailed Query:\
         return {
             type, title: `${valueCol} by ${labelCol}`, data,
             seriesKeys: ['value'],
-            colors: ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#06b6d4']
+            colors: ['#F5B027', '#538D4E', '#2563EB', '#DC2626', '#7C3AED', '#0D9488', '#EA580C', '#0284C7', '#475569', '#DB2777']
         };
     }
 
