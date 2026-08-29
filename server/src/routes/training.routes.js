@@ -94,7 +94,10 @@ router.get('/modules', authenticate, asyncHandler(async (req, res) => {
     // Filter by academic session if provided via header from client interceptor
     const sessionId = req.headers['x-academic-session'];
     if (sessionId) {
-        where.academicYearId = sessionId;
+        where.OR = [
+            { academicYearId: sessionId },
+            { academicYearId: null }
+        ];
     }
 
     const modules = await prisma.trainingModule.findMany({
@@ -168,10 +171,11 @@ router.get('/modules/:id', authenticate, asyncHandler(async (req, res) => {
             }
         });
 
+        const unitIds = moduleDetails.units.map(u => u.id);
         unitMasteries = await prisma.studentUnitMastery.findMany({
             where: {
                 studentId: req.user.id,
-                unit: { moduleId: moduleId }
+                unitId: { in: unitIds }
             }
         });
     }
