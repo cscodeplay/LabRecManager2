@@ -11,7 +11,7 @@ import {
     LayoutGrid, Table as TableIcon, Inbox, Layers, Laptop, Server, HardDrive,
     Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket,
     ShoppingBag, Code, Terminal, Award, Package, Zap, Wifi, Network, Headphones, ScanLine, Cable, Camera,
-    Share2, Folder, Truck, ArrowRight
+    Share2, Folder, Truck, ArrowRight, UsersRound, Search
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
@@ -3997,6 +3997,8 @@ function DocumentShareActionCard({ action }) {
     const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
     const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
     const [isEditing, setIsEditing] = useState(false);
+    const [editTab, setEditTab] = useState('students'); // 'students' | 'classes' | 'groups'
+    const [filterQuery, setFilterQuery] = useState('');
     const [loading, setLoading] = useState(false);
 
     const [documentId, setDocumentId] = useState(action?.documentId || '');
@@ -4007,6 +4009,8 @@ function DocumentShareActionCard({ action }) {
     const [targetStudentIds, setTargetStudentIds] = useState(action?.targetStudentIds || []);
     const [targetNames, setTargetNames] = useState(action?.targetNames || []);
     const [availableClasses, setAvailableClasses] = useState(action?.availableClasses || []);
+    const [availableGroups, setAvailableGroups] = useState(action?.availableGroups || []);
+    const [availableStudents, setAvailableStudents] = useState(action?.availableStudents || []);
     const [permission, setPermission] = useState(action?.permission || 'view');
 
     useEffect(() => {
@@ -4019,6 +4023,8 @@ function DocumentShareActionCard({ action }) {
             setTargetStudentIds(action.targetStudentIds || []);
             setTargetNames(action.targetNames || []);
             setAvailableClasses(action.availableClasses || []);
+            setAvailableGroups(action.availableGroups || []);
+            setAvailableStudents(action.availableStudents || []);
             setPermission(action.permission || 'view');
             setIsConfirmed(action.isConfirmed || false);
             setIsCancelled(action.isCancelled || false);
@@ -4029,12 +4035,27 @@ function DocumentShareActionCard({ action }) {
         setTargetClassIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
     };
 
+    const handleToggleGroup = (id) => {
+        setTargetGroupIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    };
+
+    const handleToggleStudent = (id) => {
+        setTargetStudentIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    };
+
     const handleConfirm = async () => {
         if (!documentId) {
             toast.error('Document ID is required');
             return;
         }
-        if (targetClassIds.length === 0 && targetGroupIds.length === 0 && targetStudentIds.length === 0) {
+
+        const targets = [
+            ...targetClassIds.map(id => ({ type: 'class', id })),
+            ...targetGroupIds.map(id => ({ type: 'group', id })),
+            ...targetStudentIds.map(id => ({ type: 'student', id }))
+        ];
+
+        if (targets.length === 0) {
             toast.error('Please select at least one recipient (Class, Group, or Student)');
             return;
         }
@@ -4042,6 +4063,7 @@ function DocumentShareActionCard({ action }) {
         setLoading(true);
         try {
             const res = await api.post(`/documents/${documentId}/share`, {
+                targets,
                 classIds: targetClassIds,
                 groupIds: targetGroupIds,
                 studentIds: targetStudentIds,
@@ -4062,6 +4084,8 @@ function DocumentShareActionCard({ action }) {
             setLoading(false);
         }
     };
+
+    const totalSelected = targetClassIds.length + targetGroupIds.length + targetStudentIds.length;
 
     if (isCancelled) {
         return (
@@ -4124,53 +4148,211 @@ function DocumentShareActionCard({ action }) {
                     )}
                 </div>
 
+                {/* Edit Mode: Tabs for Students, Classes, Groups */}
                 {isEditing && !isConfirmed ? (
-                    <div className="space-y-2 bg-slate-50/80 p-2.5 rounded-xl border border-slate-200">
-                        <label className="text-[10px] font-semibold text-slate-600 block uppercase tracking-wider">Select Target Classes</label>
-                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-                            {availableClasses.map(cls => {
-                                const selected = targetClassIds.includes(cls.id);
-                                return (
-                                    <button
-                                        key={cls.id}
-                                        type="button"
-                                        onClick={() => handleToggleClass(cls.id)}
-                                        className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition ${
-                                            selected
-                                                ? 'bg-violet-600 text-white border-violet-600 shadow-2xs'
-                                                : 'bg-white text-slate-700 border-slate-200 hover:border-violet-300'
-                                        }`}
-                                    >
-                                        Class {cls.name}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        <div className="flex justify-end pt-1">
+                    <div className="space-y-2.5 bg-slate-50/90 p-2.5 rounded-xl border border-slate-200">
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                            <div className="flex gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => { setEditTab('students'); setFilterQuery(''); }}
+                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition ${
+                                        editTab === 'students' ? 'bg-violet-600 text-white' : 'text-slate-600 hover:bg-slate-200'
+                                    }`}
+                                >
+                                    Students ({targetStudentIds.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setEditTab('classes'); setFilterQuery(''); }}
+                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition ${
+                                        editTab === 'classes' ? 'bg-violet-600 text-white' : 'text-slate-600 hover:bg-slate-200'
+                                    }`}
+                                >
+                                    Classes ({targetClassIds.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setEditTab('groups'); setFilterQuery(''); }}
+                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition ${
+                                        editTab === 'groups' ? 'bg-violet-600 text-white' : 'text-slate-600 hover:bg-slate-200'
+                                    }`}
+                                >
+                                    Groups ({targetGroupIds.length})
+                                </button>
+                            </div>
                             <button
                                 type="button"
                                 onClick={() => setIsEditing(false)}
-                                className="p-1 rounded-lg text-slate-600 hover:bg-slate-200 font-medium flex items-center gap-1"
+                                className="px-2 py-0.5 rounded-md bg-violet-100 text-violet-700 font-semibold text-[11px] hover:bg-violet-200 flex items-center gap-1"
                             >
-                                <Check className="w-3.5 h-3.5 text-violet-600" />
-                                <span className="text-[11px]">Done</span>
+                                <Check className="w-3 h-3" /> Done
                             </button>
+                        </div>
+
+                        {/* Search Filter */}
+                        <div className="relative">
+                            <Search className="w-3.5 h-3.5 absolute left-2 top-2 text-slate-400" />
+                            <input
+                                type="text"
+                                placeholder={`Search ${editTab}...`}
+                                value={filterQuery}
+                                onChange={(e) => setFilterQuery(e.target.value)}
+                                className="w-full pl-7 pr-2 py-1 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-800 placeholder-slate-400 focus:outline-none focus:border-violet-500"
+                            />
+                        </div>
+
+                        {/* Tab Contents */}
+                        <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                            {editTab === 'students' && (
+                                availableStudents
+                                    .filter(s => !filterQuery || s.name.toLowerCase().includes(filterQuery.toLowerCase()) || (s.admissionNumber && s.admissionNumber.toLowerCase().includes(filterQuery.toLowerCase())))
+                                    .map(s => {
+                                        const selected = targetStudentIds.includes(s.id);
+                                        return (
+                                            <button
+                                                key={s.id}
+                                                type="button"
+                                                onClick={() => handleToggleStudent(s.id)}
+                                                className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition flex items-center gap-1 ${
+                                                    selected
+                                                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                                                        : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300'
+                                                }`}
+                                            >
+                                                <User className="w-3 h-3" />
+                                                <span>{s.name}</span>
+                                                {selected && <Check className="w-3 h-3 ml-0.5" />}
+                                            </button>
+                                        );
+                                    })
+                            )}
+
+                            {editTab === 'classes' && (
+                                availableClasses
+                                    .filter(c => !filterQuery || c.name.toLowerCase().includes(filterQuery.toLowerCase()))
+                                    .map(cls => {
+                                        const selected = targetClassIds.includes(cls.id);
+                                        return (
+                                            <button
+                                                key={cls.id}
+                                                type="button"
+                                                onClick={() => handleToggleClass(cls.id)}
+                                                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition flex items-center gap-1 ${
+                                                    selected
+                                                        ? 'bg-violet-600 text-white border-violet-600 shadow-2xs'
+                                                        : 'bg-white text-slate-700 border-slate-200 hover:border-violet-300'
+                                                }`}
+                                            >
+                                                <Users className="w-3 h-3" />
+                                                <span>Class {cls.name}</span>
+                                                {selected && <Check className="w-3 h-3 ml-0.5" />}
+                                            </button>
+                                        );
+                                    })
+                            )}
+
+                            {editTab === 'groups' && (
+                                availableGroups
+                                    .filter(g => !filterQuery || g.name.toLowerCase().includes(filterQuery.toLowerCase()))
+                                    .map(g => {
+                                        const selected = targetGroupIds.includes(g.id);
+                                        return (
+                                            <button
+                                                key={g.id}
+                                                type="button"
+                                                onClick={() => handleToggleGroup(g.id)}
+                                                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition flex items-center gap-1 ${
+                                                    selected
+                                                        ? 'bg-cyan-600 text-white border-cyan-600 shadow-2xs'
+                                                        : 'bg-white text-slate-700 border-slate-200 hover:border-cyan-300'
+                                                }`}
+                                            >
+                                                <UsersRound className="w-3 h-3" />
+                                                <span>Group {g.name}</span>
+                                                {selected && <Check className="w-3 h-3 ml-0.5" />}
+                                            </button>
+                                        );
+                                    })
+                            )}
                         </div>
                     </div>
                 ) : (
+                    /* Display Mode: All selected Recipients */
                     <div className="space-y-1.5">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Recipients:</span>
+                        <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Recipients:</span>
+                            {!isConfirmed && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditing(true)}
+                                    className="text-[10px] text-violet-600 hover:text-violet-800 font-semibold flex items-center gap-0.5 hover:underline"
+                                >
+                                    <Plus className="w-3 h-3" /> Add / Edit
+                                </button>
+                            )}
+                        </div>
+
                         <div className="flex flex-wrap gap-1.5">
-                            {targetClassIds.length > 0 && targetClassIds.map(id => {
+                            {/* Class Badges */}
+                            {targetClassIds.map(id => {
                                 const c = availableClasses.find(x => x.id === id);
                                 return (
-                                    <span key={id} className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 font-medium text-[11px] border border-violet-200">
-                                        Class {c?.name || id}
+                                    <span key={`cls-${id}`} className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 font-medium text-[11px] border border-violet-200 flex items-center gap-1">
+                                        <Users className="w-3 h-3 text-violet-600" />
+                                        <span>Class {c?.name || id}</span>
+                                        {!isConfirmed && (
+                                            <button type="button" onClick={() => handleToggleClass(id)} className="hover:text-red-500 ml-0.5">
+                                                <X className="w-2.5 h-2.5" />
+                                            </button>
+                                        )}
                                     </span>
                                 );
                             })}
-                            {targetNames.length === 0 && targetClassIds.length === 0 && (
-                                <span className="text-slate-400 italic text-[11px]">No recipients specified</span>
+
+                            {/* Group Badges */}
+                            {targetGroupIds.map(id => {
+                                const g = availableGroups.find(x => x.id === id);
+                                return (
+                                    <span key={`grp-${id}`} className="px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800 font-medium text-[11px] border border-cyan-200 flex items-center gap-1">
+                                        <UsersRound className="w-3 h-3 text-cyan-600" />
+                                        <span>Group {g?.name || id}</span>
+                                        {!isConfirmed && (
+                                            <button type="button" onClick={() => handleToggleGroup(id)} className="hover:text-red-500 ml-0.5">
+                                                <X className="w-2.5 h-2.5" />
+                                            </button>
+                                        )}
+                                    </span>
+                                );
+                            })}
+
+                            {/* Student Badges */}
+                            {targetStudentIds.map(id => {
+                                const s = availableStudents.find(x => x.id === id);
+                                const name = s?.name || targetNames.find(n => n.includes(id)) || 'Student';
+                                return (
+                                    <span key={`stu-${id}`} className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-medium text-[11px] border border-emerald-200 flex items-center gap-1">
+                                        <User className="w-3 h-3 text-emerald-600" />
+                                        <span>{name}</span>
+                                        {!isConfirmed && (
+                                            <button type="button" onClick={() => handleToggleStudent(id)} className="hover:text-red-500 ml-0.5">
+                                                <X className="w-2.5 h-2.5" />
+                                            </button>
+                                        )}
+                                    </span>
+                                );
+                            })}
+
+                            {/* Fallback if targetNames was provided directly without matching ID */}
+                            {targetStudentIds.length === 0 && targetClassIds.length === 0 && targetGroupIds.length === 0 && targetNames.length > 0 && targetNames.map((name, i) => (
+                                <span key={`name-${i}`} className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-medium text-[11px] border border-emerald-200 flex items-center gap-1">
+                                    <User className="w-3 h-3 text-emerald-600" />
+                                    <span>{name}</span>
+                                </span>
+                            ))}
+
+                            {totalSelected === 0 && targetNames.length === 0 && (
+                                <span className="text-slate-400 italic text-[11px]">No recipients specified. Click "Add / Edit" above.</span>
                             )}
                         </div>
                     </div>
@@ -4211,7 +4393,7 @@ function DocumentShareActionCard({ action }) {
                         <button
                             type="button"
                             onClick={handleConfirm}
-                            disabled={loading || (targetClassIds.length === 0 && targetGroupIds.length === 0 && targetStudentIds.length === 0)}
+                            disabled={loading || totalSelected === 0}
                             title="Confirm & Share Document"
                             className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-violet-500/20 transition disabled:opacity-50 text-xs"
                         >

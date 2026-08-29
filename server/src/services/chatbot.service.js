@@ -424,8 +424,8 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                         select: { id: true, name: true, class: { select: { name: true } } }
                     }),
                     prisma.user.findMany({
-                        where: { role: 'student', ...(schoolId ? { schoolId } : {}) },
-                        select: { id: true, firstName: true, lastName: true, admissionNumber: true }
+                        where: schoolId ? { schoolId } : {},
+                        select: { id: true, firstName: true, lastName: true, admissionNumber: true, role: true }
                     })
                 ]);
 
@@ -447,10 +447,34 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 }
 
                 if (matchedDoc) {
-                    const targetClassIds = resolution.matchedClassIds || [];
-                    const targetGroupIds = resolution.matchedGroupIds || [];
-                    const targetStudentIds = resolution.matchedStudentIds || [];
+                    let targetClassIds = resolution.matchedClassIds || [];
+                    let targetGroupIds = resolution.matchedGroupIds || [];
+                    let targetStudentIds = resolution.matchedStudentIds || [];
 
+                    // Deterministic heuristic fallback for student/user matching
+                    if (targetStudentIds.length === 0) {
+                        for (const s of students) {
+                            const first = (s.firstName || '').trim().toLowerCase();
+                            const last = (s.lastName || '').trim().toLowerCase();
+                            const full = `${first} ${last}`.trim();
+                            if (full && msgLower.includes(full)) {
+                                if (!targetStudentIds.includes(s.id)) targetStudentIds.push(s.id);
+                            } else if (first && first.length > 2 && msgLower.includes(first)) {
+                                if (!targetStudentIds.includes(s.id)) targetStudentIds.push(s.id);
+                            }
+                        }
+                    }
+
+                    // Deterministic heuristic fallback for class matching
+                    if (targetClassIds.length === 0 && targetGroupIds.length === 0 && targetStudentIds.length === 0) {
+                        for (const c of classes) {
+                            if (msgLower.includes(c.name.toLowerCase())) {
+                                if (!targetClassIds.includes(c.id)) targetClassIds.push(c.id);
+                            }
+                        }
+                    }
+
+                    // If still empty and classes available, default to first class
                     if (targetClassIds.length === 0 && targetGroupIds.length === 0 && targetStudentIds.length === 0 && classes.length > 0) {
                         targetClassIds.push(classes[0].id);
                     }
@@ -460,7 +484,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                         ...targetGroupIds.map(id => `Group ${groups.find(g => g.id === id)?.name || id}`),
                         ...targetStudentIds.map(id => {
                             const s = students.find(st => st.id === id);
-                            return s ? `${s.firstName} ${s.lastName}` : id;
+                            return s ? `${s.firstName} ${s.lastName}`.trim() : id;
                         })
                     ];
 
@@ -478,7 +502,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                         targetNames,
                         availableClasses: classes.map(c => ({ id: c.id, name: c.name })),
                         availableGroups: groups.map(g => ({ id: g.id, name: g.name, className: g.class?.name })),
-                        availableStudents: students.map(s => ({ id: s.id, name: `${s.firstName} ${s.lastName}`, admissionNumber: s.admissionNumber })),
+                        availableStudents: students.map(s => ({ id: s.id, name: `${s.firstName} ${s.lastName}`.trim(), role: s.role, admissionNumber: s.admissionNumber })),
                         permission: 'view'
                     };
 

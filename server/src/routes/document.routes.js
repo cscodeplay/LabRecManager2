@@ -581,10 +581,18 @@ router.get('/:id/public', asyncHandler(async (req, res) => {
  * @access  Private (Admin/Principal/Lab Assistant)
  */
 router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), asyncHandler(async (req, res) => {
-    const { targets, message, expiresAt, permission } = req.body;
-    // targets: [{ type: 'class'|'group'|'instructor'|'admin', id: 'uuid' }]
-
+    let { targets, message, expiresAt, permission, classIds, groupIds, studentIds, userIds } = req.body;
+    
+    // Normalize targets array if passed as discrete ID lists
     if (!targets || !Array.isArray(targets)) {
+        targets = [];
+        if (Array.isArray(classIds)) classIds.forEach(id => targets.push({ type: 'class', id }));
+        if (Array.isArray(groupIds)) groupIds.forEach(id => targets.push({ type: 'group', id }));
+        if (Array.isArray(studentIds)) studentIds.forEach(id => targets.push({ type: 'student', id }));
+        if (Array.isArray(userIds)) userIds.forEach(id => targets.push({ type: 'student', id }));
+    }
+
+    if (!targets || !Array.isArray(targets) || targets.length === 0) {
         return res.status(400).json({ success: false, message: 'Targets array is required' });
     }
 
