@@ -159,7 +159,7 @@ export default function ExerciseEditorPage() {
 
                         {/* Hints system (AI Augmented) */}
                         {exercise.hints && exercise.hints.length > 0 && (
-                            <div className="mt-8">
+                            <div className="mt-6">
                                 <button 
                                     onClick={() => setShowHint(!showHint)}
                                     className="flex items-center gap-2 text-amber-400 hover:text-amber-300 text-sm font-medium transition"
@@ -168,37 +168,43 @@ export default function ExerciseEditorPage() {
                                     {showHint ? 'Hide Hint' : 'Stuck? Show Hint'}
                                 </button>
                                 {showHint && (
-                                    <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-200 text-sm">
-                                        {exercise.hints[0]}
+                                    <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-200 text-sm space-y-1.5">
+                                        {exercise.hints.map((h, hIdx) => (
+                                            <p key={hIdx}>• {h}</p>
+                                        ))}
                                     </div>
                                 )}
                             </div>
                         )}
                     </div>
 
-                    {/* Test Results Area */}
-                    {(output || testResults) && (
-                        <div className="flex-1 p-6 border-t border-slate-700 bg-slate-900/50">
-                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                <Beaker className="w-4 h-4"/> Console Output
-                            </h3>
-                            
-                            {/* STDIN Input Area */}
-                            {exercise?.unit?.module?.language !== 'html' && (
-                                <div className="mb-4">
-                                    <label className="text-xs font-semibold text-slate-400 uppercase mb-2 block">STDIN (Custom Input)</label>
-                                    <textarea 
-                                        value={customInput}
-                                        onChange={(e) => setCustomInput(e.target.value)}
-                                        placeholder="Enter manual input values here... (e.g. 5\n10)"
-                                        className="w-full bg-slate-800/50 border border-slate-700 rounded-md p-3 text-sm text-slate-300 font-mono focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all resize-y min-h-[80px]"
-                                    />
+                    {/* Interactive Input & Console Section */}
+                    <div className="p-6 border-t border-slate-700 bg-slate-900/60 space-y-4">
+                        {/* STDIN Custom Input Area - Always Accessible */}
+                        {exercise?.unit?.module?.language !== 'html' && (
+                            <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                        <span>STDIN (Custom Input)</span>
+                                    </label>
+                                    <span className="text-[10px] text-slate-400">Tested when clicking "Run"</span>
                                 </div>
-                            )}
+                                <textarea 
+                                    value={customInput}
+                                    onChange={(e) => setCustomInput(e.target.value)}
+                                    placeholder="Enter custom input values (e.g. 5&#10;10&#10;Apple)..."
+                                    className="w-full bg-slate-800/80 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 font-mono focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-y min-h-[65px] placeholder:text-slate-500"
+                                />
+                            </div>
+                        )}
 
-                            {/* Manual Run Output */}
-                            {output && (
-                                <div className="font-mono text-sm text-slate-300 bg-black/30 rounded-lg overflow-hidden">
+                        {/* Console Output from Manual Run */}
+                        {output && (
+                            <div className="space-y-1.5">
+                                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Beaker className="w-3.5 h-3.5 text-emerald-400"/> Terminal Output
+                                </h3>
+                                <div className="font-mono text-xs text-slate-300 bg-black/50 border border-slate-800 rounded-lg overflow-hidden">
                                     {exercise?.unit?.module?.language === 'html' ? (
                                         <iframe 
                                             srcDoc={output}
@@ -207,49 +213,56 @@ export default function ExerciseEditorPage() {
                                             title="HTML Output"
                                         />
                                     ) : (
-                                        <pre className="p-4 overflow-x-auto whitespace-pre-wrap text-emerald-300">
+                                        <pre className="p-3 overflow-x-auto whitespace-pre-wrap text-emerald-300 max-h-48">
                                             {output}
                                         </pre>
                                     )}
                                 </div>
-                            )}
+                            </div>
+                        )}
 
-                            {/* Submission Test Cases */}
-                            {testResults && (
-                                <div className="space-y-4">
+                        {/* Automated Submission Test Cases */}
+                        {testResults && (
+                            <div className="space-y-3 pt-2">
+                                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400"/> Test Suite Evaluation
+                                </h3>
+                                <div className="space-y-2.5">
                                     {testResults.map((tr, i) => (
-                                        <div key={i} className={`p-4 rounded-lg border ${tr.passed ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-                                            <div className="flex items-center gap-2 mb-2">
-                                                {tr.passed ? <CheckCircle2 className="w-5 h-5 text-emerald-400"/> : <XCircle className="w-5 h-5 text-red-400"/>}
-                                                <span className="font-bold text-white">Test Case {i + 1}</span>
-                                                {tr.input === 'Hidden' && <span className="ml-auto text-xs text-slate-500 uppercase bg-slate-800 px-2 rounded">Hidden Test</span>}
-                                                {tr.isAiGenerated && <span className="ml-auto flex items-center gap-1 text-xs text-indigo-300 uppercase bg-indigo-900/40 border border-indigo-500/20 px-2 rounded"><Lightbulb className="w-3 h-3"/> AI Edge Case</span>}
+                                        <div key={i} className={`p-3 rounded-lg border ${tr.passed ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                                            <div className="flex items-center gap-2 mb-1.5">
+                                                {tr.passed ? <CheckCircle2 className="w-4 h-4 text-emerald-400"/> : <XCircle className="w-4 h-4 text-red-400"/>}
+                                                <span className="font-bold text-xs text-white">Test Case {i + 1}</span>
+                                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ml-auto ${tr.passed ? 'bg-emerald-900/50 text-emerald-300' : 'bg-red-900/50 text-red-300'}`}>
+                                                    {tr.passed ? 'PASSED' : 'FAILED'}
+                                                </span>
+                                                {tr.input === 'Hidden' && <span className="text-[10px] text-slate-400 uppercase bg-slate-800 px-1.5 py-0.5 rounded">Hidden</span>}
                                             </div>
                                             {!tr.passed && tr.input !== 'Hidden' && (
-                                                <div className="mt-3 text-xs font-mono space-y-2">
-                                                    <div><span className="text-slate-500">Input:</span> <span className="text-emerald-200">{tr.input}</span></div>
-                                                    <div><span className="text-slate-500">Expected:</span> <span className="text-blue-200">{tr.expected}</span></div>
-                                                    <div><span className="text-slate-500">Actual:</span> <span className="text-red-200">{tr.actual}</span></div>
+                                                <div className="mt-2 text-[11px] font-mono space-y-1 bg-black/40 p-2 rounded border border-red-500/20">
+                                                    <div><span className="text-slate-400">Input:</span> <span className="text-emerald-300 whitespace-pre-wrap">{tr.input}</span></div>
+                                                    <div><span className="text-slate-400">Expected:</span> <span className="text-blue-300 whitespace-pre-wrap">{tr.expected}</span></div>
+                                                    <div><span className="text-slate-400">Actual:</span> <span className="text-red-300 whitespace-pre-wrap">{tr.actual}</span></div>
                                                 </div>
                                             )}
                                         </div>
                                     ))}
                                 </div>
-                            )}
+                            </div>
+                        )}
 
-                            {/* Socratic AI Review */}
-                            {socraticReview && (
-                                <div className="mt-8 p-5 bg-indigo-500/10 border border-indigo-500/30 rounded-lg">
-                                    <h4 className="flex items-center gap-2 font-bold text-indigo-300 mb-2">
-                                        🤖 AI Reviewer
-                                    </h4>
-                                    <p className="text-sm text-indigo-100 leading-relaxed">
-                                        {socraticReview}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    )}
+                        {/* Socratic AI Review */}
+                        {socraticReview && (
+                            <div className="p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-lg">
+                                <h4 className="flex items-center gap-2 font-bold text-xs text-indigo-300 mb-1.5">
+                                    🤖 Socratic AI Tutor
+                                </h4>
+                                <p className="text-xs text-indigo-100 leading-relaxed whitespace-pre-wrap">
+                                    {socraticReview}
+                                </p>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Right Panel: Monaco Editor */}

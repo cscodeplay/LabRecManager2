@@ -11,6 +11,8 @@ const os = require('os');
 const { uploadToCloudinary } = require('../utils/cloudinary');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
+const { spawnSync } = require('child_process');
+
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -56,25 +58,46 @@ async function evaluateStudentCodeWithAI(code, problemStatement, failedCases) {
 }
 
 /**
- * Helper to run Python code via Piston API
+ * Helper to run Python code with local python3 sandbox and Wandbox fallback
  */
 async function executePythonCode(code, input = '') {
+    const inputStr = typeof input === 'string' ? input : (input !== undefined && input !== null ? String(input) : '');
+    
+    // 1. Try local python3 execution first for high speed and reliability
     try {
-        // Use Wandbox API as fallback since EMKC Piston requires whitelist
+        const proc = spawnSync('python3', ['-c', code], {
+            input: inputStr,
+            encoding: 'utf8',
+            timeout: 6000
+        });
+
+        if (proc.stdout !== null || proc.stderr !== null) {
+            return {
+                stdout: proc.stdout || '',
+                stderr: proc.stderr || (proc.error ? proc.error.message : ''),
+                code: proc.status !== null ? proc.status : (proc.error ? 1 : 0)
+            };
+        }
+    } catch (localErr) {
+        console.warn('[Training Sandbox] Local python3 fallback to Wandbox:', localErr.message);
+    }
+
+    // 2. Fallback to Wandbox API
+    try {
         const response = await axios.post('https://wandbox.org/api/compile.json', {
             compiler: 'cpython-3.11.10',
             code: code,
-            stdin: input || ''
-        });
+            stdin: inputStr
+        }, { timeout: 8000 });
         
         return {
-            stdout: response.data.program_output || '',
-            stderr: response.data.program_error || '',
+            stdout: response.data.program_message || response.data.program_output || '',
+            stderr: response.data.program_error || response.data.compiler_error || '',
             code: parseInt(response.data.status || 0, 10)
         };
     } catch (err) {
-        console.error('Code execution error:', err.message);
-        throw new Error('Failed to execute code sandbox');
+        console.error('[Training Sandbox] Code execution error:', err.message);
+        throw new Error('Failed to execute code sandbox: ' + (err.message || 'Execution error'));
     }
 }
 
@@ -414,16 +437,23 @@ router.post('/exercises/:id/submit', authenticate, [
     for (const tc of testCases) {
         try {
             let exe;
+            const testInput = typeof tc.input === 'string' ? tc.input : (tc.input !== undefined && tc.input !== null ? String(tc.input) : '');
+            
             if (language === 'html') {
                 exe = { stdout: code, stderr: '', code: 0 };
             } else {
-                exe = await executePythonCode(code, tc.input);
+                exe = await executePythonCode(code, testInput);
             }
             
-            const actualOutput = exe.stdout ? exe.stdout.replace(/\r\n/g, '\n') : '';
-            const expectedOutput = tc.expectedOutput ? tc.expectedOutput.replace(/\r\n/g, '\n') : '';
+            const actualRaw = exe.stdout ? exe.stdout.replace(/\r\n/g, '\n') : '';
+            const expectedRaw = (tc.expectedOutput !== undefined ? tc.expectedOutput : tc.expected) ?? '';
+            const expectedString = typeof expectedRaw === 'string' ? expectedRaw.replace(/\r\n/g, '\n') : String(expectedRaw);
             
-            const passed = (exe.code === 0) && (actualOutput === expectedOutput);
+            // Clean comparison (trim trailing whitespace and newlines for robustness)
+            const actualClean = actualRaw.trim();
+            const expectedClean = expectedString.trim();
+            
+            const passed = (exe.code === 0) && (actualClean === expectedClean);
             if (!passed) passedAll = false;
 
             if (exe.code !== 0 && !firstErrorOutput) {
@@ -431,14 +461,14 @@ router.post('/exercises/:id/submit', authenticate, [
             }
 
             results.push({
-                input: tc.isHidden ? 'Hidden' : tc.input,
-                expected: tc.isHidden ? 'Hidden' : tc.expectedOutput,
-                actual: exe.stderr ? 'Error' : actualOutput,
+                input: tc.isHidden ? 'Hidden' : testInput,
+                expected: tc.isHidden ? 'Hidden' : expectedString,
+                actual: exe.stderr ? `Error: ${exe.stderr.trim()}` : actualRaw,
                 passed
             });
         } catch (err) {
             passedAll = false;
-            results.push({ passed: false, actual: 'Execution Sandbox Error' });
+            results.push({ passed: false, actual: `Execution Sandbox Error: ${err.message}` });
         }
     }
 
