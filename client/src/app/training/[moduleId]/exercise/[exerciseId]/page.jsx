@@ -6,7 +6,8 @@ import { useAuthStore } from '@/lib/store';
 import { trainingAPI } from '@/lib/api';
 import { 
     Play, CheckCircle2, XCircle, ArrowLeft, Lightbulb, Beaker, 
-    Plus, Trash2, RotateCcw, ListOrdered, FileText, Sparkles 
+    Plus, Trash2, RotateCcw, ListOrdered, FileText, Sparkles,
+    CheckSquare, HelpCircle, Code2, BookOpen, AlertTriangle, Send, Award
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Editor from '@monaco-editor/react';
@@ -48,6 +49,15 @@ export default function ExerciseEditorPage() {
     const [testResults, setTestResults] = useState(null);
     const [socraticReview, setSocraticReview] = useState(null);
     const [showHint, setShowHint] = useState(false);
+    const [xpEarned, setXpEarned] = useState(0);
+
+    // Multi-modal state variables
+    const [selectedMcqOption, setSelectedMcqOption] = useState(null);
+    const [blankAnswers, setBlankAnswers] = useState([]);
+    const [scenarioAnswers, setScenarioAnswers] = useState({});
+    const [submittedData, setSubmittedData] = useState(null);
+
+    const exerciseType = exercise?.exerciseType || 'coding';
 
     // Auto-detect input() statements in current code
     const detectedPrompts = useMemo(() => {
@@ -56,18 +66,20 @@ export default function ExerciseEditorPage() {
 
     // Ensure occurrence inputs array has at least as many fields as detected input() statements
     useEffect(() => {
-        setOccurrenceInputs(prev => {
-            const neededLength = Math.max(detectedPrompts.length, 1);
-            if (prev.length < neededLength) {
-                const updated = [...prev];
-                while (updated.length < neededLength) {
-                    updated.push('');
+        if (exerciseType === 'coding' || exerciseType === 'bug_fix') {
+            setOccurrenceInputs(prev => {
+                const neededLength = Math.max(detectedPrompts.length, 1);
+                if (prev.length < neededLength) {
+                    const updated = [...prev];
+                    while (updated.length < neededLength) {
+                        updated.push('');
+                    }
+                    return updated;
                 }
-                return updated;
-            }
-            return prev;
-        });
-    }, [detectedPrompts]);
+                return prev;
+            });
+        }
+    }, [detectedPrompts, exerciseType]);
 
     // Keep customInput (joined string) in sync with occurrenceInputs
     const syncToCustomInput = useCallback((inputsArray) => {
@@ -111,7 +123,7 @@ export default function ExerciseEditorPage() {
     };
 
     const handleLoadSampleInput = () => {
-        if (exercise?.testCases && exercise.testCases.length > 0) {
+        if (exercise?.testCases && Array.isArray(exercise.testCases) && exercise.testCases.length > 0) {
             const firstCase = exercise.testCases[0];
             const sampleInput = typeof firstCase.input === 'string' ? firstCase.input : '';
             if (sampleInput) {
@@ -136,8 +148,16 @@ export default function ExerciseEditorPage() {
                 const initialCode = ex.starterCode || '# Write your code here\n';
                 setCode(initialCode);
 
-                // Initialize sample inputs from first test case if available
-                if (ex.testCases && ex.testCases.length > 0 && ex.testCases[0].input) {
+                const exType = ex.exerciseType || 'coding';
+
+                // Initialize state per exercise type
+                if (exType === 'fill_blank' && ex.testCases?.blanks) {
+                    setBlankAnswers(new Array(ex.testCases.blanks.length).fill(''));
+                } else if (exType === 'case_study' && ex.testCases?.questions) {
+                    const initMap = {};
+                    ex.testCases.questions.forEach(q => { initMap[q.id] = null; });
+                    setScenarioAnswers(initMap);
+                } else if ((exType === 'coding' || exType === 'bug_fix') && Array.isArray(ex.testCases) && ex.testCases.length > 0 && ex.testCases[0].input) {
                     const sample = String(ex.testCases[0].input);
                     const lines = sample.split(/\r?\n/);
                     setOccurrenceInputs(lines.length > 0 ? lines : ['']);
@@ -156,7 +176,6 @@ export default function ExerciseEditorPage() {
         setIsRunning(true);
         setOutput('Running...');
         
-        // Visual bypass for HTML
         if (exercise?.unit?.module?.language === 'html') {
             setOutput(code);
             setTestResults(null);
@@ -181,18 +200,28 @@ export default function ExerciseEditorPage() {
 
     const handleSubmit = async () => {
         setIsSubmitting(true);
-        setOutput('Evaluating against automated test cases...');
+        setOutput('Evaluating submission...');
+        
         try {
-            const res = await trainingAPI.submitCode(exerciseId, { code });
+            const payload = {
+                code,
+                selectedOption: selectedMcqOption,
+                blankAnswers,
+                scenarioAnswers
+            };
+
+            const res = await trainingAPI.submitCode(exerciseId, payload);
             const data = res.data.data;
             
             setTestResults(data.results);
             setSocraticReview(data.socraticReview);
+            setSubmittedData(data);
+            setXpEarned(data.xpEarned || 0);
             
             if (data.status === 'passed') {
-                toast.success('All test cases passed! Mastery updated!');
+                toast.success(`🎉 Excellent! +${exercise.xpReward || 10} XP earned!`);
             } else {
-                toast.error('Some test cases failed. Review test suite below.');
+                toast.error('Submission review needed. Check details below.');
             }
             
             setOutput('');
@@ -203,79 +232,96 @@ export default function ExerciseEditorPage() {
         }
     };
 
-    if (!exercise) return <div className="p-8 text-center text-slate-500">Loading editor...</div>;
+    const getTypeBadge = () => {
+        switch (exerciseType) {
+            case 'mcq':
+                return <span className="text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><CheckSquare className="w-3 h-3"/> Output MCQ</span>;
+            case 'fill_blank':
+                return <span className="text-xs bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><FileText className="w-3 h-3"/> Syntax Cloze</span>;
+            case 'case_study':
+                return <span className="text-xs bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><BookOpen className="w-3 h-3"/> MNC Case Study</span>;
+            case 'bug_fix':
+                return <span className="text-xs bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> PR Bug Hunt</span>;
+            default:
+                return <span className="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><Code2 className="w-3 h-3"/> Coding Lab</span>;
+        }
+    };
 
     return (
         <div className="h-screen flex flex-col bg-slate-900 border-t-4 border-indigo-500">
-            {/* Top Navigation */}
+            {/* Top Navigation Bar */}
             <div className="h-14 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-4">
-                <div className="flex items-center gap-4 text-white">
-                    <button onClick={() => router.push(`/training/${moduleId}`)} className="p-2 hover:bg-slate-700 rounded-lg text-slate-300 transition">
+                <div className="flex items-center gap-3 text-white">
+                    <button onClick={() => router.push(`/training/${moduleId}`)} className="p-2 hover:bg-slate-700 rounded-lg text-slate-300 transition" title="Back to Module">
                         <ArrowLeft className="w-5 h-5" />
                     </button>
-                    <h1 className="font-semibold text-sm md:text-base truncate max-w-md">{exercise.title}</h1>
-                    <span className="text-xs bg-slate-700 px-2 py-1 rounded text-slate-300 capitalize shrink-0">
-                        {exercise.scaffoldLevel.replace('_', ' ')}
+                    <div className="flex items-center gap-2">
+                        <h1 className="font-semibold text-sm md:text-base truncate max-w-md">{exercise.title}</h1>
+                        {getTypeBadge()}
+                    </div>
+                    <span className="text-xs bg-slate-700 px-2 py-0.5 rounded text-slate-300 capitalize hidden sm:inline">
+                        {exercise.scaffoldLevel?.replace('_', ' ')}
                     </span>
-                    <span className="text-xs bg-indigo-950 text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded font-semibold shrink-0">
+                    {exercise.bloomsLevel && (
+                        <span className="text-xs bg-indigo-900/60 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded font-medium hidden md:inline">
+                            Bloom: {exercise.bloomsLevel}
+                        </span>
+                    )}
+                    <span className="text-xs bg-indigo-950 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded font-semibold shrink-0">
                         +{exercise.xpReward || 10} XP
                     </span>
                 </div>
+
+                {/* Top Action Buttons */}
                 <div className="flex gap-3">
-                    <button 
-                        onClick={handleRun} 
-                        disabled={isRunning || isSubmitting}
-                        className="btn bg-slate-700 hover:bg-slate-600 text-white border-none py-1.5 px-4 text-xs font-semibold flex items-center gap-1.5 rounded-lg transition"
-                        title="Execute code using custom occurrence inputs"
-                    >
-                        {isRunning ? 'Running...' : <><Play className="w-4 h-4 text-emerald-400" /> Run</>}
-                    </button>
+                    {(exerciseType === 'coding' || exerciseType === 'bug_fix') && (
+                        <button 
+                            onClick={handleRun} 
+                            disabled={isRunning || isSubmitting}
+                            className="btn bg-slate-700 hover:bg-slate-600 text-white border-none py-1.5 px-4 text-xs font-semibold flex items-center gap-1.5 rounded-lg transition"
+                            title="Execute code using custom occurrence inputs"
+                        >
+                            {isRunning ? 'Running...' : <><Play className="w-4 h-4 text-emerald-400" /> Run</>}
+                        </button>
+                    )}
                     <button 
                         onClick={handleSubmit}
                         disabled={isRunning || isSubmitting}
                         className="btn bg-indigo-600 hover:bg-indigo-500 text-white border-none py-1.5 px-6 font-bold text-xs flex items-center gap-1.5 rounded-lg shadow-lg shadow-indigo-600/20 transition"
-                        title="Submit code for automated grading and XP rewards"
                     >
-                        {isSubmitting ? 'Evaluating...' : 'Submit Code'}
+                        {isSubmitting ? 'Evaluating...' : exerciseType === 'coding' || exerciseType === 'bug_fix' ? 'Submit Code' : 'Submit Answers'}
                     </button>
                 </div>
             </div>
 
-            {/* Main Split Layout */}
-            <div className="flex-1 flex overflow-hidden">
-                
-                {/* Left Panel: Problem Statement, Step-by-Step STDIN & Results */}
-                <div className="w-5/12 bg-slate-800/95 border-r border-slate-700 flex flex-col overflow-y-auto">
-                    
-                    {/* Problem Description */}
-                    <div className="p-5 text-slate-200">
-                        {exercise.description.includes('## 📖 Learning Content') ? (
-                            <>
-                                <h2 className="text-sm font-bold text-emerald-400 mb-2 flex items-center gap-1.5">
-                                    📖 Learning Content
-                                </h2>
-                                <div className="prose prose-invert prose-xs leading-relaxed whitespace-pre-wrap bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 mb-4 text-xs">
-                                    {exercise.description.split('---')[0].replace('## 📖 Learning Content', '').trim()}
+            {/* ========================================================================= */}
+            {/* 1. MCQ MODE RENDERER                                                      */}
+            {/* ========================================================================= */}
+            {exerciseType === 'mcq' && (
+                <div className="flex-1 flex overflow-hidden">
+                    {/* Left Column: Problem & Code Snippet */}
+                    <div className="w-5/12 bg-slate-800/95 border-r border-slate-700 p-6 overflow-y-auto space-y-4">
+                        <div className="text-slate-200">
+                            <h2 className="text-sm font-bold text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                <CheckSquare className="w-4 h-4" /> Code Tracing & Output Predictor
+                            </h2>
+                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
+                                {exercise.description}
+                            </div>
+                        </div>
+
+                        {exercise.testCases?.codeSnippet && (
+                            <div className="space-y-1.5">
+                                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Target Code Snippet:</span>
+                                <div className="bg-slate-950 border border-slate-700 rounded-xl p-4 font-mono text-xs text-emerald-300 overflow-x-auto">
+                                    <pre className="whitespace-pre-wrap">{exercise.testCases.codeSnippet}</pre>
                                 </div>
-                                <h2 className="text-sm font-bold text-white mb-2 flex items-center gap-1.5">
-                                    🎯 Problem Statement
-                                </h2>
-                                <div className="prose prose-invert prose-xs leading-relaxed whitespace-pre-wrap text-xs">
-                                    {exercise.description.split('## 🎯 Problem Statement')[1]?.trim() || ''}
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                <h2 className="text-sm font-bold text-white mb-3">Problem Statement</h2>
-                                <div className="prose prose-invert prose-xs leading-relaxed whitespace-pre-wrap text-xs text-slate-300">
-                                    {exercise.description}
-                                </div>
-                            </>
+                            </div>
                         )}
 
-                        {/* Hints system */}
+                        {/* Hints */}
                         {exercise.hints && exercise.hints.length > 0 && (
-                            <div className="mt-4">
+                            <div className="pt-2">
                                 <button 
                                     onClick={() => setShowHint(!showHint)}
                                     className="flex items-center gap-1.5 text-amber-400 hover:text-amber-300 text-xs font-semibold transition"
@@ -294,207 +340,597 @@ export default function ExerciseEditorPage() {
                         )}
                     </div>
 
-                    {/* Step-by-Step STDIN (Occurrence-Based) Section */}
-                    <div className="p-5 border-t border-slate-700 bg-slate-900/80 space-y-3.5">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                                    <Beaker className="w-3.5 h-3.5 text-indigo-400" /> Standard Input (STDIN)
-                                </h3>
-                            </div>
-                            
-                            {/* Mode Switcher Tabs */}
-                            <div className="flex items-center bg-slate-800 p-0.5 rounded-lg border border-slate-700 text-[11px]">
-                                <button
-                                    type="button"
-                                    onClick={() => setInputMode('occurrence')}
-                                    className={`px-2.5 py-1 rounded-md font-medium flex items-center gap-1 transition ${inputMode === 'occurrence' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-                                    title="Enter input for each input() call in order of occurrence"
-                                >
-                                    <ListOrdered className="w-3 h-3" /> By Occurrence
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setInputMode('raw')}
-                                    className={`px-2.5 py-1 rounded-md font-medium flex items-center gap-1 transition ${inputMode === 'raw' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-                                    title="Paste or edit multiline raw standard input"
-                                >
-                                    <FileText className="w-3 h-3" /> Raw Text
-                                </button>
+                    {/* Right Column: Interactive Options & Immediate Evaluation */}
+                    <div className="w-7/12 bg-slate-950 p-6 overflow-y-auto space-y-6">
+                        <div>
+                            <h3 className="text-sm font-bold text-white mb-4">
+                                {exercise.testCases?.question || "Select the correct output / conclusion:"}
+                            </h3>
+
+                            <div className="space-y-3">
+                                {(exercise.testCases?.options || []).map((opt, idx) => {
+                                    const isSelected = (selectedMcqOption === idx);
+                                    const result = testResults && testResults[0];
+                                    const isCorrect = result && result.correctOption === idx;
+                                    const isWrongPick = result && isSelected && !result.passed;
+
+                                    let cardStyle = "bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-200";
+                                    if (isSelected && !testResults) {
+                                        cardStyle = "bg-indigo-950/60 border-indigo-500 text-white ring-1 ring-indigo-500 shadow-md shadow-indigo-500/10";
+                                    } else if (result) {
+                                        if (isCorrect) {
+                                            cardStyle = "bg-emerald-950/60 border-emerald-500 text-emerald-200 ring-1 ring-emerald-500";
+                                        } else if (isWrongPick) {
+                                            cardStyle = "bg-red-950/60 border-red-500 text-red-200 ring-1 ring-red-500";
+                                        }
+                                    }
+
+                                    return (
+                                        <button
+                                            key={idx}
+                                            type="button"
+                                            onClick={() => setSelectedMcqOption(idx)}
+                                            className={`w-full text-left p-4 rounded-xl border transition-all flex items-start gap-3.5 ${cardStyle}`}
+                                        >
+                                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${
+                                                isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'
+                                            }`}>
+                                                {String.fromCharCode(65 + idx)}
+                                            </span>
+                                            <span className="font-mono text-xs flex-1 leading-relaxed">{opt}</span>
+                                            {result && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
+                                            {result && isWrongPick && <XCircle className="w-5 h-5 text-red-400 shrink-0" />}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
 
-                        {/* Occurrence-Based Input Fields */}
-                        {inputMode === 'occurrence' ? (
-                            <div className="space-y-2 bg-slate-950/40 p-3 rounded-xl border border-slate-800">
-                                <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                                    <span className="flex items-center gap-1">
-                                        <span>Each field feeds into each <code className="text-indigo-400">input()</code> sequentially:</span>
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={handleLoadSampleInput}
-                                        className="text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 transition"
-                                        title="Load sample values from Test Case 1"
-                                    >
-                                        <Sparkles className="w-3 h-3" /> Load Sample
-                                    </button>
+                        {/* Submit Action */}
+                        {!testResults && (
+                            <div className="pt-2">
+                                <button
+                                    type="button"
+                                    onClick={handleSubmit}
+                                    disabled={selectedMcqOption === null || isSubmitting}
+                                    className="btn bg-indigo-600 hover:bg-indigo-500 text-white py-2 px-6 rounded-xl font-bold text-xs transition disabled:opacity-50"
+                                >
+                                    {isSubmitting ? 'Evaluating...' : 'Confirm & Submit Answer'}
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Feedback & Explanation Card */}
+                        {testResults && (
+                            <div className="space-y-4 pt-2">
+                                <div className={`p-4 rounded-xl border ${testResults[0].passed ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        {testResults[0].passed ? (
+                                            <>
+                                                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                                                <span className="font-bold text-emerald-300 text-sm">Correct! +{xpEarned} XP Earned</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <XCircle className="w-5 h-5 text-red-400" />
+                                                <span className="font-bold text-red-300 text-sm">Incorrect Option</span>
+                                            </>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-slate-300 leading-relaxed font-sans mt-1">
+                                        <strong className="text-white">Explanation:</strong> {testResults[0].explanation}
+                                    </p>
                                 </div>
 
-                                <div className="space-y-2">
-                                    {occurrenceInputs.map((val, idx) => {
-                                        const promptInfo = detectedPrompts[idx] || null;
-                                        const labelText = promptInfo?.prompt 
-                                            ? `Input #${idx + 1} ("${promptInfo.prompt}")`
-                                            : `Input #${idx + 1} (${idx === 0 ? '1st' : idx === 1 ? '2nd' : idx === 2 ? '3rd' : `${idx + 1}th`} input())`;
+                                {socraticReview && (
+                                    <div className="p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-xl">
+                                        <h4 className="font-bold text-xs text-indigo-300 mb-1 flex items-center gap-1.5">
+                                            🤖 Socratic Tutor
+                                        </h4>
+                                        <p className="text-xs text-indigo-100 leading-relaxed">{socraticReview}</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
-                                        return (
-                                            <div key={idx} className="flex items-center gap-2">
-                                                <div className="flex-1 flex items-center bg-slate-900 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 transition">
-                                                    <span className="px-2.5 py-2 text-[11px] font-mono text-indigo-300 bg-indigo-950/40 border-r border-slate-700/80 shrink-0 select-none">
-                                                        {idx + 1}
-                                                    </span>
-                                                    <input
-                                                        type="text"
-                                                        value={val}
-                                                        onChange={(e) => handleOccurrenceChange(idx, e.target.value)}
-                                                        placeholder={labelText}
-                                                        className="w-full bg-transparent px-3 py-1.5 text-xs font-mono text-slate-100 placeholder:text-slate-500 outline-none"
-                                                    />
-                                                </div>
-                                                {occurrenceInputs.length > 1 && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleRemoveOccurrence(idx)}
-                                                        className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded-lg transition shrink-0"
-                                                        title="Remove this input occurrence"
-                                                    >
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    </button>
+            {/* ========================================================================= */}
+            {/* 2. FILL-IN-THE-BLANKS (CLOZE) MODE RENDERER                                */}
+            {/* ========================================================================= */}
+            {exerciseType === 'fill_blank' && (
+                <div className="flex-1 flex overflow-hidden">
+                    {/* Left Column: Problem & Rules */}
+                    <div className="w-5/12 bg-slate-800/95 border-r border-slate-700 p-6 overflow-y-auto space-y-4">
+                        <div className="text-slate-200">
+                            <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                <FileText className="w-4 h-4" /> Syntax & Logic Cloze
+                            </h2>
+                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
+                                {exercise.description}
+                            </div>
+                        </div>
+
+                        {exercise.hints && exercise.hints.length > 0 && (
+                            <div className="pt-2">
+                                <button 
+                                    onClick={() => setShowHint(!showHint)}
+                                    className="flex items-center gap-1.5 text-cyan-400 hover:text-cyan-300 text-xs font-semibold transition"
+                                >
+                                    <Lightbulb className="w-3.5 h-3.5" /> 
+                                    {showHint ? 'Hide Socratic Hint' : 'Stuck? Show Socratic Hint'}
+                                </button>
+                                {showHint && (
+                                    <div className="mt-2 p-2.5 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-cyan-200 text-xs space-y-1">
+                                        {exercise.hints.map((h, hIdx) => (
+                                            <p key={hIdx}>💡 {h}</p>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Right Column: Code Skeleton & Interactive Blanks */}
+                    <div className="w-7/12 bg-slate-950 p-6 overflow-y-auto space-y-6">
+                        <div className="space-y-2">
+                            <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                                <span>Complete the Missing Code Statements</span>
+                            </h3>
+
+                            {/* Code Template Preview */}
+                            {exercise.testCases?.codeTemplate && (
+                                <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 font-mono text-xs text-cyan-300 leading-loose overflow-x-auto mb-4">
+                                    <pre className="whitespace-pre-wrap">{exercise.testCases.codeTemplate}</pre>
+                                </div>
+                            )}
+
+                            {/* Blanks Inputs List */}
+                            <div className="space-y-3">
+                                {(exercise.testCases?.blanks || []).map((blank, bIdx) => {
+                                    const bResult = testResults && testResults[bIdx];
+                                    return (
+                                        <div key={bIdx} className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl space-y-1.5">
+                                            <div className="flex items-center justify-between text-xs">
+                                                <span className="font-mono text-cyan-400 font-bold">__BLANK_{blank.id || (bIdx + 1)}__</span>
+                                                <span className="text-[11px] text-slate-400">{blank.hint}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <input 
+                                                    type="text"
+                                                    value={blankAnswers[bIdx] || ''}
+                                                    onChange={(e) => {
+                                                        const updated = [...blankAnswers];
+                                                        updated[bIdx] = e.target.value;
+                                                        setBlankAnswers(updated);
+                                                    }}
+                                                    placeholder={`Type code for Blank #${bIdx + 1}...`}
+                                                    className={`w-full bg-slate-950 border px-3 py-2 rounded-lg font-mono text-xs text-white outline-none transition ${
+                                                        bResult ? (bResult.isCorrect ? 'border-emerald-500 ring-1 ring-emerald-500' : 'border-red-500 ring-1 ring-red-500') : 'border-slate-700 focus:border-cyan-500'
+                                                    }`}
+                                                />
+                                                {bResult && (
+                                                    bResult.isCorrect 
+                                                        ? <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                                                        : <XCircle className="w-5 h-5 text-red-400 shrink-0" />
                                                 )}
                                             </div>
-                                        );
-                                    })}
-                                </div>
-
-                                <div className="pt-2 flex items-center justify-between">
-                                    <button
-                                        type="button"
-                                        onClick={handleAddOccurrence}
-                                        className="text-xs text-indigo-400 hover:text-indigo-300 bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-500/30 px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition"
-                                    >
-                                        <Plus className="w-3.5 h-3.5" /> Add Input for Next input()
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setOccurrenceInputs(['']);
-                                            syncToCustomInput(['']);
-                                        }}
-                                        className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1 transition"
-                                    >
-                                        <RotateCcw className="w-3 h-3" /> Clear
-                                    </button>
-                                </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
-                        ) : (
-                            /* Raw Multiline Textarea Mode */
-                            <div>
-                                <textarea 
-                                    value={customInput}
-                                    onChange={(e) => handleRawInputChange(e.target.value)}
-                                    placeholder="Enter line-by-line input values...&#10;Line 1 -> 1st input()&#10;Line 2 -> 2nd input()"
-                                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 font-mono focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-y min-h-[90px] placeholder:text-slate-500"
-                                />
-                                <span className="text-[10px] text-slate-400 mt-1 block">
-                                    Each line corresponds to one <code className="text-indigo-400">input()</code> statement.
-                                </span>
+                        </div>
+
+                        {/* Submit Button */}
+                        <div className="pt-2">
+                            <button
+                                type="button"
+                                onClick={handleSubmit}
+                                disabled={isSubmitting || blankAnswers.some(a => !a?.trim())}
+                                className="btn bg-cyan-600 hover:bg-cyan-500 text-white py-2 px-6 rounded-xl font-bold text-xs transition disabled:opacity-50"
+                            >
+                                {isSubmitting ? 'Evaluating...' : 'Check All Blanks'}
+                            </button>
+                        </div>
+
+                        {/* Review Alert */}
+                        {submittedData && (
+                            <div className={`p-4 rounded-xl border ${submittedData.status === 'passed' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                                <h4 className="font-bold text-xs text-white mb-1">
+                                    {submittedData.status === 'passed' ? `🎉 All Blanks Solved Correctly! (+${xpEarned} XP)` : 'Some statements need adjustment'}
+                                </h4>
+                                {socraticReview && <p className="text-xs text-slate-300 mt-1">{socraticReview}</p>}
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
 
-                        {/* Console Output from Manual Run */}
-                        {output && (
-                            <div className="space-y-1.5 pt-2">
-                                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                                    <Beaker className="w-3.5 h-3.5 text-emerald-400"/> Execution Output
-                                </h3>
-                                <div className="font-mono text-xs text-slate-200 bg-black/60 border border-slate-800 rounded-xl overflow-hidden shadow-inner">
-                                    <pre className="p-3.5 overflow-x-auto whitespace-pre-wrap text-emerald-300 max-h-52 leading-relaxed">
-                                        {output}
-                                    </pre>
-                                </div>
+            {/* ========================================================================= */}
+            {/* 3. MNC CASE STUDY & WORKPLACE SCENARIO RENDERER                           */}
+            {/* ========================================================================= */}
+            {exerciseType === 'case_study' && (
+                <div className="flex-1 flex overflow-hidden">
+                    {/* Left Column: Enterprise Incident & Briefing */}
+                    <div className="w-5/12 bg-slate-800/95 border-r border-slate-700 p-6 overflow-y-auto space-y-4">
+                        <div>
+                            <span className="text-[10px] uppercase font-bold bg-purple-900/60 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded">
+                                MNC Production Scenario
+                            </span>
+                            <h2 className="text-sm font-bold text-white mt-2 mb-2">
+                                {exercise.testCases?.scenarioTitle || exercise.title}
+                            </h2>
+                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed whitespace-pre-wrap bg-slate-900/80 p-4 rounded-xl border border-slate-700/80">
+                                {exercise.testCases?.scenarioContext || exercise.description}
+                            </div>
+                        </div>
+
+                        {exercise.hints && exercise.hints.length > 0 && (
+                            <div className="pt-2">
+                                <button 
+                                    onClick={() => setShowHint(!showHint)}
+                                    className="flex items-center gap-1.5 text-purple-400 hover:text-purple-300 text-xs font-semibold transition"
+                                >
+                                    <Lightbulb className="w-3.5 h-3.5" /> 
+                                    {showHint ? 'Hide Socratic Hint' : 'Stuck? Show Socratic Hint'}
+                                </button>
+                                {showHint && (
+                                    <div className="mt-2 p-2.5 bg-purple-500/10 border border-purple-500/20 rounded-lg text-purple-200 text-xs space-y-1">
+                                        {exercise.hints.map((h, hIdx) => (
+                                            <p key={hIdx}>💡 {h}</p>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         )}
+                    </div>
 
-                        {/* Automated Submission Test Cases */}
-                        {testResults && (
-                            <div className="space-y-3 pt-3">
-                                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400"/> Automated Test Suite
-                                </h3>
-                                <div className="space-y-2">
-                                    {testResults.map((tr, i) => (
-                                        <div key={i} className={`p-3 rounded-xl border ${tr.passed ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-                                            <div className="flex items-center gap-2 mb-1.5">
-                                                {tr.passed ? <CheckCircle2 className="w-4 h-4 text-emerald-400"/> : <XCircle className="w-4 h-4 text-red-400"/>}
-                                                <span className="font-bold text-xs text-white">Test Case {i + 1}</span>
-                                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ml-auto ${tr.passed ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-500/30' : 'bg-red-900/60 text-red-300 border border-red-500/30'}`}>
-                                                    {tr.passed ? 'PASSED' : 'FAILED'}
+                    {/* Right Column: Follow-up Questions & Soft Skills */}
+                    <div className="w-7/12 bg-slate-950 p-6 overflow-y-auto space-y-6">
+                        <div className="space-y-6">
+                            {(exercise.testCases?.questions || []).map((q, qIdx) => {
+                                const qResult = testResults && testResults[qIdx];
+                                return (
+                                    <div key={q.id || qIdx} className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-bold text-purple-300">Question {qIdx + 1}</span>
+                                            {q.category && (
+                                                <span className="text-[10px] bg-slate-800 text-slate-400 uppercase px-2 py-0.5 rounded font-mono">
+                                                    {q.category}
                                                 </span>
-                                                {tr.input === 'Hidden' && <span className="text-[10px] text-slate-400 uppercase bg-slate-800 px-2 py-0.5 rounded-md font-semibold">Hidden</span>}
-                                            </div>
-                                            {!tr.passed && tr.input !== 'Hidden' && (
-                                                <div className="mt-2 text-[11px] font-mono space-y-1 bg-black/50 p-2.5 rounded-lg border border-red-500/20">
-                                                    <div><span className="text-slate-400">Input:</span> <span className="text-emerald-300 whitespace-pre-wrap">{tr.input}</span></div>
-                                                    <div><span className="text-slate-400">Expected:</span> <span className="text-blue-300 whitespace-pre-wrap">{tr.expected}</span></div>
-                                                    <div><span className="text-slate-400">Actual:</span> <span className="text-red-300 whitespace-pre-wrap">{tr.actual}</span></div>
-                                                </div>
                                             )}
                                         </div>
-                                    ))}
+
+                                        <p className="text-xs text-white font-medium leading-relaxed">{q.prompt}</p>
+
+                                        {q.codeSnippet && (
+                                            <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 font-mono text-xs text-emerald-300">
+                                                <pre className="whitespace-pre-wrap">{q.codeSnippet}</pre>
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-2 pt-1">
+                                            {(q.options || []).map((opt, oIdx) => {
+                                                const isSelected = (scenarioAnswers[q.id] === oIdx);
+                                                const isCorrect = qResult && qResult.correctOption === oIdx;
+                                                const isWrong = qResult && isSelected && !qResult.isCorrect;
+
+                                                let btnColor = "bg-slate-950 border-slate-800 hover:border-slate-700 text-slate-300";
+                                                if (isSelected && !testResults) {
+                                                    btnColor = "bg-purple-950/60 border-purple-500 text-white ring-1 ring-purple-500";
+                                                } else if (qResult) {
+                                                    if (isCorrect) btnColor = "bg-emerald-950/60 border-emerald-500 text-emerald-200";
+                                                    else if (isWrong) btnColor = "bg-red-950/60 border-red-500 text-red-200";
+                                                }
+
+                                                return (
+                                                    <button
+                                                        key={oIdx}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setScenarioAnswers(prev => ({ ...prev, [q.id]: oIdx }));
+                                                        }}
+                                                        className={`w-full text-left p-3 rounded-lg border text-xs flex items-start gap-2.5 transition ${btnColor}`}
+                                                    >
+                                                        <span className="font-bold text-[11px] text-slate-400 shrink-0">{String.fromCharCode(65 + oIdx)}.</span>
+                                                        <span className="leading-relaxed flex-1">{opt}</span>
+                                                        {qResult && isCorrect && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
+                                                        {qResult && isWrong && <XCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {qResult && qResult.explanation && (
+                                            <div className="mt-2 p-2.5 bg-slate-950 rounded-lg text-[11px] text-slate-300 border border-slate-800 leading-relaxed">
+                                                <strong className="text-white">Rationale:</strong> {qResult.explanation}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Submit Button */}
+                        <div className="pt-2">
+                            <button
+                                type="button"
+                                onClick={handleSubmit}
+                                disabled={isSubmitting}
+                                className="btn bg-purple-600 hover:bg-purple-500 text-white py-2 px-6 rounded-xl font-bold text-xs transition disabled:opacity-50"
+                            >
+                                {isSubmitting ? 'Evaluating Scenario...' : 'Submit Case Study Assessment'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* 4. CODING & PR BUG-FIX MODE RENDERER                                      */}
+            {/* ========================================================================= */}
+            {(exerciseType === 'coding' || exerciseType === 'bug_fix') && (
+                <div className="flex-1 flex overflow-hidden">
+                    {/* Left Panel: Problem Statement, Step-by-Step STDIN & Results */}
+                    <div className="w-5/12 bg-slate-800/95 border-r border-slate-700 flex flex-col overflow-y-auto">
+                        {/* PR Review Alert banner */}
+                        {exerciseType === 'bug_fix' && (
+                            <div className="p-3.5 bg-rose-500/10 border-b border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                                <span><strong>PR Code Review:</strong> Identify and fix the 2 intentional bugs in this Junior PR to pass all tests.</span>
+                            </div>
+                        )}
+
+                        {/* Problem Description */}
+                        <div className="p-5 text-slate-200">
+                            {exercise.description.includes('## 📖 Learning Content') ? (
+                                <>
+                                    <h2 className="text-sm font-bold text-emerald-400 mb-2 flex items-center gap-1.5">
+                                        📖 Learning Content
+                                    </h2>
+                                    <div className="prose prose-invert prose-xs leading-relaxed whitespace-pre-wrap bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 mb-4 text-xs">
+                                        {exercise.description.split('---')[0].replace('## 📖 Learning Content', '').trim()}
+                                    </div>
+                                    <h2 className="text-sm font-bold text-white mb-2 flex items-center gap-1.5">
+                                        🎯 Problem Statement
+                                    </h2>
+                                    <div className="prose prose-invert prose-xs leading-relaxed whitespace-pre-wrap text-xs">
+                                        {exercise.description.split('## 🎯 Problem Statement')[1]?.trim() || ''}
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <h2 className="text-sm font-bold text-white mb-3">Problem Statement</h2>
+                                    <div className="prose prose-invert prose-xs leading-relaxed whitespace-pre-wrap text-xs text-slate-300">
+                                        {exercise.description}
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Hints */}
+                            {exercise.hints && exercise.hints.length > 0 && (
+                                <div className="mt-4">
+                                    <button 
+                                        onClick={() => setShowHint(!showHint)}
+                                        className="flex items-center gap-1.5 text-amber-400 hover:text-amber-300 text-xs font-semibold transition"
+                                    >
+                                        <Lightbulb className="w-3.5 h-3.5" /> 
+                                        {showHint ? 'Hide Socratic Hint' : 'Stuck? Show Socratic Hint'}
+                                    </button>
+                                    {showHint && (
+                                        <div className="mt-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-200 text-xs space-y-1">
+                                            {exercise.hints.map((h, hIdx) => (
+                                                <p key={hIdx}>💡 {h}</p>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Step-by-Step STDIN (Occurrence-Based) Section */}
+                        <div className="p-5 border-t border-slate-700 bg-slate-900/80 space-y-3.5">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                                        <Beaker className="w-3.5 h-3.5 text-indigo-400" /> Standard Input (STDIN)
+                                    </h3>
+                                </div>
+                                
+                                {/* Mode Switcher Tabs */}
+                                <div className="flex items-center bg-slate-800 p-0.5 rounded-lg border border-slate-700 text-[11px]">
+                                    <button
+                                        type="button"
+                                        onClick={() => setInputMode('occurrence')}
+                                        className={`px-2.5 py-1 rounded-md font-medium flex items-center gap-1 transition ${inputMode === 'occurrence' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                                        title="Enter input for each input() call in order of occurrence"
+                                    >
+                                        <ListOrdered className="w-3 h-3" /> By Occurrence
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setInputMode('raw')}
+                                        className={`px-2.5 py-1 rounded-md font-medium flex items-center gap-1 transition ${inputMode === 'raw' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                                        title="Paste or edit multiline raw standard input"
+                                    >
+                                        <FileText className="w-3 h-3" /> Raw Text
+                                    </button>
                                 </div>
                             </div>
-                        )}
 
-                        {/* Socratic AI Review */}
-                        {socraticReview && (
-                            <div className="p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-xl space-y-1">
-                                <h4 className="flex items-center gap-2 font-bold text-xs text-indigo-300">
-                                    🤖 Socratic AI Reviewer
-                                </h4>
-                                <p className="text-xs text-indigo-100 leading-relaxed whitespace-pre-wrap">
-                                    {socraticReview}
-                                </p>
-                            </div>
-                        )}
+                            {/* Occurrence-Based Input Fields */}
+                            {inputMode === 'occurrence' ? (
+                                <div className="space-y-2 bg-slate-950/40 p-3 rounded-xl border border-slate-800">
+                                    <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                                        <span className="flex items-center gap-1">
+                                            <span>Each field feeds into each <code className="text-indigo-400">input()</code> sequentially:</span>
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={handleLoadSampleInput}
+                                            className="text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 transition"
+                                            title="Load sample values from Test Case 1"
+                                        >
+                                            <Sparkles className="w-3 h-3" /> Load Sample
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        {occurrenceInputs.map((val, idx) => {
+                                            const promptInfo = detectedPrompts[idx] || null;
+                                            const labelText = promptInfo?.prompt 
+                                                ? `Input #${idx + 1} ("${promptInfo.prompt}")`
+                                                : `Input #${idx + 1} (${idx === 0 ? '1st' : idx === 1 ? '2nd' : idx === 2 ? '3rd' : `${idx + 1}th`} input())`;
+
+                                            return (
+                                                <div key={idx} className="flex items-center gap-2">
+                                                    <div className="flex-1 flex items-center bg-slate-900 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 transition">
+                                                        <span className="px-2.5 py-2 text-[11px] font-mono text-indigo-300 bg-indigo-950/40 border-r border-slate-700/80 shrink-0 select-none">
+                                                            {idx + 1}
+                                                        </span>
+                                                        <input
+                                                            type="text"
+                                                            value={val}
+                                                            onChange={(e) => handleOccurrenceChange(idx, e.target.value)}
+                                                            placeholder={labelText}
+                                                            className="w-full bg-transparent px-3 py-1.5 text-xs font-mono text-slate-100 placeholder:text-slate-500 outline-none"
+                                                        />
+                                                    </div>
+                                                    {occurrenceInputs.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveOccurrence(idx)}
+                                                            className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded-lg transition shrink-0"
+                                                            title="Remove this input occurrence"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <div className="pt-2 flex items-center justify-between">
+                                        <button
+                                            type="button"
+                                            onClick={handleAddOccurrence}
+                                            className="text-xs text-indigo-400 hover:text-indigo-300 bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-500/30 px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" /> Add Input for Next input()
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setOccurrenceInputs(['']);
+                                                syncToCustomInput(['']);
+                                            }}
+                                            className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1 transition"
+                                        >
+                                            <RotateCcw className="w-3 h-3" /> Clear
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                /* Raw Multiline Textarea Mode */
+                                <div>
+                                    <textarea 
+                                        value={customInput}
+                                        onChange={(e) => handleRawInputChange(e.target.value)}
+                                        placeholder="Enter line-by-line input values...&#10;Line 1 -> 1st input()&#10;Line 2 -> 2nd input()"
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 font-mono focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-y min-h-[90px] placeholder:text-slate-500"
+                                    />
+                                    <span className="text-[10px] text-slate-400 mt-1 block">
+                                        Each line corresponds to one <code className="text-indigo-400">input()</code> statement.
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Console Output from Manual Run */}
+                            {output && (
+                                <div className="space-y-1.5 pt-2">
+                                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                        <Beaker className="w-3.5 h-3.5 text-emerald-400"/> Execution Output
+                                    </h3>
+                                    <div className="font-mono text-xs text-slate-200 bg-black/60 border border-slate-800 rounded-xl overflow-hidden shadow-inner">
+                                        <pre className="p-3.5 overflow-x-auto whitespace-pre-wrap text-emerald-300 max-h-52 leading-relaxed">
+                                            {output}
+                                        </pre>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Automated Submission Test Cases */}
+                            {testResults && (
+                                <div className="space-y-3 pt-3">
+                                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400"/> Automated Test Suite
+                                    </h3>
+                                    <div className="space-y-2">
+                                        {testResults.map((tr, i) => (
+                                            <div key={i} className={`p-3 rounded-xl border ${tr.passed ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                                                <div className="flex items-center gap-2 mb-1.5">
+                                                    {tr.passed ? <CheckCircle2 className="w-4 h-4 text-emerald-400"/> : <XCircle className="w-4 h-4 text-red-400"/>}
+                                                    <span className="font-bold text-xs text-white">Test Case {i + 1}</span>
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ml-auto ${tr.passed ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-500/30' : 'bg-red-900/60 text-red-300 border border-red-500/30'}`}>
+                                                        {tr.passed ? 'PASSED' : 'FAILED'}
+                                                    </span>
+                                                    {tr.input === 'Hidden' && <span className="text-[10px] text-slate-400 uppercase bg-slate-800 px-2 py-0.5 rounded-md font-semibold">Hidden</span>}
+                                                </div>
+                                                {!tr.passed && tr.input !== 'Hidden' && (
+                                                    <div className="mt-2 text-[11px] font-mono space-y-1 bg-black/50 p-2.5 rounded-lg border border-red-500/20">
+                                                        <div><span className="text-slate-400">Input:</span> <span className="text-emerald-300 whitespace-pre-wrap">{tr.input}</span></div>
+                                                        <div><span className="text-slate-400">Expected:</span> <span className="text-blue-300 whitespace-pre-wrap">{tr.expected}</span></div>
+                                                        <div><span className="text-slate-400">Actual:</span> <span className="text-red-300 whitespace-pre-wrap">{tr.actual}</span></div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Socratic AI Review */}
+                            {socraticReview && (
+                                <div className="p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-xl space-y-1">
+                                    <h4 className="flex items-center gap-2 font-bold text-xs text-indigo-300">
+                                        🤖 Socratic AI Reviewer
+                                    </h4>
+                                    <p className="text-xs text-indigo-100 leading-relaxed whitespace-pre-wrap">
+                                        {socraticReview}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Right Panel: Monaco Editor */}
+                    <div className="w-7/12 h-full pt-2 bg-slate-950 flex flex-col">
+                        <div className="px-4 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                            <span className="font-mono text-indigo-400">solution.py</span>
+                            <span>Python 3.11 Runtime</span>
+                        </div>
+                        <div className="flex-1">
+                            <Editor
+                                height="100%"
+                                language={exercise?.unit?.module?.language || 'python'}
+                                theme="vs-dark"
+                                value={code}
+                                onChange={(val) => setCode(val || '')}
+                                options={{
+                                    minimap: { enabled: false },
+                                    fontSize: 14,
+                                    lineHeight: 24,
+                                    fontFamily: 'JetBrains Mono, monospace',
+                                    scrollbar: { vertical: 'auto' },
+                                    padding: { top: 16 }
+                                }}
+                            />
+                        </div>
                     </div>
                 </div>
-
-                {/* Right Panel: Monaco Editor */}
-                <div className="w-7/12 h-full pt-2 bg-slate-950 flex flex-col">
-                    <div className="px-4 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs text-slate-400">
-                        <span className="font-mono text-indigo-400">solution.py</span>
-                        <span>Python 3.11 Runtime</span>
-                    </div>
-                    <div className="flex-1">
-                        <Editor
-                            height="100%"
-                            language={exercise?.unit?.module?.language || 'python'}
-                            theme="vs-dark"
-                            value={code}
-                            onChange={(val) => setCode(val || '')}
-                            options={{
-                                minimap: { enabled: false },
-                                fontSize: 14,
-                                lineHeight: 24,
-                                fontFamily: 'JetBrains Mono, monospace',
-                                scrollbar: { vertical: 'auto' },
-                                padding: { top: 16 }
-                            }}
-                        />
-                    </div>
-                </div>
-            </div>
+            )}
         </div>
     );
 }

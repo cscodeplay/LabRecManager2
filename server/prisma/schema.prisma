@@ -2294,6 +2294,7 @@ model TrainingExercise {
   description       String
   difficulty        String
   scaffoldLevel     String  @map("scaffold_level")
+  exerciseType      String  @default("coding") @map("exercise_type")
   bloomsLevel       String? @map("blooms_level")
   learningObjective String? @map("learning_objective")
   isReviewExercise  Boolean @default(false) @map("is_review_exercise")

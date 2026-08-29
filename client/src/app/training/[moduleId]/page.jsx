@@ -105,24 +105,46 @@ export default function TrainingModulePage() {
                                 
                                 <div className="p-5">
                                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                        {unit.exercises.map((ex, i) => (
-                                            <button
-                                                key={ex.id}
-                                                disabled={!unlocked}
-                                                onClick={() => router.push(`/training/${moduleId}/exercise/${ex.id}`)}
-                                                className={`p-4 text-left rounded-lg border ${!unlocked ? 'bg-slate-50 border-slate-200 cursor-not-allowed' : 'bg-white border-slate-200 hover:border-primary-500 hover:shadow-md transition-all cursor-pointer'}`}
-                                            >
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <span className="text-xs font-bold text-slate-400">Exercise {i + 1}</span>
-                                                    {ex.isReviewExercise && <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded">Review</span>}
-                                                </div>
-                                                <h3 className="font-semibold text-slate-800 line-clamp-2">{ex.title}</h3>
-                                                <div className="mt-3 flex justify-between text-xs text-slate-500">
-                                                    <span className="capitalize">{ex.difficulty}</span>
-                                                    <span className="text-amber-600">+{ex.xpReward} XP</span>
-                                                </div>
-                                            </button>
-                                        ))}
+                                        {unit.exercises.map((ex, i) => {
+                                            const type = ex.exerciseType || 'coding';
+                                            const typeBadge = {
+                                                mcq: { label: '📝 MCQ', bg: 'bg-amber-50 text-amber-700 border-amber-200' },
+                                                fill_blank: { label: '🧩 Cloze', bg: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
+                                                case_study: { label: '🏢 Case Study', bg: 'bg-purple-50 text-purple-700 border-purple-200' },
+                                                bug_fix: { label: '🐞 PR Bug Hunt', bg: 'bg-rose-50 text-rose-700 border-rose-200' },
+                                                coding: { label: '⚡ Coding Lab', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+                                            }[type] || { label: '⚡ Coding Lab', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+
+                                            return (
+                                                <button
+                                                    key={ex.id}
+                                                    disabled={!unlocked}
+                                                    onClick={() => router.push(`/training/${moduleId}/exercise/${ex.id}`)}
+                                                    className={`p-4 text-left rounded-xl border transition-all flex flex-col justify-between ${!unlocked ? 'bg-slate-50 border-slate-200 cursor-not-allowed opacity-60' : 'bg-white border-slate-200 hover:border-indigo-500 hover:shadow-md cursor-pointer group'}`}
+                                                >
+                                                    <div>
+                                                        <div className="flex justify-between items-center mb-2">
+                                                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Exercise {i + 1}</span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${typeBadge.bg}`}>
+                                                                    {typeBadge.label}
+                                                                </span>
+                                                                {ex.isReviewExercise && <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-semibold">Review</span>}
+                                                            </div>
+                                                        </div>
+                                                        <h3 className="font-semibold text-slate-800 line-clamp-2 text-sm group-hover:text-indigo-600 transition-colors">
+                                                            {ex.title}
+                                                        </h3>
+                                                    </div>
+                                                    <div className="mt-4 pt-2 border-t border-slate-100 flex justify-between items-center text-xs text-slate-500">
+                                                        <span className="capitalize text-[11px] bg-slate-100 px-2 py-0.5 rounded text-slate-600">
+                                                            {ex.scaffoldLevel?.replace('_', ' ') || ex.difficulty}
+                                                        </span>
+                                                        <span className="text-indigo-600 font-bold">+{ex.xpReward} XP</span>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             </div>

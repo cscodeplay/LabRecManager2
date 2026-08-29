@@ -343,7 +343,7 @@ router.post('/units/:id/exercises', authenticate, authorize('admin', 'principal'
 
 /**
  * @route   GET /api/training/exercises/:id
- * @desc    Get specific exercise data for the editor
+ * @desc    Get specific exercise data for the editor / multi-modal player
  * @access  Private
  */
 router.get('/exercises/:id', authenticate, asyncHandler(async (req, res) => {
@@ -362,16 +362,48 @@ router.get('/exercises/:id', authenticate, asyncHandler(async (req, res) => {
 
     if (!exercise) return res.status(404).json({ success: false, message: 'Exercise not found' });
 
-    // Hide solution code and hidden test cases for students
+    const exerciseType = exercise.exerciseType || 'coding';
+
+    // Hide solution answers from students before submission
     if (req.user.role === 'student') {
         exercise.solutionCode = undefined;
-        if (Array.isArray(exercise.testCases)) {
-            exercise.testCases = exercise.testCases.map(tc => {
-                if (tc.isHidden) {
-                    return { isHidden: true };
-                }
-                return tc;
-            });
+        
+        if (exerciseType === 'coding' || exerciseType === 'bug_fix') {
+            if (Array.isArray(exercise.testCases)) {
+                exercise.testCases = exercise.testCases.map(tc => {
+                    if (tc.isHidden) return { isHidden: true };
+                    return tc;
+                });
+            }
+        } else if (exerciseType === 'mcq') {
+            const rawTc = exercise.testCases || {};
+            exercise.testCases = {
+                question: rawTc.question || '',
+                codeSnippet: rawTc.codeSnippet || '',
+                options: rawTc.options || [],
+                explanation: undefined, // Hidden until submit
+                correctOption: undefined // Hidden until submit
+            };
+        } else if (exerciseType === 'fill_blank') {
+            const rawTc = exercise.testCases || {};
+            exercise.testCases = {
+                codeTemplate: rawTc.codeTemplate || '',
+                blanks: Array.isArray(rawTc.blanks) ? rawTc.blanks.map(b => ({ id: b.id, hint: b.hint })) : [],
+                explanation: undefined
+            };
+        } else if (exerciseType === 'case_study') {
+            const rawTc = exercise.testCases || {};
+            exercise.testCases = {
+                scenarioTitle: rawTc.scenarioTitle || '',
+                scenarioContext: rawTc.scenarioContext || '',
+                questions: Array.isArray(rawTc.questions) ? rawTc.questions.map(q => ({
+                    id: q.id,
+                    prompt: q.prompt,
+                    codeSnippet: q.codeSnippet || null,
+                    options: q.options || [],
+                    category: q.category || 'technical'
+                })) : []
+            };
         }
     }
 
@@ -419,17 +451,15 @@ router.post('/exercises/:id/run', authenticate, [
 
 /**
  * @route   POST /api/training/exercises/:id/submit
- * @desc    Submit code, evaluate against test cases, update mastery and XP
+ * @desc    Submit exercise (Coding, MCQ, Fill-in-Blank, Case Study, PR Review)
  * @access  Private
  */
-router.post('/exercises/:id/submit', authenticate, [
-    body('code').notEmpty()
-], asyncHandler(async (req, res) => {
+router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res) => {
     const exerciseId = req.params.id;
-    const { code } = req.body;
     const studentId = req.user.id;
+    const { code, selectedOption, blankAnswers, scenarioAnswers } = req.body;
 
-    // Fetch exercise with true test cases
+    // Fetch exercise with true test cases and solution data
     const exercise = await prisma.trainingExercise.findUnique({
         where: { id: exerciseId },
         include: { unit: { include: { module: true } } }
@@ -437,144 +467,194 @@ router.post('/exercises/:id/submit', authenticate, [
 
     if (!exercise) return res.status(404).json({ success: false, message: 'Exercise not found' });
 
+    const exerciseType = exercise.exerciseType || 'coding';
     const language = exercise.unit?.module?.language?.toLowerCase() || 'python';
-    const testCases = Array.isArray(exercise.testCases) ? exercise.testCases : [];
     let passedAll = true;
     let results = [];
-    let firstErrorOutput = null;
+    let socraticReview = null;
+    let submissionCode = code || '';
+    let submissionOutput = '';
 
-    // Evaluate each test case
-    for (const tc of testCases) {
-        try {
-            let exe;
-            const testInput = typeof tc.input === 'string' ? tc.input : (tc.input !== undefined && tc.input !== null ? String(tc.input) : '');
+    // ==========================================
+    // 1. MCQ EVALUATION
+    // ==========================================
+    if (exerciseType === 'mcq') {
+        const mcqData = exercise.testCases || {};
+        const correctOpt = parseInt(mcqData.correctOption, 10);
+        const userOpt = parseInt(selectedOption, 10);
+        
+        passedAll = (userOpt === correctOpt);
+        submissionCode = JSON.stringify({ selectedOption: userOpt });
+        submissionOutput = passedAll ? 'Correct answer selected.' : 'Incorrect option chosen.';
+        
+        results = [{
+            passed: passedAll,
+            selectedOption: userOpt,
+            correctOption: correctOpt,
+            explanation: mcqData.explanation || 'Review the code execution flow and state transformations.'
+        }];
+
+        if (!passedAll) {
+            socraticReview = `Consider dry-running the code line by line. Notice what the variable values become before the return/print statement.`;
+        }
+    } 
+    // ==========================================
+    // 2. FILL-IN-THE-BLANKS (CLOZE) EVALUATION
+    // ==========================================
+    else if (exerciseType === 'fill_blank') {
+        const fillData = exercise.testCases || {};
+        const blanks = Array.isArray(fillData.blanks) ? fillData.blanks : [];
+        const userAnswers = Array.isArray(blankAnswers) ? blankAnswers : [];
+        
+        submissionCode = JSON.stringify({ answers: userAnswers });
+        let allBlanksPassed = true;
+
+        results = blanks.map((blank, i) => {
+            const userVal = (userAnswers[i] || '').trim().toLowerCase();
+            const expectedList = Array.isArray(blank.expected) 
+                ? blank.expected.map(e => e.trim().toLowerCase()) 
+                : [String(blank.expected || '').trim().toLowerCase()];
             
-            if (language === 'html') {
-                exe = { stdout: code, stderr: '', code: 0 };
+            const isCorrect = expectedList.some(exp => exp === userVal || userVal.replace(/\s+/g, '') === exp.replace(/\s+/g, ''));
+            if (!isCorrect) allBlanksPassed = false;
+
+            return {
+                blankId: blank.id,
+                userAnswer: userAnswers[i] || '',
+                isCorrect,
+                hint: blank.hint || 'Check syntax and naming conventions.'
+            };
+        });
+
+        passedAll = allBlanksPassed;
+        submissionOutput = passedAll ? 'All blanks filled correctly.' : 'Some blanks were incorrect.';
+        
+        if (!passedAll) {
+            socraticReview = `Check the missing operations. Are you using the correct method signature or keyword?`;
+        }
+    }
+    // ==========================================
+    // 3. CASE STUDY / MNC SCENARIO EVALUATION
+    // ==========================================
+    else if (exerciseType === 'case_study') {
+        const caseData = exercise.testCases || {};
+        const questions = Array.isArray(caseData.questions) ? caseData.questions : [];
+        const userResponses = scenarioAnswers || {};
+        
+        submissionCode = JSON.stringify({ responses: userResponses });
+        let correctCount = 0;
+
+        results = questions.map(q => {
+            const correctOpt = parseInt(q.correctOption, 10);
+            const userChoice = parseInt(userResponses[q.id], 10);
+            const isCorrect = (userChoice === correctOpt);
+            if (isCorrect) correctCount++;
+
+            return {
+                questionId: q.id,
+                prompt: q.prompt,
+                userChoice,
+                correctOption: correctOpt,
+                isCorrect,
+                explanation: q.explanation || ''
+            };
+        });
+
+        // 100% required for mastery or >= 80%
+        passedAll = (correctCount === questions.length);
+        submissionOutput = `Score: ${correctCount}/${questions.length} questions answered correctly.`;
+
+        if (!passedAll) {
+            socraticReview = `Review the incident root cause. In an enterprise system, prioritize data integrity, bounded resource limits, and clear RCA communication.`;
+        }
+    }
+    // ==========================================
+    // 4. CODING & PR REVIEW (BUG FIX) EVALUATION
+    // ==========================================
+    else {
+        const testCases = Array.isArray(exercise.testCases) ? exercise.testCases : [];
+        let firstErrorOutput = null;
+
+        for (const tc of testCases) {
+            try {
+                let exe;
+                const testInput = typeof tc.input === 'string' ? tc.input : (tc.input !== undefined && tc.input !== null ? String(tc.input) : '');
+                
+                if (language === 'html') {
+                    exe = { stdout: code, stderr: '', code: 0 };
+                } else {
+                    exe = await executePythonCode(code, testInput);
+                }
+                
+                const actualRaw = exe.stdout ? exe.stdout.replace(/\r\n/g, '\n') : '';
+                const expectedRaw = (tc.expectedOutput !== undefined ? tc.expectedOutput : tc.expected) ?? '';
+                const expectedString = typeof expectedRaw === 'string' ? expectedRaw.replace(/\r\n/g, '\n') : String(expectedRaw);
+                
+                // Clean comparison
+                const actualClean = actualRaw.trim();
+                const expectedClean = expectedString.trim();
+                
+                const passed = (exe.code === 0) && (actualClean === expectedClean);
+                if (!passed) passedAll = false;
+
+                if (exe.code !== 0 && !firstErrorOutput) {
+                    firstErrorOutput = exe.stderr;
+                }
+
+                results.push({
+                    input: tc.isHidden ? 'Hidden' : testInput,
+                    expected: tc.isHidden ? 'Hidden' : expectedString,
+                    actual: exe.stderr ? `Error: ${exe.stderr.trim()}` : actualRaw,
+                    passed
+                });
+            } catch (err) {
+                passedAll = false;
+                results.push({ passed: false, actual: `Execution Sandbox Error: ${err.message}` });
+            }
+        }
+
+        submissionOutput = firstErrorOutput || (results.length > 0 ? results[0].actual : '');
+
+        // Evaluate with AI for Coding Failures
+        if (results.some(r => !r.passed) || results.length === 0) {
+            const failedCases = results.filter(r => !r.passed).map(r => ({ input: r.input, expected: r.expected, actual: r.actual }));
+            const aiEvaluation = await evaluateStudentCodeWithAI(code, exercise.description, failedCases);
+            
+            if (aiEvaluation) {
+                socraticReview = aiEvaluation.socraticFeedback;
+                if (Array.isArray(aiEvaluation.suggestedEdgeCases)) {
+                    aiEvaluation.suggestedEdgeCases.forEach(tc => {
+                        results.push({
+                            input: tc.input,
+                            expected: tc.expectedOutput,
+                            actual: 'Not Evaluated (Dynamic AI Case)',
+                            passed: false,
+                            isAiGenerated: true
+                        });
+                    });
+                }
             } else {
-                exe = await executePythonCode(code, testInput);
+                socraticReview = "Consider tracing your program with the first failing input. What does your logic return vs what is expected?";
             }
-            
-            const actualRaw = exe.stdout ? exe.stdout.replace(/\r\n/g, '\n') : '';
-            const expectedRaw = (tc.expectedOutput !== undefined ? tc.expectedOutput : tc.expected) ?? '';
-            const expectedString = typeof expectedRaw === 'string' ? expectedRaw.replace(/\r\n/g, '\n') : String(expectedRaw);
-            
-            // Clean comparison (trim trailing whitespace and newlines for robustness)
-            const actualClean = actualRaw.trim();
-            const expectedClean = expectedString.trim();
-            
-            const passed = (exe.code === 0) && (actualClean === expectedClean);
-            if (!passed) passedAll = false;
-
-            if (exe.code !== 0 && !firstErrorOutput) {
-                firstErrorOutput = exe.stderr;
-            }
-
-            results.push({
-                input: tc.isHidden ? 'Hidden' : testInput,
-                expected: tc.isHidden ? 'Hidden' : expectedString,
-                actual: exe.stderr ? `Error: ${exe.stderr.trim()}` : actualRaw,
-                passed
-            });
-        } catch (err) {
-            passedAll = false;
-            results.push({ passed: false, actual: `Execution Sandbox Error: ${err.message}` });
         }
     }
 
     const testStatus = passedAll ? 'passed' : 'failed';
-
-    // Evaluate with AI 
-    let socraticReview = null;
-    let isPartiallyCorrect = false;
-
-    // We fetch a hypothetical config, for now hardcoded to checking AI if failed or async logic.
-    // Assuming synchronous AI check if it failed test cases:
-    if (results.some(r => !r.passed) || results.length === 0) {
-        const failedCases = results.filter(r => !r.passed).map(r => ({ input: r.input, expected: r.expected, actual: r.actual }));
-        const aiEvaluation = await evaluateStudentCodeWithAI(code, exercise.description, failedCases);
-        
-        if (aiEvaluation) {
-            socraticReview = aiEvaluation.socraticFeedback;
-            isPartiallyCorrect = aiEvaluation.isPartiallyCorrect;
-            
-            // Inject dynamic edge cases into results for the UI to portray
-            if (Array.isArray(aiEvaluation.suggestedEdgeCases)) {
-                aiEvaluation.suggestedEdgeCases.forEach(tc => {
-                    results.push({
-                        input: tc.input,
-                        expected: tc.expectedOutput,
-                        actual: 'Not Evaluated (Dynamic AI Case)',
-                        passed: false,
-                        isAiGenerated: true
-                    });
-                });
-            }
-        } else {
-            socraticReview = "Consider tracing your program with the first failing input. What does your logic currently return vs what is expected?";
-        }
-    }
-
-    // Save code to Student Document Folder System structure automatically
-    try {
-        const dateStr = new Date().toISOString().split('T')[0];
-        const folderName = `Training Records - ${dateStr}`;
-
-        // Find or create the master document folder for the date
-        let folder = await prisma.documentFolder.findFirst({
-            where: { schoolId: req.user.schoolId, createdById: req.user.id, name: folderName }
-        });
-
-        if (!folder) {
-            folder = await prisma.documentFolder.create({
-                data: {
-                    schoolId: req.user.schoolId,
-                    createdById: req.user.id,
-                    name: folderName
-                }
-            });
-        }
-
-        // Store file locally first to upload to Cloudinary (as raw TXT block since it's code)
-        const fileExt = language === 'html' ? '.html' : '.py';
-        const fileName = `Exercise_${exerciseId}_${Date.now()}${fileExt}`;
-        const tempPath = path.join(os.tmpdir(), fileName);
-        fs.writeFileSync(tempPath, code);
-
-        const uploadResult = await uploadToCloudinary(tempPath, { folder: 'student/codes', resourceType: 'raw' });
-
-        await prisma.document.create({
-            data: {
-                schoolId: req.user.schoolId,
-                uploadedById: req.user.id,
-                folderId: folder.id,
-                name: `Solution - ${exercise.title}`,
-                fileName: fileName,
-                fileType: fileExt,
-                mimeType: language === 'html' ? 'text/html' : 'text/x-python',
-                fileSize: Buffer.byteLength(code, 'utf8'),
-                cloudinaryId: uploadResult.public_id,
-                url: uploadResult.secure_url
-            }
-        });
-    } catch (fsErr) {
-        console.error("Failed to store document in filesystem structure:", fsErr);
-    }
 
     // Save Submission
     const submission = await prisma.codingSubmission.create({
         data: {
             exerciseId,
             studentId,
-            code,
+            code: submissionCode,
             status: testStatus,
-            output: firstErrorOutput || (results.length > 0 ? results[0].actual : ''),
+            output: submissionOutput,
             testResults: results,
             aiSocraticReview: socraticReview
         }
     });
 
-    // If passed, update Progress & Mastery
+    // If passed, update Progress, Mastery & XP
     if (passedAll && req.user.role === 'student') {
         const unitId = exercise.unitId;
         const moduleId = exercise.unit.moduleId;
@@ -589,55 +669,51 @@ router.post('/exercises/:id/submit', authenticate, [
                 data: {
                     studentId,
                     moduleId,
-                    currentUnitId: unitId
+                    currentUnitId: unitId,
+                    totalXP: exercise.xpReward || 10
+                }
+            });
+        } else {
+            await prisma.studentTrainingProgress.update({
+                where: { id: progress.id },
+                data: {
+                    totalXP: { increment: exercise.xpReward || 10 },
+                    lastActiveAt: new Date()
                 }
             });
         }
 
-        // Ensure Mastery record exists
+        // Update Mastery
+        const totalExercisesInUnit = await prisma.trainingExercise.count({ where: { unitId } });
+        
         let mastery = await prisma.studentUnitMastery.findUnique({
             where: { studentId_unitId: { studentId, unitId } }
         });
 
+        const newDone = (mastery ? mastery.exercisesDone : 0) + 1;
+        const newScore = totalExercisesInUnit > 0 ? (newDone / totalExercisesInUnit) * 100 : 100;
+        const isMastered = newScore >= (exercise.unit?.unlockThreshold || 80);
+
         if (!mastery) {
-            mastery = await prisma.studentUnitMastery.create({
-                data: { studentId, unitId, status: 'in_progress' }
+            await prisma.studentUnitMastery.create({
+                data: {
+                    studentId,
+                    unitId,
+                    exercisesDone: newDone,
+                    masteryScore: Math.min(newScore, 100),
+                    status: isMastered ? 'mastered' : 'in_progress',
+                    unlockedAt: new Date(),
+                    masteredAt: isMastered ? new Date() : null
+                }
             });
-        }
-
-        // Has this student already solved this?
-        const priorSuccess = await prisma.codingSubmission.findFirst({
-            where: { exerciseId, studentId, status: 'passed', id: { not: submission.id } }
-        });
-
-        if (!priorSuccess) {
-            // First time passing! Add XP
-            await prisma.studentTrainingProgress.update({
-                where: { id: progress.id },
-                data: { totalXP: { increment: exercise.xpReward } }
-            });
-
-            // Update Unit Mastery
-            const totalUnitExecs = await prisma.trainingExercise.count({ where: { unitId } });
-            const newExercisesDone = mastery.exercisesDone + 1;
-            const newScore = (newExercisesDone / totalUnitExecs) * 100;
-
-            let newMasteryStatus = mastery.status;
-            let masteredAtTime = mastery.masteredAt;
-            
-            if (newScore >= exercise.unit.unlockThreshold && mastery.status !== 'mastered') {
-                newMasteryStatus = 'mastered';
-                masteredAtTime = new Date();
-                // We would then unlock the next unit here.
-            }
-
+        } else {
             await prisma.studentUnitMastery.update({
                 where: { id: mastery.id },
                 data: {
-                    exercisesDone: newExercisesDone,
-                    masteryScore: newScore,
-                    status: newMasteryStatus,
-                    masteredAt: masteredAtTime
+                    exercisesDone: newDone,
+                    masteryScore: Math.min(newScore, 100),
+                    status: isMastered ? 'mastered' : 'in_progress',
+                    masteredAt: isMastered ? (mastery.masteredAt || new Date()) : null
                 }
             });
         }
@@ -648,7 +724,9 @@ router.post('/exercises/:id/submit', authenticate, [
         data: {
             status: testStatus,
             results,
-            socraticReview
+            socraticReview,
+            xpEarned: passedAll ? (exercise.xpReward || 10) : 0,
+            submissionId: submission.id
         }
     });
 }));
