@@ -61,7 +61,17 @@ async function evaluateStudentCodeWithAI(code, problemStatement, failedCases) {
  * Helper to run Python code with local python3 sandbox and Wandbox fallback
  */
 async function executePythonCode(code, input = '') {
-    const inputStr = typeof input === 'string' ? input : (input !== undefined && input !== null ? String(input) : '');
+    let inputStr = '';
+    if (Array.isArray(input)) {
+        inputStr = input.map(x => (x !== null && x !== undefined) ? String(x) : '').join('\n') + '\n';
+    } else if (typeof input === 'string') {
+        inputStr = input.replace(/\r\n/g, '\n');
+        if (inputStr && !inputStr.endsWith('\n')) {
+            inputStr += '\n';
+        }
+    } else if (input !== undefined && input !== null) {
+        inputStr = String(input) + '\n';
+    }
     
     // 1. Try local python3 execution first for high speed and reliability
     try {
