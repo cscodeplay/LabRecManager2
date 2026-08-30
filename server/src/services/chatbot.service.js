@@ -418,10 +418,221 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
         const msgLower = (message || '').toLowerCase();
 
+        // Intent detection: Document Unsharing / Revoking Shares (e.g. "Unshare document Agreement - Systems 2015", "Revoke share for document XYZ")
+        const isDocumentUnshareIntent = (
+            (/\b(unshare|un-share|revoke\s*share|remove\s*share|stop\s*sharing|delete\s*share)\b/i.test(msgLower) ||
+             (msgLower.includes('unshare') || msgLower.includes('un-share') || msgLower.includes('revoke')) &&
+             (msgLower.includes('document') || msgLower.includes('file') || msgLower.includes('pdf') || msgLower.includes('agreement') || msgLower.includes('manual') || msgLower.includes('doc'))) &&
+            !msgLower.includes('whiteboard') && !msgLower.includes('recording')
+        );
+
+        if (isDocumentUnshareIntent) {
+            try {
+                console.log('[ChatBot] Document unshare intent detected:', message);
+
+                const documents = await prisma.document.findMany({
+                    where: {
+                        ...(schoolId ? { schoolId } : {}),
+                        deletedAt: null
+                    },
+                    select: { id: true, name: true, fileType: true, fileSize: true }
+                });
+
+                let matchedDoc = null;
+                for (const d of documents) {
+                    if (msgLower.includes(d.name.toLowerCase())) {
+                        matchedDoc = d;
+                        break;
+                    }
+                }
+                // Try fuzzy/word matching if not exact
+                if (!matchedDoc) {
+                    for (const d of documents) {
+                        const words = d.name.toLowerCase().split(/[\s-_]+/).filter(w => w.length > 3);
+                        if (words.length > 0 && words.every(w => msgLower.includes(w))) {
+                            matchedDoc = d;
+                            break;
+                        }
+                    }
+                }
+                if (!matchedDoc && documents.length > 0) {
+                    // Try partial match
+                    for (const d of documents) {
+                        const words = d.name.toLowerCase().split(/[\s-_]+/).filter(w => w.length > 3);
+                        if (words.some(w => msgLower.includes(w))) {
+                            matchedDoc = d;
+                            break;
+                        }
+                    }
+                }
+
+                if (!matchedDoc) {
+                    return {
+                        message: `⚠️ **Document Not Found**\n\nCould not identify the document to unshare from your request. Please check the document name in [Documents](/admin/documents).`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        documentUnshareAction: null,
+                        provider: 'groq'
+                    };
+                }
+
+                // Find active shares for this document
+                const existingShares = await prisma.documentShare.findMany({
+                    where: {
+                        documentId: matchedDoc.id
+                    },
+                    include: {
+                        targetClass: { select: { id: true, name: true } },
+                        targetGroup: { select: { id: true, name: true } },
+                        targetUser: { select: { id: true, firstName: true, lastName: true, role: true } }
+                    }
+                });
+
+                if (existingShares.length === 0) {
+                    return {
+                        message: `ℹ️ **Document Not Currently Shared**\n\nThe document **"${matchedDoc.name}"** is currently not shared with any classes, groups, or individual users.`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        documentUnshareAction: null,
+                        provider: 'groq'
+                    };
+                }
+
+                const sharesList = existingShares.map(s => {
+                    let name = 'Recipient';
+                    if (s.targetClass) name = `Class ${s.targetClass.name}`;
+                    else if (s.targetGroup) name = `Group ${s.targetGroup.name}`;
+                    else if (s.targetUser) name = `${s.targetUser.firstName} ${s.targetUser.lastName}`.trim();
+                    return {
+                        id: s.id,
+                        targetType: s.targetType,
+                        name,
+                        role: s.targetUser?.role || s.targetType,
+                        sharedAt: s.sharedAt
+                    };
+                });
+
+                const documentUnshareAction = {
+                    documentId: matchedDoc.id,
+                    documentName: matchedDoc.name,
+                    fileType: matchedDoc.fileType || 'pdf',
+                    fileSize: Number(matchedDoc.fileSize || 0),
+                    shares: sharesList,
+                    isConfirmed: false
+                };
+
+                return {
+                    message: `🔓 **Document Unshare Proposal Prepared!**\n\nI found **${sharesList.length}** active ${sharesList.length === 1 ? 'share' : 'shares'} for document **"${matchedDoc.name}"**.\n\n- **Document:** ${matchedDoc.name}\n- **Currently Shared With:** ${sharesList.map(s => s.name).join(', ')}\n\nReview the shares below and click **Confirm & Revoke Access** to unshare:`,
+                    sql: null,
+                    queryResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    documentUnshareAction,
+                    provider: 'groq'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Document unshare intent error:', err);
+            }
+        }
+
+        // Intent detection: Folder Creation (e.g. "Create new folder with name subshots in folder screenshots", "create folder Assignments")
+        const isFolderCreateIntent = (
+            (/\b(create|make|add|new)\s+(a\s+)?(folder|directory)\b/i.test(msgLower) ||
+             /\b(create\s+new\s+folder|make\s+new\s+folder|add\s+folder)\b/i.test(msgLower) ||
+             msgLower.includes('ਫੋਲਡਰ ਬਣਾਓ') || msgLower.includes('फ़ोल्डर बनाएं')) &&
+            !msgLower.includes('list') && !msgLower.includes('show')
+        );
+
+        if (isFolderCreateIntent) {
+            try {
+                console.log('[ChatBot] Folder create intent detected:', message);
+
+                // Fetch existing folders
+                const allFolders = await prisma.documentFolder.findMany({
+                    where: {
+                        ...(schoolId ? { schoolId } : {}),
+                        deletedAt: null
+                    },
+                    select: { id: true, name: true, parentId: true },
+                    orderBy: { name: 'asc' }
+                });
+
+                // Extract folder name
+                let folderName = '';
+                const nameWithMatch = message.match(/with\s+name\s+["']?([^"'\n]+?)["']?(?:\s+(?:in|inside|under)\s+folder|\s*$)/i);
+                const namedMatch = message.match(/named\s+["']?([^"'\n]+?)["']?(?:\s+(?:in|inside|under)\s+folder|\s*$)/i);
+                const folderQuotedMatch = message.match(/folder\s+["']([^"'\n]+)["']/i);
+                const folderInMatch = message.match(/folder\s+([a-zA-Z0-9_-]+)\s+(?:in|inside|under)\s+folder/i);
+
+                if (nameWithMatch && nameWithMatch[1]) {
+                    folderName = nameWithMatch[1].trim();
+                } else if (namedMatch && namedMatch[1]) {
+                    folderName = namedMatch[1].trim();
+                } else if (folderInMatch && folderInMatch[1]) {
+                    folderName = folderInMatch[1].trim();
+                } else if (folderQuotedMatch && folderQuotedMatch[1]) {
+                    folderName = folderQuotedMatch[1].trim();
+                } else {
+                    // Generic fallback
+                    const words = message.split(/\s+/);
+                    const folderIdx = words.findIndex(w => w.toLowerCase() === 'folder');
+                    if (folderIdx !== -1 && words[folderIdx + 1] && !['in', 'inside', 'under', 'with', 'named'].includes(words[folderIdx + 1].toLowerCase())) {
+                        folderName = words[folderIdx + 1].replace(/["',]/g, '').trim();
+                    }
+                }
+
+                if (!folderName) {
+                    folderName = 'New Folder';
+                }
+
+                // Extract parent folder name
+                let parentFolderName = '';
+                const parentMatch = message.match(/(?:in|inside|under)\s+folder\s+["']?([^"'\n]+?)["']?(?:\s|$)/i) ||
+                                    message.match(/(?:in|inside|under)\s+["']([^"'\n]+)["']/i);
+                if (parentMatch && parentMatch[1]) {
+                    parentFolderName = parentMatch[1].trim().toLowerCase();
+                }
+
+                let matchedParent = null;
+                if (parentFolderName) {
+                    matchedParent = allFolders.find(f => f.name.toLowerCase() === parentFolderName);
+                    if (!matchedParent) {
+                        matchedParent = allFolders.find(f => f.name.toLowerCase().includes(parentFolderName) || parentFolderName.includes(f.name.toLowerCase()));
+                    }
+                }
+
+                const folderAction = {
+                    actionType: 'create',
+                    name: folderName,
+                    parentId: matchedParent ? matchedParent.id : null,
+                    parentName: matchedParent ? matchedParent.name : 'Root Folder (Home)',
+                    availableFolders: allFolders.map(f => ({ id: f.id, name: f.name })),
+                    isConfirmed: false
+                };
+
+                return {
+                    message: `📁 **Folder Creation Proposal Prepared!**\n\nI have prepared a proposal to create folder **"${folderAction.name}"** inside **"${folderAction.parentName}"**.\n\n- **Folder Name:** ${folderAction.name}\n- **Parent Directory:** ${folderAction.parentName}\n\nReview the details below and click **Confirm & Create Folder**:`,
+                    sql: null,
+                    queryResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    folderAction,
+                    provider: 'groq'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Folder create intent error:', err);
+            }
+        }
+
         // Intent detection: Document Sharing (e.g. "Share 'Physics Lab Manual' with Class 11 Non-Medical A", "Share document with Group A")
         const isDocumentShareIntent = (
             (msgLower.includes('share') || msgLower.includes('send') || msgLower.includes('distribute') || msgLower.includes('give access')) &&
             (msgLower.includes('document') || msgLower.includes('file') || msgLower.includes('pdf') || msgLower.includes('doc') || msgLower.includes('notes') || msgLower.includes('manual')) &&
+            !msgLower.includes('unshare') && !msgLower.includes('un-share') && !msgLower.includes('revoke') && !msgLower.includes('stop sharing') && !msgLower.includes('remove share') &&
             !msgLower.includes('shared with') && !msgLower.includes('view share')
         );
 

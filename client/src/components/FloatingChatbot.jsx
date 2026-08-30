@@ -11,11 +11,11 @@ import {
     LayoutGrid, Table as TableIcon, Inbox, Layers, Laptop, Server, HardDrive,
     Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket,
     ShoppingBag, Code, Terminal, Award, Package, Zap, Wifi, Network, Headphones, ScanLine, Cable, Camera,
-    Share2, Folder, Truck, ArrowRight, UsersRound, Search, RotateCcw, UserCheck, ShieldAlert
+    Share2, Folder, Truck, ArrowRight, UsersRound, Search, RotateCcw, UserCheck, ShieldAlert, FolderPlus, Square
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
-import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI, classesAPI, timetableAPI, usersAPI, ticketsAPI, labsAPI, procurementAPI, trainingAPI } from '@/lib/api';
+import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI, classesAPI, timetableAPI, usersAPI, ticketsAPI, labsAPI, procurementAPI, trainingAPI, documentsAPI, foldersAPI } from '@/lib/api';
 import VoiceInputButton from './VoiceInputButton';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -6070,6 +6070,374 @@ function LaptopReturnActionCard({ action }) {
     );
 }
 
+/* ─── Document Unshare Action Card ─── */
+function DocumentUnshareActionCard({ action }) {
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [shares, setShares] = useState(action?.shares || []);
+    const [selectedShareIds, setSelectedShareIds] = useState(() => (action?.shares || []).map(s => s.id));
+    const [revokedCount, setRevokedCount] = useState(0);
+
+    const docName = action?.documentName || 'Document';
+    const fileType = action?.fileType || 'pdf';
+
+    const toggleSelectShare = (id) => {
+        setSelectedShareIds(prev =>
+            prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+        );
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedShareIds.length === shares.length) {
+            setSelectedShareIds([]);
+        } else {
+            setSelectedShareIds(shares.map(s => s.id));
+        }
+    };
+
+    const handleConfirm = async () => {
+        if (selectedShareIds.length === 0) {
+            toast.error('Please select at least one share to revoke');
+            return;
+        }
+
+        setLoading(true);
+        let successCount = 0;
+        try {
+            for (const shareId of selectedShareIds) {
+                try {
+                    await documentsAPI.removeShare(shareId);
+                    successCount++;
+                } catch (err) {
+                    console.warn(`Failed to remove share ${shareId}:`, err.message);
+                }
+            }
+
+            if (successCount > 0) {
+                setRevokedCount(successCount);
+                setIsConfirmed(true);
+                toast.success(`Revoked ${successCount} ${successCount === 1 ? 'share' : 'shares'} for "${docName}"`);
+            } else {
+                toast.error('Failed to revoke shares');
+            }
+        } catch (err) {
+            console.error('Error in unsharing:', err);
+            toast.error(err.message || 'Error revoking access');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Document Unshare Proposal Discarded</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(false)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                    >
+                        <Undo2 className="w-3 h-3" /> Restore
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (isConfirmed) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 shadow-sm space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-emerald-800 font-bold text-[13px]">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <span>Document Shares Successfully Revoked!</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-200/70 text-emerald-800 font-mono text-[10px] font-bold">
+                        UNSHARED
+                    </span>
+                </div>
+                <p className="text-[11px] text-slate-600">
+                    Revoked <strong>{revokedCount}</strong> access {revokedCount === 1 ? 'grant' : 'grants'} for <strong>"{docName}"</strong>.
+                </p>
+                <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-emerald-700">Recipients can no longer view this document</span>
+                    <a
+                        href="/admin/documents"
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+                    >
+                        View in Documents <ExternalLink className="w-3 h-3" />
+                    </a>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-2.5 rounded-2xl border border-rose-200/90 bg-gradient-to-br from-rose-50/70 via-white to-orange-50/50 shadow-sm overflow-hidden text-xs animate-in fade-in">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-rose-600 to-red-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold tracking-wide">
+                    <Share2 className="w-4 h-4 text-rose-200 shrink-0" />
+                    <span>Revoke Document Sharing</span>
+                </div>
+                <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-medium">
+                    {shares.length} Active {shares.length === 1 ? 'Share' : 'Shares'}
+                </span>
+            </div>
+
+            <div className="p-3.5 space-y-3">
+                {/* Document details */}
+                <div className="bg-white rounded-xl p-3 border border-rose-100 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center font-bold text-xs">
+                            <FileText className="w-4 h-4" />
+                        </div>
+                        <div>
+                            <div className="font-bold text-slate-800 text-[12px]">{docName}</div>
+                            <div className="text-[10px] text-slate-400 font-mono uppercase">{fileType} File</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Shares list */}
+                <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
+                        <span>Select shares to revoke:</span>
+                        <button
+                            type="button"
+                            onClick={toggleSelectAll}
+                            className="text-[10px] text-rose-600 hover:text-rose-700 font-medium hover:underline"
+                        >
+                            {selectedShareIds.length === shares.length ? 'Deselect All' : 'Select All'}
+                        </button>
+                    </div>
+
+                    <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                        {shares.map(s => {
+                            const isSelected = selectedShareIds.includes(s.id);
+                            return (
+                                <button
+                                    key={s.id}
+                                    type="button"
+                                    onClick={() => toggleSelectShare(s.id)}
+                                    className={`w-full flex items-center justify-between p-2 rounded-xl border text-left transition ${
+                                        isSelected
+                                            ? 'bg-rose-50/70 border-rose-300 text-rose-900'
+                                            : 'bg-white border-slate-200 text-slate-600 opacity-60'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        {isSelected ? (
+                                            <CheckSquare className="w-4 h-4 text-rose-600 shrink-0" />
+                                        ) : (
+                                            <Square className="w-4 h-4 text-slate-400 shrink-0" />
+                                        )}
+                                        <span className="font-semibold text-[11px]">{s.name}</span>
+                                    </div>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-500 uppercase font-medium">
+                                        {s.role || s.targetType}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Footer Actions */}
+                <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(true)}
+                        className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleConfirm}
+                        disabled={loading || selectedShareIds.length === 0}
+                        className="px-3.5 py-1.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white font-semibold text-[11px] rounded-xl shadow-xs hover:shadow transition flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        Confirm & Revoke Access ({selectedShareIds.length})
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* ─── Folder Action Card ─── */
+function FolderActionCard({ action }) {
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(false);
+    const [loading, setLoading] = useState(false);
+
+    const [name, setName] = useState(action?.name || 'New Folder');
+    const [parentId, setParentId] = useState(action?.parentId || '');
+
+    const availableFolders = action?.availableFolders || [];
+    const selectedParent = availableFolders.find(f => f.id === parentId);
+
+    const handleConfirm = async () => {
+        if (!name.trim()) {
+            toast.error('Folder name is required');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const res = await foldersAPI.create({
+                name: name.trim(),
+                parentId: parentId || null
+            });
+
+            if (res.data?.success) {
+                setIsConfirmed(true);
+                toast.success(`Folder "${name.trim()}" created successfully!`);
+            } else {
+                toast.error(res.data?.message || 'Failed to create folder');
+            }
+        } catch (err) {
+            console.error('Error creating folder:', err);
+            toast.error(err.response?.data?.message || err.message || 'Error creating folder');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Folder Creation Proposal Discarded</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(false)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                    >
+                        <Undo2 className="w-3 h-3" /> Restore
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (isConfirmed) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 shadow-sm space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-emerald-800 font-bold text-[13px]">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <span>Folder Successfully Created!</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-200/70 text-emerald-800 font-mono text-[10px] font-bold">
+                        CREATED
+                    </span>
+                </div>
+                <div className="bg-white/90 rounded-xl p-3 border border-emerald-100 space-y-1 text-slate-700 text-[11px]">
+                    <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">Folder Name:</span>
+                        <span className="font-bold text-slate-800">{name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">Location:</span>
+                        <span className="font-semibold text-indigo-600">{selectedParent ? selectedParent.name : 'Root Folder (Home)'}</span>
+                    </div>
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-emerald-700">Ready for organizing documents</span>
+                    <a
+                        href="/admin/documents"
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+                    >
+                        View in Documents <ExternalLink className="w-3 h-3" />
+                    </a>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-2.5 rounded-2xl border border-amber-200/90 bg-gradient-to-br from-amber-50/70 via-white to-yellow-50/50 shadow-sm overflow-hidden text-xs animate-in fade-in">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold tracking-wide">
+                    <FolderPlus className="w-4 h-4 text-amber-200 shrink-0" />
+                    <span>Create Document Folder</span>
+                </div>
+                <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-medium">
+                    Directory
+                </span>
+            </div>
+
+            <div className="p-3.5 space-y-3">
+                <div className="space-y-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Folder Name
+                    </label>
+                    <div className="flex items-center gap-2">
+                        <Folder className="w-4 h-4 text-amber-500 shrink-0" />
+                        <input
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="Folder Name"
+                            className="w-full p-2 text-xs bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                        />
+                    </div>
+                </div>
+
+                <div className="space-y-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Parent Directory
+                    </label>
+                    <select
+                        value={parentId}
+                        onChange={(e) => setParentId(e.target.value)}
+                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-xl font-medium text-slate-800 focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    >
+                        <option value="">📁 Root Folder (Home)</option>
+                        {availableFolders.map(f => (
+                            <option key={f.id} value={f.id}>
+                                📂 {f.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                {/* Footer Actions */}
+                <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(true)}
+                        className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleConfirm}
+                        disabled={loading || !name.trim()}
+                        className="px-3.5 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-semibold text-[11px] rounded-xl shadow-xs hover:shadow transition flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderPlus className="w-3.5 h-3.5" />}
+                        Confirm & Create Folder
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 /* ═══════════════════════════════════════════════════════
    MAIN FLOATING CHATBOT COMPONENT
    ═══════════════════════════════════════════════════════ */
@@ -6546,6 +6914,8 @@ export default function FloatingChatbot() {
                                     {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
                                     {msg.shiftAction && <ShiftActionCard action={msg.shiftAction} />}
                                     {msg.documentShareAction && <DocumentShareActionCard action={msg.documentShareAction} />}
+                                    {msg.documentUnshareAction && <DocumentUnshareActionCard action={msg.documentUnshareAction} />}
+                                    {msg.folderAction && <FolderActionCard action={msg.folderAction} />}
                                     {msg.laptopIssueAction && <LaptopIssueActionCard action={msg.laptopIssueAction} />}
                                     {msg.laptopReturnAction && <LaptopReturnActionCard action={msg.laptopReturnAction} />}
                                     {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
