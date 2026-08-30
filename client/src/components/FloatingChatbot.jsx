@@ -6438,6 +6438,396 @@ function FolderActionCard({ action }) {
     );
 }
 
+/* ─── Group Action Card (Create, Auto-Generate, Assign PCs, Edit, Delete) ─── */
+function GroupActionCard({ action }) {
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [resultData, setResultData] = useState(null);
+
+    const actionType = action?.actionType || 'auto_generate'; // 'create' | 'auto_generate' | 'assign_pc' | 'auto_assign_pcs' | 'edit' | 'delete'
+    const classId = action?.classId;
+    const className = action?.className || 'Class';
+
+    // State for create
+    const [groupName, setGroupName] = useState(action?.groupName || 'Group 1');
+    const [description, setDescription] = useState(action?.description || 'Lab practical working group');
+    const [selectedStudentIds, setSelectedStudentIds] = useState(action?.selectedStudentIds || []);
+    const [leaderId, setLeaderId] = useState(null);
+
+    // State for assign_pc
+    const [groupId, setGroupId] = useState(action?.groupId || '');
+    const [pcId, setPcId] = useState(action?.pcId || '');
+
+    // State for edit
+    const [editName, setEditName] = useState(action?.newName || action?.groupName || '');
+    const [editDesc, setEditDesc] = useState(action?.description || '');
+
+    const availableStudents = action?.availableStudents || [];
+    const availableGroups = action?.availableGroups || [];
+    const availablePcs = action?.availablePcs || [];
+
+    const toggleStudent = (id) => {
+        setSelectedStudentIds(prev => {
+            const next = prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id];
+            if (!next.includes(leaderId)) {
+                setLeaderId(next[0] || null);
+            }
+            return next;
+        });
+    };
+
+    const handleConfirm = async () => {
+        setLoading(true);
+        try {
+            if (actionType === 'auto_generate') {
+                if (!classId) throw new Error('Class ID is required');
+                const res = await classesAPI.autoGenerateGroups(classId);
+                if (res.data?.success) {
+                    setIsConfirmed(true);
+                    setResultData(res.data?.data?.groups || []);
+                    toast.success(res.data?.message || 'Groups auto-generated successfully!');
+                } else {
+                    toast.error(res.data?.message || 'Failed to auto-generate groups');
+                }
+            } else if (actionType === 'create') {
+                if (!classId) throw new Error('Class ID is required');
+                if (!groupName.trim()) throw new Error('Group name is required');
+                const res = await classesAPI.createGroup(classId, {
+                    name: groupName.trim(),
+                    description: description.trim(),
+                    studentIds: selectedStudentIds,
+                    leaderId: leaderId || selectedStudentIds[0]
+                });
+                if (res.data?.success) {
+                    setIsConfirmed(true);
+                    setResultData(res.data?.data?.group);
+                    toast.success(`Group "${groupName.trim()}" created successfully!`);
+                } else {
+                    toast.error(res.data?.message || 'Failed to create group');
+                }
+            } else if (actionType === 'auto_assign_pcs') {
+                if (!classId) throw new Error('Class ID is required');
+                const res = await classesAPI.autoAssignPcs(classId);
+                if (res.data?.success) {
+                    setIsConfirmed(true);
+                    setResultData(res.data?.data?.assignments || []);
+                    toast.success(res.data?.message || 'PCs auto-assigned successfully!');
+                } else {
+                    toast.error(res.data?.message || 'Failed to assign PCs');
+                }
+            } else if (actionType === 'assign_pc') {
+                const targetGroupId = groupId || action?.groupId;
+                const targetPcId = pcId || action?.pcId;
+                if (!targetGroupId) throw new Error('Group is required');
+                const res = await classesAPI.assignPcToGroup(targetGroupId, targetPcId || null);
+                if (res.data?.success) {
+                    setIsConfirmed(true);
+                    toast.success(res.data?.message || 'PC assigned to group successfully!');
+                } else {
+                    toast.error(res.data?.message || 'Failed to assign PC');
+                }
+            } else if (actionType === 'edit') {
+                const targetGroupId = groupId || action?.groupId;
+                if (!targetGroupId || !classId) throw new Error('Group and Class are required');
+                const res = await classesAPI.updateGroup(classId, targetGroupId, {
+                    name: editName.trim(),
+                    description: editDesc.trim()
+                });
+                if (res.data?.success) {
+                    setIsConfirmed(true);
+                    setResultData(res.data?.data?.group);
+                    toast.success(`Group updated to "${editName.trim()}" successfully!`);
+                } else {
+                    toast.error(res.data?.message || 'Failed to update group');
+                }
+            } else if (actionType === 'delete') {
+                const targetGroupId = groupId || action?.groupId;
+                if (!targetGroupId || !classId) throw new Error('Group and Class are required');
+                const res = await classesAPI.deleteGroup(classId, targetGroupId);
+                if (res.data?.success) {
+                    setIsConfirmed(true);
+                    toast.success(res.data?.message || 'Group deleted successfully!');
+                } else {
+                    toast.error(res.data?.message || 'Failed to delete group');
+                }
+            }
+        } catch (err) {
+            console.error('Group action error:', err);
+            toast.error(err.response?.data?.message || err.message || 'Operation failed');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Group Proposal Discarded</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(false)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                    >
+                        <Undo2 className="w-3 h-3" /> Restore
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (isConfirmed) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 shadow-sm space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-emerald-800 font-bold text-[13px]">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <span>Group Operation Executed Successfully!</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-200/70 text-emerald-800 font-mono text-[10px] font-bold uppercase">
+                        {actionType}
+                    </span>
+                </div>
+                <p className="text-[11px] text-slate-600">
+                    Target Class: <strong>{className}</strong>
+                </p>
+                <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-emerald-700">Records updated in database</span>
+                    {classId && (
+                        <a
+                            href={`/classes/${classId}`}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+                        >
+                            View Groups in Class <ExternalLink className="w-3 h-3" />
+                        </a>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-2.5 rounded-2xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/50 shadow-sm overflow-hidden text-xs animate-in fade-in">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold tracking-wide">
+                    <UsersRound className="w-4 h-4 text-indigo-200 shrink-0" />
+                    <span>
+                        {actionType === 'auto_generate' && 'Auto-Generate Gender-Segregated Groups'}
+                        {actionType === 'create' && 'Create Student Group'}
+                        {actionType === 'auto_assign_pcs' && 'Auto-Assign Lab Workstations'}
+                        {actionType === 'assign_pc' && 'Assign PC to Group'}
+                        {actionType === 'edit' && 'Edit / Rename Group'}
+                        {actionType === 'delete' && 'Delete Student Group'}
+                    </span>
+                </div>
+                <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-medium">
+                    {className}
+                </span>
+            </div>
+
+            <div className="p-3.5 space-y-3">
+                {/* 1. AUTO GENERATE */}
+                {actionType === 'auto_generate' && (
+                    <div className="space-y-2.5">
+                        <div className="bg-white rounded-xl p-3 border border-indigo-100 space-y-1.5">
+                            <div className="flex justify-between items-center text-[11px]">
+                                <span className="text-slate-500 font-medium">Class:</span>
+                                <span className="font-bold text-slate-800">{className}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-[11px]">
+                                <span className="text-slate-500 font-medium">Total Enrolled Students:</span>
+                                <span className="font-bold text-indigo-600">{action?.totalStudents || 0} students</span>
+                            </div>
+                            <div className="flex justify-between items-center text-[11px] pt-1 border-t border-slate-100">
+                                <span className="text-slate-500 font-medium">Gender Breakdown:</span>
+                                <span className="font-semibold text-slate-700">
+                                    👧 {action?.girlsCount || 0} Girls | 👦 {action?.boysCount || 0} Boys
+                                </span>
+                            </div>
+                        </div>
+                        <div className="text-[11px] text-slate-600 bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100">
+                            💡 <strong>Algorithm Rule:</strong> Splits class into single-gender practical groups (2-3 students per group) with an automatically assigned group leader.
+                        </div>
+                    </div>
+                )}
+
+                {/* 2. CREATE SINGLE GROUP */}
+                {actionType === 'create' && (
+                    <div className="space-y-2.5">
+                        <div className="space-y-1">
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Group Name</label>
+                            <input
+                                type="text"
+                                value={groupName}
+                                onChange={(e) => setGroupName(e.target.value)}
+                                className="w-full p-2 text-xs bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                placeholder="Group Name"
+                            />
+                        </div>
+                        {availableStudents.length > 0 && (
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Select Enrolled Students ({selectedStudentIds.length})</label>
+                                <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
+                                    {availableStudents.map(s => {
+                                        const isSelected = selectedStudentIds.includes(s.id);
+                                        return (
+                                            <button
+                                                key={s.id}
+                                                type="button"
+                                                onClick={() => toggleStudent(s.id)}
+                                                className={`w-full flex items-center justify-between p-1.5 rounded-lg border text-left text-[11px] transition ${
+                                                    isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-900 font-semibold' : 'bg-white border-slate-200 text-slate-600'
+                                                }`}
+                                            >
+                                                <span>{s.gender === 'female' ? '👧' : '👦'} {s.name}</span>
+                                                <span className="text-[9px] text-slate-400 font-mono">{s.admissionNumber}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* 3. AUTO ASSIGN PCS */}
+                {actionType === 'auto_assign_pcs' && (
+                    <div className="space-y-2.5">
+                        <div className="bg-white rounded-xl p-3 border border-indigo-100 space-y-1.5 text-[11px]">
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-500 font-medium">Class:</span>
+                                <span className="font-bold text-slate-800">{className}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-500 font-medium">Groups to Assign:</span>
+                                <span className="font-bold text-indigo-600">{action?.groupsCount || 0} groups</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-500 font-medium">Available Active PCs:</span>
+                                <span className="font-bold text-emerald-600">{action?.availablePcsCount || 0} workstations</span>
+                            </div>
+                        </div>
+                        <div className="text-[11px] text-slate-600 bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100">
+                            ⚡ <strong>Contiguous Lab Layout:</strong> All Boy groups are assigned contiguous PCs in zone 1, followed contiguously by all Girl groups in zone 2.
+                        </div>
+                    </div>
+                )}
+
+                {/* 4. ASSIGN SINGLE PC */}
+                {actionType === 'assign_pc' && (
+                    <div className="space-y-2.5">
+                        <div className="space-y-1">
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Select Group</label>
+                            <select
+                                value={groupId || action?.groupId}
+                                onChange={(e) => setGroupId(e.target.value)}
+                                className="w-full p-2 text-xs bg-white border border-slate-200 rounded-xl font-semibold text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                            >
+                                {availableGroups.map(g => (
+                                    <option key={g.id} value={g.id}>
+                                        👥 {g.name} {g.assignedPc ? `(Current: ${g.assignedPc})` : '(No PC)'}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Select Lab Workstation (PC)</label>
+                            <select
+                                value={pcId || action?.pcId}
+                                onChange={(e) => setPcId(e.target.value)}
+                                className="w-full p-2 text-xs bg-white border border-slate-200 rounded-xl font-semibold text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                            >
+                                <option value="">❌ None / Unassign PC</option>
+                                {availablePcs.map(p => (
+                                    <option key={p.id} value={p.id}>
+                                        🖥️ {p.itemNumber} {p.labName ? `(${p.labName})` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                )}
+
+                {/* 5. EDIT GROUP */}
+                {actionType === 'edit' && (
+                    <div className="space-y-2.5">
+                        <div className="space-y-1">
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Target Group</label>
+                            <select
+                                value={groupId || action?.groupId}
+                                onChange={(e) => setGroupId(e.target.value)}
+                                className="w-full p-2 text-xs bg-white border border-slate-200 rounded-xl font-semibold text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                            >
+                                {availableGroups.map(g => (
+                                    <option key={g.id} value={g.id}>👥 {g.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">New Group Name</label>
+                            <input
+                                type="text"
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                                className="w-full p-2 text-xs bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                placeholder="New Group Name"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* 6. DELETE GROUP */}
+                {actionType === 'delete' && (
+                    <div className="space-y-2.5">
+                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-1 text-[11px] text-rose-900">
+                            <div className="font-bold flex items-center gap-1.5 text-rose-700">
+                                <ShieldAlert className="w-4 h-4" /> Warning: Deleting Student Group
+                            </div>
+                            <p>Are you sure you want to remove group <strong>"{action?.groupName}"</strong>? Group members will be returned to the unassigned student pool.</p>
+                        </div>
+                    </div>
+                )}
+
+                {/* Footer Actions */}
+                <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(true)}
+                        className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleConfirm}
+                        disabled={loading}
+                        className={`px-3.5 py-1.5 text-white font-semibold text-[11px] rounded-xl shadow-xs hover:shadow transition flex items-center gap-1.5 disabled:opacity-50 ${
+                            actionType === 'delete'
+                                ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700'
+                                : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700'
+                        }`}
+                    >
+                        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (
+                            actionType === 'delete' ? <Trash2 className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />
+                        )}
+                        {actionType === 'auto_generate' && 'Confirm & Auto-Generate Groups'}
+                        {actionType === 'create' && 'Confirm & Create Group'}
+                        {actionType === 'auto_assign_pcs' && 'Confirm & Auto-Assign PCs'}
+                        {actionType === 'assign_pc' && 'Confirm & Assign PC'}
+                        {actionType === 'edit' && 'Confirm & Update Group'}
+                        {actionType === 'delete' && 'Confirm & Delete Group'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 /* ═══════════════════════════════════════════════════════
    MAIN FLOATING CHATBOT COMPONENT
    ═══════════════════════════════════════════════════════ */
@@ -6523,12 +6913,38 @@ export default function FloatingChatbot() {
         return currentSessionId;
     };
 
+    // Global keyboard shortcut: Cmd+K / Ctrl+K or Cmd+/ / Ctrl+/
+    useEffect(() => {
+        const handleGlobalKeyDown = (e) => {
+            if ((e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === 'k' || e.key === '/')) {
+                e.preventDefault();
+                setIsOpen(prev => {
+                    const nextState = !prev;
+                    if (nextState) {
+                        setTimeout(() => {
+                            inputRef.current?.focus();
+                        }, 50);
+                    }
+                    return nextState;
+                });
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalKeyDown);
+        return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+    }, []);
+
     useEffect(() => {
         if (isOpen) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isOpen]);
 
     useEffect(() => {
-        if (isOpen) { setUnread(0); inputRef.current?.focus(); }
+        if (isOpen) {
+            setUnread(0);
+            setTimeout(() => {
+                inputRef.current?.focus();
+            }, 50);
+        }
     }, [isOpen]);
 
     const handleSend = async () => {
@@ -6576,6 +6992,11 @@ export default function FloatingChatbot() {
                         periodTimingAction: d.periodTimingAction,
                         shiftAction: d.shiftAction,
                         documentShareAction: d.documentShareAction,
+                        documentUnshareAction: d.documentUnshareAction,
+                        folderAction: d.folderAction,
+                        laptopIssueAction: d.laptopIssueAction,
+                        laptopReturnAction: d.laptopReturnAction,
+                        groupAction: d.groupAction,
                         model: d.model, 
                         provider: d.provider, 
                         timestamp: d.timestamp 
@@ -6706,7 +7127,7 @@ export default function FloatingChatbot() {
                 <button
                     onClick={() => setIsOpen(true)}
                     className="fixed bottom-6 right-6 z-[9999] w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 text-white shadow-2xl shadow-violet-500/40 flex items-center justify-center hover:scale-110 hover:shadow-violet-500/60 transition-all duration-300 group"
-                    title="LIA"
+                    title="LIA (⌘K / Ctrl+K)"
                 >
                     <Bot className="w-6 h-6 group-hover:scale-110 transition-transform" />
                     {/* Pulse ring */}
@@ -6735,6 +7156,9 @@ export default function FloatingChatbot() {
                                 <h3 className="font-bold text-xs sm:text-sm leading-none truncate">
                                     LIA
                                 </h3>
+                                <span className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-white/20 text-[9px] font-mono text-white/90" title="Keyboard Shortcut">
+                                    ⌘K
+                                </span>
                                 <select 
                                     value={preferredModel}
                                     onChange={(e) => setPreferredModel(e.target.value)}
@@ -6918,6 +7342,7 @@ export default function FloatingChatbot() {
                                     {msg.folderAction && <FolderActionCard action={msg.folderAction} />}
                                     {msg.laptopIssueAction && <LaptopIssueActionCard action={msg.laptopIssueAction} />}
                                     {msg.laptopReturnAction && <LaptopReturnActionCard action={msg.laptopReturnAction} />}
+                                    {msg.groupAction && <GroupActionCard action={msg.groupAction} />}
                                     {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
                                 </div>
                             </div>

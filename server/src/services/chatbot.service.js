@@ -418,6 +418,285 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
         const msgLower = (message || '').toLowerCase();
 
+        // Intent detection: Student Group Operations (Create, Auto-Generate, Assign PCs, Edit, Delete)
+        const isGroupIntent = (
+            (msgLower.includes('group') || msgLower.includes('groups') || msgLower.includes('ਗਰੁੱਪ') || msgLower.includes('ग्रुप')) &&
+            (msgLower.includes('create') || msgLower.includes('make') || msgLower.includes('add') || msgLower.includes('generate') ||
+             msgLower.includes('assign pc') || msgLower.includes('assign pcs') || msgLower.includes('allocate pc') || msgLower.includes('pc') ||
+             msgLower.includes('edit') || msgLower.includes('rename') || msgLower.includes('update') ||
+             msgLower.includes('delete') || msgLower.includes('remove') || msgLower.includes('auto')) &&
+            !msgLower.includes('whatsapp') && !msgLower.includes('target group') && !msgLower.includes('share with group')
+        );
+
+        if (isGroupIntent) {
+            try {
+                console.log('[ChatBot] Group management intent detected:', message);
+
+                // Fetch classes and active PCs
+                const [allClasses, allPcs] = await Promise.all([
+                    prisma.class.findMany({
+                        where: schoolId ? { schoolId } : {},
+                        include: {
+                            enrollments: {
+                                where: { status: 'active' },
+                                include: { student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true, gender: true } } }
+                            },
+                            groups: {
+                                include: {
+                                    members: { include: { student: { select: { id: true, firstName: true, lastName: true, gender: true } } } },
+                                    assignedPc: { include: { lab: { select: { id: true, name: true } } } }
+                                }
+                            }
+                        },
+                        orderBy: { name: 'asc' }
+                    }),
+                    prisma.labItem.findMany({
+                        where: {
+                            ...(schoolId ? { schoolId } : {}),
+                            itemType: 'pc',
+                            status: 'active'
+                        },
+                        include: { lab: { select: { id: true, name: true } } },
+                        orderBy: [{ lab: { name: 'asc' } }, { itemNumber: 'asc' }]
+                    })
+                ]);
+
+                // 1. Resolve target class
+                let matchedClass = null;
+                for (const c of allClasses) {
+                    if (msgLower.includes(c.name.toLowerCase())) {
+                        matchedClass = c;
+                        break;
+                    }
+                }
+                if (!matchedClass) {
+                    // Try partial match e.g. "12-a", "12a", "demo class"
+                    for (const c of allClasses) {
+                        const nameClean = c.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const msgClean = msgLower.replace(/[^a-z0-9]/g, '');
+                        if (msgClean.includes(nameClean) || (msgLower.includes('demo') && c.name.toLowerCase().includes('12-a'))) {
+                            matchedClass = c;
+                            break;
+                        }
+                    }
+                }
+                if (!matchedClass && allClasses.length > 0) {
+                    matchedClass = allClasses.find(c => c.name.toLowerCase().includes('12-a') || c.name.toLowerCase().includes('demo')) || allClasses[0];
+                }
+
+                // 2. Identify Sub-Action
+                const isAutoGenerate = msgLower.includes('auto') || msgLower.includes('generate') || (msgLower.includes('groups') && !msgLower.includes('delete') && !msgLower.includes('assign'));
+                const isDelete = msgLower.includes('delete') || msgLower.includes('remove');
+                const isEdit = msgLower.includes('edit') || msgLower.includes('rename') || msgLower.includes('update');
+                const isAssignPc = msgLower.includes('assign pc') || msgLower.includes('assign pcs') || msgLower.includes('allocate pc') || (msgLower.includes('assign') && msgLower.includes('pc'));
+
+                let groupAction = null;
+
+                if (isAssignPc) {
+                    // PC Assignment (auto or single)
+                    const isAutoAssign = msgLower.includes('auto') || msgLower.includes('all') || !msgLower.includes('to group');
+
+                    // Try matching specific group
+                    let matchedGroup = null;
+                    if (matchedClass?.groups) {
+                        for (const g of matchedClass.groups) {
+                            if (msgLower.includes(g.name.toLowerCase())) {
+                                matchedGroup = g;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Try matching specific PC
+                    let matchedPc = null;
+                    for (const p of allPcs) {
+                        if (msgLower.includes(p.itemNumber.toLowerCase())) {
+                            matchedPc = p;
+                            break;
+                        }
+                    }
+
+                    if (isAutoAssign && !matchedGroup) {
+                        groupAction = {
+                            actionType: 'auto_assign_pcs',
+                            classId: matchedClass?.id,
+                            className: matchedClass?.name || 'Class',
+                            groupsCount: matchedClass?.groups?.length || 0,
+                            availablePcsCount: allPcs.length,
+                            availableClasses: allClasses.map(c => ({ id: c.id, name: c.name, groupsCount: c.groups?.length || 0 })),
+                            isConfirmed: false
+                        };
+                        return {
+                            message: `🖥️ **Auto-Assign PCs Proposal Prepared!**\n\nI have prepared a proposal to automatically assign lab PCs contiguously to **${matchedClass?.groups?.length || 0} groups** in **${matchedClass?.name}** (Boys groups first, then Girls groups).\n\n- **Target Class:** ${matchedClass?.name}\n- **Total Groups:** ${matchedClass?.groups?.length || 0}\n- **Available Active PCs:** ${allPcs.length}\n\nClick **Confirm & Auto-Assign PCs** below:`,
+                            sql: null,
+                            queryResult: null,
+                            chartData: null,
+                            groupAction,
+                            provider: 'groq'
+                        };
+                    } else {
+                        groupAction = {
+                            actionType: 'assign_pc',
+                            classId: matchedClass?.id,
+                            className: matchedClass?.name || 'Class',
+                            groupId: matchedGroup ? matchedGroup.id : (matchedClass?.groups?.[0]?.id || null),
+                            groupName: matchedGroup ? matchedGroup.name : (matchedClass?.groups?.[0]?.name || 'Group 1'),
+                            pcId: matchedPc ? matchedPc.id : (allPcs[0]?.id || null),
+                            pcNumber: matchedPc ? matchedPc.itemNumber : (allPcs[0]?.itemNumber || 'PC-01'),
+                            availableGroups: (matchedClass?.groups || []).map(g => ({ id: g.id, name: g.name, assignedPc: g.assignedPc?.itemNumber })),
+                            availablePcs: allPcs.map(p => ({ id: p.id, itemNumber: p.itemNumber, labName: p.lab?.name })),
+                            isConfirmed: false
+                        };
+                        return {
+                            message: `🖥️ **Group PC Assignment Prepared!**\n\nI have prepared a proposal to assign **${groupAction.pcNumber}** to **"${groupAction.groupName}"** in **${groupAction.className}**.\n\nReview the selection below and click **Confirm & Assign PC**:`,
+                            sql: null,
+                            queryResult: null,
+                            chartData: null,
+                            groupAction,
+                            provider: 'groq'
+                        };
+                    }
+                } else if (isDelete) {
+                    // Group Deletion
+                    let matchedGroup = null;
+                    if (matchedClass?.groups) {
+                        for (const g of matchedClass.groups) {
+                            if (msgLower.includes(g.name.toLowerCase())) {
+                                matchedGroup = g;
+                                break;
+                            }
+                        }
+                        if (!matchedGroup && matchedClass.groups.length > 0) {
+                            matchedGroup = matchedClass.groups[0];
+                        }
+                    }
+
+                    groupAction = {
+                        actionType: 'delete',
+                        classId: matchedClass?.id,
+                        className: matchedClass?.name || 'Class',
+                        groupId: matchedGroup?.id,
+                        groupName: matchedGroup?.name || 'Group',
+                        membersCount: matchedGroup?.members?.length || 0,
+                        availableGroups: (matchedClass?.groups || []).map(g => ({ id: g.id, name: g.name, membersCount: g.members?.length || 0 })),
+                        isConfirmed: false
+                    };
+
+                    return {
+                        message: `🗑️ **Group Deletion Proposal Prepared!**\n\nAre you sure you want to delete **"${groupAction.groupName}"** from **${groupAction.className}**?\n\n- **Group Name:** ${groupAction.groupName}\n- **Enrolled Members:** ${groupAction.membersCount}\n- **Class:** ${groupAction.className}\n\nClick **Confirm & Delete Group** to proceed:`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        groupAction,
+                        provider: 'groq'
+                    };
+                } else if (isEdit) {
+                    // Group Edit / Rename
+                    let matchedGroup = null;
+                    if (matchedClass?.groups) {
+                        for (const g of matchedClass.groups) {
+                            if (msgLower.includes(g.name.toLowerCase())) {
+                                matchedGroup = g;
+                                break;
+                            }
+                        }
+                        if (!matchedGroup && matchedClass.groups.length > 0) {
+                            matchedGroup = matchedClass.groups[0];
+                        }
+                    }
+
+                    // Extract new name if given e.g. "rename group Alpha to Team Alpha"
+                    let newName = '';
+                    const renameMatch = message.match(/(?:to|as)\s+["']?([^"'\n]+?)["']?(?:\s+(?:in|for)|\s*$)/i);
+                    if (renameMatch && renameMatch[1]) {
+                        newName = renameMatch[1].trim();
+                    } else {
+                        newName = matchedGroup ? `${matchedGroup.name} (Updated)` : 'Updated Group';
+                    }
+
+                    groupAction = {
+                        actionType: 'edit',
+                        classId: matchedClass?.id,
+                        className: matchedClass?.name || 'Class',
+                        groupId: matchedGroup?.id,
+                        groupName: matchedGroup?.name || 'Group',
+                        newName,
+                        description: matchedGroup?.description || 'Lab practical group',
+                        availableGroups: (matchedClass?.groups || []).map(g => ({ id: g.id, name: g.name })),
+                        isConfirmed: false
+                    };
+
+                    return {
+                        message: `✏️ **Group Edit Proposal Prepared!**\n\nI have prepared a proposal to update **"${groupAction.groupName}"** in **${groupAction.className}**.\n\n- **Target Group:** ${groupAction.groupName}\n- **New Name:** ${groupAction.newName}\n\nReview the details below and click **Confirm & Update Group**:`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        groupAction,
+                        provider: 'groq'
+                    };
+                } else if (isAutoGenerate) {
+                    // Auto-Generate Groups
+                    const students = (matchedClass?.enrollments || []).map(e => e.student).filter(Boolean);
+                    const boysCount = students.filter(s => s.gender === 'male').length;
+                    const girlsCount = students.filter(s => s.gender === 'female').length;
+
+                    groupAction = {
+                        actionType: 'auto_generate',
+                        classId: matchedClass?.id,
+                        className: matchedClass?.name || 'Class',
+                        totalStudents: students.length,
+                        boysCount,
+                        girlsCount,
+                        availableClasses: allClasses.map(c => ({ id: c.id, name: c.name, studentCount: c.enrollments?.length || 0 })),
+                        isConfirmed: false
+                    };
+
+                    return {
+                        message: `👥 **Auto-Generate Groups Proposal Prepared!**\n\nI can automatically generate gender-segregated student groups (2-3 students per group) for **${matchedClass?.name}**.\n\n- **Target Class:** ${matchedClass?.name}\n- **Total Students Enrolled:** ${students.length}\n- **Student Breakdown:** 👧 ${girlsCount} Girls (${((girlsCount / (students.length || 1)) * 100).toFixed(0)}%) | 👦 ${boysCount} Boys (${((boysCount / (students.length || 1)) * 100).toFixed(0)}%)\n- **Estimated Groups:** ~${Math.ceil(girlsCount / 3) + Math.ceil(boysCount / 3)} groups\n\nClick **Confirm & Auto-Generate Groups** below:`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        groupAction,
+                        provider: 'groq'
+                    };
+                } else {
+                    // Single Group Creation
+                    let groupName = '';
+                    const nameMatch = message.match(/(?:group|named|name)\s+["']?([^"'\n]+?)["']?(?:\s+(?:in|for|with)|\s*$)/i);
+                    if (nameMatch && nameMatch[1] && !['in', 'for', 'with', 'a', 'new'].includes(nameMatch[1].toLowerCase())) {
+                        groupName = nameMatch[1].trim();
+                    } else {
+                        groupName = `Group ${(matchedClass?.groups?.length || 0) + 1}`;
+                    }
+
+                    const students = (matchedClass?.enrollments || []).map(e => e.student).filter(Boolean);
+
+                    groupAction = {
+                        actionType: 'create',
+                        classId: matchedClass?.id,
+                        className: matchedClass?.name || 'Class',
+                        groupName,
+                        description: 'Lab practical working group',
+                        availableClasses: allClasses.map(c => ({ id: c.id, name: c.name })),
+                        availableStudents: students.map(s => ({ id: s.id, name: `${s.firstName} ${s.lastName}`, admissionNumber: s.admissionNumber, gender: s.gender })),
+                        selectedStudentIds: [],
+                        isConfirmed: false
+                    };
+
+                    return {
+                        message: `👥 **Group Creation Proposal Prepared!**\n\nI have prepared a proposal to create group **"${groupAction.groupName}"** in **${groupAction.className}**.\n\n- **Group Name:** ${groupAction.groupName}\n- **Class:** ${groupAction.className}\n\nSelect students below and click **Confirm & Create Group**:`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        groupAction,
+                        provider: 'groq'
+                    };
+                }
+            } catch (err) {
+                console.error('[ChatBot] Group intent error:', err);
+            }
+        }
+
         // Intent detection: Document Unsharing / Revoking Shares (e.g. "Unshare document Agreement - Systems 2015", "Revoke share for document XYZ")
         const isDocumentUnshareIntent = (
             (/\b(unshare|un-share|revoke\s*share|remove\s*share|stop\s*sharing|delete\s*share)\b/i.test(msgLower) ||

@@ -688,6 +688,51 @@ router.post('/:id/groups/auto-assign-pcs', authenticate, authorize('admin', 'pri
 }));
 
 /**
+ * @route   PUT /api/classes/:classId/groups/:groupId
+ * @desc    Update group name, description, or assigned PC
+ * @access  Private (Admin, Instructor)
+ */
+router.put('/:classId/groups/:groupId', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), [
+    body('name').optional().isString().trim(),
+    body('description').optional().isString().trim(),
+    body('assignedPcId').optional().isUUID()
+], asyncHandler(async (req, res) => {
+    const { classId, groupId } = req.params;
+    const { name, description, assignedPcId } = req.body;
+
+    const group = await prisma.studentGroup.findFirst({
+        where: { id: groupId, classId }
+    });
+
+    if (!group) {
+        return res.status(404).json({ success: false, message: 'Group not found' });
+    }
+
+    const updated = await prisma.studentGroup.update({
+        where: { id: groupId },
+        data: {
+            name: name !== undefined ? name.trim() : group.name,
+            description: description !== undefined ? description.trim() : group.description,
+            assignedPcId: assignedPcId !== undefined ? assignedPcId : group.assignedPcId
+        },
+        include: {
+            members: {
+                include: { student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true, gender: true } } }
+            },
+            assignedPc: {
+                include: { lab: { select: { id: true, name: true } } }
+            }
+        }
+    });
+
+    res.json({
+        success: true,
+        message: `Group "${updated.name}" updated successfully`,
+        data: { group: updated }
+    });
+}));
+
+/**
  * @route   DELETE /api/classes/:classId/groups/:groupId
  * @desc    Delete a group
  * @access  Private (Admin, Instructor)
