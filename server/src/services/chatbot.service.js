@@ -240,6 +240,8 @@ SQL BEST PRACTICES:
 ⚠️ CRITICAL — SYNONYM DICTIONARY (ALWAYS APPLY BEFORE GENERATING SQL):
 The database uses specific short values in item_type and other columns. Users will use everyday language. You MUST translate:
   "computer", "computers", "desktop", "desktops", "system", "systems", "CPU", "CPUs" → item_type ILIKE '%pc%'
+  "laptop", "laptops", "notebook", "thinkpad", "macbook", "latitude", "travelmate" → item_type ILIKE '%laptop%'
+  "webcam", "webcams", "camera", "cameras", "cam", "brio", "c920", "kiyo" → (item_type ILIKE '%webcam%' OR item_type ILIKE '%camera%')
   "printer", "printers" → item_type ILIKE '%printer%'
   "projector", "projectors", "LCD projector" → item_type ILIKE '%projector%'
   "monitor", "monitors", "screen", "screens", "display" → item_type ILIKE '%monitor%'
@@ -300,7 +302,13 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
   * \`name\`, \`file_type\`, \`file_size\` (size in bytes), \`uploaded_by_id\`, \`deleted_at\` (filter \`deleted_at IS NULL\` for active files).
 - Breakdown by file format: \`SELECT UPPER(COALESCE(file_type, 'OTHER')) AS file_type, COUNT(*) AS doc_count, ROUND(SUM(file_size) / (1024.0 * 1024.0), 2) AS total_mb FROM documents WHERE deleted_at IS NULL GROUP BY file_type ORDER BY total_mb DESC;\`
 - Top storage consumers: \`SELECT first_name || ' ' || last_name AS full_name, email, role::text AS role, storage_quota_mb AS quota_mb, ROUND(COALESCE(storage_used_bytes, 0) / (1024.0 * 1024.0), 2) AS used_mb FROM users WHERE COALESCE(storage_used_bytes, 0) > 0 ORDER BY storage_used_bytes DESC LIMIT 10;\`
-11. Be extremely concise. No unnecessary explanations. Results speak for themselves.
+11. **LAPTOP ISSUANCE & INVENTORY QUERIES**:
+- Laptops and webcams are tracked in the \`lab_items\` table (\`item_type\` = 'laptop', 'webcam', 'pc', 'printer', 'projector'):
+  * Available laptops (not currently issued): \`SELECT li.item_number, li.brand, li.model_no, li.serial_no, l.name AS lab_name FROM lab_items li LEFT JOIN labs l ON li.lab_id = l.id WHERE li.item_type = 'laptop' AND li.status = 'active' AND li.id NOT IN (SELECT laptop_id FROM laptop_issuances WHERE status = 'issued');\`
+  * Active issuances: \`SELECT li.item_number, li.brand, li.model_no, u.first_name || ' ' || u.last_name AS issued_to, u.role::text, liss.voucher_number, liss.issued_at, liss.expected_return_date, liss.status::text FROM laptop_issuances liss JOIN lab_items li ON liss.laptop_id = li.id JOIN users u ON liss.issued_to_id = u.id WHERE liss.status = 'issued' ORDER BY liss.issued_at DESC;\`
+  * Webcams: \`SELECT li.item_number, li.brand, li.model_no, li.serial_no, l.name AS lab_name, li.status FROM lab_items li LEFT JOIN labs l ON li.lab_id = l.id WHERE (li.item_type ILIKE '%webcam%' OR li.item_type ILIKE '%camera%');\`
+  * Strict policy: Laptops may ONLY be issued to staff/instructors/lab_assistants/admins/principals, NEVER to students.
+12. Be extremely concise. No unnecessary explanations. Results speak for themselves.
 ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     }
 
@@ -529,6 +537,271 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 }
             } catch (err) {
                 console.error('[ChatBot] Document share intent error:', err);
+            }
+        }
+
+        // Intent detection: Laptop Issuance (e.g. "Issue laptop LAP-001 to Rajesh Kumar", "Issue ThinkPad to Charanpreet", "Issue laptop to student Ajay")
+        const isLaptopIssueIntent = (
+            (/\b(issue|give|assign|handover|allocate|checkout)\s+(a\s+)?(laptop|notebook|thinkpad|macbook|elitebook)\b/i.test(msgLower) ||
+             /\b(laptop\s+issuance|issue\s+a\s+laptop|issue\s+laptop)\b/i.test(msgLower) ||
+             msgLower.includes('ਲੈਪਟਾਪ ਜਾਰੀ') || msgLower.includes('ਲੈਪਟਾਪ ਇਸ਼ੂ') || msgLower.includes('लैपटॉप जारी') || msgLower.includes('लैपटॉप इशू')) &&
+            !msgLower.includes('return') && !msgLower.includes('receive') && !msgLower.includes('list') && !msgLower.includes('show')
+        );
+
+        if (isLaptopIssueIntent) {
+            try {
+                console.log('[ChatBot] Laptop issue intent detected:', message);
+
+                // 1. Fetch all users and laptops to match target recipient and laptop
+                const [allUsers, allLaptops, issuedLaptops] = await Promise.all([
+                    prisma.user.findMany({
+                        where: schoolId ? { schoolId, isActive: true } : { isActive: true },
+                        select: { id: true, firstName: true, lastName: true, email: true, role: true }
+                    }),
+                    prisma.labItem.findMany({
+                        where: {
+                            ...(schoolId ? { schoolId } : {}),
+                            itemType: 'laptop',
+                            status: 'active'
+                        },
+                        include: {
+                            lab: { select: { id: true, name: true, roomNumber: true } }
+                        }
+                    }),
+                    prisma.laptopIssuance.findMany({
+                        where: {
+                            ...(schoolId ? { schoolId } : {}),
+                            status: 'issued'
+                        },
+                        select: { laptopId: true }
+                    })
+                ]);
+
+                const issuedLaptopIds = new Set(issuedLaptops.map(i => i.laptopId));
+                const availableLaptops = allLaptops.filter(l => !issuedLaptopIds.has(l.id));
+
+                // 2. Identify target recipient mentioned in prompt
+                let matchedUser = null;
+                for (const u of allUsers) {
+                    const fullName = `${u.firstName} ${u.lastName}`.toLowerCase().trim();
+                    const firstName = u.firstName.toLowerCase().trim();
+                    const lastName = u.lastName ? u.lastName.toLowerCase().trim() : '';
+                    if (msgLower.includes(fullName) || (firstName.length > 2 && msgLower.includes(firstName)) || (lastName.length > 2 && msgLower.includes(lastName))) {
+                        matchedUser = u;
+                        break;
+                    }
+                }
+
+                // 3. STUDENT RESTRICTION: Check if target recipient is a student
+                if (matchedUser && matchedUser.role === 'student') {
+                    return {
+                        message: `❌ **Laptop Issuance Denied: Students Not Permitted**\n\nAccording to school laboratory policy, laptops **cannot be issued to students** (${matchedUser.firstName} ${matchedUser.lastName} is registered as a \`student\`).\n\nLaptops may only be issued to **Instructors**, **Lab Assistants**, **Principals**, or **Administrative Staff** for academic and official use.`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        laptopIssueAction: null,
+                        provider: 'groq'
+                    };
+                }
+
+                if (msgLower.includes('student') || msgLower.includes('ਵਿਦਿਆਰਥੀ') || msgLower.includes('छात्र')) {
+                    // Check if prompt specifically asked to issue to a student
+                    return {
+                        message: `❌ **Laptop Issuance Denied: Students Not Permitted**\n\nSchool laboratory policy strictly prohibits issuing laptops to students.\n\nLaptops can only be issued to authorized **Instructors**, **Lab Assistants**, and **Staff members**. Please select an eligible staff member to proceed.`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        laptopIssueAction: null,
+                        provider: 'groq'
+                    };
+                }
+
+                // 4. Identify target laptop
+                let matchedLaptop = null;
+                for (const l of availableLaptops) {
+                    const itemNum = l.itemNumber.toLowerCase();
+                    const brand = (l.brand || '').toLowerCase();
+                    const model = (l.modelNo || '').toLowerCase();
+                    const serial = (l.serialNo || '').toLowerCase();
+                    if (msgLower.includes(itemNum) || (model && msgLower.includes(model)) || (serial && msgLower.includes(serial)) || (brand && msgLower.includes(brand))) {
+                        matchedLaptop = l;
+                        break;
+                    }
+                }
+                if (!matchedLaptop && availableLaptops.length > 0) {
+                    matchedLaptop = availableLaptops[0];
+                }
+
+                // Eligible staff list (Instructors, Admins, Principals, Lab Assistants)
+                const eligibleStaff = allUsers.filter(u => ['instructor', 'admin', 'principal', 'lab_assistant'].includes(u.role));
+                if (!matchedUser && eligibleStaff.length > 0) {
+                    matchedUser = eligibleStaff[0];
+                }
+
+                if (availableLaptops.length === 0) {
+                    return {
+                        message: `⚠️ **No Available Laptops Found**\n\nAll registered laptops are currently issued or undergoing maintenance. Please check [Laptop Issuance Management](/admin/laptop-issuances) to return an existing unit before issuing a new one.`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        laptopIssueAction: null,
+                        provider: 'groq'
+                    };
+                }
+
+                // Calculate default return date (+14 days)
+                const now = new Date();
+                const returnDate = new Date(now);
+                returnDate.setDate(returnDate.getDate() + 14);
+                const defaultReturnIsoDate = returnDate.toISOString().split('T')[0];
+
+                const currentIsoDateTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+                const laptopIssueAction = {
+                    laptopId: matchedLaptop.id,
+                    laptopItemNumber: matchedLaptop.itemNumber,
+                    laptopBrand: matchedLaptop.brand || 'Laptop',
+                    laptopModel: matchedLaptop.modelNo || '',
+                    laptopSerial: matchedLaptop.serialNo || '',
+                    laptopSpecs: matchedLaptop.specs || {},
+                    laptopLab: matchedLaptop.lab?.name || 'Lab',
+                    issuedToId: matchedUser ? matchedUser.id : '',
+                    issuedToName: matchedUser ? `${matchedUser.firstName} ${matchedUser.lastName}`.trim() : '',
+                    issuedToEmail: matchedUser ? matchedUser.email : '',
+                    issuedToRole: matchedUser ? matchedUser.role : 'instructor',
+                    issuedAt: currentIsoDateTime,
+                    expectedReturnDate: defaultReturnIsoDate,
+                    purpose: 'Academic instruction & laboratory coursework',
+                    conditionOnIssue: 'good',
+                    remarks: 'Issued via AI Assistant',
+                    availableLaptops: availableLaptops.map(l => ({
+                        id: l.id,
+                        itemNumber: l.itemNumber,
+                        brand: l.brand,
+                        modelNo: l.modelNo,
+                        serialNo: l.serialNo,
+                        specs: l.specs,
+                        labName: l.lab?.name
+                    })),
+                    eligibleStaff: eligibleStaff.map(s => ({
+                        id: s.id,
+                        name: `${s.firstName} ${s.lastName}`.trim(),
+                        email: s.email,
+                        role: s.role
+                    })),
+                    isConfirmed: false
+                };
+
+                return {
+                    message: `💻 **Laptop Issuance Proposal Prepared!**\n\nI have prepared the issuance card for laptop **${matchedLaptop.itemNumber} (${matchedLaptop.brand} ${matchedLaptop.modelNo})** to **${matchedUser ? `${matchedUser.firstName} ${matchedUser.lastName} (${matchedUser.role.toUpperCase()})` : 'Staff Member'}**.\n\n- **Laptop:** ${matchedLaptop.itemNumber} — ${matchedLaptop.brand} ${matchedLaptop.modelNo} (S/N: \`${matchedLaptop.serialNo}\`)\n- **Issued To:** ${matchedUser ? `${matchedUser.firstName} ${matchedUser.lastName} (${matchedUser.role})` : 'Select Staff'}\n- **Date & Time of Issue:** ${currentIsoDateTime.replace('T', ' ')}\n- **Expected Return Date:** ${defaultReturnIsoDate}\n\nReview the date, time, component status, and click **Confirm & Issue Laptop** below:`,
+                    sql: null,
+                    queryResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    laptopIssueAction,
+                    provider: 'groq'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Laptop issue intent error:', err);
+            }
+        }
+
+        // Intent detection: Laptop Return / Receive (e.g. "Return laptop LAP-001", "Receive laptop from Rajesh Kumar", "Return ThinkPad")
+        const isLaptopReturnIntent = (
+            (/\b(return|receive|checkin|handback|surrender)\s+(a\s+)?(laptop|notebook|thinkpad|macbook|elitebook)\b/i.test(msgLower) ||
+             /\b(receive\s+laptop\s+back|return\s+issued\s+laptop|receive\s+laptop)\b/i.test(msgLower) ||
+             msgLower.includes('ਲੈਪਟਾਪ ਵਾਪਸ') || msgLower.includes('ਲੈਪਟਾਪ ਰਿਸੀਵ') || msgLower.includes('लैपटॉप वापस') || msgLower.includes('लैपटॉप रिसीव')) &&
+            !msgLower.includes('list') && !msgLower.includes('show')
+        );
+
+        if (isLaptopReturnIntent) {
+            try {
+                console.log('[ChatBot] Laptop return intent detected:', message);
+
+                const activeIssuances = await prisma.laptopIssuance.findMany({
+                    where: {
+                        ...(schoolId ? { schoolId } : {}),
+                        status: 'issued'
+                    },
+                    include: {
+                        laptop: { select: { id: true, itemNumber: true, brand: true, modelNo: true, serialNo: true } },
+                        issuedTo: { select: { id: true, firstName: true, lastName: true, email: true, role: true } }
+                    },
+                    orderBy: { issuedAt: 'desc' }
+                });
+
+                if (activeIssuances.length === 0) {
+                    return {
+                        message: `ℹ️ **No Laptops Currently Issued**\n\nThere are currently no active laptop issuances to return in the system.`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        laptopReturnAction: null,
+                        provider: 'groq'
+                    };
+                }
+
+                // Match specific issuance
+                let matchedIssuance = null;
+                for (const iss of activeIssuances) {
+                    const itemNum = iss.laptop.itemNumber.toLowerCase();
+                    const brand = (iss.laptop.brand || '').toLowerCase();
+                    const model = (iss.laptop.modelNo || '').toLowerCase();
+                    const userName = `${iss.issuedTo.firstName} ${iss.issuedTo.lastName}`.toLowerCase();
+                    const voucher = (iss.voucherNumber || '').toLowerCase();
+                    if (msgLower.includes(itemNum) || (brand && msgLower.includes(brand)) || (model && msgLower.includes(model)) || msgLower.includes(userName) || (voucher && msgLower.includes(voucher))) {
+                        matchedIssuance = iss;
+                        break;
+                    }
+                }
+                if (!matchedIssuance) {
+                    matchedIssuance = activeIssuances[0];
+                }
+
+                const now = new Date();
+                const currentIsoDateTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+                const laptopReturnAction = {
+                    issuanceId: matchedIssuance.id,
+                    laptopId: matchedIssuance.laptop.id,
+                    laptopItemNumber: matchedIssuance.laptop.itemNumber,
+                    laptopBrand: matchedIssuance.laptop.brand,
+                    laptopModel: matchedIssuance.laptop.modelNo,
+                    laptopSerial: matchedIssuance.laptop.serialNo,
+                    issuedToName: `${matchedIssuance.issuedTo.firstName} ${matchedIssuance.issuedTo.lastName}`.trim(),
+                    issuedToRole: matchedIssuance.issuedTo.role,
+                    voucherNumber: matchedIssuance.voucherNumber,
+                    issuedAt: matchedIssuance.issuedAt,
+                    returnedAt: currentIsoDateTime,
+                    conditionOnReturn: 'good',
+                    returnRemarks: 'Returned via AI Assistant',
+                    activeIssuances: activeIssuances.map(i => ({
+                        id: i.id,
+                        voucherNumber: i.voucherNumber,
+                        itemNumber: i.laptop.itemNumber,
+                        brand: i.laptop.brand,
+                        modelNo: i.laptop.modelNo,
+                        userName: `${i.issuedTo.firstName} ${i.issuedTo.lastName}`.trim(),
+                        issuedAt: i.issuedAt
+                    })),
+                    isConfirmed: false
+                };
+
+                return {
+                    message: `🔄 **Laptop Return / Receive Proposal Prepared!**\n\nI have prepared the return card for laptop **${matchedIssuance.laptop.itemNumber} (${matchedIssuance.laptop.brand} ${matchedIssuance.laptop.modelNo})** issued to **${matchedIssuance.issuedTo.firstName} ${matchedIssuance.issuedTo.lastName}**.\n\n- **Voucher #:** \`${matchedIssuance.voucherNumber}\`\n- **Issued On:** ${new Date(matchedIssuance.issuedAt).toLocaleDateString()}\n- **Return Date & Time:** ${currentIsoDateTime.replace('T', ' ')}\n\nReview the return conditions below and click **Confirm & Mark Returned**:`,
+                    sql: null,
+                    queryResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    laptopReturnAction,
+                    provider: 'groq'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Laptop return intent error:', err);
             }
         }
 

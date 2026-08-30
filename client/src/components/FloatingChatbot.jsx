@@ -11,7 +11,7 @@ import {
     LayoutGrid, Table as TableIcon, Inbox, Layers, Laptop, Server, HardDrive,
     Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket,
     ShoppingBag, Code, Terminal, Award, Package, Zap, Wifi, Network, Headphones, ScanLine, Cable, Camera,
-    Share2, Folder, Truck, ArrowRight, UsersRound, Search
+    Share2, Folder, Truck, ArrowRight, UsersRound, Search, RotateCcw, UserCheck, ShieldAlert
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
@@ -5557,6 +5557,519 @@ function PeriodTimingActionCard({ action }) {
     );
 }
 
+/* ─── Laptop Issue Action Card ─── */
+function LaptopIssueActionCard({ action }) {
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [voucherInfo, setVoucherInfo] = useState(null);
+
+    // Form fields
+    const [laptopId, setLaptopId] = useState(action?.laptopId || '');
+    const [issuedToId, setIssuedToId] = useState(action?.issuedToId || '');
+    const [issuedAt, setIssuedAt] = useState(action?.issuedAt || '');
+    const [expectedReturnDate, setExpectedReturnDate] = useState(action?.expectedReturnDate || '');
+    const [purpose, setPurpose] = useState(action?.purpose || 'Academic instruction & lab coursework');
+    const [conditionOnIssue, setConditionOnIssue] = useState(action?.conditionOnIssue || 'good');
+    const [remarks, setRemarks] = useState(action?.remarks || 'Issued via AI Assistant');
+
+    // Component Checklist
+    const [components, setComponents] = useState({
+        screen: 'working',
+        keyboard: 'working',
+        touchpad: 'working',
+        battery: 'working',
+        charger: 'working',
+        ports: 'working'
+    });
+
+    const [isEditing, setIsEditing] = useState(false);
+
+    // Lookups
+    const availableLaptops = action?.availableLaptops || [];
+    const eligibleStaff = action?.eligibleStaff || [];
+
+    const selectedLaptop = availableLaptops.find(l => l.id === laptopId) || {
+        itemNumber: action?.laptopItemNumber || 'LAP-001',
+        brand: action?.laptopBrand || 'Dell',
+        modelNo: action?.laptopModel || 'Latitude 5420',
+        serialNo: action?.laptopSerial || '',
+        specs: action?.laptopSpecs || {}
+    };
+
+    const selectedStaff = eligibleStaff.find(s => s.id === issuedToId) || {
+        name: action?.issuedToName || 'Selected Staff',
+        email: action?.issuedToEmail || '',
+        role: action?.issuedToRole || 'instructor'
+    };
+
+    const toggleComponent = (compKey) => {
+        setComponents(prev => ({
+            ...prev,
+            [compKey]: prev[compKey] === 'working' ? 'issue' : 'working'
+        }));
+    };
+
+    const handleConfirm = async () => {
+        if (!laptopId) {
+            toast.error('Please select an available laptop');
+            return;
+        }
+        if (!issuedToId) {
+            toast.error('Please select an eligible staff member');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const payload = {
+                laptopId,
+                issuedToId,
+                purpose: purpose.trim(),
+                issuedAt: issuedAt || new Date().toISOString(),
+                expectedReturnDate: expectedReturnDate || undefined,
+                conditionOnIssue,
+                remarks: remarks.trim(),
+                screenStatus: components.screen,
+                keyboardStatus: components.keyboard,
+                touchpadStatus: components.touchpad,
+                batteryStatus: components.battery,
+                chargerStatus: components.charger,
+                portsStatus: components.ports
+            };
+
+            const res = await labsAPI.issueLaptop(payload);
+            if (res.data?.success) {
+                setIsConfirmed(true);
+                setVoucherInfo(res.data.data?.issuance);
+                toast.success(`Laptop issued! Voucher: ${res.data.data?.issuance?.voucherNumber || 'Created'}`);
+            } else {
+                toast.error(res.data?.message || 'Failed to issue laptop');
+            }
+        } catch (err) {
+            console.error('Error issuing laptop:', err);
+            toast.error(err.response?.data?.message || err.message || 'Error issuing laptop');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Laptop Issuance Proposal Discarded</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(false)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                    >
+                        <Undo2 className="w-3 h-3" /> Restore Proposal
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (isConfirmed) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 shadow-sm space-y-3 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-emerald-800 font-bold text-[13px]">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <span>Laptop Successfully Issued!</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-200/70 text-emerald-800 font-mono text-[10px] font-bold">
+                        {voucherInfo?.voucherNumber || 'ISSUED'}
+                    </span>
+                </div>
+                <div className="bg-white/90 rounded-xl p-3 border border-emerald-100 space-y-1.5 text-slate-700">
+                    <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">Laptop:</span>
+                        <span className="font-semibold">{selectedLaptop.itemNumber} ({selectedLaptop.brand} {selectedLaptop.modelNo})</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">Issued To:</span>
+                        <span className="font-semibold text-indigo-600">{selectedStaff.name} ({selectedStaff.role?.toUpperCase()})</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-slate-500 font-medium">Issued Date & Time:</span>
+                        <span className="font-medium">{issuedAt ? issuedAt.replace('T', ' ') : new Date().toLocaleString()}</span>
+                    </div>
+                    {expectedReturnDate && (
+                        <div className="flex justify-between">
+                            <span className="text-slate-500 font-medium">Expected Return:</span>
+                            <span className="font-medium text-amber-700">{expectedReturnDate}</span>
+                        </div>
+                    )}
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                    <span className="text-[11px] text-emerald-700">Recorded in Laptop Issuance Register</span>
+                    <a
+                        href="/admin/laptop-issuances"
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+                    >
+                        View in Register <ExternalLink className="w-3 h-3" />
+                    </a>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-2.5 rounded-2xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/70 via-white to-blue-50/50 shadow-sm overflow-hidden text-xs animate-in fade-in">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold tracking-wide">
+                    <Laptop className="w-4 h-4 text-indigo-200 shrink-0" />
+                    <span>Laptop Issuance Card</span>
+                </div>
+                <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-medium tracking-wide">
+                    Staff Only
+                </span>
+            </div>
+
+            <div className="p-3.5 space-y-3">
+                {/* Equipment & Recipient Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* Laptop Card */}
+                    <div className="bg-white rounded-xl p-2.5 border border-indigo-100 shadow-xs space-y-1">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-indigo-900">
+                            <span className="flex items-center gap-1.5">
+                                <Laptop className="w-3.5 h-3.5 text-indigo-600" /> Laptop Unit
+                            </span>
+                            <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-mono font-bold">
+                                {selectedLaptop.itemNumber}
+                            </span>
+                        </div>
+                        {isEditing && availableLaptops.length > 1 ? (
+                            <select
+                                value={laptopId}
+                                onChange={(e) => setLaptopId(e.target.value)}
+                                className="w-full mt-1 p-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                            >
+                                {availableLaptops.map(l => (
+                                    <option key={l.id} value={l.id}>
+                                        {l.itemNumber} — {l.brand} {l.modelNo} ({l.serialNo})
+                                    </option>
+                                ))}
+                            </select>
+                        ) : (
+                            <div>
+                                <div className="font-bold text-slate-800 text-[12px]">{selectedLaptop.brand} {selectedLaptop.modelNo}</div>
+                                {selectedLaptop.serialNo && (
+                                    <div className="text-[10px] text-slate-500 font-mono">S/N: {selectedLaptop.serialNo}</div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Recipient Card */}
+                    <div className="bg-white rounded-xl p-2.5 border border-indigo-100 shadow-xs space-y-1">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-indigo-900">
+                            <span className="flex items-center gap-1.5">
+                                <User className="w-3.5 h-3.5 text-indigo-600" /> Issued To (Staff)
+                            </span>
+                            <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded text-[10px] font-semibold uppercase">
+                                {selectedStaff.role}
+                            </span>
+                        </div>
+                        {isEditing && eligibleStaff.length > 1 ? (
+                            <select
+                                value={issuedToId}
+                                onChange={(e) => setIssuedToId(e.target.value)}
+                                className="w-full mt-1 p-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                            >
+                                {eligibleStaff.map(s => (
+                                    <option key={s.id} value={s.id}>
+                                        {s.name} ({s.role?.toUpperCase()}) — {s.email}
+                                    </option>
+                                ))}
+                            </select>
+                        ) : (
+                            <div>
+                                <div className="font-bold text-slate-800 text-[12px]">{selectedStaff.name}</div>
+                                <div className="text-[10px] text-slate-500 truncate">{selectedStaff.email}</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Date & Time of Issue & Expected Return */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/80">
+                    <div className="space-y-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-indigo-500" /> Date & Time of Issue
+                        </label>
+                        <input
+                            type="datetime-local"
+                            value={issuedAt}
+                            onChange={(e) => setIssuedAt(e.target.value)}
+                            className="w-full p-1.5 text-xs bg-white border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        />
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-amber-500" /> Expected Return Date
+                        </label>
+                        <input
+                            type="date"
+                            value={expectedReturnDate}
+                            onChange={(e) => setExpectedReturnDate(e.target.value)}
+                            className="w-full p-1.5 text-xs bg-white border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        />
+                    </div>
+                </div>
+
+                {/* Component Status Checklist */}
+                <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
+                        <span>Component Status on Issue:</span>
+                        <span className="text-[10px] text-slate-400">Click to toggle issue</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                        {Object.entries(components).map(([compKey, status]) => (
+                            <button
+                                key={compKey}
+                                type="button"
+                                onClick={() => toggleComponent(compKey)}
+                                className={`flex items-center justify-between px-2 py-1 rounded-lg border text-[10px] font-medium transition ${
+                                    status === 'working'
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100/70'
+                                        : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100/70'
+                                }`}
+                            >
+                                <span className="capitalize">{compKey}</span>
+                                {status === 'working' ? (
+                                    <Check className="w-3 h-3 text-emerald-600" />
+                                ) : (
+                                    <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Purpose & Remarks */}
+                <div className="space-y-2">
+                    <div className="space-y-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Purpose of Issuance
+                        </label>
+                        <input
+                            type="text"
+                            value={purpose}
+                            onChange={(e) => setPurpose(e.target.value)}
+                            placeholder="e.g. Practical examination duty, Viva sessions..."
+                            className="w-full p-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        />
+                    </div>
+                </div>
+
+                {/* Footer Controls */}
+                <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setIsEditing(!isEditing)}
+                            className="text-[11px] text-slate-600 hover:text-indigo-600 font-medium flex items-center gap-1 transition"
+                        >
+                            <Edit3 className="w-3 h-3" /> {isEditing ? 'Done Editing' : 'Change Unit/Staff'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setIsCancelled(true)}
+                            className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                        >
+                            Discard
+                        </button>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={handleConfirm}
+                        disabled={loading}
+                        className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-semibold text-[11px] rounded-xl shadow-xs hover:shadow transition flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Laptop className="w-3.5 h-3.5" />}
+                        Confirm & Issue Laptop
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* ─── Laptop Return Action Card ─── */
+function LaptopReturnActionCard({ action }) {
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(false);
+    const [loading, setLoading] = useState(false);
+
+    const [issuanceId, setIssuanceId] = useState(action?.issuanceId || '');
+    const [returnedAt, setReturnedAt] = useState(action?.returnedAt || '');
+    const [conditionOnReturn, setConditionOnReturn] = useState(action?.conditionOnReturn || 'good');
+    const [returnRemarks, setReturnRemarks] = useState(action?.returnRemarks || 'Returned via AI Assistant');
+
+    const activeIssuances = action?.activeIssuances || [];
+    const selectedIssuance = activeIssuances.find(i => i.id === issuanceId) || {
+        itemNumber: action?.laptopItemNumber || 'LAP-001',
+        brand: action?.laptopBrand || 'Laptop',
+        modelNo: action?.laptopModel || '',
+        userName: action?.issuedToName || 'Staff Member',
+        voucherNumber: action?.voucherNumber || 'VOUCHER'
+    };
+
+    const handleConfirm = async () => {
+        if (!issuanceId) {
+            toast.error('Issuance record is required');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const res = await labsAPI.returnLaptop(issuanceId, {
+                conditionOnReturn,
+                returnRemarks: returnRemarks.trim(),
+                returnedAt: returnedAt || new Date().toISOString()
+            });
+
+            if (res.data?.success) {
+                setIsConfirmed(true);
+                toast.success('Laptop marked as returned successfully!');
+            } else {
+                toast.error(res.data?.message || 'Failed to return laptop');
+            }
+        } catch (err) {
+            console.error('Error returning laptop:', err);
+            toast.error(err.response?.data?.message || err.message || 'Error returning laptop');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-slate-700">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>Laptop Return Proposal Discarded</span>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (isConfirmed) {
+        return (
+            <div className="mt-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 shadow-sm space-y-2 text-[12px] animate-in fade-in">
+                <div className="flex items-center gap-2 text-emerald-800 font-bold text-[13px]">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <span>Laptop Successfully Returned & Received!</span>
+                </div>
+                <p className="text-[11px] text-slate-600">
+                    Laptop <strong>{selectedIssuance.itemNumber}</strong> returned by <strong>{selectedIssuance.userName}</strong> on {returnedAt ? returnedAt.replace('T', ' ') : new Date().toLocaleString()}.
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-2.5 rounded-2xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/70 via-white to-teal-50/50 shadow-sm overflow-hidden text-xs animate-in fade-in">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold tracking-wide">
+                    <RotateCcw className="w-4 h-4 text-emerald-200 shrink-0" />
+                    <span>Laptop Return / Receive Card</span>
+                </div>
+                <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-medium">
+                    Voucher: {selectedIssuance.voucherNumber}
+                </span>
+            </div>
+
+            <div className="p-3.5 space-y-3">
+                <div className="bg-white rounded-xl p-3 border border-emerald-100 space-y-1.5">
+                    <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Laptop Unit:</span>
+                        <span className="font-bold text-slate-800">{selectedIssuance.itemNumber} ({selectedIssuance.brand} {selectedIssuance.modelNo})</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Borrowed By:</span>
+                        <span className="font-semibold text-indigo-600">{selectedIssuance.userName}</span>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-emerald-500" /> Return Date & Time
+                        </label>
+                        <input
+                            type="datetime-local"
+                            value={returnedAt}
+                            onChange={(e) => setReturnedAt(e.target.value)}
+                            className="w-full p-1.5 text-xs bg-white border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Condition on Return
+                        </label>
+                        <select
+                            value={conditionOnReturn}
+                            onChange={(e) => setConditionOnReturn(e.target.value)}
+                            className="w-full p-1.5 text-xs bg-white border border-slate-200 rounded-lg font-medium text-slate-800 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        >
+                            <option value="good">Good / Working Condition</option>
+                            <option value="fair">Fair (Minor cosmetic wear)</option>
+                            <option value="needs_maintenance">Needs Maintenance / Inspection</option>
+                            <option value="damaged">Damaged</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div className="space-y-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Return Remarks
+                    </label>
+                    <input
+                        type="text"
+                        value={returnRemarks}
+                        onChange={(e) => setReturnRemarks(e.target.value)}
+                        placeholder="e.g. All accessories and charger returned intact"
+                        className="w-full p-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                    />
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                    <button
+                        type="button"
+                        onClick={() => setIsCancelled(true)}
+                        className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleConfirm}
+                        disabled={loading}
+                        className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold text-[11px] rounded-xl shadow-xs hover:shadow transition flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                        Confirm & Mark Returned
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 /* ═══════════════════════════════════════════════════════
    MAIN FLOATING CHATBOT COMPONENT
    ═══════════════════════════════════════════════════════ */
@@ -6033,6 +6546,8 @@ export default function FloatingChatbot() {
                                     {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
                                     {msg.shiftAction && <ShiftActionCard action={msg.shiftAction} />}
                                     {msg.documentShareAction && <DocumentShareActionCard action={msg.documentShareAction} />}
+                                    {msg.laptopIssueAction && <LaptopIssueActionCard action={msg.laptopIssueAction} />}
+                                    {msg.laptopReturnAction && <LaptopReturnActionCard action={msg.laptopReturnAction} />}
                                     {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
                                 </div>
                             </div>

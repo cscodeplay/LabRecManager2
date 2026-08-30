@@ -1684,7 +1684,7 @@ router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', '
             return res.status(400).json({ success: false, message: 'This laptop is already issued' });
         }
 
-        // Verify staff member exists
+        // Verify staff member exists and is NOT a student
         const staffMember = await prisma.user.findFirst({
             where: { id: issuedToId, schoolId: req.user.schoolId }
         });
@@ -1694,8 +1694,15 @@ router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', '
             return res.status(404).json({ success: false, message: 'Staff member not found' });
         }
 
+        if (staffMember.role === 'student') {
+            return res.status(400).json({
+                success: false,
+                message: 'Laptops cannot be issued to students. Laptops can only be issued to instructors, lab assistants, or staff members.'
+            });
+        }
+
         // Build component status from individual fields
-        const { screenStatus, keyboardStatus, touchpadStatus, batteryStatus, portsStatus, chargerStatus } = req.body;
+        const { screenStatus, keyboardStatus, touchpadStatus, batteryStatus, portsStatus, chargerStatus, issuedAt } = req.body;
         const componentStatus = {
             screen: screenStatus || 'working',
             keyboard: keyboardStatus || 'working',
@@ -1714,6 +1721,7 @@ router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', '
             issuedById: req.user.id,
             voucherNumber,
             purpose,
+            issuedAt: issuedAt ? new Date(issuedAt) : new Date(),
             expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
             conditionOnIssue: conditionOnIssue || 'good',
             componentStatus,
@@ -1727,7 +1735,7 @@ router.post('/laptop-issuances', authenticate, authorize('admin', 'principal', '
             data: createData,
             include: {
                 laptop: { select: { id: true, itemNumber: true, brand: true, modelNo: true, serialNo: true } },
-                issuedTo: { select: { id: true, firstName: true, lastName: true, email: true } },
+                issuedTo: { select: { id: true, firstName: true, lastName: true, email: true, role: true } },
                 issuedBy: { select: { id: true, firstName: true, lastName: true } }
             }
         });
@@ -1762,7 +1770,7 @@ router.put('/laptop-issuances/:id/return', authenticate, authorize('admin', 'pri
     body('conditionOnReturn').optional().isString(),
     body('returnRemarks').optional().isString()
 ], asyncHandler(async (req, res) => {
-    const { conditionOnReturn, returnRemarks } = req.body;
+    const { conditionOnReturn, returnRemarks, returnedAt } = req.body;
 
     const issuance = await prisma.laptopIssuance.findFirst({
         where: { id: req.params.id, schoolId: req.user.schoolId }
@@ -1780,7 +1788,7 @@ router.put('/laptop-issuances/:id/return', authenticate, authorize('admin', 'pri
         where: { id: req.params.id },
         data: {
             status: 'returned',
-            returnedAt: new Date(),
+            returnedAt: returnedAt ? new Date(returnedAt) : new Date(),
             receivedById: req.user.id,
             conditionOnReturn: conditionOnReturn || 'good',
             returnRemarks
