@@ -532,7 +532,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             }
         }
 
-        // Intent detection: Storage & Space Query (e.g. "how much storage is used?", "show storage breakdown", "who uses most storage?", "storage status", "disk space")
+        // Intent detection: Storage & Space Queries (targeted by specific question)
         const isStorageIntent = (
             (/\b(storage|disk\s*space|quota|storage\s*usage|used\s*space|free\s*space|storage\s*limit|storage\s*breakdown|storage\s*summary|file\s*sizes|storage\s*consumed)\b/i.test(msgLower) ||
              msgLower.includes('how much storage') || msgLower.includes('how much space') || msgLower.includes('check storage') || msgLower.includes('who is using storage') || msgLower.includes('who uses the most storage') ||
@@ -544,8 +544,144 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             try {
                 console.log('[ChatBot] Storage query intent detected:', message);
 
-                const [roleSummary, docTypeSummary, topUsers, totalDocCount] = await Promise.all([
-                    prisma.$queryRawUnsafe(`
+                const wantsChart = msgLower.includes('chart') || msgLower.includes('graph') || msgLower.includes('plot') || msgLower.includes('pie') || msgLower.includes('visual');
+
+                // Case 1: Document / File Type Storage Query ONLY
+                const isDocTypeQuery = (
+                    /\b(document\s*types?|file\s*types?|file\s*formats?|file\s*extensions?|extensions?|formats?|by\s*type|by\s*format|by\s*document|pdf|image|png|docx|files?)\b/i.test(msgLower) &&
+                    !msgLower.includes('by role') && !msgLower.includes('who')
+                );
+
+                if (isDocTypeQuery) {
+                    const [docTypeSummary, totalDocStats] = await Promise.all([
+                        prisma.$queryRawUnsafe(`
+                            SELECT 
+                                UPPER(COALESCE(file_type, 'OTHER')) as file_type,
+                                COUNT(*)::int as total_documents,
+                                ROUND(SUM(COALESCE(file_size, 0)) / (1024.0 * 1024.0), 2) as total_size_mb,
+                                ROUND(AVG(COALESCE(file_size, 0)) / (1024.0 * 1024.0), 2) as avg_size_mb
+                            FROM documents
+                            WHERE deleted_at IS NULL ${schoolId ? `AND school_id = '${schoolId}'` : ''}
+                            GROUP BY file_type
+                            ORDER BY total_size_mb DESC
+                        `),
+                        prisma.$queryRawUnsafe(`
+                            SELECT 
+                                COUNT(*)::int as total_count,
+                                ROUND(SUM(COALESCE(file_size, 0)) / (1024.0 * 1024.0), 2) as total_mb
+                            FROM documents
+                            WHERE deleted_at IS NULL ${schoolId ? `AND school_id = '${schoolId}'` : ''}
+                        `)
+                    ]);
+
+                    const totalDocs = totalDocStats[0]?.total_count || 0;
+                    const totalMB = Number(totalDocStats[0]?.total_mb || 0);
+
+                    const docRowsMarkdown = docTypeSummary.length > 0
+                        ? docTypeSummary.map(d => `| \`${d.file_type}\` | ${d.total_documents} | ${d.total_size_mb} MB | ${d.avg_size_mb} MB |`).join('\n')
+                        : '| - | 0 | 0 MB | 0 MB |';
+
+                    const storageDocSQL = `SELECT UPPER(COALESCE(file_type, 'OTHER')) AS file_type, COUNT(*)::int AS total_documents, ROUND(SUM(COALESCE(file_size, 0)) / (1024.0 * 1024.0), 2) AS total_size_mb, ROUND(AVG(COALESCE(file_size, 0)) / (1024.0 * 1024.0), 2) AS avg_size_mb FROM documents WHERE deleted_at IS NULL GROUP BY file_type ORDER BY total_size_mb DESC;`;
+
+                    let chartData = null;
+                    if (wantsChart || docTypeSummary.length > 1) {
+                        chartData = {
+                            type: 'pie',
+                            title: 'Storage by Document Type (MB)',
+                            data: docTypeSummary.map(d => ({
+                                name: d.file_type,
+                                value: Number(d.total_size_mb) || 0.01
+                            }))
+                        };
+                    }
+
+                    const responseText = `📁 **Storage Consumed by Document Type**\n\n` +
+                        `• **Total Active Documents:** **${totalDocs}** files\n` +
+                        `• **Total Document Size:** \`${totalMB.toFixed(2)} MB\` (${(totalMB / 1024).toFixed(2)} GB)\n\n` +
+                        `| File Format | Total Files | Total Size | Avg File Size |\n` +
+                        `| :--- | :---: | :---: | :---: |\n` +
+                        `${docRowsMarkdown}\n\n` +
+                        `\`\`\`sql\n${storageDocSQL}\n\`\`\`\n<!--EXEC_SQL:${storageDocSQL}:END_SQL-->`;
+
+                    const queryResult = await this.executeSQL(storageDocSQL);
+
+                    return {
+                        message: responseText,
+                        sql: storageDocSQL,
+                        queryResult,
+                        chartData,
+                        reportAction: null,
+                        provider: 'groq'
+                    };
+                }
+
+                // Case 2: Top Storage Users / Consumers Query ONLY
+                const isTopUsersQuery = /\b(who\s+(is\s+)?using|top\s*(storage|users|consumers)|most\s+storage|highest\s+storage|largest\s+storage|which\s+user)\b/i.test(msgLower);
+
+                if (isTopUsersQuery) {
+                    const topUsers = await prisma.$queryRawUnsafe(`
+                        SELECT 
+                            first_name || ' ' || last_name as full_name,
+                            email,
+                            role::text as role,
+                            storage_quota_mb as quota_mb,
+                            ROUND(COALESCE(storage_used_bytes, 0) / (1024.0 * 1024.0), 2) as used_mb,
+                            ROUND(
+                                CASE 
+                                    WHEN COALESCE(storage_quota_mb, 0) > 0 
+                                    THEN (COALESCE(storage_used_bytes, 0) / (storage_quota_mb * 1024.0 * 1024.0)) * 100 
+                                    ELSE 0 
+                                END, 1
+                            ) as percent_used
+                        FROM users
+                        WHERE COALESCE(storage_used_bytes, 0) > 0 ${schoolId ? `AND school_id = '${schoolId}'` : ''}
+                        ORDER BY storage_used_bytes DESC
+                        LIMIT 10
+                    `);
+
+                    const topUsersSQL = `SELECT first_name || ' ' || last_name AS full_name, email, role::text AS role, storage_quota_mb AS quota_mb, ROUND(COALESCE(storage_used_bytes, 0) / (1024.0 * 1024.0), 2) AS used_mb, ROUND((COALESCE(storage_used_bytes, 0) / (storage_quota_mb * 1024.0 * 1024.0)) * 100, 1) AS percent_used FROM users WHERE COALESCE(storage_used_bytes, 0) > 0 ORDER BY storage_used_bytes DESC LIMIT 10;`;
+
+                    let userRowsMarkdown = topUsers.length > 0
+                        ? topUsers.map((u, i) => `| ${i + 1} | **${u.full_name}** | \`${u.email}\` | \`${u.role}\` | ${u.used_mb} MB | ${u.quota_mb} MB | ${u.percent_used}% |`).join('\n')
+                        : '| - | _No users have consumed storage yet._ | - | - | 0 MB | - | 0% |';
+
+                    let chartData = null;
+                    if (wantsChart && topUsers.length > 0) {
+                        chartData = {
+                            type: 'bar',
+                            title: 'Top Storage Consumers (MB)',
+                            data: topUsers.map(u => ({
+                                name: u.full_name,
+                                value: Number(u.used_mb)
+                            }))
+                        };
+                    }
+
+                    const responseText = `🏆 **Top Storage Consumers**\n\n` +
+                        `Here are the users currently consuming the most storage space:\n\n` +
+                        `| # | User | Email | Role | Used Space | Quota | % Utilized |\n` +
+                        `| :---: | :--- | :--- | :---: | :---: | :---: | :---: |\n` +
+                        `${userRowsMarkdown}\n\n` +
+                        `\`\`\`sql\n${topUsersSQL}\n\`\`\`\n<!--EXEC_SQL:${topUsersSQL}:END_SQL-->\n\n` +
+                        `💡 _To adjust individual user quotas, visit [Storage Settings](/admin/storage)._`;
+
+                    const queryResult = await this.executeSQL(topUsersSQL);
+
+                    return {
+                        message: responseText,
+                        sql: topUsersSQL,
+                        queryResult,
+                        chartData,
+                        reportAction: null,
+                        provider: 'groq'
+                    };
+                }
+
+                // Case 3: Storage by Role ONLY
+                const isRoleQuery = /\b(by\s+role|roles|student\s+storage|instructor\s+storage|admin\s+storage)\b/i.test(msgLower);
+
+                if (isRoleQuery) {
+                    const roleSummary = await prisma.$queryRawUnsafe(`
                         SELECT 
                             role::text as role,
                             COUNT(*)::int as user_count,
@@ -562,28 +698,56 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                         ${schoolId ? `WHERE school_id = '${schoolId}'` : ''}
                         GROUP BY role
                         ORDER BY used_mb DESC
-                    `),
+                    `);
+
+                    const roleRowsMarkdown = roleSummary.map(r => 
+                        `| **${r.role.toUpperCase()}** | ${r.user_count} | ${r.used_mb} MB | ${(r.total_quota_mb / 1024).toFixed(1)} GB | ${r.percent_used}% |`
+                    ).join('\n');
+
+                    const storageRoleSQL = `SELECT role::text, COUNT(*)::int as user_count, ROUND(SUM(COALESCE(storage_used_bytes, 0)) / (1024.0 * 1024.0), 2) as used_mb, SUM(COALESCE(storage_quota_mb, 500))::int as total_quota_mb, ROUND((SUM(COALESCE(storage_used_bytes, 0)) / (SUM(COALESCE(storage_quota_mb, 500)) * 1024.0 * 1024.0)) * 100, 1) as percent_used FROM users GROUP BY role ORDER BY used_mb DESC;`;
+
+                    let chartData = null;
+                    if (wantsChart || roleSummary.length > 1) {
+                        chartData = {
+                            type: 'pie',
+                            title: 'Storage Consumption by Role (MB)',
+                            data: roleSummary.map(r => ({
+                                name: r.role.toUpperCase(),
+                                value: Number(r.used_mb) || 0.01
+                            }))
+                        };
+                    }
+
+                    const responseText = `👥 **Storage Breakdown by User Role**\n\n` +
+                        `| Role | Users | Storage Used | Total Quota | % Utilized |\n` +
+                        `| :--- | :---: | :---: | :---: | :---: |\n` +
+                        `${roleRowsMarkdown}\n\n` +
+                        `\`\`\`sql\n${storageRoleSQL}\n\`\`\`\n<!--EXEC_SQL:${storageRoleSQL}:END_SQL-->`;
+
+                    const queryResult = await this.executeSQL(storageRoleSQL);
+
+                    return {
+                        message: responseText,
+                        sql: storageRoleSQL,
+                        queryResult,
+                        chartData,
+                        reportAction: null,
+                        provider: 'groq'
+                    };
+                }
+
+                // Case 4: Overall Storage Status / Capacity Query
+                const [roleSummary, totalDocCount] = await Promise.all([
                     prisma.$queryRawUnsafe(`
                         SELECT 
-                            UPPER(COALESCE(file_type, 'OTHER')) as file_type,
-                            COUNT(*)::int as total_documents,
-                            ROUND(SUM(COALESCE(file_size, 0)) / (1024.0 * 1024.0), 2) as total_size_mb
-                        FROM documents
-                        WHERE deleted_at IS NULL ${schoolId ? `AND school_id = '${schoolId}'` : ''}
-                        GROUP BY file_type
-                        ORDER BY total_size_mb DESC
-                    `),
-                    prisma.$queryRawUnsafe(`
-                        SELECT 
-                            first_name || ' ' || last_name as full_name,
-                            email,
                             role::text as role,
-                            storage_quota_mb as quota_mb,
-                            ROUND(COALESCE(storage_used_bytes, 0) / (1024.0 * 1024.0), 2) as used_mb
+                            COUNT(*)::int as user_count,
+                            ROUND(SUM(COALESCE(storage_used_bytes, 0)) / (1024.0 * 1024.0), 2) as used_mb,
+                            SUM(COALESCE(storage_quota_mb, 500))::int as total_quota_mb
                         FROM users
-                        WHERE COALESCE(storage_used_bytes, 0) > 0 ${schoolId ? `AND school_id = '${schoolId}'` : ''}
-                        ORDER BY storage_used_bytes DESC
-                        LIMIT 5
+                        ${schoolId ? `WHERE school_id = '${schoolId}'` : ''}
+                        GROUP BY role
+                        ORDER BY used_mb DESC
                     `),
                     prisma.document.count({
                         where: {
@@ -593,7 +757,6 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                     })
                 ]);
 
-                // Calculate total stats
                 const totalUsedMB = roleSummary.reduce((sum, r) => sum + Number(r.used_mb || 0), 0);
                 const totalQuotaMB = roleSummary.reduce((sum, r) => sum + Number(r.total_quota_mb || 0), 0);
                 const totalUsersCount = roleSummary.reduce((sum, r) => sum + Number(r.user_count || 0), 0);
@@ -601,28 +764,10 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 const totalQuotaGB = (totalQuotaMB / 1024).toFixed(1);
                 const overallPct = totalQuotaMB > 0 ? ((totalUsedMB / totalQuotaMB) * 100).toFixed(1) : '0.0';
 
-                // SQL query string to display
                 const storageSQL = `SELECT role::text, COUNT(*)::int as user_count, ROUND(SUM(COALESCE(storage_used_bytes, 0)) / (1024.0 * 1024.0), 2) as used_mb, SUM(COALESCE(storage_quota_mb, 500))::int as quota_mb FROM users GROUP BY role ORDER BY used_mb DESC;`;
-                
-                // Format role table
-                let roleRowsMarkdown = roleSummary.map(r => 
-                    `| **${r.role.toUpperCase()}** | ${r.user_count} | ${r.used_mb} MB | ${(r.total_quota_mb / 1024).toFixed(1)} GB | ${r.percent_used}% |`
-                ).join('\n');
 
-                // Format doc types
-                let docRowsMarkdown = docTypeSummary.map(d => 
-                    `| \`${d.file_type}\` | ${d.total_documents} | ${d.total_size_mb} MB |`
-                ).join('\n');
-
-                // Format top users
-                let topUsersMarkdown = topUsers.length > 0
-                    ? topUsers.map((u, i) => `${i + 1}. **${u.full_name}** (${u.role}) — \`${u.used_mb} MB\` of ${u.quota_mb} MB`).join('\n')
-                    : '_No users have consumed storage yet._';
-
-                // Chart generation if requested or appropriate
                 let chartData = null;
-                const wantsChart = msgLower.includes('chart') || msgLower.includes('graph') || msgLower.includes('plot') || msgLower.includes('pie') || msgLower.includes('visual');
-                if (wantsChart || roleSummary.length > 1) {
+                if (wantsChart) {
                     chartData = {
                         type: 'pie',
                         title: 'Storage Consumption by Role (MB)',
@@ -633,18 +778,13 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                     };
                 }
 
-                const responseText = `💾 **Storage Analytics & Capacity Report**\n\n` +
-                    `• **Total Used:** \`${totalUsedMB.toFixed(2)} MB\` (${totalUsedGB} GB) / **Allocated Quota:** \`${totalQuotaGB} GB\`\n` +
-                    `• **Overall Utilization:** \`${overallPct}%\` across **${totalUsersCount}** registered users\n` +
-                    `• **Active Documents:** **${totalDocCount}** files stored in cloud storage\n\n` +
-                    `### 👥 Storage Breakdown by Role\n` +
-                    `| Role | Users | Storage Used | Total Quota | % Utilized |\n` +
-                    `| :--- | :---: | :---: | :---: | :---: |\n` +
-                    `${roleRowsMarkdown}\n\n` +
-                    (docTypeSummary.length > 0 ? `### 📁 Document Types Distribution\n| Format | File Count | Size |\n| :--- | :---: | :---: |\n${docRowsMarkdown}\n\n` : '') +
-                    `### 🏆 Top Storage Consumers\n${topUsersMarkdown}\n\n` +
+                const responseText = `💾 **Overall Storage Status**\n\n` +
+                    `• **Total Storage Used:** \`${totalUsedMB.toFixed(2)} MB\` (${totalUsedGB} GB)\n` +
+                    `• **Total Allocated Quota:** \`${totalQuotaGB} GB\`\n` +
+                    `• **Capacity Utilized:** \`${overallPct}%\` across **${totalUsersCount}** registered users\n` +
+                    `• **Total Active Documents:** **${totalDocCount}** files\n\n` +
                     `\`\`\`sql\n${storageSQL}\n\`\`\`\n<!--EXEC_SQL:${storageSQL}:END_SQL-->\n\n` +
-                    `💡 _To manage storage quotas or increase individual limits, visit [Storage Settings](/admin/storage)._`;
+                    `💡 _Ask "show storage by document type", "who uses most storage", or "storage by role" for specific breakdowns._`;
 
                 const queryResult = await this.executeSQL(storageSQL);
 
