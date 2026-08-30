@@ -742,7 +742,6 @@ router.get('/shared', authenticate, asyncHandler(async (req, res) => {
                 select: { classId: true }
             });
             const classIds = enrollments.map(e => e.classId);
-            console.log('[GET /documents/shared] Student classIds:', classIds);
 
             // Get student's group IDs
             const groupMembers = await prisma.groupMember.findMany({
@@ -750,7 +749,6 @@ router.get('/shared', authenticate, asyncHandler(async (req, res) => {
                 select: { groupId: true }
             });
             const groupIds = groupMembers.map(g => g.groupId);
-            console.log('[GET /documents/shared] Student groupIds:', groupIds);
 
             if (classIds.length > 0) {
                 orConditions.push({ targetType: 'class', targetClassId: { in: classIds } });
@@ -758,23 +756,42 @@ router.get('/shared', authenticate, asyncHandler(async (req, res) => {
             if (groupIds.length > 0) {
                 orConditions.push({ targetType: 'group', targetGroupId: { in: groupIds } });
             }
-            // Direct user shares for students - enum value is 'student'
+            // Direct user shares for students
             orConditions.push({ targetType: 'student', targetUserId: userId });
+            orConditions.push({ targetUserId: userId });
         } else {
-            // For non-students, use their role as targetType
-            const targetTypeForUser = userRole; // 'instructor', 'admin', etc.
-            orConditions.push({ targetType: targetTypeForUser, targetUserId: userId });
-            orConditions.push({ sharedById: userId });
+            // For non-students (instructors, admins, principals, etc.)
+            orConditions.push({ targetUserId: userId });
+            orConditions.push({ targetType: userRole, targetUserId: userId });
+
+            // If instructor, also check classes they teach
+            const classSubjects = await prisma.classSubject.findMany({
+                where: { instructorId: userId },
+                select: { classId: true }
+            });
+            const instructorClassIds = [...new Set(classSubjects.map(cs => cs.classId))];
+            if (instructorClassIds.length > 0) {
+                orConditions.push({ targetType: 'class', targetClassId: { in: instructorClassIds } });
+            }
         }
 
         console.log('[GET /documents/shared] orConditions count:', orConditions.length);
 
-        // Even with just direct shares, we should query
+        if (orConditions.length === 0) {
+            return res.json({ success: true, data: { documents: [] } });
+        }
+
+        // Query shares where document was NOT uploaded by current user AND not shared by current user
         const shares = await prisma.documentShare.findMany({
             where: {
                 OR: orConditions,
+                sharedById: { not: userId },
+                document: {
+                    schoolId,
+                    uploadedById: { not: userId },
+                    deletedAt: null
+                },
                 AND: [
-                    { document: { schoolId } },
                     {
                         OR: [
                             { expiresAt: null },

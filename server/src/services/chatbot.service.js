@@ -289,7 +289,18 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
   2. Parse each holiday into standard format with \`YYYY-MM-DD\`. Store the original Punjabi / Hindi title in \`title_hindi\` and the standard English name in \`title\`.
   3. If user role is admin, generate a PostgreSQL \`INSERT INTO school_calendar ... ON CONFLICT (school_id, date) DO UPDATE SET title = EXCLUDED.title, title_hindi = EXCLUDED.title_hindi, type = EXCLUDED.type, is_holiday = EXCLUDED.is_holiday;\` query wrapped in <!--EXEC_SQL:...:END_SQL--> to automatically save the events to the database.
   4. Always present a formatted Markdown table of all extracted holidays with columns: Date | English Name | Punjabi/Hindi Name | Type | Status.
-10. Be extremely concise. No unnecessary explanations. Results speak for themselves.
+10. **STORAGE & DISK USAGE QUERIES**:
+- Storage is tracked in the \`users\` table:
+  * \`storage_quota_mb\` (INT): Storage quota in Megabytes (default 500 MB).
+  * \`storage_used_bytes\` (BIGINT): Storage consumed in bytes.
+  * To convert bytes to MB: \`ROUND(storage_used_bytes / (1024.0 * 1024.0), 2) AS used_mb\`
+  * To convert bytes to GB: \`ROUND(storage_used_bytes / (1024.0 * 1024.0 * 1024.0), 3) AS used_gb\`
+  * To calculate percentage utilized: \`ROUND((storage_used_bytes / (storage_quota_mb * 1024.0 * 1024.0)) * 100, 1) AS percent_used\`
+- The \`documents\` table stores file uploads:
+  * \`name\`, \`file_type\`, \`file_size\` (size in bytes), \`uploaded_by_id\`, \`deleted_at\` (filter \`deleted_at IS NULL\` for active files).
+- Breakdown by file format: \`SELECT UPPER(COALESCE(file_type, 'OTHER')) AS file_type, COUNT(*) AS doc_count, ROUND(SUM(file_size) / (1024.0 * 1024.0), 2) AS total_mb FROM documents WHERE deleted_at IS NULL GROUP BY file_type ORDER BY total_mb DESC;\`
+- Top storage consumers: \`SELECT first_name || ' ' || last_name AS full_name, email, role::text AS role, storage_quota_mb AS quota_mb, ROUND(COALESCE(storage_used_bytes, 0) / (1024.0 * 1024.0), 2) AS used_mb FROM users WHERE COALESCE(storage_used_bytes, 0) > 0 ORDER BY storage_used_bytes DESC LIMIT 10;\`
+11. Be extremely concise. No unnecessary explanations. Results speak for themselves.
 ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     }
 
@@ -518,6 +529,135 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 }
             } catch (err) {
                 console.error('[ChatBot] Document share intent error:', err);
+            }
+        }
+
+        // Intent detection: Storage & Space Query (e.g. "how much storage is used?", "show storage breakdown", "who uses most storage?", "storage status", "disk space")
+        const isStorageIntent = (
+            (/\b(storage|disk\s*space|quota|storage\s*usage|used\s*space|free\s*space|storage\s*limit|storage\s*breakdown|storage\s*summary|file\s*sizes|storage\s*consumed)\b/i.test(msgLower) ||
+             msgLower.includes('how much storage') || msgLower.includes('how much space') || msgLower.includes('check storage') || msgLower.includes('who is using storage') || msgLower.includes('who uses the most storage') ||
+             msgLower.includes('ਸਟੋਰੇਜ') || msgLower.includes('ਸਪੇਸ') || msgLower.includes('स्टोरेज')) &&
+            !msgLower.includes('store room') && !msgLower.includes('store equipment')
+        );
+
+        if (isStorageIntent) {
+            try {
+                console.log('[ChatBot] Storage query intent detected:', message);
+
+                const [roleSummary, docTypeSummary, topUsers, totalDocCount] = await Promise.all([
+                    prisma.$queryRawUnsafe(`
+                        SELECT 
+                            role::text as role,
+                            COUNT(*)::int as user_count,
+                            ROUND(SUM(COALESCE(storage_used_bytes, 0)) / (1024.0 * 1024.0), 2) as used_mb,
+                            SUM(COALESCE(storage_quota_mb, 500))::int as total_quota_mb,
+                            ROUND(
+                                CASE 
+                                    WHEN SUM(COALESCE(storage_quota_mb, 500)) > 0 
+                                    THEN (SUM(COALESCE(storage_used_bytes, 0)) / (SUM(COALESCE(storage_quota_mb, 500)) * 1024.0 * 1024.0)) * 100 
+                                    ELSE 0 
+                                END, 1
+                            ) as percent_used
+                        FROM users
+                        ${schoolId ? `WHERE school_id = '${schoolId}'` : ''}
+                        GROUP BY role
+                        ORDER BY used_mb DESC
+                    `),
+                    prisma.$queryRawUnsafe(`
+                        SELECT 
+                            UPPER(COALESCE(file_type, 'OTHER')) as file_type,
+                            COUNT(*)::int as total_documents,
+                            ROUND(SUM(COALESCE(file_size, 0)) / (1024.0 * 1024.0), 2) as total_size_mb
+                        FROM documents
+                        WHERE deleted_at IS NULL ${schoolId ? `AND school_id = '${schoolId}'` : ''}
+                        GROUP BY file_type
+                        ORDER BY total_size_mb DESC
+                    `),
+                    prisma.$queryRawUnsafe(`
+                        SELECT 
+                            first_name || ' ' || last_name as full_name,
+                            email,
+                            role::text as role,
+                            storage_quota_mb as quota_mb,
+                            ROUND(COALESCE(storage_used_bytes, 0) / (1024.0 * 1024.0), 2) as used_mb
+                        FROM users
+                        WHERE COALESCE(storage_used_bytes, 0) > 0 ${schoolId ? `AND school_id = '${schoolId}'` : ''}
+                        ORDER BY storage_used_bytes DESC
+                        LIMIT 5
+                    `),
+                    prisma.document.count({
+                        where: {
+                            deletedAt: null,
+                            ...(schoolId ? { schoolId } : {})
+                        }
+                    })
+                ]);
+
+                // Calculate total stats
+                const totalUsedMB = roleSummary.reduce((sum, r) => sum + Number(r.used_mb || 0), 0);
+                const totalQuotaMB = roleSummary.reduce((sum, r) => sum + Number(r.total_quota_mb || 0), 0);
+                const totalUsersCount = roleSummary.reduce((sum, r) => sum + Number(r.user_count || 0), 0);
+                const totalUsedGB = (totalUsedMB / 1024).toFixed(2);
+                const totalQuotaGB = (totalQuotaMB / 1024).toFixed(1);
+                const overallPct = totalQuotaMB > 0 ? ((totalUsedMB / totalQuotaMB) * 100).toFixed(1) : '0.0';
+
+                // SQL query string to display
+                const storageSQL = `SELECT role::text, COUNT(*)::int as user_count, ROUND(SUM(COALESCE(storage_used_bytes, 0)) / (1024.0 * 1024.0), 2) as used_mb, SUM(COALESCE(storage_quota_mb, 500))::int as quota_mb FROM users GROUP BY role ORDER BY used_mb DESC;`;
+                
+                // Format role table
+                let roleRowsMarkdown = roleSummary.map(r => 
+                    `| **${r.role.toUpperCase()}** | ${r.user_count} | ${r.used_mb} MB | ${(r.total_quota_mb / 1024).toFixed(1)} GB | ${r.percent_used}% |`
+                ).join('\n');
+
+                // Format doc types
+                let docRowsMarkdown = docTypeSummary.map(d => 
+                    `| \`${d.file_type}\` | ${d.total_documents} | ${d.total_size_mb} MB |`
+                ).join('\n');
+
+                // Format top users
+                let topUsersMarkdown = topUsers.length > 0
+                    ? topUsers.map((u, i) => `${i + 1}. **${u.full_name}** (${u.role}) — \`${u.used_mb} MB\` of ${u.quota_mb} MB`).join('\n')
+                    : '_No users have consumed storage yet._';
+
+                // Chart generation if requested or appropriate
+                let chartData = null;
+                const wantsChart = msgLower.includes('chart') || msgLower.includes('graph') || msgLower.includes('plot') || msgLower.includes('pie') || msgLower.includes('visual');
+                if (wantsChart || roleSummary.length > 1) {
+                    chartData = {
+                        type: 'pie',
+                        title: 'Storage Consumption by Role (MB)',
+                        data: roleSummary.map(r => ({
+                            name: r.role.toUpperCase(),
+                            value: Number(r.used_mb) || 0.01
+                        }))
+                    };
+                }
+
+                const responseText = `💾 **Storage Analytics & Capacity Report**\n\n` +
+                    `• **Total Used:** \`${totalUsedMB.toFixed(2)} MB\` (${totalUsedGB} GB) / **Allocated Quota:** \`${totalQuotaGB} GB\`\n` +
+                    `• **Overall Utilization:** \`${overallPct}%\` across **${totalUsersCount}** registered users\n` +
+                    `• **Active Documents:** **${totalDocCount}** files stored in cloud storage\n\n` +
+                    `### 👥 Storage Breakdown by Role\n` +
+                    `| Role | Users | Storage Used | Total Quota | % Utilized |\n` +
+                    `| :--- | :---: | :---: | :---: | :---: |\n` +
+                    `${roleRowsMarkdown}\n\n` +
+                    (docTypeSummary.length > 0 ? `### 📁 Document Types Distribution\n| Format | File Count | Size |\n| :--- | :---: | :---: |\n${docRowsMarkdown}\n\n` : '') +
+                    `### 🏆 Top Storage Consumers\n${topUsersMarkdown}\n\n` +
+                    `\`\`\`sql\n${storageSQL}\n\`\`\`\n<!--EXEC_SQL:${storageSQL}:END_SQL-->\n\n` +
+                    `💡 _To manage storage quotas or increase individual limits, visit [Storage Settings](/admin/storage)._`;
+
+                const queryResult = await this.executeSQL(storageSQL);
+
+                return {
+                    message: responseText,
+                    sql: storageSQL,
+                    queryResult,
+                    chartData,
+                    reportAction: null,
+                    provider: 'groq'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Storage intent handler failed:', err);
             }
         }
 

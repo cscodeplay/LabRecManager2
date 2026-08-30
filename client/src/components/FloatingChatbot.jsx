@@ -79,7 +79,7 @@ function SQLCardItem({ row, cols }) {
     const statusVal = statusKey ? String(row[statusKey]) : null;
 
     // 4. Identify count / quantitative metrics
-    const countKeys = ['total_computers', 'pc_count', 'count', 'total_items', 'item_count', 'quantity', 'total', 'active_count'];
+    const countKeys = ['total_computers', 'pc_count', 'count', 'total_items', 'item_count', 'quantity', 'total', 'active_count', 'used_mb', 'total_mb', 'total_size_mb', 'quota_mb', 'percent_used', 'doc_count', 'total_documents'];
     const countKey = countKeys.find(k => k in row && row[k] !== null && row[k] !== undefined && !isNaN(Number(row[k])));
     const countVal = countKey !== undefined ? row[countKey] : null;
 
@@ -137,6 +137,9 @@ function SQLCardItem({ row, cols }) {
         if (itemType.includes('camera')) return <Camera className="w-4 h-4 text-indigo-500 shrink-0" />;
         if (itemType.includes('headphone') || itemType.includes('audio') || itemType.includes('speaker') || itemType.includes('soundbar')) return <Headphones className="w-4 h-4 text-pink-500 shrink-0" />;
         if (itemType.includes('cable')) return <Cable className="w-4 h-4 text-slate-500 shrink-0" />;
+        if (strCols.includes('storage') || strCols.includes('quota') || strCols.includes('used_mb') || strCols.includes('total_mb') || strCols.includes('file_size') || strCols.includes('size_mb')) {
+            return <HardDrive className="w-4 h-4 text-violet-500 shrink-0" />;
+        }
         if (strCols.includes('lab') || strCols.includes('room')) return <Building2 className="w-4 h-4 text-indigo-500 shrink-0" />;
         if (strCols.includes('student') || strCols.includes('user') || strCols.includes('first_name')) return <User className="w-4 h-4 text-violet-500 shrink-0" />;
         if (strCols.includes('assignment') || strCols.includes('class') || strCols.includes('subject')) return <BookOpen className="w-4 h-4 text-emerald-500 shrink-0" />;
