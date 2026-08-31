@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, Mic } from 'lucide-react';
+import { Menu, Mic, Keyboard } from 'lucide-react';
 import Sidebar from './Sidebar';
 import NotificationBell from './NotificationBell';
 import ProfileDropdown from './ProfileDropdown';
@@ -11,6 +11,7 @@ import { DatabaseStatusBadge } from './DatabaseStatus';
 import FloatingChatbot from './FloatingChatbot';
 import GlobalSearch from './GlobalSearch';
 import VoiceHUD from './VoiceHUD';
+import GlobalQuickActions from './GlobalQuickActions';
 import { useAuthStore } from '@/lib/store';
 
 export default function AppLayout({ children }) {
@@ -101,10 +102,22 @@ export default function AppLayout({ children }) {
                                 type="button"
                                 onClick={() => setVoiceHudOpen(true)}
                                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-600 border border-slate-200 text-xs font-medium transition shadow-sm"
-                                title="Voice AI Assistant (Ctrl+Shift+V)"
+                                title="Voice AI Assistant (Ctrl+Shift+V / ⌘+Shift+V)"
                             >
                                 <Mic className="w-3.5 h-3.5 text-rose-500" />
                                 <span className="hidden sm:inline">Voice AI</span>
+                            </button>
+
+                            {/* Global Shortcuts / Quick Invocations Launcher */}
+                            <button
+                                type="button"
+                                onClick={() => window.dispatchEvent(new CustomEvent('open-quick-action', { detail: { modal: 'cheatsheet' } }))}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 border border-slate-200 text-xs font-medium transition shadow-sm"
+                                title="Quick Invocations & Shortcuts (⌘? / ⌘1–⌘6)"
+                            >
+                                <Keyboard className="w-3.5 h-3.5 text-indigo-500" />
+                                <span className="hidden sm:inline">Shortcuts</span>
+                                <kbd className="hidden md:inline-block px-1 py-0.2 rounded bg-white border border-slate-200 text-[10px] font-mono text-slate-500 font-bold">⌘1–6</kbd>
                             </button>
                         </div>
 
@@ -129,6 +142,9 @@ export default function AppLayout({ children }) {
 
             {/* Keyboard-Invoked Global Search Dialog (⌘K / Ctrl+K) */}
             <GlobalSearch />
+
+            {/* Keyboard-Invoked Global Quick Actions (⌘1-⌘6, ⌘?) */}
+            <GlobalQuickActions />
 
             {/* Global Voice Interaction HUD */}
             <VoiceHUD isOpen={voiceHudOpen} onClose={() => setVoiceHudOpen(false)} />
