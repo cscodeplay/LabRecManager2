@@ -485,10 +485,31 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 }
 
                 // 2. Identify Sub-Action
-                const isAutoGenerate = msgLower.includes('auto') || msgLower.includes('generate') || (msgLower.includes('groups') && !msgLower.includes('delete') && !msgLower.includes('assign'));
-                const isDelete = msgLower.includes('delete') || msgLower.includes('remove');
-                const isEdit = msgLower.includes('edit') || msgLower.includes('rename') || msgLower.includes('update');
-                const isAssignPc = msgLower.includes('assign pc') || msgLower.includes('assign pcs') || msgLower.includes('allocate pc') || (msgLower.includes('assign') && msgLower.includes('pc'));
+                const isAssignPc = (
+                    /\b(assign|allocate|map|connect|link|set)\s+(pc|pcs|computer|computers|workstation|workstations)\b/i.test(msgLower) ||
+                    (/\b(assign|allocate)\b/i.test(msgLower) && /\b(pc|pcs|computer|computers|workstation|workstations)\b/i.test(msgLower)) ||
+                    (msgLower.includes('assign') && (msgLower.includes('pc-') || msgLower.includes('cl1-') || msgLower.includes('clx')))
+                );
+
+                const isDelete = /\b(delete|remove|destroy|clear|drop)\s+(the\s+)?(group|groups)\b/i.test(msgLower) ||
+                                 (msgLower.includes('delete') && msgLower.includes('group'));
+
+                const isEdit = /\b(rename|edit|update|modify|change\s+name)\s+(the\s+)?group\b/i.test(msgLower) ||
+                               (msgLower.includes('rename') && msgLower.includes('group'));
+
+                const isSingleCreate = (
+                    (/\b(create|make|add|new)\s+(a\s+|single\s+|new\s+)?group\s+["']?([a-zA-Z0-9_\s-]+?)["']?\s+(?:in|for)\b/i.test(msgLower) ||
+                     /\bcreate\s+(a\s+)?group\s+["'][^"']+["']/i.test(msgLower) ||
+                     /\bcreate\s+(a\s+)?group\s+named\b/i.test(msgLower)) &&
+                    !msgLower.includes('groups') &&
+                    !msgLower.includes('segregated') &&
+                    !msgLower.includes('auto') &&
+                    !msgLower.includes('split') &&
+                    !msgLower.includes('divide') &&
+                    !msgLower.includes('generate')
+                );
+
+                const isAutoGenerate = !isAssignPc && !isDelete && !isEdit && !isSingleCreate;
 
                 let groupAction = null;
 
@@ -662,9 +683,12 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 } else {
                     // Single Group Creation
                     let groupName = '';
-                    const nameMatch = message.match(/(?:group|named|name)\s+["']?([^"'\n]+?)["']?(?:\s+(?:in|for|with)|\s*$)/i);
-                    if (nameMatch && nameMatch[1] && !['in', 'for', 'with', 'a', 'new'].includes(nameMatch[1].toLowerCase())) {
-                        groupName = nameMatch[1].trim();
+                    const quotedMatch = message.match(/group\s+["']([^"'\n]+)["']/i) || message.match(/named\s+["']([^"'\n]+)["']/i);
+                    const namedMatch = message.match(/(?:group|named)\s+([a-zA-Z0-9_\s-]+?)(?:\s+(?:in|for|with)|\s*$)/i);
+                    if (quotedMatch && quotedMatch[1]) {
+                        groupName = quotedMatch[1].trim();
+                    } else if (namedMatch && namedMatch[1] && !['in', 'for', 'with', 'a', 'new', 'leaders', 'members', 'students', 'to'].includes(namedMatch[1].trim().toLowerCase())) {
+                        groupName = namedMatch[1].trim();
                     } else {
                         groupName = `Group ${(matchedClass?.groups?.length || 0) + 1}`;
                     }
