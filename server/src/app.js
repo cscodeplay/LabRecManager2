@@ -1023,7 +1023,7 @@ const cronService = require('./services/cron.service');
 cronService.setSocketIO(io);
 cronService.initCronJobs();
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📚 Lab Record Manager API ready`);
