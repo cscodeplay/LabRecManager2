@@ -1311,48 +1311,74 @@ router.put('/shift-requests/:id/approve', authenticate, authorize('admin', 'prin
     const { adminNotes } = req.body;
 
     const shiftRequest = await prisma.equipmentShiftRequest.findUnique({
-        where: { id: req.params.id }
+        where: { id: req.params.id },
+        include: {
+            item: true,
+            fromLab: { select: { id: true, name: true } },
+            toLab: { select: { id: true, name: true } }
+        }
     });
 
     if (!shiftRequest) {
         return res.status(404).json({ success: false, message: 'Shift request not found' });
     }
 
-    if (shiftRequest.status !== 'pending') {
+    if (shiftRequest.status !== 'pending' && shiftRequest.status !== 'approved') {
         return res.status(400).json({ success: false, message: `Cannot approve a request with status: ${shiftRequest.status}` });
     }
 
-    const updated = await prisma.equipmentShiftRequest.update({
-        where: { id: req.params.id },
-        data: {
-            status: 'approved',
-            approvedById: req.user.id,
-            approvedAt: new Date(),
-            adminNotes
-        },
-        include: {
-            item: { select: { id: true, itemNumber: true, itemType: true } },
-            fromLab: { select: { id: true, name: true } },
-            toLab: { select: { id: true, name: true } },
-            requestedBy: { select: { id: true, firstName: true, lastName: true } },
-            approvedBy: { select: { id: true, firstName: true, lastName: true } }
-        }
-    });
+    // Atomically approve the request, move the item to the new lab, and record history
+    const [updated, updatedItem, history] = await prisma.$transaction([
+        prisma.equipmentShiftRequest.update({
+            where: { id: req.params.id },
+            data: {
+                status: 'completed',
+                approvedById: req.user.id,
+                approvedAt: new Date(),
+                completedAt: new Date(),
+                adminNotes
+            },
+            include: {
+                item: { select: { id: true, itemNumber: true, itemType: true, labId: true } },
+                fromLab: { select: { id: true, name: true } },
+                toLab: { select: { id: true, name: true } },
+                requestedBy: { select: { id: true, firstName: true, lastName: true } },
+                approvedBy: { select: { id: true, firstName: true, lastName: true } }
+            }
+        }),
+        prisma.labItem.update({
+            where: { id: shiftRequest.itemId },
+            data: { labId: shiftRequest.toLabId }
+        }),
+        prisma.equipmentShiftHistory.create({
+            data: {
+                itemId: shiftRequest.itemId,
+                fromLabId: shiftRequest.fromLabId,
+                toLabId: shiftRequest.toLabId,
+                shiftedById: req.user.id,
+                approvedById: req.user.id,
+                shiftRequestId: shiftRequest.id,
+                notes: adminNotes || 'Shift request approved and item moved'
+            }
+        })
+    ]);
 
     // Send notification to requester
-    await prisma.notification.create({
-        data: {
-            userId: shiftRequest.requestedById,
-            title: 'Shift Request Approved',
-            message: `Your request to move ${updated.item.itemNumber} from ${updated.fromLab.name} to ${updated.toLab.name} has been approved. Please complete the physical move.`,
-            is_read: false
-        }
-    });
+    if (shiftRequest.requestedById) {
+        await prisma.notification.create({
+            data: {
+                userId: shiftRequest.requestedById,
+                title: 'Shift Request Approved & Completed',
+                message: `Your request to move ${shiftRequest.item.itemNumber} from ${shiftRequest.fromLab.name} to ${shiftRequest.toLab.name} has been approved and the item has been moved.`,
+                is_read: false
+            }
+        }).catch(err => console.warn('[Notification] Send failed:', err.message));
+    }
 
     res.json({
         success: true,
-        message: 'Shift request approved',
-        data: { shiftRequest: updated }
+        message: `${shiftRequest.item.itemNumber} approved and successfully moved to ${shiftRequest.toLab.name}`,
+        data: { shiftRequest: updated, item: updatedItem, history }
     });
 }));
 

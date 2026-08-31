@@ -61,8 +61,8 @@ export default function ShiftRequestsPage() {
         setActionLoading(request.id);
         try {
             if (action === 'approve') {
-                await labsAPI.approveShiftRequest(request.id, adminNotes);
-                toast.success('Request approved');
+                const res = await labsAPI.approveShiftRequest(request.id, adminNotes);
+                toast.success(res.data?.message || `${request.item?.itemNumber} approved and moved to ${request.toLab?.name}!`);
             } else {
                 await labsAPI.rejectShiftRequest(request.id, adminNotes);
                 toast.success('Request rejected');
