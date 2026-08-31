@@ -11,7 +11,8 @@ import {
     LayoutGrid, Table as TableIcon, Inbox, Layers, Laptop, Server, HardDrive,
     Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket,
     ShoppingBag, Code, Terminal, Award, Package, Zap, Wifi, Network, Headphones, ScanLine, Cable, Camera,
-    Share2, Folder, Truck, ArrowRight, UsersRound, Search, RotateCcw, UserCheck, ShieldAlert, FolderPlus, Square
+    Share2, Folder, Truck, ArrowRight, UsersRound, Search, RotateCcw, UserCheck, ShieldAlert, FolderPlus, Square,
+    GripHorizontal
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
@@ -6854,6 +6855,82 @@ export default function FloatingChatbot() {
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
     const inputRef = useRef(null);
+    const panelRef = useRef(null);
+
+    // ── Draggable Window State ──
+    const [position, setPosition] = useState(null); // { x: number, y: number } | null
+    const [isDragging, setIsDragging] = useState(false);
+    const dragDataRef = useRef({ startX: 0, startY: 0, initX: 0, initY: 0 });
+
+    const handleHeaderPointerDown = (e) => {
+        // Only trigger drag with primary click/touch, when not maximized, and not on interactive buttons/inputs
+        if (e.button !== 0 || isExpanded) return;
+        if (e.target.closest('button') || e.target.closest('select') || e.target.closest('input') || e.target.closest('a')) {
+            return;
+        }
+
+        const panel = panelRef.current;
+        if (!panel) return;
+
+        const rect = panel.getBoundingClientRect();
+        dragDataRef.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            initX: rect.left,
+            initY: rect.top
+        };
+
+        setIsDragging(true);
+
+        const handlePointerMove = (moveEvent) => {
+            const dx = moveEvent.clientX - dragDataRef.current.startX;
+            const dy = moveEvent.clientY - dragDataRef.current.startY;
+
+            const panelWidth = panel.offsetWidth || 420;
+            const panelHeight = panel.offsetHeight || 600;
+
+            const maxX = Math.max(10, window.innerWidth - panelWidth - 10);
+            const maxY = Math.max(10, window.innerHeight - panelHeight - 10);
+
+            const nextX = Math.max(10, Math.min(maxX, dragDataRef.current.initX + dx));
+            const nextY = Math.max(10, Math.min(maxY, dragDataRef.current.initY + dy));
+
+            setPosition({ x: nextX, y: nextY });
+        };
+
+        const handlePointerUp = () => {
+            setIsDragging(false);
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+        };
+
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+    };
+
+    // Re-clamp position on window resize
+    useEffect(() => {
+        const handleResize = () => {
+            if (!position) return;
+            const panel = panelRef.current;
+            const panelWidth = panel?.offsetWidth || 420;
+            const panelHeight = panel?.offsetHeight || 600;
+
+            const maxX = Math.max(10, window.innerWidth - panelWidth - 10);
+            const maxY = Math.max(10, window.innerHeight - panelHeight - 10);
+
+            setPosition(prev => {
+                if (!prev) return null;
+                return {
+                    x: Math.max(10, Math.min(maxX, prev.x)),
+                    y: Math.max(10, Math.min(maxY, prev.y))
+                };
+            });
+        };
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [position]);
 
     // Only render for admin/principal
     const isAdmin = user?.role === 'admin' || user?.role === 'principal' || user?.role === 'instructor';
@@ -7117,10 +7194,34 @@ export default function FloatingChatbot() {
 
     const suggestions = instructorPromptCategories[activePromptCategory]?.prompts || [];
 
-    // ── Sizing ──
+    // ── Sizing & Positioning ──
     const panelClass = isExpanded
         ? 'fixed inset-4 z-[9999] rounded-2xl'
+        : position
+        ? 'rounded-2xl'
         : 'fixed bottom-20 right-4 z-[9999] w-[420px] h-[600px] max-h-[80vh] rounded-2xl';
+
+    const panelStyle = isExpanded
+        ? { backdropFilter: 'blur(20px)' }
+        : position
+        ? {
+            position: 'fixed',
+            left: `${position.x}px`,
+            top: `${position.y}px`,
+            bottom: 'auto',
+            right: 'auto',
+            width: '420px',
+            height: '600px',
+            maxHeight: '85vh',
+            maxWidth: 'calc(100vw - 20px)',
+            zIndex: 9999,
+            backdropFilter: 'blur(20px)',
+            userSelect: isDragging ? 'none' : 'auto'
+          }
+        : {
+            backdropFilter: 'blur(20px)',
+            userSelect: isDragging ? 'none' : 'auto'
+          };
 
     // Early return if not authorized (must be AFTER all hooks)
     if (!isAuthenticated || !isAdmin) return null;
@@ -7148,11 +7249,21 @@ export default function FloatingChatbot() {
 
             {/* ── Chat Panel ── */}
             {isOpen && (
-                <div className={`${panelClass} flex flex-col bg-white border border-slate-200 shadow-2xl shadow-slate-900/20 overflow-hidden`}
-                    style={{ backdropFilter: 'blur(20px)' }}>
+                <div 
+                    ref={panelRef}
+                    className={`${panelClass} flex flex-col bg-white border border-slate-200 shadow-2xl shadow-slate-900/20 overflow-hidden transition-shadow`}
+                    style={panelStyle}
+                >
 
-                    {/* Header */}
-                    <div className="flex items-center justify-between px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white flex-shrink-0 gap-2">
+                    {/* Header (Draggable Handle) */}
+                    <div 
+                        onPointerDown={handleHeaderPointerDown}
+                        onDoubleClick={() => !isExpanded && setPosition(null)}
+                        className={`flex items-center justify-between px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white flex-shrink-0 gap-2 select-none ${
+                            !isExpanded ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : ''
+                        }`}
+                        title={!isExpanded ? "Click & drag header to move • Double-click to reset position" : ""}
+                    >
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                             <div className="w-7 h-7 rounded-lg bg-white/20 backdrop-blur flex items-center justify-center flex-shrink-0">
                                 <Bot className="w-4 h-4" />
@@ -7164,10 +7275,15 @@ export default function FloatingChatbot() {
                                 <span className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-white/20 text-[9px] font-mono text-white/90" title="Keyboard Shortcut">
                                     ⌘J
                                 </span>
+                                {!isExpanded && (
+                                    <span className="hidden md:inline-flex items-center text-white/60 hover:text-white/90 transition cursor-grab" title="Click and drag to move chat window anywhere on screen">
+                                        <GripHorizontal className="w-3.5 h-3.5" />
+                                    </span>
+                                )}
                                 <select 
                                     value={preferredModel}
                                     onChange={(e) => setPreferredModel(e.target.value)}
-                                    className="bg-white/15 border border-white/25 text-white text-[10px] rounded px-1.5 py-0.5 outline-none focus:bg-white/25 max-w-[100px] truncate"
+                                    className="bg-white/15 border border-white/25 text-white text-[10px] rounded px-1.5 py-0.5 outline-none focus:bg-white/25 max-w-[100px] truncate cursor-pointer"
                                 >
                                     <option value="auto" className="text-black">Auto</option>
                                     <option value="groq" className="text-black">Groq (Llama)</option>
