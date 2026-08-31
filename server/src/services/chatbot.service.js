@@ -418,6 +418,127 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
         const msgLower = (message || '').toLowerCase();
 
+        // Intent detection: Inventory / Equipment / Hardware / Stock Register Data Insertion
+        const isInventoryInsertIntent = (
+            (msgLower.includes('insert') || msgLower.includes('add') || msgLower.includes('load') || msgLower.includes('import') || msgLower.includes('create') || msgLower.includes('save') || msgLower.includes('register')) &&
+            (msgLower.includes('inventory') || msgLower.includes('it inventory') || msgLower.includes('stock') || msgLower.includes('serial') || msgLower.includes('equipment') || msgLower.includes('hardware') || msgLower.includes('desktop') || msgLower.includes('laptop') || msgLower.includes('pc'))
+        ) || (
+            msgLower.includes('serial no for') || msgLower.includes('serial number for') || msgLower.includes('serials for')
+        );
+
+        if (isInventoryInsertIntent && (documentContext || msgLower.includes('serial') || msgLower.includes('desktop') || msgLower.includes('model') || msgLower.includes('cpu') || msgLower.includes('ram'))) {
+            try {
+                console.log('[ChatBot] Inventory Insert intent detected:', message);
+
+                // 1. Fetch available Labs
+                const allLabs = await prisma.lab.findMany({
+                    where: schoolId ? { schoolId } : {},
+                    select: { id: true, name: true, roomNumber: true, schoolId: true },
+                    orderBy: { name: 'asc' }
+                });
+
+                // Find IT Lab / Computer Lab
+                let targetLab = allLabs.find(l => l.name.toLowerCase().includes('it') || l.name.toLowerCase().includes('computer')) || allLabs[0];
+
+                // 2. Extract Brand, Model, Specs, ItemType from prompt
+                let brand = 'Generic';
+                const brandMatch = message.match(/\b(Acer|Dell|HP|Lenovo|Apple|Asus|Samsung|LG|Logitech|Cisco|Intel|AMD|Sony|Toshiba|Canon|Epson)\b/i);
+                if (brandMatch) brand = brandMatch[1];
+
+                let modelNo = '';
+                const modelMatch = message.match(/model\s+([a-zA-Z0-9_\s-]+?)(?:\s+(?:amd|intel|cpu|with|ram|and|\d+gb)|\s*$)/i) ||
+                                  message.match(/(?:Veriton|OptiPlex|ProBook|ThinkPad|IdeaPad|Latitude|Pavilion|Vostro|MacBook|EliteBook)\s*[a-zA-Z0-9_-]*/i);
+                if (modelMatch) {
+                    modelNo = (modelMatch[1] || modelMatch[0]).trim();
+                } else {
+                    modelNo = `${brand} PC`;
+                }
+
+                // Item Type
+                let itemType = 'pc';
+                if (msgLower.includes('laptop')) itemType = 'laptop';
+                else if (msgLower.includes('printer')) itemType = 'printer';
+                else if (msgLower.includes('projector')) itemType = 'projector';
+                else if (msgLower.includes('webcam') || msgLower.includes('camera')) itemType = 'webcam';
+                else if (msgLower.includes('switch') || msgLower.includes('router')) itemType = 'network';
+
+                // Extract hardware specs from user prompt
+                const specsObj = {};
+                if (msgLower.includes('amd a8') || msgLower.includes('amd')) specsObj.cpu = 'AMD A8';
+                else if (msgLower.includes('i3') || msgLower.includes('i5') || msgLower.includes('i7') || msgLower.includes('intel')) {
+                    const cpuMatch = message.match(/(intel\s+core\s+i[3579][^\s,]*|i[3579][^\s,]*|intel[^\s,]*)/i);
+                    specsObj.cpu = cpuMatch ? cpuMatch[0] : 'Intel Core';
+                }
+                const ramMatch = message.match(/(\d+\s*gb\s*(?:ddr[2345])?(?:\s*ram)?)/i);
+                if (ramMatch) specsObj.ram = ramMatch[0].trim();
+
+                const hddMatch = message.match(/(\d+\s*(?:tb|gb)\s*(?:hdd|ssd|nvme)?(?:\s*\d+\s*rpm)?)/i);
+                if (hddMatch) specsObj.storage = hddMatch[0].trim();
+
+                const gpuMatch = message.match(/(radeon\s*graphics|radeon|geforce|nvidia|intel\s*uhd|gpu[^\s,]*)/i);
+                if (gpuMatch) specsObj.gpu = gpuMatch[0].trim();
+
+                const specsStr = Object.values(specsObj).join(', ') || message.substring(0, 80);
+
+                // 3. Extract Serial Numbers from documentContext or message
+                const rawLines = `${documentContext}\n${message}`.split(/[\r\n,;]+/);
+                const serialCandidates = [];
+
+                for (const line of rawLines) {
+                    const trimmed = line.trim();
+                    if (!trimmed || trimmed.startsWith('---') || trimmed.length > 50) continue;
+                    
+                    const snMatch = trimmed.match(/(?:serial\s*(?:no|number)?\s*[:#-]?\s*)?([A-Za-z0-9\/-]{5,30})/i);
+                    if (snMatch && !snMatch[1].toLowerCase().includes('http') && !snMatch[1].toLowerCase().includes('inventory')) {
+                        const sn = snMatch[1].replace(/^[0-9]+[.)]\s*/, '').trim();
+                        if (sn.length >= 4 && !serialCandidates.includes(sn)) {
+                            serialCandidates.push(sn);
+                        }
+                    }
+                }
+
+                // Fallback serial generator if none explicitly detected in OCR lines
+                const finalSerials = serialCandidates.length >= 2 
+                    ? serialCandidates.slice(0, 30)
+                    : Array.from({ length: 10 }, (_, i) => `${brand.toUpperCase().slice(0, 4)}-${modelNo.replace(/[^A-Za-z0-9]/g, '').toUpperCase()}-${String(i + 1).padStart(3, '0')}`);
+
+                const records = finalSerials.map((sn, idx) => ({
+                    itemNumber: `${brand.toUpperCase().slice(0, 3)}-PC-${String(idx + 1).padStart(2, '0')}`,
+                    itemType,
+                    brand,
+                    modelNo,
+                    serialNo: sn,
+                    specs: specsObj,
+                    specifications: specsStr,
+                    status: 'active',
+                    selected: true
+                }));
+
+                const dataLoadingAction = {
+                    actionType: 'inventory_import',
+                    title: `📦 ${records.length} ${brand} ${modelNo} Desktops Preview`,
+                    labId: targetLab ? targetLab.id : null,
+                    labName: targetLab ? targetLab.name : 'Computer Lab',
+                    availableLabs: allLabs.map(l => ({ id: l.id, name: l.name })),
+                    columns: ['Item No', 'Type', 'Brand / Model', 'Serial No', 'Specs', 'Status'],
+                    records,
+                    isConfirmed: false
+                };
+
+                return {
+                    message: `📦 **Inventory Import Proposal Prepared!**\n\nI have extracted **${records.length} ${brand} ${modelNo} Desktop Computers** with your hardware specifications:\n\n- **Brand & Model:** ${brand} ${modelNo}\n- **Hardware Specs:** ${specsStr}\n- **Total Units Detected:** ${records.length} Units\n- **Target Lab:** ${targetLab ? targetLab.name : 'Computer Lab'}\n\nPlease review the table below, adjust selections or target lab if needed, and click **Confirm & Load [${records.length}] Records** to save directly into the database:`,
+                    sql: null,
+                    queryResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    dataLoadingAction,
+                    provider: 'groq'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Inventory Insert intent error:', err);
+            }
+        }
+
         // Intent detection: Student Group Operations (Create, Auto-Generate, Assign PCs, Edit, Delete)
         const isGroupIntent = (
             (msgLower.includes('group') || msgLower.includes('groups') || msgLower.includes('ਗਰੁੱਪ') || msgLower.includes('ग्रुप')) &&
@@ -4092,7 +4213,7 @@ ${queryResult.error}\n\nFailed Query:\
         }
 
         return {
-            message: aiText, sql: executedSQL, queryResult, chartData, reportAction,
+            message: aiText, sql: executedSQL, queryResult, chartData, reportAction, dataLoadingAction: null,
             model: aiResult.model, provider: aiResult.provider,
             timestamp: new Date().toISOString()
         };

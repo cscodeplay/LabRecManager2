@@ -30,7 +30,7 @@ const nextConfig = {
         ],
     },
     async rewrites() {
-        const apiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001').replace(/\/api\/?$/, '').replace(/\/$/, '');
+        const apiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000').replace(/\/api\/?$/, '').replace(/\/$/, '');
         return [
             {
                 source: '/api/:path*',

@@ -7350,13 +7350,15 @@ export default function FloatingChatbot() {
 
         try {
             const history = messages.slice(-10).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', content: m.content }));
-            const docCtx = uploadedDocs.map(d => `--- ${d.fileName} ---\n${d.extractedText}`).join('\n\n');
+            const docCtx = uploadedDocs.map(d => `--- ${d.fileName} ---\n${(d.extractedText || '').substring(0, 15000)}`).join('\n\n');
 
             const res = await api.post('/admin/chatbot/chat', { 
                 message: msg, 
                 conversationHistory: history, 
                 documentContext: docCtx,
                 provider: preferredModel
+            }, {
+                timeout: 120000
             });
             if (res.data.success) {
                 const d = res.data.data;
@@ -7373,6 +7375,7 @@ export default function FloatingChatbot() {
                         queryResult: d.queryResult, 
                         chartData: d.chartData, 
                         reportAction: d.reportAction, 
+                        dataLoadingAction: d.dataLoadingAction,
                         meetingAction: d.meetingAction,
                         calendarAction: d.calendarAction,
                         assignmentAction: d.assignmentAction,
