@@ -6913,10 +6913,15 @@ export default function FloatingChatbot() {
         return currentSessionId;
     };
 
-    // Global keyboard shortcut: Cmd+K / Ctrl+K or Cmd+/ / Ctrl+/
+    // Global keyboard shortcut: Cmd+J / Ctrl+J, Cmd+/ / Ctrl+/, or Cmd+Shift+K / Ctrl+Shift+K (avoiding Cmd+K which is for Global Search)
     useEffect(() => {
         const handleGlobalKeyDown = (e) => {
-            if ((e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === 'k' || e.key === '/')) {
+            const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+            const isJ = isCmdOrCtrl && !e.shiftKey && e.key.toLowerCase() === 'j';
+            const isSlash = isCmdOrCtrl && !e.shiftKey && e.key === '/';
+            const isShiftK = isCmdOrCtrl && e.shiftKey && e.key.toLowerCase() === 'k';
+
+            if (isJ || isSlash || isShiftK) {
                 e.preventDefault();
                 setIsOpen(prev => {
                     const nextState = !prev;
@@ -7127,7 +7132,7 @@ export default function FloatingChatbot() {
                 <button
                     onClick={() => setIsOpen(true)}
                     className="fixed bottom-6 right-6 z-[9999] w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 text-white shadow-2xl shadow-violet-500/40 flex items-center justify-center hover:scale-110 hover:shadow-violet-500/60 transition-all duration-300 group"
-                    title="LIA (⌘K / Ctrl+K)"
+                    title="LIA (⌘J / Ctrl+J)"
                 >
                     <Bot className="w-6 h-6 group-hover:scale-110 transition-transform" />
                     {/* Pulse ring */}
@@ -7157,7 +7162,7 @@ export default function FloatingChatbot() {
                                     LIA
                                 </h3>
                                 <span className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-white/20 text-[9px] font-mono text-white/90" title="Keyboard Shortcut">
-                                    ⌘K
+                                    ⌘J
                                 </span>
                                 <select 
                                     value={preferredModel}
