@@ -54,7 +54,7 @@ router.get('/status', authenticate, asyncHandler(async (req, res) => {
 
 /**
  * @route   POST /api/files/upload
- * @desc    Upload a file to Cloudinary
+ * @desc    Upload a file (Cloudinary with local filesystem fallback)
  * @access  Private
  */
 router.post('/upload', authenticate, upload.single('file'), asyncHandler(async (req, res) => {
@@ -62,30 +62,66 @@ router.post('/upload', authenticate, upload.single('file'), asyncHandler(async (
         return res.status(400).json({ success: false, message: 'No file provided' });
     }
 
-    if (!cloudinary.isConfigured()) {
-        return res.status(503).json({
-            success: false,
-            message: 'Cloudinary not configured. Upload to external service and paste URL instead.'
-        });
+    let fileUrl = null;
+    let fileId = null;
+    let width = null;
+    let height = null;
+    let size = req.file.size;
+
+    // 1. Try Cloudinary first if configured
+    if (cloudinary.isConfigured()) {
+        try {
+            const result = await cloudinary.uploadFile(
+                req.file.buffer,
+                req.file.originalname,
+                req.file.mimetype
+            );
+            fileId = result.publicId;
+            fileUrl = result.secureUrl || result.url;
+            size = result.size || req.file.size;
+            width = result.width;
+            height = result.height;
+        } catch (cErr) {
+            console.warn('[Files Upload] Cloudinary upload failed, falling back to local disk:', cErr.message);
+        }
     }
 
-    const result = await cloudinary.uploadFile(
-        req.file.buffer,
-        req.file.originalname,
-        req.file.mimetype
-    );
+    // 2. Fallback to local disk storage if Cloudinary not configured or failed
+    if (!fileUrl) {
+        const fs = require('fs');
+        const path = require('path');
+        const { v4: uuidv4 } = require('uuid');
+
+        const uploadDir = path.join(__dirname, '../../uploads/inventory');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+
+        const uniqueId = uuidv4();
+        const ext = path.extname(req.file.originalname) || (req.file.mimetype.startsWith('image/') ? '.jpg' : '.bin');
+        const safeName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const fileName = `${uniqueId}-${safeName}`;
+        const filePath = path.join(uploadDir, fileName);
+
+        fs.writeFileSync(filePath, req.file.buffer);
+
+        fileId = uniqueId;
+        fileUrl = `/uploads/inventory/${fileName}`;
+    }
 
     res.json({
         success: true,
         message: 'File uploaded successfully',
         data: {
-            fileId: result.publicId,
-            url: result.secureUrl,
+            fileId,
+            url: fileUrl,
+            imageUrl: fileUrl,
+            secureUrl: fileUrl,
             fileName: req.file.originalname,
             mimeType: req.file.mimetype,
-            size: result.size || req.file.size,
-            width: result.width,
-            height: result.height
+            size,
+            width,
+            height
         }
     });
 }));

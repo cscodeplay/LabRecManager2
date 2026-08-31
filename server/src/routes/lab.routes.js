@@ -116,7 +116,7 @@ router.get('/debug-maintenance/:labId', async (req, res) => {
  * @desc    Upload an image for inventory item
  * @access  Private (Admin)
  */
-router.post('/upload-image', authenticate, authorize('admin', 'principal', 'lab_assistant'), uploadSingle, asyncHandler(async (req, res) => {
+router.post('/upload-image', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), uploadSingle, asyncHandler(async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ success: false, message: 'No image file provided' });
     }

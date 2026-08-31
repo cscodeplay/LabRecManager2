@@ -822,38 +822,57 @@ function ChatChart({ chartData }) {
     );
 }
 
-/* ─── Interactive AI Report Action Card ─── */
+/* ─── Interactive AI Report Action Card with Multi-Format Downloads ─── */
 function ReportActionCard({ action }) {
     const [downloading, setDownloading] = useState(false);
+    const [previewData, setPreviewData] = useState(null);
+    const [showPreview, setShowPreview] = useState(false);
+
+    const fetchReportData = async () => {
+        if (action.reportResults) return { reportResults: action.reportResults };
+        const res = await reportsAPI.generateCustom({
+            entities: action.entities || ['students'],
+            filters: action.filters || {}
+        });
+        return res.data;
+    };
 
     const handleDownload = async (format) => {
         setDownloading(true);
         try {
-            const res = await reportsAPI.generateCustom({
-                entities: action.entities || ['students'],
-                filters: action.filters || {}
-            });
-            const reportData = res.data;
+            const reportData = await fetchReportData();
 
             if (!reportData || !reportData.reportResults) {
                 toast.error('No report data returned');
                 return;
             }
 
+            const results = reportData.reportResults;
+            const keys = Object.keys(results);
+            const firstResult = results[keys[0]];
+            const timestamp = new Date().toISOString().slice(0, 10);
+            const entityLabel = (action.entities || ['report']).join('_');
+
+            // 1. EXCEL (.XLSX)
             if (format === 'xlsx') {
                 const workbook = XLSX.utils.book_new();
-                for (const key of Object.keys(reportData.reportResults)) {
-                    const section = reportData.reportResults[key];
+                for (const key of keys) {
+                    const section = results[key];
                     if (section.rows && section.rows.length > 0) {
                         const worksheet = XLSX.utils.json_to_sheet(section.rows);
+                        // Auto column widths
+                        const maxCols = Object.keys(section.rows[0]).map(k => ({
+                            wch: Math.max(k.length + 2, ...section.rows.slice(0, 50).map(r => String(r[k] || '').length + 2))
+                        }));
+                        worksheet['!cols'] = maxCols;
                         XLSX.utils.book_append_sheet(workbook, worksheet, section.title.substring(0, 30));
                     }
                 }
-                XLSX.writeFile(workbook, `AI_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
-                toast.success('Excel workbook downloaded!');
-            } else if (format === 'csv') {
-                const keys = Object.keys(reportData.reportResults);
-                const firstResult = reportData.reportResults[keys[0]];
+                XLSX.writeFile(workbook, `ULRMS_${entityLabel.toUpperCase()}_REPORT_${timestamp}.xlsx`);
+                toast.success('📊 Excel (.xlsx) workbook downloaded!');
+            }
+            // 2. CSV (.CSV)
+            else if (format === 'csv') {
                 if (!firstResult?.rows?.length) {
                     toast.error('No rows to export');
                     return;
@@ -864,27 +883,86 @@ function ReportActionCard({ action }) {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `AI_Report_${new Date().toISOString().slice(0, 10)}.csv`;
+                a.download = `ULRMS_${entityLabel.toUpperCase()}_DATA_${timestamp}.csv`;
                 a.click();
                 URL.revokeObjectURL(url);
-                toast.success('CSV downloaded!');
-            } else if (format === 'pdf') {
+                toast.success('📑 CSV file downloaded!');
+            }
+            // 3. JSON (.JSON)
+            else if (format === 'json') {
+                const jsonOutput = JSON.stringify(reportData, null, 2);
+                const blob = new Blob([jsonOutput], { type: 'application/json;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ULRMS_${entityLabel.toUpperCase()}_REPORT_${timestamp}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success('🗄️ JSON data downloaded!');
+            }
+            // 4. PDF / PRINT
+            else if (format === 'pdf' || format === 'print') {
                 const printWindow = window.open('', '_blank');
-                const results = reportData.reportResults;
-                let html = `<html><head><title>AI Generated Report</title><style>body{font-family:sans-serif;padding:20px;} table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;} th,td{border:1px solid #cbd5e1;padding:6px 10px;} th{background:#f1f5f9;}</style></head><body><h2>AI Generated Report</h2>`;
-                for (const k of Object.keys(results)) {
+                let html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>ULRMS System Report - ${entityLabel.toUpperCase()}</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 28px; color: #0f172a; background: #fff; line-height: 1.5; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #4f46e5; padding-bottom: 16px; margin-bottom: 24px; }
+        .title { font-size: 22px; font-weight: 800; color: #1e1b4b; margin: 0 0 4px 0; }
+        .subtitle { font-size: 13px; color: #64748b; margin: 0; }
+        .badge { background: #e0e7ff; color: #3730a3; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+        .meta { font-size: 12px; color: #475569; margin-bottom: 20px; }
+        .section-title { font-size: 16px; font-weight: 700; color: #334155; margin: 24px 0 10px 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+        th { background: #f8fafc; color: #334155; font-weight: 700; text-align: left; padding: 10px 12px; border: 1px solid #cbd5e1; font-size: 11px; text-transform: uppercase; }
+        td { border: 1px solid #e2e8f0; padding: 8px 12px; color: #1e293b; }
+        tr:nth-child(even) td { background: #f8fafc; }
+        .footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; display: flex; justify-content: space-between; }
+        @media print { body { padding: 10px; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1 class="title">Unified Lab Record Management System</h1>
+            <p class="subtitle">AI-Generated Official Report & Summary</p>
+        </div>
+        <span class="badge">${(action.entities || ['report']).join(' • ')}</span>
+    </div>
+    <div class="meta">
+        <strong>Generated On:</strong> ${new Date().toLocaleString()} | <strong>Target Entities:</strong> ${(action.entities || []).join(', ')}
+    </div>`;
+
+                for (const k of keys) {
                     const sec = results[k];
                     if (!sec.rows?.length) continue;
                     const headers = Object.keys(sec.rows[0]);
-                    html += `<h3>${sec.title}</h3><table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>`;
+                    html += `<h2 class="section-title">📊 ${sec.title} (${sec.rows.length} records)</h2>
+                    <table>
+                        <thead>
+                            <tr>${headers.map(h => `<th>${h.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ')}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>`;
                     sec.rows.forEach(r => {
-                        html += `<tr>${headers.map(h => `<td>${r[h] ?? '-'}</td>`).join('')}</tr>`;
+                        html += `<tr>${headers.map(h => `<td>${r[h] !== null && r[h] !== undefined ? String(r[h]) : '-'}</td>`).join('')}</tr>`;
                     });
                     html += `</tbody></table>`;
                 }
-                html += `<script>window.onload=function(){window.print();}</script></body></html>`;
+
+                html += `
+    <div class="footer">
+        <span>Confidential & Internal Lab Management Document</span>
+        <span>ULRMS Intelligence Engine</span>
+    </div>
+    <script>window.onload = function() { window.print(); };</script>
+</body>
+</html>`;
                 printWindow.document.write(html);
                 printWindow.document.close();
+                toast.success('📄 Printable PDF view prepared!');
             }
         } catch (err) {
             console.error('In-chat report export error:', err);
@@ -895,44 +973,278 @@ function ReportActionCard({ action }) {
     };
 
     return (
-        <div className="mt-2 rounded-xl bg-gradient-to-r from-indigo-50/90 to-purple-50/90 border border-indigo-200 shadow-2xs overflow-hidden text-[11px]">
-            <div className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
-                    <span className="font-semibold text-xs tracking-tight">Report Ready</span>
+        <div className="mt-3 rounded-2xl bg-white border border-indigo-200 shadow-md overflow-hidden text-xs">
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-100" />
+                    </div>
+                    <div>
+                        <h4 className="font-bold text-xs leading-tight">AI Report Ready</h4>
+                        <p className="text-[10px] text-indigo-100">Ready for instant download & export</p>
+                    </div>
                 </div>
-                <span className="text-[9px] font-semibold px-1.5 py-0.5 bg-white/20 text-white rounded-md uppercase">
-                    {(action.entities || []).join(', ')}
+                <span className="text-[10px] font-bold px-2 py-0.5 bg-white/20 text-white rounded-full uppercase tracking-wider">
+                    {(action.entities || ['Data']).join(', ')}
                 </span>
             </div>
-            <div className="p-2.5 flex items-center justify-between gap-2">
-                <span className="text-slate-600 text-[11px] truncate">Export format:</span>
-                <div className="flex items-center gap-1.5">
+
+            <div className="p-3 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-slate-600 text-[11px] font-medium">Download / Export formats:</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* PDF */}
                     <button
                         onClick={() => handleDownload('pdf')}
                         disabled={downloading}
-                        title="Download PDF"
-                        className="p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition shadow-2xs disabled:opacity-50"
+                        title="Download / Print PDF Report"
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-[11px] transition shadow-2xs disabled:opacity-50"
                     >
-                        <FileText className="w-3.5 h-3.5" />
+                        <FileText className="w-3.5 h-3.5" /> PDF
                     </button>
+
+                    {/* Excel XLSX */}
                     <button
                         onClick={() => handleDownload('xlsx')}
                         disabled={downloading}
-                        title="Download Excel (XLSX)"
-                        className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition shadow-2xs disabled:opacity-50"
+                        title="Download Excel Workbook (.xlsx)"
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] transition shadow-2xs disabled:opacity-50"
                     >
-                        <File className="w-3.5 h-3.5" />
+                        <File className="w-3.5 h-3.5" /> Excel (.xlsx)
                     </button>
+
+                    {/* CSV */}
                     <button
                         onClick={() => handleDownload('csv')}
                         disabled={downloading}
-                        title="Download CSV"
-                        className="p-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition shadow-2xs disabled:opacity-50"
+                        title="Download CSV file (.csv)"
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold text-[11px] transition shadow-2xs disabled:opacity-50"
                     >
-                        <Download className="w-3.5 h-3.5" />
+                        <Download className="w-3.5 h-3.5" /> CSV
+                    </button>
+
+                    {/* JSON */}
+                    <button
+                        onClick={() => handleDownload('json')}
+                        disabled={downloading}
+                        title="Download JSON Data (.json)"
+                        className="flex items-center gap-1 px-2 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] transition shadow-2xs disabled:opacity-50"
+                    >
+                        <Code className="w-3.5 h-3.5" /> JSON
+                    </button>
+
+                    {/* Print */}
+                    <button
+                        onClick={() => handleDownload('print')}
+                        disabled={downloading}
+                        title="Print Report"
+                        className="flex items-center gap-1 px-2 py-1.5 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold text-[11px] transition shadow-2xs disabled:opacity-50"
+                    >
+                        <Printer className="w-3.5 h-3.5" /> Print
                     </button>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+/* ─── Interactive Multi-Image Data Loading Card with Table Preview & Confirm ─── */
+function DataLoadingCard({ action }) {
+    const [records, setRecords] = useState(action.records || []);
+    const [selectedLabId, setSelectedLabId] = useState(action.labId || action.availableLabs?.[0]?.id || '');
+    const [availableLabs, setAvailableLabs] = useState(action.availableLabs || []);
+    const [isConfirmed, setIsConfirmed] = useState(action.isConfirmed || false);
+    const [loading, setLoading] = useState(false);
+    const [resultMessage, setResultMessage] = useState('');
+
+    useEffect(() => {
+        if (!availableLabs.length) {
+            api.get('/labs').then(res => {
+                if (res.data?.success) {
+                    setAvailableLabs(res.data.data || []);
+                    if (!selectedLabId && res.data.data?.[0]?.id) {
+                        setSelectedLabId(res.data.data[0].id);
+                    }
+                }
+            }).catch(() => {});
+        }
+    }, []);
+
+    const selectedCount = records.filter(r => r.selected !== false).length;
+
+    const toggleSelectAll = () => {
+        const allSelected = selectedCount === records.length;
+        setRecords(prev => prev.map(r => ({ ...r, selected: !allSelected })));
+    };
+
+    const toggleRow = (idx) => {
+        setRecords(prev => prev.map((r, i) => i === idx ? { ...r, selected: !r.selected } : r));
+    };
+
+    const handleConfirmImport = async () => {
+        const itemsToLoad = records.filter(r => r.selected !== false);
+        if (itemsToLoad.length === 0) {
+            toast.error('Please select at least one record to import');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const res = await api.post('/admin/chatbot/load-data', {
+                actionType: action.actionType || 'inventory_import',
+                labId: selectedLabId,
+                records: itemsToLoad
+            });
+
+            if (res.data?.success) {
+                setIsConfirmed(true);
+                setResultMessage(res.data.message || `Successfully loaded ${itemsToLoad.length} items!`);
+                toast.success(res.data.message || 'Records loaded into database!');
+                window.dispatchEvent(new CustomEvent('lab-items-updated'));
+            }
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to load records into database');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="mt-3 rounded-2xl bg-white border border-indigo-200 shadow-md overflow-hidden text-xs">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
+                        <Layers className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                        <h4 className="font-bold text-xs leading-tight">{action.title || 'Data Loading Preview'}</h4>
+                        <p className="text-[10px] text-indigo-100">{records.length} records extracted from image(s)</p>
+                    </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-semibold">
+                    {selectedCount}/{records.length} Selected
+                </span>
+            </div>
+
+            {/* Source Image Thumbnails (up to 5 images) */}
+            {action.imageUrls && action.imageUrls.length > 0 && (
+                <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2 overflow-x-auto">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex-shrink-0">Source Images ({action.imageUrls.length}):</span>
+                    {action.imageUrls.map((url, idx) => (
+                        <img key={idx} src={url} alt={`Upload ${idx+1}`} className="w-8 h-8 rounded-lg object-cover border border-slate-200 shadow-2xs flex-shrink-0" />
+                    ))}
+                </div>
+            )}
+
+            {/* Destination Lab Selector */}
+            <div className="p-3 bg-indigo-50/50 border-b border-indigo-100 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5 flex-1">
+                    <label className="text-[11px] font-bold text-slate-700 whitespace-nowrap">Target Lab:</label>
+                    <select
+                        value={selectedLabId}
+                        disabled={isConfirmed}
+                        onChange={(e) => setSelectedLabId(e.target.value)}
+                        className="text-xs px-2.5 py-1 bg-white border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none flex-1 max-w-[200px]"
+                    >
+                        {availableLabs.map(l => (
+                            <option key={l.id} value={l.id}>🏢 {l.name}</option>
+                        ))}
+                    </select>
+                </div>
+                <button
+                    type="button"
+                    disabled={isConfirmed}
+                    onClick={toggleSelectAll}
+                    className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition"
+                >
+                    {selectedCount === records.length ? 'Deselect All' : 'Select All'}
+                </button>
+            </div>
+
+            {/* Structured Table Preview */}
+            <div className="max-h-56 overflow-y-auto overflow-x-auto border-b border-slate-200">
+                <table className="w-full text-left text-[11px] border-collapse">
+                    <thead className="bg-slate-100 sticky top-0 z-10 text-slate-600 font-bold border-b border-slate-200">
+                        <tr>
+                            <th className="p-2 w-8 text-center">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedCount === records.length && records.length > 0}
+                                    onChange={toggleSelectAll}
+                                    disabled={isConfirmed}
+                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                            </th>
+                            <th className="p-2">Item No</th>
+                            <th className="p-2">Type</th>
+                            <th className="p-2">Brand / Model</th>
+                            <th className="p-2">Serial No</th>
+                            <th className="p-2">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {records.map((r, idx) => (
+                            <tr key={idx} className={`hover:bg-indigo-50/40 transition ${r.selected !== false ? 'bg-white' : 'bg-slate-50 opacity-60'}`}>
+                                <td className="p-2 text-center">
+                                    <input
+                                        type="checkbox"
+                                        checked={r.selected !== false}
+                                        onChange={() => toggleRow(idx)}
+                                        disabled={isConfirmed}
+                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                </td>
+                                <td className="p-2 font-mono font-bold text-slate-800">{r.itemNumber || r.itemNo || '-'}</td>
+                                <td className="p-2 capitalize">
+                                    <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold">
+                                        {r.itemType || r.type || 'pc'}
+                                    </span>
+                                </td>
+                                <td className="p-2 font-medium text-slate-800">
+                                    {r.brand ? `${r.brand} ` : ''}{r.model || 'Standard Unit'}
+                                </td>
+                                <td className="p-2 font-mono text-[10px] text-slate-600">{r.serialNumber || r.serialNo || '-'}</td>
+                                <td className="p-2">
+                                    <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
+                                        {r.status || 'Active'}
+                                    </span>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Footer with Confirm Button or Success Banner */}
+            <div className="p-3 bg-slate-50 flex items-center justify-between gap-2">
+                {isConfirmed ? (
+                    <div className="flex items-center justify-between w-full">
+                        <span className="flex items-center gap-1.5 font-bold text-emerald-600 text-xs">
+                            <CheckCircle2 className="w-4 h-4" /> {resultMessage || 'Data Loaded Successfully!'}
+                        </span>
+                        <a
+                            href={selectedLabId ? `/admin/labs/${selectedLabId}/pcs` : '/admin/labs'}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition"
+                        >
+                            View in Lab <ExternalLink className="w-3 h-3" />
+                        </a>
+                    </div>
+                ) : (
+                    <>
+                        <span className="text-[11px] text-slate-500">
+                            {selectedCount} item{selectedCount === 1 ? '' : 's'} ready to load
+                        </span>
+                        <button
+                            type="button"
+                            disabled={loading || selectedCount === 0}
+                            onClick={handleConfirmImport}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-xl font-bold text-xs shadow-md transition disabled:opacity-50"
+                        >
+                            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                            Confirm & Load {selectedCount} Records
+                        </button>
+                    </>
+                )}
             </div>
         </div>
     );
@@ -7111,29 +7423,56 @@ export default function FloatingChatbot() {
     };
 
     const handleFileUpload = async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+        const rawFiles = Array.from(e.target.files || []);
+        if (rawFiles.length === 0) return;
+
+        const files = rawFiles.slice(0, 5); // Support max 5 images / documents
+        if (rawFiles.length > 5) {
+            toast('Processing the first 5 images for analysis');
+        }
+
         setIsUploading(true);
         try {
             const fd = new FormData();
-            fd.append('document', file);
+            files.forEach(f => {
+                fd.append('documents', f);
+                fd.append('files', f);
+            });
+            fd.append('document', files[0]); // Backward compatibility
+
             const res = await api.post('/admin/chatbot/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
             if (res.data.success) {
                 const docData = res.data.data;
                 setUploadedDocs(prev => [...prev, docData]);
-                const isImg = docData.mimeType?.startsWith('image/') || Boolean(docData.imageUrl);
-                setMessages(prev => [...prev, {
-                    role: 'assistant',
-                    content: isImg
-                        ? `🖼️ **Image Loaded & Analyzed:** ${docData.fileName}\n\n*OCR Text / Visual Analysis Preview:*\n> ${docData.preview || 'Ready for queries.'}\n\nYou can now ask me questions or instruct me to create records based on this image.`
-                        : `📄 **Loaded:** ${docData.fileName} (${docData.charCount.toLocaleString()} chars).\nAsk me anything about it.`,
-                    imageUrl: docData.imageUrl || null,
-                    timestamp: new Date().toISOString()
-                }]);
-                toast.success(isImg ? 'Image analyzed successfully!' : 'Document loaded');
+                const isImg = docData.mimeType?.startsWith('image/') || Boolean(docData.imageUrl) || (docData.imageUrls && docData.imageUrls.length > 0);
+
+                if (docData.dataLoadingAction) {
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: `📊 **Data Extraction Complete (${files.length} file/image(s) processed):**\n\nI have extracted tabular data from your uploaded image(s). Please review the preview table below, choose the destination lab, and click **Confirm & Load** to import into the database.`,
+                        dataLoadingAction: docData.dataLoadingAction,
+                        imageUrl: docData.imageUrl || null,
+                        timestamp: new Date().toISOString()
+                    }]);
+                    toast.success('Tabular data extracted & ready for loading!');
+                } else {
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: isImg
+                            ? `🖼️ **${files.length > 1 ? `${files.length} Images` : 'Image'} Loaded & Analyzed:** ${docData.fileName}\n\n*OCR Text / Visual Analysis Preview:*\n> ${docData.preview || 'Ready for queries.'}\n\nYou can now ask me questions or instruct me to create records based on this image.`
+                            : `📄 **Loaded:** ${docData.fileName} (${docData.charCount.toLocaleString()} chars).\nAsk me anything about it.`,
+                        imageUrl: docData.imageUrl || null,
+                        timestamp: new Date().toISOString()
+                    }]);
+                    toast.success(isImg ? (files.length > 1 ? `${files.length} images analyzed successfully!` : 'Image analyzed successfully!') : 'Document loaded');
+                }
             }
-        } catch (err) { toast.error(err.response?.data?.message || err.message); }
-        finally { setIsUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
+        } catch (err) { 
+            toast.error(err.response?.data?.message || err.message); 
+        } finally { 
+            setIsUploading(false); 
+            if (fileInputRef.current) fileInputRef.current.value = ''; 
+        }
     };
 
     const clearChat = () => {
@@ -7446,6 +7785,7 @@ export default function FloatingChatbot() {
                                     {msg.queryResult && <SQLResult sql={msg.sql} result={msg.queryResult} onRerun={() => handleRerunSQL(msg.sql)} />}
                                     {msg.chartData && <ChatChart chartData={msg.chartData} />}
                                     {msg.reportAction && <ReportActionCard action={msg.reportAction} />}
+                                    {msg.dataLoadingAction && <DataLoadingCard action={msg.dataLoadingAction} />}
                                     {msg.meetingAction && <MeetingActionCard action={msg.meetingAction} />}
                                     {msg.calendarAction && <CalendarActionCard action={msg.calendarAction} />}
                                     {msg.assignmentAction && <AssignmentActionCard action={msg.assignmentAction} />}
@@ -7532,9 +7872,9 @@ export default function FloatingChatbot() {
 
                             {/* Input bar */}
                             <div className="flex items-end gap-2 px-3 py-2.5 bg-white border-t border-slate-200 flex-shrink-0">
-                                <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".txt,.csv,.json,.pdf,.md,.sql,.log,.png,.jpg,.jpeg,.webp,.bmp" />
+                                <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".txt,.csv,.json,.pdf,.md,.sql,.log,.png,.jpg,.jpeg,.webp,.bmp" />
                                 <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
-                                    className="flex-shrink-0 w-8 h-8 rounded-lg bg-violet-50 border border-violet-200 flex items-center justify-center text-violet-500 hover:bg-violet-100 transition disabled:opacity-50" title="Upload document, holiday PDF or image">
+                                    className="flex-shrink-0 w-8 h-8 rounded-lg bg-violet-50 border border-violet-200 flex items-center justify-center text-violet-500 hover:bg-violet-100 transition disabled:opacity-50" title="Upload up to 5 documents or images for data collection & loading">
                                     {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                                 </button>
                                 
