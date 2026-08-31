@@ -1,0 +1,11 @@
+{
+  "name": "lab-record-manager",
+  "version": "1.0.0",
+  "description": "Unified Lab Record Management System (ULRMS)",
+  "scripts": {
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "dev": "npm run dev:server",
+    "build": "cd client && npm run build"
+  }
+}
