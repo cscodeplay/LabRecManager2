@@ -1,17 +1,17 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     MousePointer2, Pencil, Highlighter, Eraser, Circle, Type, Minus, Sparkles,
-    Square, LassoSelect, PenTool, Brush, Droplet, Palette,
-    CheckSquare, PaintBucket, Pipette, LayoutTemplate, Clock,
+    Square, LassoSelect, PenTool, Brush, Droplet,
+    PaintBucket, Pipette, LayoutTemplate, Clock,
     Square as SquareShape, Circle as CircleShape, Triangle, Star, StickyNote, Waypoints,
     ArrowUpRight, RemoveFormatting, X
 } from 'lucide-react';
 
-const INNER_RADIUS = 85;
-const OUTER_RADIUS = 145;
-const MENU_RADIUS = 165; // Total outer bound to clamp
+const INNER_RADIUS = 80;
+const SUB_ARC_RADIUS = 55; // Distance from parent tool to sub-tool
+const MENU_RADIUS = 160;   // Bounding radius for position clamping
 
 const INNER_TOOLS = [
     { id: 'select', label: 'Select', icon: MousePointer2 },
@@ -20,7 +20,7 @@ const INNER_TOOLS = [
     { id: 'eraser', label: 'Eraser', icon: Eraser },
     { id: 'shapes', label: 'Shapes', icon: Circle },
     { id: 'text', label: 'Text', icon: Type },
-    { id: 'line', label: 'Line/Arrow', icon: Minus },
+    { id: 'line', label: 'Line', icon: Minus },
     { id: 'more', label: 'More', icon: Sparkles },
 ];
 
@@ -30,9 +30,9 @@ const OUTER_TOOLS = {
         { id: 'lasso_select', label: 'Lasso', icon: LassoSelect, action: { selectMode: 'lasso' } },
     ],
     pen: [
-        { id: 'pen_thin', label: 'Thin (2px)', icon: Pencil, action: { strokeWidth: 2 } },
-        { id: 'pen_med', label: 'Medium (4px)', icon: Pencil, action: { strokeWidth: 4 } },
-        { id: 'pen_thick', label: 'Thick (8px)', icon: Pencil, action: { strokeWidth: 8 } },
+        { id: 'pen_thin', label: '2px', icon: Pencil, action: { strokeWidth: 2 } },
+        { id: 'pen_med', label: '4px', icon: Pencil, action: { strokeWidth: 4 } },
+        { id: 'pen_thick', label: '8px', icon: Pencil, action: { strokeWidth: 8 } },
         { id: 'pen_calligraphy', label: 'Calligraphy', icon: PenTool, action: { brushType: 'calligraphy' } },
         { id: 'pen_crayon', label: 'Crayon', icon: Brush, action: { brushType: 'crayon' } },
         { id: 'pen_watercolor', label: 'Watercolor', icon: Droplet, action: { brushType: 'watercolor' } },
@@ -46,8 +46,8 @@ const OUTER_TOOLS = {
     ],
     eraser: [
         { id: 'erase_small', label: 'Small', icon: Eraser, action: { eraserSize: 5 } },
-        { id: 'erase_med', label: 'Medium', icon: Eraser, action: { eraserSize: 10 } },
-        { id: 'erase_large', label: 'Large', icon: Eraser, action: { eraserSize: 20 } },
+        { id: 'erase_med', label: 'Medium', icon: Eraser, action: { eraserSize: 15 } },
+        { id: 'erase_large', label: 'Large', icon: Eraser, action: { eraserSize: 30 } },
         { id: 'erase_obj', label: 'Object', icon: RemoveFormatting, action: { eraserMode: 'object' } },
     ],
     shapes: [
@@ -81,165 +81,246 @@ export default function RadialToolbar({
     canvasBounds
 }) {
     const [hoveredInner, setHoveredInner] = useState(null);
-    const [isClosing, setIsClosing] = useState(false);
     const [clampedPos, setClampedPos] = useState({ x: 0, y: 0 });
+    const containerRef = useRef(null);
 
     useEffect(() => {
         if (isOpen) {
-            setIsClosing(false);
-            setHoveredInner(null);
+            setHoveredInner(currentTool);
 
-            // Clamp position
             let cx = position.x;
             let cy = position.y;
             if (canvasBounds) {
-                cx = Math.max(MENU_RADIUS, Math.min(canvasBounds.width - MENU_RADIUS, cx));
-                cy = Math.max(MENU_RADIUS, Math.min(canvasBounds.height - MENU_RADIUS, cy));
+                cx = Math.max(MENU_RADIUS + 20, Math.min(canvasBounds.width - MENU_RADIUS - 20, cx));
+                cy = Math.max(MENU_RADIUS + 20, Math.min(canvasBounds.height - MENU_RADIUS - 20, cy));
             }
             setClampedPos({ x: cx, y: cy });
         }
-    }, [isOpen, position, canvasBounds]);
+    }, [isOpen, position, canvasBounds, currentTool]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.key === 'Escape' && isOpen) {
-                handleClose();
+                onClose();
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen]);
+    }, [isOpen, onClose]);
 
-    const handleClose = () => {
-        setIsClosing(true);
-        setTimeout(() => {
+    if (!isOpen) return null;
+
+    const activeOuterTools = (hoveredInner && OUTER_TOOLS[hoveredInner]) ? OUTER_TOOLS[hoveredInner] : null;
+    const parentIndex = INNER_TOOLS.findIndex(t => t.id === hoveredInner);
+    const parentAngleDeg = parentIndex !== -1 ? (parentIndex * 45 - 90) : -90;
+    const parentAngleRad = parentAngleDeg * (Math.PI / 180);
+    const parentX = INNER_RADIUS * Math.cos(parentAngleRad);
+    const parentY = INNER_RADIUS * Math.sin(parentAngleRad);
+
+    // Calculate sub-tool positions relative to parent tool
+    const subToolPositions = [];
+    if (activeOuterTools && activeOuterTools.length > 0) {
+        const numSub = activeOuterTools.length;
+        const totalSpanDeg = Math.min(130, numSub * 26);
+        const stepDeg = numSub > 1 ? totalSpanDeg / (numSub - 1) : 0;
+        const startDeg = parentAngleDeg - totalSpanDeg / 2;
+
+        activeOuterTools.forEach((tool, i) => {
+            const subDeg = startDeg + i * stepDeg;
+            const subRad = subDeg * (Math.PI / 180);
+            const sx = parentX + SUB_ARC_RADIUS * Math.cos(subRad);
+            const sy = parentY + SUB_ARC_RADIUS * Math.sin(subRad);
+            subToolPositions.push({ tool, x: sx, y: sy, angleDeg: subDeg });
+        });
+    }
+
+    const handleInnerClick = (e, tool) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setHoveredInner(tool.id);
+        onToolSelect(tool.id);
+        if (!OUTER_TOOLS[tool.id]) {
             onClose();
-            setIsClosing(false);
-        }, 150);
-    };
-
-    const handleInnerClick = (tool) => {
-        if (!OUTER_TOOLS[tool.id] || OUTER_TOOLS[tool.id].length === 0) {
-            onToolSelect(tool.id);
-            handleClose();
-        } else {
-            // Keep it open, just select the tool itself generally, or require outer click?
-            onToolSelect(tool.id);
-            setHoveredInner(tool.id);
         }
     };
 
-    const handleOuterClick = (innerId, outerTool) => {
+    const handleOuterClick = (e, innerId, outerTool) => {
+        e.stopPropagation();
+        e.preventDefault();
         onToolSelect(innerId, outerTool.action);
-        handleClose();
+        onClose();
     };
 
-    if (!isOpen && !isClosing) return null;
-
     const CurrentIcon = INNER_TOOLS.find(t => t.id === currentTool)?.icon || Pencil;
-    const activeOuterTools = hoveredInner ? OUTER_TOOLS[hoveredInner] : null;
 
     return (
-        <div className="fixed inset-0 z-50 overflow-hidden pointer-events-none">
-            {/* Backdrop */}
-            <div 
-                className={`absolute inset-0 bg-black/20 backdrop-blur-sm pointer-events-auto transition-opacity duration-150 ${isClosing ? 'opacity-0' : 'opacity-100'}`}
-                onClick={handleClose}
-            />
-
-            {/* Radial Container */}
-            <div 
-                className={`absolute pointer-events-auto transition-all transform-gpu origin-center
-                    ${isClosing ? 'scale-80 opacity-0 duration-150 ease-in' : 'scale-100 opacity-100 duration-250'}
-                `}
-                style={{ 
-                    left: clampedPos.x, 
-                    top: clampedPos.y,
-                    transitionTimingFunction: isClosing ? 'ease-in' : 'cubic-bezier(0.34, 1.56, 0.64, 1)'
-                }}
+        <div
+            ref={containerRef}
+            className="radial-toolbar-container absolute z-50 pointer-events-auto select-none animate-in zoom-in-90 duration-150"
+            style={{
+                left: clampedPos.x,
+                top: clampedPos.y,
+                transform: 'translate(-50%, -50%)',
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+        >
+            {/* SVG Ring Background & Arc Highlight */}
+            <svg
+                className="absolute overflow-visible pointer-events-none"
+                style={{ left: 0, top: 0, transform: 'translate(-50%, -50%)' }}
+                width="360"
+                height="360"
+                viewBox="-180 -180 360 360"
             >
-                {/* Outer Ring */}
-                {activeOuterTools && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        {activeOuterTools.map((tool, i) => {
-                            const angle = (i * (360 / activeOuterTools.length) - 90) * (Math.PI / 180);
-                            const x = OUTER_RADIUS * Math.cos(angle);
-                            const y = OUTER_RADIUS * Math.sin(angle);
-                            
-                            return (
-                                <button
-                                    key={tool.id}
-                                    onClick={(e) => { e.stopPropagation(); handleOuterClick(hoveredInner, tool); }}
-                                    className={`absolute flex flex-col items-center justify-center w-9 h-9 rounded-full 
-                                        bg-slate-800/80 border border-white/10 text-white shadow-lg
-                                        hover:bg-white/20 hover:scale-110 transition-all duration-200
-                                        animate-in zoom-in spin-in-12 fade-in slide-in-from-center-10
-                                    `}
-                                    style={{
-                                        transform: `translate(${x}px, ${y}px)`,
-                                        animationDuration: '200ms',
-                                        animationDelay: `${i * 20}ms`,
-                                        animationFillMode: 'both'
-                                    }}
-                                    title={tool.label}
-                                >
-                                    <tool.icon className={`w-4 h-4 ${tool.colorClass || ''}`} />
-                                </button>
-                            );
-                        })}
-                    </div>
+                <defs>
+                    <filter id="radialGlow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feGaussianBlur stdDeviation="6" result="blur" />
+                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#1e293b" stopOpacity="0.92" />
+                        <stop offset="100%" stopColor="#0f172a" stopOpacity="0.95" />
+                    </linearGradient>
+                </defs>
+
+                {/* Main Inner Ring Background Track */}
+                <circle
+                    cx="0"
+                    cy="0"
+                    r={INNER_RADIUS}
+                    fill="none"
+                    stroke="url(#ringGrad)"
+                    strokeWidth="48"
+                    className="drop-shadow-xl"
+                />
+                <circle
+                    cx="0"
+                    cy="0"
+                    r={INNER_RADIUS - 24}
+                    fill="none"
+                    stroke="rgba(99, 102, 241, 0.35)"
+                    strokeWidth="1.5"
+                />
+                <circle
+                    cx="0"
+                    cy="0"
+                    r={INNER_RADIUS + 24}
+                    fill="none"
+                    stroke="rgba(99, 102, 241, 0.35)"
+                    strokeWidth="1.5"
+                />
+
+                {/* Sub-tool Connecting Fan Arc Background */}
+                {activeOuterTools && activeOuterTools.length > 0 && (
+                    <g className="animate-in fade-in zoom-in-75 duration-200">
+                        {/* Connector line from parent to arc */}
+                        <line
+                            x1={parentX}
+                            y1={parentY}
+                            x2={parentX + Math.cos(parentAngleRad) * (SUB_ARC_RADIUS + 10)}
+                            y2={parentY + Math.sin(parentAngleRad) * (SUB_ARC_RADIUS + 10)}
+                            stroke="#6366f1"
+                            strokeWidth="3"
+                            strokeDasharray="4,3"
+                            opacity="0.8"
+                        />
+                        {/* Sub-tool background pill fan */}
+                        {subToolPositions.map((st, idx) => (
+                            <circle
+                                key={idx}
+                                cx={st.x}
+                                cy={st.y}
+                                r="22"
+                                fill="#0f172a"
+                                stroke="#818cf8"
+                                strokeWidth="2"
+                                opacity="0.92"
+                                filter="url(#radialGlow)"
+                            />
+                        ))}
+                    </g>
                 )}
+            </svg>
 
-                {/* Inner Ring */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                    {INNER_TOOLS.map((tool, i) => {
-                        const angle = (i * 45 - 90) * (Math.PI / 180); // 8 items = 45 degrees
-                        const x = INNER_RADIUS * Math.cos(angle);
-                        const y = INNER_RADIUS * Math.sin(angle);
-                        const isActive = currentTool === tool.id;
-                        const isHovered = hoveredInner === tool.id;
-
-                        return (
-                            <button
-                                key={tool.id}
-                                onClick={(e) => { e.stopPropagation(); handleInnerClick(tool); }}
-                                onMouseEnter={() => setHoveredInner(tool.id)}
-                                onMouseLeave={() => { /* Option to keep open until moving far away or entering center */ }}
-                                className={`absolute flex flex-col items-center justify-center w-11 h-11 rounded-full shadow-lg
-                                    backdrop-blur-xl border border-white/10 text-white transition-all duration-200
-                                    hover:scale-110 group
-                                    ${isActive ? 'bg-blue-500/30 ring-2 ring-blue-400' : 'bg-slate-900/90 hover:bg-white/20'}
-                                    ${!isClosing ? 'animate-in zoom-in fade-in' : ''}
-                                `}
-                                style={{
-                                    transform: `translate(${x}px, ${y}px)`,
-                                    animationDuration: '300ms',
-                                    animationDelay: `${i * 30}ms`,
-                                    animationFillMode: 'both'
-                                }}
-                            >
-                                <tool.icon className="w-5 h-5 mb-0.5" />
-                                <span className="text-[9px] font-medium leading-none opacity-80 group-hover:opacity-100">
-                                    {tool.label}
-                                </span>
-                            </button>
-                        );
-                    })}
-                </div>
-
-                {/* Center Hub */}
+            {/* Sub-Tool Buttons (Anchored near parent tool in an arc) */}
+            {activeOuterTools && subToolPositions.map(({ tool, x, y }) => (
                 <button
-                    onClick={(e) => { e.stopPropagation(); handleClose(); }}
-                    className={`absolute flex items-center justify-center w-[50px] h-[50px] rounded-full 
-                        bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl border-2 border-white/20
-                        text-white hover:scale-110 hover:shadow-2xl transition-all duration-200 z-10
-                        transform -translate-x-1/2 -translate-y-1/2
-                    `}
-                    style={{ left: 0, top: 0 }}
+                    key={tool.id}
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => handleOuterClick(e, hoveredInner, tool)}
+                    className="absolute flex flex-col items-center justify-center w-10 h-10 rounded-full bg-slate-900/95 border-2 border-indigo-400 text-white shadow-xl hover:scale-115 hover:bg-indigo-600 hover:border-white transition-all duration-150 z-30 cursor-pointer"
+                    style={{
+                        left: x,
+                        top: y,
+                        transform: 'translate(-50%, -50%)',
+                    }}
+                    title={tool.label}
                 >
-                    <CurrentIcon className="w-6 h-6" />
+                    <tool.icon className={'w-4 h-4 ' + (tool.colorClass || '')} />
+                    <span className="text-[8px] font-bold mt-0.5 leading-none px-1 rounded bg-slate-950/80 text-indigo-200 whitespace-nowrap">
+                        {tool.label}
+                    </span>
                 </button>
-            </div>
+            ))}
+
+            {/* Inner Ring Buttons */}
+            {INNER_TOOLS.map((tool, i) => {
+                const angleRad = (i * 45 - 90) * (Math.PI / 180);
+                const x = INNER_RADIUS * Math.cos(angleRad);
+                const y = INNER_RADIUS * Math.sin(angleRad);
+                const isActive = currentTool === tool.id;
+                const isHovered = hoveredInner === tool.id;
+
+                return (
+                    <button
+                        key={tool.id}
+                        type="button"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => handleInnerClick(e, tool)}
+                        onMouseEnter={() => setHoveredInner(tool.id)}
+                        className={'absolute flex flex-col items-center justify-center w-11 h-11 rounded-full shadow-2xl transition-all duration-150 z-20 cursor-pointer ' + (
+                            isHovered
+                                ? 'bg-indigo-600 text-white border-2 border-white scale-115 shadow-indigo-500/50'
+                                : isActive
+                                    ? 'bg-blue-600 text-white border-2 border-blue-300 scale-105'
+                                    : 'bg-slate-900/90 text-slate-200 border border-slate-700/80 hover:bg-slate-800 hover:text-white'
+                        )}
+                        style={{
+                            left: x,
+                            top: y,
+                            transform: 'translate(-50%, -50%)',
+                        }}
+                        title={tool.label}
+                    >
+                        <tool.icon className="w-5 h-5" />
+                        <span className="text-[8px] font-extrabold leading-none mt-0.5 opacity-90">
+                            {tool.label}
+                        </span>
+                    </button>
+                );
+            })}
+
+            {/* Center Hub */}
+            <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onClose();
+                }}
+                className="absolute flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 shadow-2xl border-2 border-white/40 text-white hover:scale-110 transition-all duration-150 z-40 cursor-pointer"
+                style={{
+                    left: 0,
+                    top: 0,
+                    transform: 'translate(-50%, -50%)',
+                }}
+                title="Close Wheel"
+            >
+                <CurrentIcon className="w-6 h-6" />
+            </button>
         </div>
     );
 }

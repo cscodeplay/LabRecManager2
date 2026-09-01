@@ -3152,8 +3152,13 @@ export default function Whiteboard({
             e.preventDefault();
         }
 
-        // ─── Barrel Button → Open Radial Toolbar ───
-        // Apple Pencil barrel button fires as button 5 in Safari
+        // Ignore clicks on radial toolbar or FAB button
+        if (e.target?.closest?.('.radial-toolbar-container') || e.target?.closest?.('.radial-fab-button')) {
+            return;
+        }
+
+        // ─── Barrel Button / Stylus Long-Press → Open Radial Toolbar ───
+        // Apple Pencil barrel button or right-click
         if (e.button === 5 || (e.pointerType === 'pen' && e.button === 2)) {
             const wrapper = canvasWrapperRef.current;
             if (wrapper) {
@@ -6334,6 +6339,8 @@ export default function Whiteboard({
                     {/* Floating Radial FAB Button (Bottom-Left) */}
                     <button
                         type="button"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                             e.stopPropagation();
                             const wrapper = canvasWrapperRef.current;
@@ -6343,7 +6350,7 @@ export default function Whiteboard({
                                 setShowRadialMenu(!showRadialMenu);
                             }
                         }}
-                        className="absolute bottom-20 left-4 z-40 w-11 h-11 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/30 border-2 border-white/20 flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-200"
+                        className="radial-fab-button absolute bottom-20 left-4 z-40 w-11 h-11 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/30 border-2 border-white/20 flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-200 cursor-pointer pointer-events-auto"
                         title="Quick Tool Wheel (Press ~ or barrel button)"
                     >
                         <Plus className="w-5 h-5" />
