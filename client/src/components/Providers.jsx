@@ -12,6 +12,7 @@ import { ConfirmProvider } from './ConfirmDialog';
 import { GlobalMeetingProvider, useGlobalMeeting } from './GlobalMeetingContext';
 import MeetingProvider from './MeetingProvider';
 import LiveMeetingBanner from './LiveMeetingBanner';
+import DynamicIsland from './DynamicIsland';
 
 function LanguageInitializer() {
     const { language } = useLanguageStore();
@@ -74,6 +75,7 @@ export function Providers({ children }) {
                 <ConfirmProvider>
                     <ThemeInitializer />
                     <LanguageInitializer />
+                    <DynamicIsland />
                     <LiveMeetingBanner />
                     <AppLayout>
                         {children}
