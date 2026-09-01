@@ -15,6 +15,10 @@ import {
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
 import AdminPermissionsPanel from './AdminPermissionsPanel';
+import RadialToolbar from './RadialToolbar';
+import { BRUSH_TYPES, renderCalligraphy, renderCrayon, renderWatercolor, renderFountainPen, floodFill, sampleColor } from './WhiteboardBrushEngine';
+import StickyNoteRenderer, { createStickyNoteObject, STICKY_COLORS } from './StickyNote';
+import TemplateGallery from './TemplateGallery';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
@@ -559,6 +563,22 @@ export default function Whiteboard({
 
     // OCR toggle
     const [isOcrActive, setIsOcrActive] = useState(false);
+
+    // ─── Radial Toolbar State ───────────────────────────────────────────
+    const [showRadialMenu, setShowRadialMenu] = useState(false);
+    const [radialMenuPos, setRadialMenuPos] = useState({ x: 0, y: 0 });
+    const longPressTimerRef = useRef(null);
+    const longPressStartPosRef = useRef(null);
+
+    // ─── Brush Engine State ─────────────────────────────────────────────
+    const [brushType, setBrushType] = useState('normal'); // normal, calligraphy, crayon, watercolor, fountain
+
+    // ─── Template Gallery State ─────────────────────────────────────────
+    const [showTemplateGallery, setShowTemplateGallery] = useState(false);
+
+    // ─── Pressure Sensitivity ───────────────────────────────────────────
+    const [pressureSensitivity, setPressureSensitivity] = useState(true);
+    const currentPressureRef = useRef(0.5);
 
     // Fullscreen scaling
     const [fullscreenScale, setFullscreenScale] = useState(1);
@@ -1700,6 +1720,115 @@ export default function Whiteboard({
         saveToHistory();
     }, [selectedShapeIds, selectedTextIds, selectedImageId, saveToHistory]);
 
+    // ─── Radial Toolbar & Template Callbacks ──────────────────────────────
+    const handleRadialToolSelect = useCallback((toolId, options = {}) => {
+        if (toolId === 'pen') {
+            setTool('pen');
+            if (options.brushType) setBrushType(options.brushType);
+            if (options.strokeWidth) setStrokeWidth(options.strokeWidth);
+        } else if (toolId === 'highlighter') {
+            setTool('highlighter');
+            if (options.color) {
+                const colorMap = {
+                    yellow: 'rgba(255, 235, 59, 0.4)',
+                    green: 'rgba(76, 175, 80, 0.4)',
+                    blue: 'rgba(33, 150, 243, 0.4)',
+                    pink: 'rgba(233, 30, 99, 0.4)',
+                    orange: 'rgba(255, 152, 0, 0.4)',
+                };
+                setHighlighterColor(colorMap[options.color] || colorMap.yellow);
+            }
+        } else if (toolId === 'eraser') {
+            setTool('eraser');
+            if (options.eraserSize) setEraserSize(options.eraserSize);
+        } else if (toolId === 'shapes') {
+            if (options.shapeType === 'sticky_note') {
+                const wrapper = canvasWrapperRef.current;
+                const cx = wrapper ? wrapper.clientWidth / 2 - 100 : 200;
+                const cy = wrapper ? wrapper.clientHeight / 2 - 100 : 200;
+                const newNote = createStickyNoteObject(cx, cy, 'yellow');
+                setPageShapeObjects(prev => ({
+                    ...prev,
+                    [currentPage]: [...(prev[currentPage] || []), newNote]
+                }));
+                setTool('select');
+                setSelectedShapeIds([newNote.id]);
+                toast.success('Sticky note added!', { icon: '📝' });
+            } else {
+                setTool('shape');
+                if (options.shapeType) setShapeType(options.shapeType);
+            }
+        } else if (toolId === 'select') {
+            setTool('select');
+            if (options.selectMode) setSelectMode(options.selectMode);
+        } else if (toolId === 'line') {
+            setTool('line');
+            if (options.lineType) setLineType(options.lineType);
+        } else if (toolId === 'text') {
+            setTool('text');
+        } else if (toolId === 'more') {
+            if (options.action === 'templates') {
+                setShowTemplateGallery(true);
+            } else if (options.action === 'fill') {
+                setTool('fill');
+                toast('Click anywhere inside an area to fill', { icon: '🎨' });
+            } else if (options.action === 'eyedropper') {
+                setTool('eyedropper');
+                toast('Click on the canvas to pick a color', { icon: '✒️' });
+            } else if (options.action === 'laser') {
+                setTool('laser');
+            } else if (options.action === 'datetime') {
+                const now = new Date().toLocaleString();
+                const newTxt = {
+                    id: Date.now(),
+                    text: now,
+                    x: 200,
+                    y: 200,
+                    width: 250,
+                    height: 40,
+                    rotation: 0,
+                    color: color,
+                    fontSize: 18,
+                    fontWeight: 'bold',
+                    fontStyle: 'normal'
+                };
+                setPageTextObjects(prev => ({
+                    ...prev,
+                    [currentPage]: [...(prev[currentPage] || []), newTxt]
+                }));
+                toast.success(`Inserted DateTime: ${now}`, { icon: '📅' });
+            }
+        }
+        setShowRadialMenu(false);
+    }, [currentPage, color, strokeWidth]);
+
+    const handleApplyTemplate = useCallback((templateData) => {
+        if (!templateData) return;
+        const { shapes, texts, background, title } = templateData;
+        
+        if (shapes && shapes.length > 0) {
+            setPageShapeObjects(prev => ({
+                ...prev,
+                [currentPage]: [...(prev[currentPage] || []), ...shapes]
+            }));
+        }
+        if (texts && texts.length > 0) {
+            setPageTextObjects(prev => ({
+                ...prev,
+                [currentPage]: [...(prev[currentPage] || []), ...texts]
+            }));
+        }
+        if (background) {
+            setPageBackgrounds(prev => ({
+                ...prev,
+                [currentPage]: { pattern: background.pattern || 'plain', color: background.color || '#ffffff' }
+            }));
+        }
+        setShowTemplateGallery(false);
+        toast.success(`Applied "${title}" template!`, { icon: '📐' });
+        saveToHistory();
+    }, [currentPage, saveToHistory]);
+
     // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -1737,15 +1866,32 @@ export default function Whiteboard({
                     handleDelete();
                 }
             } else if (e.key === 'Escape') {
+                if (showRadialMenu) {
+                    setShowRadialMenu(false);
+                    return;
+                }
+                if (showTemplateGallery) {
+                    setShowTemplateGallery(false);
+                    return;
+                }
                 setSelectedImageId(null);
                 setSelectedTextIds([]);
                 setSelectedShapeIds([]);
+            } else if (e.key === '`' || e.key === '~') {
+                // Tilde key opens the radial toolbar at canvas center
+                e.preventDefault();
+                const wrapper = canvasWrapperRef.current;
+                if (wrapper) {
+                    const rect = wrapper.getBoundingClientRect();
+                    setRadialMenuPos({ x: rect.width / 2, y: rect.height / 2 });
+                    setShowRadialMenu(true);
+                }
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedImageId, (selectedTextIds.length > 0 ? selectedTextIds[0] : null), selectedShapeIds, selection, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack]);
+    }, [selectedImageId, (selectedTextIds.length > 0 ? selectedTextIds[0] : null), selectedShapeIds, selection, showRadialMenu, showTemplateGallery, handleCopy, handleCut, handlePaste, handleDuplicate, handleDelete, handleBringToFront, handleSendToBack]);
 
     // Image manipulation mouse handlers
     useEffect(() => {
@@ -3006,6 +3152,23 @@ export default function Whiteboard({
             e.preventDefault();
         }
 
+        // ─── Barrel Button → Open Radial Toolbar ───
+        // Apple Pencil barrel button fires as button 5 in Safari
+        if (e.button === 5 || (e.pointerType === 'pen' && e.button === 2)) {
+            const wrapper = canvasWrapperRef.current;
+            if (wrapper) {
+                const rect = wrapper.getBoundingClientRect();
+                setRadialMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+                setShowRadialMenu(true);
+            }
+            return;
+        }
+
+        // Close radial menu on any normal pen/touch/mouse down
+        if (showRadialMenu) {
+            setShowRadialMenu(false);
+        }
+
         // 1. Palm Rejection Logic
         if (e.pointerType === 'pen') {
             if (penReleaseTimeoutRef.current) {
@@ -3015,6 +3178,23 @@ export default function Whiteboard({
             isPenActiveRef.current = true;
             activePointerIdRef.current = e.pointerId;
             activePointerTypeRef.current = 'pen';
+
+            // Capture pressure for brush engine
+            if (pressureSensitivity) {
+                currentPressureRef.current = e.pressure || 0.5;
+            }
+
+            // Start long-press timer for radial toolbar (400ms)
+            longPressStartPosRef.current = { x: e.clientX, y: e.clientY };
+            longPressTimerRef.current = setTimeout(() => {
+                const wrapper = canvasWrapperRef.current;
+                if (wrapper) {
+                    const rect = wrapper.getBoundingClientRect();
+                    setRadialMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+                    setShowRadialMenu(true);
+                }
+            }, 400);
+
             try {
                 e.currentTarget?.setPointerCapture?.(e.pointerId);
             } catch (_) {}
@@ -3042,12 +3222,28 @@ export default function Whiteboard({
         }
 
         startDrawing(e);
-    }, [canUserDraw, startDrawing]);
+    }, [canUserDraw, startDrawing, showRadialMenu, pressureSensitivity]);
 
     const handlePointerMove = useCallback((e) => {
         if (e.cancelable) {
             e.preventDefault();
         }
+
+        // Cancel long-press timer if pen moved too far
+        if (longPressTimerRef.current && longPressStartPosRef.current) {
+            const dx = e.clientX - longPressStartPosRef.current.x;
+            const dy = e.clientY - longPressStartPosRef.current.y;
+            if (Math.hypot(dx, dy) > 5) {
+                clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
+            }
+        }
+
+        // Track pressure for brush engine
+        if (pressureSensitivity && e.pointerType === 'pen') {
+            currentPressureRef.current = e.pressure || 0.5;
+        }
+
         if (!isDrawing) return;
 
         // Reject non-active pointers (palm or secondary touch points)
@@ -3059,7 +3255,7 @@ export default function Whiteboard({
         }
 
         draw(e);
-    }, [isDrawing, draw]);
+    }, [isDrawing, draw, pressureSensitivity]);
 
     const handlePointerUp = useCallback((e) => {
         if (e.cancelable) {
@@ -6085,10 +6281,98 @@ export default function Whiteboard({
                         </div>
                     )}
 
+                    {/* Sticky Notes Layer */}
+                    {(pageShapeObjects[currentPage] || []).filter(s => s.type === 'sticky_note').map((note) => (
+                        <StickyNoteRenderer
+                            key={note.id}
+                            note={note}
+                            isSelected={selectedShapeIds.includes(note.id)}
+                            isEditing={editingShapeTextId === note.id}
+                            canEdit={canUserDraw}
+                            onSelect={(id) => {
+                                setSelectedShapeIds([id]);
+                                setSelectedImageId(null);
+                                setSelectedTextIds([]);
+                            }}
+                            onUpdate={(id, updates) => {
+                                setPageShapeObjects(prev => ({
+                                    ...prev,
+                                    [currentPage]: (prev[currentPage] || []).map(s => s.id === id ? { ...s, ...updates } : s)
+                                }));
+                            }}
+                            onDelete={(id) => {
+                                setPageShapeObjects(prev => ({
+                                    ...prev,
+                                    [currentPage]: (prev[currentPage] || []).filter(s => s.id !== id)
+                                }));
+                                setSelectedShapeIds([]);
+                            }}
+                            onStartDrag={(e, id) => {
+                                setShapeDragState({
+                                    id,
+                                    action: 'move',
+                                    startX: e.clientX,
+                                    startY: e.clientY,
+                                    startObj: { ...note }
+                                });
+                            }}
+                            onStartResize={(e, id, corner) => {
+                                setShapeDragState({
+                                    id,
+                                    action: `resize-${corner}`,
+                                    startX: e.clientX,
+                                    startY: e.clientY,
+                                    startObj: { ...note }
+                                });
+                            }}
+                            onDoubleClick={(id) => {
+                                setEditingShapeTextId(id);
+                            }}
+                        />
+                    ))}
+
+                    {/* Floating Radial FAB Button (Bottom-Left) */}
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            const wrapper = canvasWrapperRef.current;
+                            if (wrapper) {
+                                const rect = wrapper.getBoundingClientRect();
+                                setRadialMenuPos({ x: rect.width / 2, y: rect.height / 2 });
+                                setShowRadialMenu(!showRadialMenu);
+                            }
+                        }}
+                        className="absolute bottom-20 left-4 z-40 w-11 h-11 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/30 border-2 border-white/20 flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all duration-200"
+                        title="Quick Tool Wheel (Press ~ or barrel button)"
+                    >
+                        <Plus className="w-5 h-5" />
+                    </button>
+
+                    {/* Circular Radial Toolbar */}
+                    <RadialToolbar
+                        isOpen={showRadialMenu}
+                        position={radialMenuPos}
+                        currentTool={tool}
+                        currentBrushType={brushType}
+                        onToolSelect={handleRadialToolSelect}
+                        onClose={() => setShowRadialMenu(false)}
+                        canvasBounds={canvasWrapperRef.current ? { width: canvasWrapperRef.current.clientWidth, height: canvasWrapperRef.current.clientHeight } : { width: 1920, height: 1080 }}
+                    />
+
                     {/* 360-Degree Rotation Protractor & Angle Dial Overlay */}
                     {activeRotatingObject && <RotationDial obj={activeRotatingObject} />}
                 </div>
             </div>
+
+            {/* Template Gallery Modal */}
+            <TemplateGallery
+                isOpen={showTemplateGallery}
+                onClose={() => setShowTemplateGallery(false)}
+                onApplyTemplate={handleApplyTemplate}
+                canvasWidth={canvasWrapperRef.current?.clientWidth || 1920}
+                canvasHeight={canvasWrapperRef.current?.clientHeight || 1080}
+            />
 
             {/* Footer */}
             <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 rounded-b-xl">
