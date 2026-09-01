@@ -13,6 +13,7 @@ import { GlobalMeetingProvider, useGlobalMeeting } from './GlobalMeetingContext'
 import MeetingProvider from './MeetingProvider';
 import LiveMeetingBanner from './LiveMeetingBanner';
 import DynamicIsland from './DynamicIsland';
+import InstructorLectureIsland from './InstructorLectureIsland';
 
 function LanguageInitializer() {
     const { language } = useLanguageStore();
@@ -76,6 +77,7 @@ export function Providers({ children }) {
                     <ThemeInitializer />
                     <LanguageInitializer />
                     <DynamicIsland />
+                    <InstructorLectureIsland />
                     <LiveMeetingBanner />
                     <AppLayout>
                         {children}

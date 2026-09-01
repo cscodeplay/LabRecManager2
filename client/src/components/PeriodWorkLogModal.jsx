@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 
 const ACTIVITY_TYPES = [
     { id: 'lecture', label: 'Regular Lecture', icon: BookOpen, color: 'bg-blue-50 text-blue-700 border-blue-200' },
+    { id: 'free_period', label: 'Free Period / Prep Task', icon: CheckSquare, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
     { id: 'other_activity', label: 'Other Activity / Event', icon: Flag, color: 'bg-purple-50 text-purple-700 border-purple-200' },
     { id: 'early_leave', label: 'Early Dismissal', icon: Clock, color: 'bg-amber-50 text-amber-700 border-amber-200' },
     { id: 'substitute', label: 'Substitute Teacher', icon: UserCheck, color: 'bg-teal-50 text-teal-700 border-teal-200' },
@@ -32,6 +33,13 @@ const LECTURE_TASK_PRESETS = {
         'Supervise individual student execution at workstations',
         'Inspect code output & conduct mini-viva assessment',
         'Verify and sign student practical records'
+    ],
+    free_period: [
+        'Prepare lecture notes, slides, and class exercises',
+        'Evaluate student assignment submissions and practical records',
+        'Setup laboratory equipment, PCs & demo test bench',
+        'Student doubt clearing, mentoring & remedial support',
+        'Departmental curriculum planning & administrative duty'
     ],
     revision: [
         'Rapid chapter summary & formula recap',
@@ -76,8 +84,9 @@ export default function PeriodWorkLogModal({
         if (!isOpen) return;
 
         // Reset and check if there's an existing plan or log for this slot and date
-        setActivityType('lecture');
-        setActivityTitle('');
+        const isFreePeriod = slot?.slotType === 'free' || (!slot?.subject && !slot?.subjectId);
+        setActivityType(isFreePeriod ? 'free_period' : 'lecture');
+        setActivityTitle(isFreePeriod ? 'Free / Prep Tasks' : '');
         setTopicsCovered('');
         setHomework('');
         setRemarks('');
@@ -87,8 +96,8 @@ export default function PeriodWorkLogModal({
         setNewTaskText('');
 
         // Default initial tasks depending on slot type
-        const defaultPresetKey = (slot?.slotType === 'lab' || period?.slotType === 'lab') ? 'lab' : 'theory';
-        const defaultList = LECTURE_TASK_PRESETS[defaultPresetKey].map((t, idx) => ({
+        const defaultPresetKey = isFreePeriod ? 'free_period' : ((slot?.slotType === 'lab' || period?.slotType === 'lab') ? 'lab' : 'theory');
+        const defaultList = (LECTURE_TASK_PRESETS[defaultPresetKey] || LECTURE_TASK_PRESETS.theory).map((t, idx) => ({
             id: `task_init_${idx}`,
             text: t,
             completed: false,
@@ -248,7 +257,7 @@ export default function PeriodWorkLogModal({
 
             const payload = {
                 title,
-                description: finalTopics || topicsCovered.trim(),
+                description: finalTopics || topicsCovered.trim() || 'Free Period Tasks',
                 homeworkDescription: homework.trim(),
                 notes: fullNotes,
                 status: activityType === 'cancelled' ? 'cancelled' : 'completed',
@@ -256,19 +265,58 @@ export default function PeriodWorkLogModal({
                 scheduledDate: formattedDate,
                 scheduledDuration: 40,
                 lectureNumber: period?.periodNumber || slot?.periodNumber || 1,
-                classId: classId || slot?.classId,
-                subjectId: slot?.subjectId || subjects[0]?.id,
+                classId: classId || slot?.classId || slot?.timetable?.classId || null,
+                subjectId: slot?.subjectId || subjects[0]?.id || null,
                 instructorId: substituteTeacherId || slot?.instructorId || currentUser?.id,
                 timetableSlotId: slot?.id || null
             };
 
-            if (existingPlanId) {
-                await teachingAPI.updatePlan(existingPlanId, payload);
-            } else {
-                await teachingAPI.createPlan(payload);
+            let savedToBackend = false;
+            try {
+                if (payload.classId && payload.subjectId) {
+                    if (existingPlanId) {
+                        await teachingAPI.updatePlan(existingPlanId, payload);
+                    } else {
+                        await teachingAPI.createPlan(payload);
+                    }
+                    savedToBackend = true;
+                }
+            } catch (err) {
+                console.warn('Backend teaching plan save skipped for free period:', err);
             }
 
-            toast.success('Period work & lecture tasks logged successfully!', { icon: '📝' });
+            // Save to local storage cache for instant persistent UI retrieval
+            try {
+                const storageKey = `period_work_logs_${currentUser?.id || 'default'}`;
+                const existingLogs = JSON.parse(localStorage.getItem(storageKey) || '{}');
+                const workKey = `${slot?.id || period?.periodNumber || slot?.periodNumber}_${dateStr}`;
+                existingLogs[workKey] = {
+                    slotId: slot?.id,
+                    periodNumber: period?.periodNumber || slot?.periodNumber,
+                    day,
+                    dateStr,
+                    topicsCovered: finalTopics,
+                    activityType,
+                    activityTitle,
+                    hasLoggedWork: true,
+                    tasks,
+                    tasksCount: tasks.length,
+                    completedTasksCount: completedTasks.length,
+                    lastCompletedAt: completedTasks.slice(-1)[0]?.completedAt || null,
+                    updatedAt: new Date().toISOString()
+                };
+                localStorage.setItem(storageKey, JSON.stringify(existingLogs));
+            } catch (storageErr) {
+                // Ignore storage error
+            }
+
+            toast.success(
+                activityType === 'free_period'
+                    ? 'Free period tasks & prep work logged successfully!'
+                    : 'Period work & lecture tasks logged successfully!',
+                { icon: '📝' }
+            );
+
             if (onWorkSaved) {
                 onWorkSaved({
                     slotId: slot?.id,

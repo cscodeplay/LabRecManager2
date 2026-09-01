@@ -126,10 +126,30 @@ export default function TimetablePage() {
         loadUpcomingHolidays();
         loadWeekHolidays();
 
+        // Load cached work logs from local storage
+        if (user?.id) {
+            try {
+                const storageKey = `period_work_logs_${user.id}`;
+                const cached = JSON.parse(localStorage.getItem(storageKey) || '{}');
+                if (cached && Object.keys(cached).length > 0) {
+                    setLoggedWorkMap(prev => ({ ...cached, ...prev }));
+                }
+            } catch (e) {}
+        }
+
+        // Socket listener for global timetable timing sync across classes and teachers
+        const handleTimingsUpdated = () => {
+            loadLiveData();
+        };
+        window.addEventListener('timetable:timings-updated', handleTimingsUpdated);
+
         // Refresh live data every 30 seconds
         const interval = setInterval(loadLiveData, 30000);
-        return () => clearInterval(interval);
-    }, [isAuthenticated, _hasHydrated, weekOffset]);
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener('timetable:timings-updated', handleTimingsUpdated);
+        };
+    }, [isAuthenticated, _hasHydrated, weekOffset, user?.id]);
 
     // Live timer tick
     useEffect(() => {
@@ -675,13 +695,13 @@ export default function TimetablePage() {
 
                                                             {/* Bottom row: Instructor Task Performed button + Bottom Right Period Timings */}
                                                             <div className="relative z-10 mt-1.5 pt-1 border-t border-black/5 dark:border-white/5 flex items-center justify-between gap-1">
-                                                                {isInstructorOrAdmin && daySlot && daySlot.slotType !== 'break_period' && (
+                                                                {isInstructorOrAdmin && (!daySlot || daySlot.slotType !== 'break_period') && (
                                                                     <div>
                                                                         {loggedWork ? (
                                                                             <button
                                                                                 type="button"
-                                                                                onClick={(e) => handleOpenWorkLogModal(e, day, period, daySlot)}
-                                                                                className="text-[9px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-1 py-0.2 rounded flex items-center gap-0.5"
+                                                                                onClick={(e) => handleOpenWorkLogModal(e, day, period, daySlot || { periodNumber: period.periodNumber, startTime: period.startTime, endTime: period.endTime, slotType: 'free', subject: { name: 'Free / Prep Period' } })}
+                                                                                className="text-[9px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-1 py-0.5 rounded flex items-center gap-0.5 hover:opacity-90 transition shadow-2xs"
                                                                                 title="View Logged Task"
                                                                             >
                                                                                 <Check className="w-2.5 h-2.5" />
@@ -694,11 +714,15 @@ export default function TimetablePage() {
                                                                         ) : (
                                                                             <button
                                                                                 type="button"
-                                                                                onClick={(e) => handleOpenWorkLogModal(e, day, period, daySlot)}
-                                                                                className="text-[9px] font-bold text-primary-700 dark:text-primary-300 bg-white/90 dark:bg-slate-900/90 hover:bg-primary-50 border border-primary-200 dark:border-primary-800 rounded px-1 py-0.2 flex items-center gap-0.5 transition shadow-2xs"
-                                                                                title="Log Task Performed"
+                                                                                onClick={(e) => handleOpenWorkLogModal(e, day, period, daySlot || { periodNumber: period.periodNumber, startTime: period.startTime, endTime: period.endTime, slotType: 'free', subject: { name: 'Free / Prep Period' } })}
+                                                                                className={`text-[9px] font-bold rounded px-1.5 py-0.5 flex items-center gap-0.5 transition shadow-2xs ${
+                                                                                    daySlot
+                                                                                        ? 'text-primary-700 dark:text-primary-300 bg-white/90 dark:bg-slate-900/90 hover:bg-primary-50 border border-primary-200 dark:border-primary-800'
+                                                                                        : 'text-slate-600 dark:text-slate-400 bg-white/80 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                                                                                }`}
+                                                                                title={daySlot ? "Log Task Performed" : "Log Free Period Tasks / Prep Work"}
                                                                             >
-                                                                                <Plus className="w-2.5 h-2.5" /> Task
+                                                                                <Plus className="w-2.5 h-2.5" /> {daySlot ? 'Task' : 'Free Task'}
                                                                             </button>
                                                                         )}
                                                                     </div>

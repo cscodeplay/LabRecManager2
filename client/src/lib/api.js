@@ -604,6 +604,8 @@ export const timetableAPI = {
     getTeacherSchedule: (teacherId) => api.get(`/timetable/teacher/${teacherId}`),
 
     // Period timings
+    getGlobalStructure: () => api.get('/timetable/global-structure'),
+    updateGlobalPeriodTimings: (data) => api.put('/timetable/global-period-timings', data),
     updatePeriodTimings: (timetableId, data) => api.put(`/timetable/${timetableId}/period-timings`, data),
 };
 

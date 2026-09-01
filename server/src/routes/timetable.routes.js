@@ -273,6 +273,128 @@ router.post('/:id/slots/bulk', authenticate, authorize('admin', 'principal'), as
 }));
 
 /**
+ * @route   GET /api/timetable/global-structure
+ * @desc    Get the global period timings structure for the school
+ * @access  Private
+ */
+router.get('/global-structure', authenticate, asyncHandler(async (req, res) => {
+    const schoolId = req.user.schoolId;
+    const DEFAULT_PERIODS = [
+        { periodNumber: 1, startTime: '08:00', endTime: '08:40', slotType: 'lecture' },
+        { periodNumber: 2, startTime: '08:40', endTime: '09:20', slotType: 'lecture' },
+        { periodNumber: 3, startTime: '09:20', endTime: '10:00', slotType: 'lecture' },
+        { periodNumber: 4, startTime: '10:00', endTime: '10:15', slotType: 'break_period' },
+        { periodNumber: 5, startTime: '10:15', endTime: '10:55', slotType: 'lecture' },
+        { periodNumber: 6, startTime: '10:55', endTime: '11:35', slotType: 'lecture' },
+        { periodNumber: 7, startTime: '11:35', endTime: '12:15', slotType: 'lecture' },
+        { periodNumber: 8, startTime: '12:15', endTime: '12:55', slotType: 'lecture' },
+    ];
+
+    const sampleSlots = await prisma.timetableSlot.findMany({
+        where: {
+            timetable: { schoolId, isActive: true }
+        },
+        orderBy: [{ periodNumber: 'asc' }],
+        distinct: ['periodNumber'],
+        select: {
+            periodNumber: true,
+            startTime: true,
+            endTime: true,
+            slotType: true
+        }
+    });
+
+    if (sampleSlots && sampleSlots.length > 0) {
+        return res.json({ success: true, data: { periods: sampleSlots } });
+    }
+
+    res.json({ success: true, data: { periods: DEFAULT_PERIODS } });
+}));
+
+/**
+ * @route   PUT /api/timetable/global-period-timings
+ * @desc    Update period timings globally across ALL classes and instructor schedules in the school
+ * @access  Private (Admin, Principal)
+ */
+router.put('/global-period-timings', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+    const { periodTimings, dayOfWeek, removePeriodNumber } = req.body;
+    const schoolId = req.user.schoolId;
+
+    if (!periodTimings || !Array.isArray(periodTimings) || periodTimings.length === 0) {
+        return res.status(400).json({ success: false, message: 'periodTimings array is required' });
+    }
+
+    const activeTimetables = await prisma.timetable.findMany({
+        where: { schoolId, isActive: true },
+        select: { id: true, classId: true }
+    });
+
+    const ALL_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const daysToProcess = dayOfWeek && dayOfWeek !== 'all' ? [dayOfWeek.toLowerCase()] : ALL_DAYS;
+
+    for (const tt of activeTimetables) {
+        if (removePeriodNumber) {
+            await prisma.timetableSlot.deleteMany({
+                where: {
+                    timetableId: tt.id,
+                    periodNumber: parseInt(removePeriodNumber, 10)
+                }
+            });
+        }
+
+        for (const pt of periodTimings) {
+            const pNum = parseInt(pt.periodNumber, 10);
+            if (!pNum || !pt.startTime || !pt.endTime) continue;
+
+            for (const day of daysToProcess) {
+                await prisma.timetableSlot.upsert({
+                    where: {
+                        unique_slot_per_day_period: {
+                            timetableId: tt.id,
+                            dayOfWeek: day,
+                            periodNumber: pNum
+                        }
+                    },
+                    update: {
+                        startTime: pt.startTime,
+                        endTime: pt.endTime,
+                        ...(pt.slotType && { slotType: pt.slotType })
+                    },
+                    create: {
+                        timetableId: tt.id,
+                        dayOfWeek: day,
+                        periodNumber: pNum,
+                        startTime: pt.startTime,
+                        endTime: pt.endTime,
+                        slotType: pt.slotType || 'lecture'
+                    }
+                });
+            }
+        }
+    }
+
+    // Broadcast update to all clients via Socket.io
+    const io = req.app.get('io');
+    if (io) {
+        io.emit('timetable:timings-updated', {
+            schoolId,
+            periodTimings,
+            dayOfWeek: dayOfWeek || 'all',
+            updatedAt: new Date().toISOString()
+        });
+    }
+
+    res.json({
+        success: true,
+        message: `Global period timings updated successfully across ${activeTimetables.length} classes and all instructor schedules`,
+        data: {
+            timetablesCount: activeTimetables.length,
+            periodTimings
+        }
+    });
+}));
+
+/**
  * @route   PUT /api/timetable/:id/period-timings
  * @desc    Bulk update timings for specific period numbers across a timetable or day (auto-creates timetable/slots if needed)
  * @access  Private (Admin, Principal)

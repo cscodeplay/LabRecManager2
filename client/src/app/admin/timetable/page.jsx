@@ -549,11 +549,13 @@ export default function AdminTimetablePage() {
 
     // Period Editing & Reordering
     const [autoAdjustSubsequent, setAutoAdjustSubsequent] = useState(true);
+    const [applyGloballyToAllClasses, setApplyGloballyToAllClasses] = useState(true);
 
     const handleEditPeriodClick = (period) => {
         setEditingPeriod(period);
         setPeriodForm({ startTime: period.startTime, endTime: period.endTime, slotType: period.slotType || 'lecture' });
         setAutoAdjustSubsequent(true);
+        setApplyGloballyToAllClasses(true);
         setShowPeriodModal(true);
     };
 
@@ -573,15 +575,23 @@ export default function AdminTimetablePage() {
             // 1. Locally update period structure immediately
             setPeriodStructure(updatedPeriods);
 
-            // 2. Persist updated timings to timetable in DB (auto-creates timetable if needed)
-            const targetId = timetable?.id || selectedClassId;
-            const res = await api.put(`/timetable/${targetId}/period-timings`, {
-                classId: selectedClassId,
-                periodTimings: updatedPeriods
-            });
+            // 2. Persist updated timings to DB
+            if (applyGloballyToAllClasses) {
+                // Apply globally to all active timetables across classes and instructor views
+                await api.put('/timetable/global-period-timings', {
+                    periodTimings: updatedPeriods
+                });
+            }
 
-            if (res.data?.data?.timetable) {
-                setTimetable(res.data.data.timetable);
+            const targetId = timetable?.id || selectedClassId;
+            if (targetId) {
+                const res = await api.put(`/timetable/${targetId}/period-timings`, {
+                    classId: selectedClassId,
+                    periodTimings: updatedPeriods
+                });
+                if (res.data?.data?.timetable) {
+                    setTimetable(res.data.data.timetable);
+                }
             }
 
             // Also update individual slots locally and in state
@@ -601,9 +611,11 @@ export default function AdminTimetablePage() {
             setSlots(updatedSlots);
 
             toast.success(
-                autoAdjustSubsequent
-                    ? 'Period timings updated & subsequent periods auto-adjusted without overlap!'
-                    : 'Period timing updated successfully!'
+                applyGloballyToAllClasses
+                    ? 'Global period timings updated & synced across all classes and instructors!'
+                    : (autoAdjustSubsequent
+                        ? 'Period timings updated & subsequent periods auto-adjusted without overlap!'
+                        : 'Period timing updated successfully!')
             );
             setShowPeriodModal(false);
             if (selectedClassId) {
@@ -1811,6 +1823,27 @@ export default function AdminTimetablePage() {
                                     {autoAdjustSubsequent
                                         ? `Subsequent periods (P${editingPeriod.periodNumber + 1} to P${periodStructure.length}) will automatically shift to prevent any overlapping timings.`
                                         : 'Only update this period. Subsequent periods will keep their current timings.'}
+                                </p>
+                            </div>
+
+                            {/* Global Sync Across All Classes & Instructors */}
+                            <div className="bg-indigo-50/60 dark:bg-indigo-950/30 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800/50 space-y-2">
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={applyGloballyToAllClasses}
+                                        onChange={(e) => setApplyGloballyToAllClasses(e.target.checked)}
+                                        className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                                    />
+                                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                                        <span>🌐 Global Timing Sync for the Day</span>
+                                        <span className="text-[9px] bg-indigo-500 text-white font-extrabold px-1.5 py-0.2 rounded-full uppercase">All Classes & Instructors</span>
+                                    </span>
+                                </label>
+                                <p className="text-[11px] text-slate-600 dark:text-slate-400 pl-6 leading-tight">
+                                    {applyGloballyToAllClasses
+                                        ? 'Timing changes will apply globally across all class timetables and instructor schedules for the day.'
+                                        : 'Only update this specific class timetable.'}
                                 </p>
                             </div>
                         </div>
