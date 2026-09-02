@@ -207,6 +207,43 @@ router.get('/modules/:id', authenticate, asyncHandler(async (req, res) => {
         });
 
         const unitIds = moduleDetails.units.map(u => u.id);
+        const allExerciseIds = moduleDetails.units.flatMap(u => u.exercises.map(e => e.id));
+
+        // Fetch user's submissions for all exercises in this module
+        const userSubmissions = await prisma.codingSubmission.findMany({
+            where: {
+                studentId: req.user.id,
+                exerciseId: { in: allExerciseIds }
+            },
+            orderBy: { submittedAt: 'desc' },
+            select: {
+                exerciseId: true,
+                status: true,
+                submittedAt: true
+            }
+        });
+
+        const exerciseStatusMap = {};
+        for (const sub of userSubmissions) {
+            if (!exerciseStatusMap[sub.exerciseId]) {
+                exerciseStatusMap[sub.exerciseId] = {
+                    status: sub.status,
+                    lastSubmittedAt: sub.submittedAt,
+                    hasPassed: sub.status === 'passed'
+                };
+            } else if (sub.status === 'passed') {
+                exerciseStatusMap[sub.exerciseId].hasPassed = true;
+            }
+        }
+
+        // Attach userStatus to each exercise
+        moduleDetails.units.forEach(u => {
+            u.exercises.forEach(e => {
+                const subInfo = exerciseStatusMap[e.id];
+                e.userStatus = subInfo?.hasPassed ? 'passed' : subInfo ? subInfo.status : 'unvisited';
+            });
+        });
+
         unitMasteries = await prisma.studentUnitMastery.findMany({
             where: {
                 studentId: req.user.id,
@@ -409,7 +446,19 @@ router.get('/exercises/:id', authenticate, asyncHandler(async (req, res) => {
         }
     }
 
-    res.json({ success: true, data: { exercise } });
+    // Fetch latest user submission for this exercise to restore answers & results
+    let latestSubmission = null;
+    if (req.user?.id) {
+        latestSubmission = await prisma.codingSubmission.findFirst({
+            where: {
+                exerciseId: req.params.id,
+                studentId: req.user.id
+            },
+            orderBy: { submittedAt: 'desc' }
+        });
+    }
+
+    res.json({ success: true, data: { exercise, latestSubmission } });
 }));
 
 /**
@@ -661,9 +710,21 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
     let nextExerciseId = null;
     let isUnitMastered = false;
 
-    if (passedAll && req.user?.id) {
+    if (req.user?.id) {
         const unitId = exercise.unitId;
         const moduleId = exercise.unit.moduleId;
+
+        // Check if student already passed this exercise before
+        const previousPass = await prisma.codingSubmission.findFirst({
+            where: {
+                exerciseId,
+                studentId,
+                status: 'passed',
+                id: { not: submission.id }
+            }
+        });
+
+        const xpToAward = (passedAll && !previousPass) ? (exercise.xpReward || 10) : 0;
 
         // Ensure Progress record exists
         let progress = await prisma.studentTrainingProgress.findUnique({
@@ -676,39 +737,49 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
                     studentId,
                     moduleId,
                     currentUnitId: unitId,
-                    totalXP: exercise.xpReward || 10
+                    totalXP: xpToAward
                 }
             });
-            updatedTotalXP = exercise.xpReward || 10;
+            updatedTotalXP = xpToAward;
         } else {
             const updated = await prisma.studentTrainingProgress.update({
                 where: { id: progress.id },
                 data: {
-                    totalXP: { increment: exercise.xpReward || 10 },
+                    totalXP: xpToAward > 0 ? { increment: xpToAward } : undefined,
                     lastActiveAt: new Date()
                 }
             });
             updatedTotalXP = updated.totalXP;
         }
 
-        // Update Mastery
+        // Update Mastery accurately by counting DISTINCT passed exercises in this unit
         const totalExercisesInUnit = await prisma.trainingExercise.count({ where: { unitId } });
         
+        const passedExercises = await prisma.codingSubmission.findMany({
+            where: {
+                studentId,
+                status: 'passed',
+                exercise: { unitId }
+            },
+            select: { exerciseId: true },
+            distinct: ['exerciseId']
+        });
+
+        const distinctPassedCount = passedExercises.length;
+        const newScore = totalExercisesInUnit > 0 ? (distinctPassedCount / totalExercisesInUnit) * 100 : 100;
+        isUnitMastered = newScore >= (exercise.unit?.unlockThreshold || 80);
+
         let mastery = await prisma.studentUnitMastery.findUnique({
             where: { studentId_unitId: { studentId, unitId } }
         });
-
-        const newDone = (mastery ? mastery.exercisesDone : 0) + 1;
-        const newScore = totalExercisesInUnit > 0 ? (newDone / totalExercisesInUnit) * 100 : 100;
-        isUnitMastered = newScore >= (exercise.unit?.unlockThreshold || 80);
 
         if (!mastery) {
             await prisma.studentUnitMastery.create({
                 data: {
                     studentId,
                     unitId,
-                    exercisesDone: newDone,
-                    masteryScore: Math.min(newScore, 100),
+                    exercisesDone: distinctPassedCount,
+                    masteryScore: Math.min(Math.round(newScore), 100),
                     status: isUnitMastered ? 'mastered' : 'in_progress',
                     unlockedAt: new Date(),
                     masteredAt: isUnitMastered ? new Date() : null
@@ -718,8 +789,8 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
             await prisma.studentUnitMastery.update({
                 where: { id: mastery.id },
                 data: {
-                    exercisesDone: newDone,
-                    masteryScore: Math.min(newScore, 100),
+                    exercisesDone: distinctPassedCount,
+                    masteryScore: Math.min(Math.round(newScore), 100),
                     status: isUnitMastered ? 'mastered' : 'in_progress',
                     masteredAt: isUnitMastered ? (mastery.masteredAt || new Date()) : null
                 }

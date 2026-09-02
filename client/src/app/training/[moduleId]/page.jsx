@@ -107,6 +107,10 @@ export default function TrainingModulePage() {
                                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {unit.exercises.map((ex, i) => {
                                             const type = ex.exerciseType || 'coding';
+                                            const isPassed = ex.userStatus === 'passed';
+                                            const isFailed = ex.userStatus === 'failed';
+                                            const isUnvisited = !ex.userStatus || ex.userStatus === 'unvisited';
+
                                             const typeBadge = {
                                                 mcq: { label: '📝 MCQ', bg: 'bg-amber-50 text-amber-700 border-amber-200' },
                                                 fill_blank: { label: '🧩 Cloze', bg: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
@@ -115,16 +119,42 @@ export default function TrainingModulePage() {
                                                 coding: { label: '⚡ Coding Lab', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
                                             }[type] || { label: '⚡ Coding Lab', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
 
+                                            let cardBorder = 'bg-white border-slate-200 hover:border-indigo-500 hover:shadow-md';
+                                            if (isPassed) {
+                                                cardBorder = 'bg-emerald-50/40 border-emerald-300 hover:border-emerald-500 hover:shadow-md';
+                                            } else if (isFailed) {
+                                                cardBorder = 'bg-amber-50/40 border-amber-300 hover:border-amber-500 hover:shadow-md';
+                                            } else if (isUnvisited) {
+                                                cardBorder = 'bg-white border-rose-200 hover:border-rose-400 hover:shadow-md';
+                                            }
+
                                             return (
                                                 <button
                                                     key={ex.id}
                                                     disabled={!unlocked}
                                                     onClick={() => router.push(`/training/${moduleId}/exercise/${ex.id}`)}
-                                                    className={`p-4 text-left rounded-xl border transition-all flex flex-col justify-between ${!unlocked ? 'bg-slate-50 border-slate-200 cursor-not-allowed opacity-60' : 'bg-white border-slate-200 hover:border-indigo-500 hover:shadow-md cursor-pointer group'}`}
+                                                    className={`p-4 text-left rounded-xl border transition-all flex flex-col justify-between ${!unlocked ? 'bg-slate-50 border-slate-200 cursor-not-allowed opacity-60' : `${cardBorder} cursor-pointer group`}`}
                                                 >
                                                     <div>
                                                         <div className="flex justify-between items-center mb-2">
-                                                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Exercise {i + 1}</span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Exercise {i + 1}</span>
+                                                                {isPassed && (
+                                                                    <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full font-bold">
+                                                                        ✅ Passed
+                                                                    </span>
+                                                                )}
+                                                                {isFailed && (
+                                                                    <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-bold">
+                                                                        ⚠️ Review
+                                                                    </span>
+                                                                )}
+                                                                {isUnvisited && (
+                                                                    <span className="text-[10px] bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Unvisited
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                             <div className="flex items-center gap-1.5">
                                                                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${typeBadge.bg}`}>
                                                                     {typeBadge.label}

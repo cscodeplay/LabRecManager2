@@ -218,11 +218,12 @@ export default function ExerciseEditorPage() {
                 ]);
 
                 const ex = exRes.data.data.exercise;
+                const latestSub = exRes.data.data.latestSubmission;
                 setExercise(ex);
 
                 // Restore draft if present
                 const savedDraft = localStorage.getItem(`training_draft_${exerciseId}`);
-                const initialCode = savedDraft || ex.starterCode || '# Write your code here\n';
+                const initialCode = savedDraft || (latestSub?.code && (ex.exerciseType === 'coding' || ex.exerciseType === 'bug_fix') ? latestSub.code : null) || ex.starterCode || '# Write your code here\n';
                 setCode(initialCode);
 
                 if (modRes?.data?.data?.module) {
@@ -236,10 +237,44 @@ export default function ExerciseEditorPage() {
 
                 const exType = ex.exerciseType || 'coding';
 
-                // Initialize state per exercise type
-                if (exType === 'fill_blank' && ex.testCases?.blanks) {
+                // Restore latest submission data (scores, answers, test results, Socratic review)
+                if (latestSub) {
+                    setSubmittedData({
+                        status: latestSub.status,
+                        results: latestSub.testResults,
+                        socraticReview: latestSub.aiSocraticReview
+                    });
+                    setTestResults(latestSub.testResults);
+                    setSocraticReview(latestSub.aiSocraticReview);
+
+                    if (exType === 'mcq' && latestSub.code) {
+                        try {
+                            const parsed = typeof latestSub.code === 'string' ? JSON.parse(latestSub.code) : latestSub.code;
+                            if (parsed.selectedOption !== undefined && parsed.selectedOption !== null) {
+                                setSelectedMcqOption(Number(parsed.selectedOption));
+                            }
+                        } catch {}
+                    } else if (exType === 'fill_blank' && latestSub.code) {
+                        try {
+                            const parsed = typeof latestSub.code === 'string' ? JSON.parse(latestSub.code) : latestSub.code;
+                            if (Array.isArray(parsed.answers)) {
+                                setBlankAnswers(parsed.answers);
+                            }
+                        } catch {}
+                    } else if (exType === 'case_study' && latestSub.code) {
+                        try {
+                            const parsed = typeof latestSub.code === 'string' ? JSON.parse(latestSub.code) : latestSub.code;
+                            if (parsed.responses) {
+                                setScenarioAnswers(parsed.responses);
+                            }
+                        } catch {}
+                    }
+                }
+
+                // Initialize empty defaults if not restored from submission
+                if (exType === 'fill_blank' && (!latestSub || !latestSub.code) && ex.testCases?.blanks) {
                     setBlankAnswers(new Array(ex.testCases.blanks.length).fill(''));
-                } else if (exType === 'case_study' && ex.testCases?.questions) {
+                } else if (exType === 'case_study' && (!latestSub || !latestSub.code) && ex.testCases?.questions) {
                     const initMap = {};
                     ex.testCases.questions.forEach(q => { initMap[q.id] = null; });
                     setScenarioAnswers(initMap);
@@ -340,6 +375,16 @@ export default function ExerciseEditorPage() {
             if (data.isUnitMastered) {
                 setIsUnitMastered(true);
             }
+
+            // Instantly update moduleData exercise status for curriculum drawer
+            setModuleData(prev => {
+                if (!prev) return prev;
+                const updatedUnits = prev.units?.map(u => ({
+                    ...u,
+                    exercises: u.exercises?.map(e => e.id === exerciseId ? { ...e, userStatus: data.status } : e)
+                }));
+                return { ...prev, units: updatedUnits };
+            });
             
             if (data.status === 'passed') {
                 toast.success(`🎉 Excellent! +${data.xpEarned || exercise.xpReward || 10} XP earned!`);
@@ -535,6 +580,25 @@ export default function ExerciseEditorPage() {
                                     <div className="space-y-1">
                                         {unit.exercises?.map((exItem, exIdx) => {
                                             const isCurrent = exItem.id === exerciseId;
+                                            const isPassed = exItem.userStatus === 'passed';
+                                            const isFailed = exItem.userStatus === 'failed';
+                                            const isUnvisited = !exItem.userStatus || exItem.userStatus === 'unvisited';
+
+                                            let cardBg = 'bg-slate-800/60 border border-slate-700/60 text-slate-300 hover:bg-slate-800';
+                                            if (isCurrent) {
+                                                cardBg = isPassed 
+                                                    ? 'bg-emerald-600 text-white ring-2 ring-emerald-400 shadow-md shadow-emerald-600/30'
+                                                    : isFailed 
+                                                    ? 'bg-amber-600 text-white ring-2 ring-amber-400 shadow-md shadow-amber-600/30'
+                                                    : 'bg-indigo-600 text-white ring-2 ring-indigo-400 shadow-md shadow-indigo-600/30';
+                                            } else if (isPassed) {
+                                                cardBg = 'bg-emerald-950/40 border border-emerald-500/40 hover:bg-emerald-900/50 text-emerald-200';
+                                            } else if (isFailed) {
+                                                cardBg = 'bg-amber-950/40 border border-amber-500/40 hover:bg-amber-900/50 text-amber-200';
+                                            } else if (isUnvisited) {
+                                                cardBg = 'bg-rose-950/30 border border-rose-500/30 hover:bg-rose-900/40 text-rose-200';
+                                            }
+
                                             return (
                                                 <button
                                                     key={exItem.id}
@@ -542,24 +606,43 @@ export default function ExerciseEditorPage() {
                                                         router.push(`/training/${moduleId}/exercise/${exItem.id}`);
                                                         setIsNavOpen(false);
                                                     }}
-                                                    className={`w-full text-left p-2.5 rounded-xl text-xs font-semibold transition flex items-center justify-between gap-2 ${
-                                                        isCurrent
-                                                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                                                            : 'bg-slate-800/60 hover:bg-slate-800 text-slate-300'
-                                                    }`}
+                                                    className={`w-full text-left p-2.5 rounded-xl text-xs font-semibold transition flex items-center justify-between gap-2 ${cardBg}`}
                                                 >
                                                     <div className="flex items-center gap-2 min-w-0">
-                                                        <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold ${
-                                                            isCurrent ? 'bg-white/20 text-white' : 'bg-slate-700 text-slate-400'
+                                                        <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                                                            isCurrent 
+                                                                ? 'bg-white/20 text-white' 
+                                                                : isPassed 
+                                                                ? 'bg-emerald-500/20 text-emerald-300' 
+                                                                : isFailed 
+                                                                ? 'bg-amber-500/20 text-amber-300' 
+                                                                : 'bg-rose-500/20 text-rose-300'
                                                         }`}>
-                                                            {exIdx + 1}
+                                                            {isPassed ? <Check className="w-3 h-3 text-emerald-300" /> : isFailed ? <X className="w-3 h-3 text-amber-300" /> : exIdx + 1}
                                                         </span>
                                                         <span className="truncate">{exItem.title}</span>
                                                     </div>
 
-                                                    <span className="text-[10px] opacity-75 font-mono">
-                                                        +{exItem.xpReward || 10}XP
-                                                    </span>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        {isPassed && (
+                                                            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">
+                                                                Passed
+                                                            </span>
+                                                        )}
+                                                        {isFailed && (
+                                                            <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">
+                                                                Review
+                                                            </span>
+                                                        )}
+                                                        {isUnvisited && (
+                                                            <span className="text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Unvisited
+                                                            </span>
+                                                        )}
+                                                        <span className="text-[10px] opacity-75 font-mono">
+                                                            +{exItem.xpReward || 10}XP
+                                                        </span>
+                                                    </div>
                                                 </button>
                                             );
                                         })}
