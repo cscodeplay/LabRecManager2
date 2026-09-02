@@ -85,7 +85,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
             let lastGeminiError = null;
             for (const modelName of geminiModels) {
                 try {
@@ -167,7 +167,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
             let lastGeminiError = null;
             for (const modelName of geminiModels) {
                 try {
@@ -249,7 +249,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -325,7 +325,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -395,7 +395,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -483,7 +483,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1438,29 +1438,37 @@ Output MUST be ONLY valid JSON matching this exact schema:
 
         // 1. Try Groq
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            try {
-                const completion = await this.groq.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
-                    messages: [
-                        { role: 'system', content: 'You are an educational AI assistant. Output ONLY valid JSON matching the schema. No markdown code blocks.' },
-                        { role: 'user', content: systemPrompt }
-                    ],
-                    temperature: 0.2
-                });
-                return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
-            } catch (err) {
-                console.warn('[AIService] Groq training outline failed:', err.message);
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192'];
+            for (const modelName of groqModels) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [
+                            { role: 'system', content: 'You are an educational AI assistant. Output ONLY valid JSON matching the schema. No markdown code blocks.' },
+                            { role: 'user', content: systemPrompt }
+                        ],
+                        temperature: 0.2
+                    });
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                    if (parsed && (parsed.title || parsed.units)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Groq training outline (${modelName}) failed:`, err.message);
+                }
             }
         }
 
         // 2. Try Gemini
         if (this.genAI) {
-            try {
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-                const result = await model.generateContent(systemPrompt);
-                return this.parseJSONResponse(result.response.text());
-            } catch (err) {
-                console.warn('[AIService] Gemini training outline failed:', err.message);
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && (parsed.title || parsed.units)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Gemini training outline (${modelName}) failed:`, err.message);
+                }
             }
         }
 
@@ -1538,29 +1546,37 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 1. Try Groq
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            try {
-                const completion = await this.groq.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
-                    messages: [
-                        { role: 'system', content: 'Output ONLY valid JSON. Escape quotes in SVG attributes properly.' },
-                        { role: 'user', content: systemPrompt }
-                    ],
-                    temperature: 0.2
-                });
-                return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
-            } catch (err) {
-                console.warn('[AIService] Groq theory/graphics failed:', err.message);
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+            for (const modelName of groqModels) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [
+                            { role: 'system', content: 'Output ONLY valid JSON. Escape quotes in SVG attributes properly.' },
+                            { role: 'user', content: systemPrompt }
+                        ],
+                        temperature: 0.2
+                    });
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                    if (parsed && (parsed.theoryMarkdown || parsed.svgGraphic)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Groq theory/graphics (${modelName}) failed:`, err.message);
+                }
             }
         }
 
         // 2. Try Gemini
         if (this.genAI) {
-            try {
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-                const result = await model.generateContent(systemPrompt);
-                return this.parseJSONResponse(result.response.text());
-            } catch (err) {
-                console.warn('[AIService] Gemini theory/graphics failed:', err.message);
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && (parsed.theoryMarkdown || parsed.svgGraphic)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Gemini theory/graphics (${modelName}) failed:`, err.message);
+                }
             }
         }
 
@@ -1574,7 +1590,7 @@ Output MUST be ONLY valid JSON matching this schema:
   <text x="150" y="80" fill="#a5b4fc" font-size="16" font-family="sans-serif" font-weight="bold" text-anchor="middle">Input / State</text>
   <circle cx="150" cy="150" r="40" fill="#312e81" stroke="#818cf8" stroke-width="2" />
   <text x="150" y="155" fill="#ffffff" font-size="13" font-family="sans-serif" text-anchor="middle">Data</text>
-  <path d="M 270 150 L 350 150" stroke="#818cf8" stroke-width="3" marker-end="url(#arrow)" />
+  <path d="M 270 150 L 350 150" stroke="#818cf8" stroke-width="3" />
   <rect x="360" y="40" width="220" height="220" rx="12" fill="#1e293b" stroke="#10b981" stroke-width="2" />
   <text x="470" y="80" fill="#6ee7b7" font-size="16" font-family="sans-serif" font-weight="bold" text-anchor="middle">${topic}</text>
   <rect x="390" y="120" width="160" height="60" rx="8" fill="#064e3b" stroke="#34d399" stroke-width="1.5" />
@@ -1597,12 +1613,7 @@ Output MUST be ONLY valid JSON matching this schema:
     }
 
     /**
-     * Generate complete Training Exercises covering all 5 question types:
-     * - coding
-     * - mcq (Output Prediction / Conceptual MCQ)
-     * - fill_blank (Syntax Cloze)
-     * - bug_fix (PR Code Review / Bug Hunt)
-     * - case_study (MNC Incident Case Study)
+     * Generate complete Training Exercises covering all 5 question types
      */
     async generateTrainingExercise({ topic, unitTitle = '', language = 'python', exerciseType = 'coding', difficulty = 'beginner', scaffoldLevel = 'guided', bloomsLevel = 'apply', customPrompt = '', provider = 'groq' }) {
         let typeInstruction = '';
@@ -1624,7 +1635,7 @@ Output MUST be ONLY valid JSON matching this schema:
     "question": "What is the exact output of this code snippet?",
     "codeSnippet": "Code snippet in ${language} demonstrating a tricky concept or edge case",
     "options": ["Option A (Incorrect)", "Option B (Correct)", "Option C (Distractor)", "Option D (Distractor)"],
-    "correctOption": 1 (0-indexed integer corresponding to correct option),
+    "correctOption": 1,
     "explanation": "Detailed explanation of why Option B is correct and why others fail."
   }
 - "starterCode": null
@@ -1692,29 +1703,37 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 1. Try Groq
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            try {
-                const completion = await this.groq.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
-                    messages: [
-                        { role: 'system', content: 'Output ONLY valid JSON. No markdown code block wrapping.' },
-                        { role: 'user', content: systemPrompt }
-                    ],
-                    temperature: 0.2
-                });
-                return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
-            } catch (err) {
-                console.warn('[AIService] Groq exercise generation failed:', err.message);
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+            for (const modelName of groqModels) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [
+                            { role: 'system', content: 'Output ONLY valid JSON. No markdown code block wrapping.' },
+                            { role: 'user', content: systemPrompt }
+                        ],
+                        temperature: 0.2
+                    });
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                    if (parsed && (parsed.title || parsed.description)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Groq exercise generation (${modelName}) failed:`, err.message);
+                }
             }
         }
 
         // 2. Try Gemini
         if (this.genAI) {
-            try {
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-                const result = await model.generateContent(systemPrompt);
-                return this.parseJSONResponse(result.response.text());
-            } catch (err) {
-                console.warn('[AIService] Gemini exercise generation failed:', err.message);
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && (parsed.title || parsed.description)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Gemini exercise generation (${modelName}) failed:`, err.message);
+                }
             }
         }
 
@@ -1822,28 +1841,36 @@ Output MUST be ONLY valid JSON:
 }`;
 
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            try {
-                const completion = await this.groq.chat.completions.create({
-                    model: 'llama-3.1-8b-instant',
-                    messages: [
-                        { role: 'system', content: 'Output ONLY valid JSON.' },
-                        { role: 'user', content: systemPrompt }
-                    ],
-                    temperature: 0.3
-                });
-                return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
-            } catch (err) {
-                console.warn('[AIService] Groq socratic hint failed:', err.message);
+            const groqModels = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
+            for (const modelName of groqModels) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [
+                            { role: 'system', content: 'Output ONLY valid JSON.' },
+                            { role: 'user', content: systemPrompt }
+                        ],
+                        temperature: 0.3
+                    });
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                    if (parsed && (parsed.socraticHint || parsed.guidingQuestion)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Groq socratic hint (${modelName}) failed:`, err.message);
+                }
             }
         }
 
         if (this.genAI) {
-            try {
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-                const result = await model.generateContent(systemPrompt);
-                return this.parseJSONResponse(result.response.text());
-            } catch (err) {
-                console.warn('[AIService] Gemini socratic hint failed:', err.message);
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && (parsed.socraticHint || parsed.guidingQuestion)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Gemini socratic hint (${modelName}) failed:`, err.message);
+                }
             }
         }
 
@@ -1855,6 +1882,7 @@ Output MUST be ONLY valid JSON:
     }
 
     parseJSONResponse(text) {
+        if (!text || typeof text !== 'string') return null;
         let cleanText = text.trim();
         cleanText = cleanText.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
 
@@ -1870,7 +1898,18 @@ Output MUST be ONLY valid JSON:
             cleanText = cleanText.substring(firstCurly, lastCurly + 1);
         }
 
-        return JSON.parse(cleanText);
+        try {
+            return JSON.parse(cleanText);
+        } catch (err) {
+            // Attempt to clean trailing commas
+            try {
+                const fixed = cleanText.replace(/,\s*([\]}])/g, '$1');
+                return JSON.parse(fixed);
+            } catch (innerErr) {
+                console.warn('[AIService] Failed to parse JSON response:', cleanText.substring(0, 100));
+                return null;
+            }
+        }
     }
 }
 
