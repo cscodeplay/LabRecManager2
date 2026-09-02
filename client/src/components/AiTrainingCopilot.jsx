@@ -87,11 +87,16 @@ export default function AiTrainingCopilot({
         if (context.language) setLanguage(context.language);
         if (context.classLevel) setClassLevel(context.classLevel);
         if (context.board) setBoard(context.board);
-        if (context.topic && !prompt) setPrompt(context.topic);
         if (context.exerciseType) setSubExerciseType(context.exerciseType);
         if (context.difficulty) setDifficulty(context.difficulty);
         if (context.scaffoldLevel) setScaffoldLevel(context.scaffoldLevel);
         if (context.bloomsLevel) setBloomsLevel(context.bloomsLevel);
+        
+        // Prioritize unitTitle for exercise / theory tabs if topic is not custom
+        const targetTopic = context.unitTitle || context.topic || '';
+        if (targetTopic && (!prompt || prompt === PRESETS.outline[0])) {
+            setPrompt(targetTopic);
+        }
     }, [isOpen, activeTab, context]);
 
     const handleFileUpload = (e) => {
@@ -106,7 +111,7 @@ export default function AiTrainingCopilot({
                 const base64 = reader.result.split(',')[1];
                 setImageBase64(base64);
                 setImageMimeType(file.type);
-                toast.success(`📸 Image "${file.name}" loaded for Vision RAG`);
+                toast.success(`📸 Image "${file.name}" loaded for Vision RAG Grounding`);
             };
             reader.readAsDataURL(file);
         } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf') || file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
@@ -115,12 +120,12 @@ export default function AiTrainingCopilot({
                 const text = reader.result;
                 if (typeof text === 'string') {
                     setDocumentText(text);
-                    toast.success(`📄 File "${file.name}" text loaded (${text.length} chars)`);
+                    toast.success(`📄 "${file.name}" text loaded (${text.length} chars) for RAG Grounding`);
                 } else {
                     const base64 = reader.result.split(',')[1];
                     setImageBase64(base64);
                     setImageMimeType(file.type || 'application/pdf');
-                    toast.success(`📄 Document "${file.name}" loaded for RAG processing`);
+                    toast.success(`📄 Document "${file.name}" loaded for RAG Grounding`);
                 }
             };
             if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
@@ -133,14 +138,19 @@ export default function AiTrainingCopilot({
         }
     };
 
+    const handleClearDocument = () => {
+        setUploadedFileName('');
+        setDocumentText('');
+        setImageBase64(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        toast.success('Document detached');
+    };
+
     const handleGenerate = async () => {
+        const effectiveTopic = prompt.trim() || context.unitTitle || context.topic || (tab === 'outline' ? 'Computer Science Foundations' : 'Core Unit Concepts');
+
         if (tab === 'rag' && !documentText.trim() && !imageBase64) {
             toast.error('Please upload an ebook/PDF/image or paste document text');
-            return;
-        }
-
-        if (tab !== 'rag' && !prompt.trim()) {
-            toast.error('Please enter a topic or instruction');
             return;
         }
 
@@ -149,48 +159,39 @@ export default function AiTrainingCopilot({
 
         try {
             let action = 'generate_outline';
-            let payload = {};
+            let payload = {
+                topic: effectiveTopic,
+                unitTitle: context.unitTitle || '',
+                unitDescription: context.unitDescription || '',
+                moduleTitle: context.moduleTitle || '',
+                documentText: documentText.trim(),
+                imageBase64,
+                mimeType: imageMimeType,
+                language,
+                classLevel,
+                board,
+                totalUnits
+            };
 
             if (tab === 'outline') {
                 action = 'generate_outline';
-                payload = {
-                    topic: prompt,
-                    language,
-                    classLevel,
-                    board,
-                    totalUnits
-                };
             } else if (tab === 'theory') {
                 action = 'generate_theory';
-                payload = {
-                    topic: prompt,
-                    unitTitle: context.unitTitle || '',
-                    language,
-                    classLevel
-                };
             } else if (tab === 'exercise') {
                 action = 'generate_exercise';
                 payload = {
-                    topic: prompt,
-                    unitTitle: context.unitTitle || '',
-                    language,
+                    ...payload,
                     exerciseType: subExerciseType,
                     difficulty,
                     scaffoldLevel,
                     bloomsLevel,
-                    customPrompt: prompt
+                    customPrompt: prompt.trim()
                 };
             } else if (tab === 'rag') {
                 action = 'generate_from_document';
                 payload = {
-                    documentText,
-                    imageBase64,
-                    mimeType: imageMimeType,
-                    customPrompt: prompt,
-                    language,
-                    classLevel,
-                    board,
-                    totalUnits
+                    ...payload,
+                    customPrompt: prompt.trim()
                 };
             }
 
@@ -330,46 +331,107 @@ export default function AiTrainingCopilot({
                     {/* Left Panel: Inputs & Configuration */}
                     <div className="md:col-span-5 p-6 overflow-y-auto border-r border-slate-200 dark:border-slate-800 space-y-4 bg-slate-50/50 dark:bg-slate-900/30">
                         
-                        {/* Tab 4: RAG Resource Upload Box */}
-                        {tab === 'rag' && (
-                            <div className="space-y-3">
-                                <div>
-                                    <label className="text-xs font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300 mb-1.5 flex items-center justify-between">
-                                        <span>Upload Textbook / PDF / Syllabus *</span>
-                                        <span className="text-[10px] text-slate-400">OCR & Vision Grounded</span>
-                                    </label>
-                                    
-                                    <input 
-                                        type="file" 
-                                        ref={fileInputRef} 
-                                        onChange={handleFileUpload} 
-                                        accept=".pdf,.png,.jpg,.jpeg,.txt,.md" 
-                                        className="hidden" 
-                                    />
+                        {/* Global Document Grounding Bar */}
+                        <div className="rounded-2xl p-3.5 border transition-all bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 shadow-sm">
+                            <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                    <Database className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                                    Source Reference (RAG)
+                                </span>
+                                {uploadedFileName || documentText || imageBase64 ? (
+                                    <span className="text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-300 dark:border-emerald-800">
+                                        <CheckCircle2 className="w-3 h-3" /> Grounding Active
+                                    </span>
+                                ) : (
+                                    <span className="text-[10px] text-slate-400">Optional</span>
+                                )}
+                            </div>
 
-                                    <div 
-                                        onClick={() => fileInputRef.current?.click()}
-                                        className="p-4 border-2 border-dashed border-purple-300 dark:border-purple-800 hover:border-purple-500 rounded-2xl bg-purple-50/40 dark:bg-purple-950/20 text-center cursor-pointer transition"
-                                    >
-                                        <UploadCloud className="w-7 h-7 text-purple-600 dark:text-purple-400 mx-auto mb-1.5" />
-                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block">
-                                            {uploadedFileName ? `Attached: ${uploadedFileName}` : 'Click to Upload Ebook / PDF / Image'}
-                                        </span>
-                                        <span className="text-[10px] text-slate-400">PDF, PNG, JPG, TXT up to 15MB</span>
+                            <input 
+                                type="file" 
+                                ref={fileInputRef} 
+                                onChange={handleFileUpload} 
+                                accept=".pdf,.png,.jpg,.jpeg,.txt,.md" 
+                                className="hidden" 
+                            />
+
+                            {uploadedFileName || documentText || imageBase64 ? (
+                                <div className="flex items-center justify-between p-2 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/50 text-xs">
+                                    <div className="flex items-center gap-2 overflow-hidden">
+                                        <FileUp className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                                        <div className="truncate">
+                                            <div className="font-bold text-slate-900 dark:text-white truncate">
+                                                {uploadedFileName || 'Pasted Resource Text'}
+                                            </div>
+                                            <div className="text-[10px] text-purple-700 dark:text-purple-300">
+                                                {documentText ? `${documentText.length} characters loaded` : 'Vision / OCR processed'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0 ml-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className="text-[10px] px-2 py-1 rounded-lg bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/50 font-bold"
+                                        >
+                                            Change
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleClearDocument}
+                                            className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                            title="Detach Document"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
                                     </div>
                                 </div>
-
-                                <div>
-                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 block">
-                                        Or Paste Resource Text / Chapter Notes
-                                    </label>
-                                    <textarea
-                                        value={documentText}
-                                        onChange={e => setDocumentText(e.target.value)}
-                                        placeholder="Paste chapter excerpts, lab manual experiments, syllabus topics, or code examples here..."
-                                        className="w-full h-24 p-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono focus:ring-2 focus:ring-purple-500/20 outline-none"
-                                    />
+                            ) : (
+                                <div 
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="p-2.5 border border-dashed border-slate-300 dark:border-slate-700 hover:border-purple-500 rounded-xl bg-slate-50/50 dark:bg-slate-900/50 text-center cursor-pointer transition flex items-center justify-center gap-2"
+                                >
+                                    <UploadCloud className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                                    <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                                        Upload PDF / Ebook / Image to ground all lessons & labs
+                                    </span>
                                 </div>
+                            )}
+                        </div>
+
+                        {/* Unit Context Lock Indicator */}
+                        {context.unitTitle && (
+                            <div className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/50 flex items-center justify-between">
+                                <div className="overflow-hidden">
+                                    <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                                        <Bookmark className="w-3 h-3" /> Target Unit Context
+                                    </div>
+                                    <div className="text-xs font-bold text-slate-900 dark:text-white truncate mt-0.5">
+                                        {context.unitTitle}
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setPrompt(context.unitTitle)}
+                                    className="text-[10px] bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg px-2 py-1 font-bold shrink-0 ml-2 hover:bg-indigo-50"
+                                >
+                                    Use As Prompt
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Tab 4: RAG Resource Paste Area (If Tab === 'rag') */}
+                        {tab === 'rag' && (
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 block">
+                                    Resource Text / Chapter Notes
+                                </label>
+                                <textarea
+                                    value={documentText}
+                                    onChange={e => setDocumentText(e.target.value)}
+                                    placeholder="Paste chapter excerpts, lab manual experiments, syllabus topics, or code examples here..."
+                                    className="w-full h-24 p-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono focus:ring-2 focus:ring-purple-500/20 outline-none"
+                                />
                             </div>
                         )}
 
@@ -407,14 +469,18 @@ export default function AiTrainingCopilot({
                         {/* Prompt Input */}
                         <div>
                             <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5 flex items-center justify-between">
-                                <span>{tab === 'rag' ? 'Additional Instructions (Optional)' : 'Topic / Problem Statement *'}</span>
-                                <span className="text-[10px] font-normal text-slate-400">Auto-filled from wizard</span>
+                                <span>{tab === 'rag' ? 'Additional Instructions (Optional)' : 'Topic / Problem Focus'}</span>
+                                <span className="text-[10px] font-normal text-slate-400">
+                                    {context.unitTitle ? 'Defaults to active unit' : 'Auto-filled from wizard'}
+                                </span>
                             </label>
                             <textarea
                                 value={prompt}
                                 onChange={e => setPrompt(e.target.value)}
                                 placeholder={
-                                    tab === 'outline'
+                                    context.unitTitle
+                                        ? `e.g. Specific challenge for ${context.unitTitle}...`
+                                        : tab === 'outline'
                                         ? "e.g. Python Object-Oriented Programming for Class 11..."
                                         : tab === 'theory'
                                         ? "e.g. How Recursion Call Stack works with visual SVG diagram..."

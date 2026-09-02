@@ -1263,6 +1263,8 @@ export default function TrainingModuleWizard({
                     classLevel: moduleForm.classLevel,
                     board: moduleForm.boardAligned,
                     unitTitle: units[selectedUnitIdx]?.title,
+                    unitDescription: units[selectedUnitIdx]?.description || '',
+                    moduleTitle: moduleForm.title || '',
                     topic: currentStep === 1
                         ? (moduleForm.title || moduleForm.description)
                         : currentStep === 2

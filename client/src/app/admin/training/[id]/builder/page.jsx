@@ -1261,6 +1261,8 @@ export default function PedagogyBuilderPage() {
                     classLevel: moduleData?.classLevel || 11,
                     board: moduleData?.boardAligned || 'PSEB',
                     unitTitle: moduleData?.units?.find(u => u.id === activeUnitId)?.title || '',
+                    unitDescription: moduleData?.units?.find(u => u.id === activeUnitId)?.description || '',
+                    moduleTitle: moduleData?.title || '',
                     topic: exerciseForm.title || moduleData?.units?.find(u => u.id === activeUnitId)?.title || moduleData?.title || '',
                     exerciseType: exerciseForm.exerciseType,
                     difficulty: exerciseForm.difficulty,

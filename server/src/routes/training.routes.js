@@ -1128,6 +1128,7 @@ router.post('/ai-assist', authenticate, asyncHandler(async (req, res) => {
                     classLevel: payload.classLevel || 11,
                     board: payload.board || 'PSEB',
                     totalUnits: payload.totalUnits || 3,
+                    documentText: payload.documentText || '',
                     provider
                 });
                 break;
@@ -1136,6 +1137,9 @@ router.post('/ai-assist', authenticate, asyncHandler(async (req, res) => {
                 result = await aiService.generateTrainingTheoryAndGraphics({
                     topic: payload.topic || 'Python Basics',
                     unitTitle: payload.unitTitle || '',
+                    unitDescription: payload.unitDescription || '',
+                    moduleTitle: payload.moduleTitle || '',
+                    documentText: payload.documentText || '',
                     language: payload.language || 'python',
                     classLevel: payload.classLevel || 11,
                     provider
@@ -1146,6 +1150,9 @@ router.post('/ai-assist', authenticate, asyncHandler(async (req, res) => {
                 result = await aiService.generateTrainingExercise({
                     topic: payload.topic || 'Functions and Loops',
                     unitTitle: payload.unitTitle || '',
+                    unitDescription: payload.unitDescription || '',
+                    moduleTitle: payload.moduleTitle || '',
+                    documentText: payload.documentText || '',
                     language: payload.language || 'python',
                     exerciseType: payload.exerciseType || 'coding',
                     difficulty: payload.difficulty || 'beginner',

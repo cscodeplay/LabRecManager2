@@ -1399,7 +1399,7 @@ Output ONLY a valid JSON object matching this schema:
     /**
      * Generate structured Training Module Outline (Curriculum & Units)
      */
-    async generateTrainingModuleOutline({ topic, targetAudience = '', language = 'python', classLevel = 11, board = 'PSEB', totalUnits = 3, provider = 'groq' }) {
+    async generateTrainingModuleOutline({ topic, targetAudience = '', language = 'python', classLevel = 11, board = 'PSEB', totalUnits = 3, documentText = '', provider = 'groq' }) {
         const targetUnitsCount = Math.max(1, Math.min(10, parseInt(totalUnits) || 3));
         const systemPrompt = `You are a distinguished Computer Science educator and curriculum designer.
 Create a high-impact, pedagogy-aligned training course outline for the given topic.
@@ -1409,6 +1409,12 @@ CLASS LEVEL: Grade ${classLevel}
 BOARD / CURRICULUM: ${board}
 TARGET UNITS COUNT: ${targetUnitsCount}
 TARGET AUDIENCE / FOCUS: ${targetAudience || 'School / College Computer Science Students'}
+
+${documentText ? `SOURCE REFERENCE DOCUMENT (GROUNDING MATERIAL):
+---
+${documentText.slice(0, 14000)}
+---
+STRICT GROUNDING REQUIREMENT: An authoritative textbook/syllabus document is attached above. You MUST extract and structure the ${targetUnitsCount} units, key concepts, and descriptions directly from the chapters and topics in this document to avoid irrelevant or generic content.` : ''}
 
 CRITICAL REQUIREMENT: The "units" array in the JSON response MUST contain EXACTLY ${targetUnitsCount} distinct, logically progressive units (numbered 1 to ${targetUnitsCount}).
 
@@ -1516,13 +1522,22 @@ Output MUST be ONLY valid JSON matching this exact schema:
     /**
      * Generate rich Lesson Theory, Markdown Notes, and Educational SVG Graphics / Mermaid Diagrams
      */
-    async generateTrainingTheoryAndGraphics({ topic, unitTitle = '', language = 'python', classLevel = 11, provider = 'groq' }) {
+    async generateTrainingTheoryAndGraphics({ topic, unitTitle = '', unitDescription = '', moduleTitle = '', documentText = '', language = 'python', classLevel = 11, provider = 'groq' }) {
         const systemPrompt = `You are an elite Computer Science instructional designer and technical illustrator.
 Generate comprehensive, student-friendly learning material for the following concept:
 TOPIC: ${topic}
-UNIT: ${unitTitle || 'General Unit'}
+UNIT TITLE: ${unitTitle || 'General Unit'} ${unitDescription ? `(${unitDescription})` : ''}
+COURSE: ${moduleTitle || 'Active Computer Science Course'}
 LANGUAGE: ${language}
 CLASS LEVEL: Grade ${classLevel}
+
+${unitTitle ? `UNIT CONTEXT ALIGNMENT: This lesson belongs directly to the unit "${unitTitle}". You MUST tailor the theory, definitions, practical code snippets, and SVG illustrations specifically to this unit's concept scope.` : ''}
+
+${documentText ? `REFERENCE DOCUMENT EXCERPTS (STRICT GROUNDING):
+---
+${documentText.slice(0, 10000)}
+---
+MANDATORY GROUNDING RULE: You MUST draw your terminology, algorithmic steps, code syntax, and examples strictly from the uploaded document material above to ensure 100% textbook alignment and avoid irrelevant tangents.` : ''}
 
 REQUIREMENTS:
 1. "theoryMarkdown": Detailed, clean markdown with headings (##, ###), bullet points, bold keywords, code examples with syntax formatting, mental analogies, and memory tips.
@@ -1615,23 +1630,23 @@ Output MUST be ONLY valid JSON matching this schema:
     /**
      * Generate complete Training Exercises covering all 5 question types
      */
-    async generateTrainingExercise({ topic, unitTitle = '', language = 'python', exerciseType = 'coding', difficulty = 'beginner', scaffoldLevel = 'guided', bloomsLevel = 'apply', customPrompt = '', provider = 'groq' }) {
+    async generateTrainingExercise({ topic, unitTitle = '', unitDescription = '', moduleTitle = '', documentText = '', language = 'python', exerciseType = 'coding', difficulty = 'beginner', scaffoldLevel = 'guided', bloomsLevel = 'apply', customPrompt = '', provider = 'groq' }) {
         let typeInstruction = '';
         if (exerciseType === 'coding') {
             typeInstruction = `Generate a standard CODING LAB exercise:
-CRITICAL: Do NOT output placeholder code like 'def solve(n): pass'. The "starterCode" and "solutionCode" MUST be specifically written for '${topic}' (or custom prompt '${customPrompt}') with realistic function names, docstrings, and actual algorithm logic matching difficulty '${difficulty}', scaffold '${scaffoldLevel}', and bloom level '${bloomsLevel}'.
+CRITICAL: Do NOT output placeholder code like 'def solve(n): pass'. The "starterCode" and "solutionCode" MUST be specifically written for '${topic}' in the context of unit '${unitTitle}' (or custom prompt '${customPrompt}') with realistic function names, docstrings, and actual algorithm logic matching difficulty '${difficulty}', scaffold '${scaffoldLevel}', and bloom level '${bloomsLevel}'.
 - "starterCode": Boilerplate with function signature, docstring explaining parameters/returns, scaffolding comments and starter variables.
 - "solutionCode": Complete working executable solution code solving the specific problem.
 - "testCases": Array of at least 3 realistic test cases with realistic inputs and expected outputs: [{"input": "...", "expectedOutput": "...", "isHidden": false}, {"input": "...", "expectedOutput": "...", "isHidden": true}]
 - "hints": Array of 2-3 progressive Socratic hints.`;
         } else if (exerciseType === 'bug_fix') {
             typeInstruction = `Generate a PR REVIEW / BUG HUNT exercise where student is given buggy code and must fix it:
-- "starterCode": Code specifically implementing '${topic}' containing a subtle logical or off-by-one bug with comments like "# FIX THE BUG HERE"
+- "starterCode": Code specifically implementing '${topic}' for unit '${unitTitle}' containing a subtle logical or off-by-one bug with comments like "# FIX THE BUG HERE"
 - "solutionCode": The clean, corrected code
 - "testCases": Array of 3 test cases that fail on buggy code but pass on corrected code
 - "hints": Array of 2 hints pointing toward the bug's cause`;
         } else if (exerciseType === 'mcq') {
-            typeInstruction = `Generate a CODE TRACING / OUTPUT PREDICTION MCQ specifically about '${topic}':
+            typeInstruction = `Generate a CODE TRACING / OUTPUT PREDICTION MCQ specifically about '${topic}' for unit '${unitTitle}':
 - "testCases": {
     "question": "What is the exact output of this code snippet?",
     "codeSnippet": "Code snippet in ${language} demonstrating ${topic} with tricky logic or edge cases",
@@ -1642,7 +1657,7 @@ CRITICAL: Do NOT output placeholder code like 'def solve(n): pass'. The "starter
 - "starterCode": null
 - "solutionCode": null`;
         } else if (exerciseType === 'fill_blank') {
-            typeInstruction = `Generate a SYNTAX CLOZE / FILL-IN-THE-BLANKS exercise for '${topic}':
+            typeInstruction = `Generate a SYNTAX CLOZE / FILL-IN-THE-BLANKS exercise for '${topic}' in unit '${unitTitle}':
 - "starterCode": The exact code snippet template containing placeholders like {{BLANK_1}} and {{BLANK_2}}
 - "solutionCode": The complete, working, executable code with all {{BLANK_N}} placeholders replaced with their exact correct answer tokens
 - "testCases": {
@@ -1655,7 +1670,7 @@ CRITICAL: Do NOT output placeholder code like 'def solve(n): pass'. The "starter
     "explanation": "Detailed explanation of the completed code syntax."
   }`;
         } else if (exerciseType === 'case_study') {
-            typeInstruction = `Generate a REAL-WORLD MNC INCIDENT CASE STUDY based on '${topic}':
+            typeInstruction = `Generate a REAL-WORLD MNC INCIDENT CASE STUDY based on '${topic}' for unit '${unitTitle}':
 - "testCases": {
     "company": "Fictional Tech Company / Team",
     "incident": "Incident description (e.g. Production latency spike during peak checkout)",
@@ -1674,14 +1689,23 @@ CRITICAL: Do NOT output placeholder code like 'def solve(n): pass'. The "starter
 
         const systemPrompt = `You are an expert pedagogy and computer science challenge architect.
 Create an exercise with the following parameters:
-TOPIC: ${topic}
-UNIT: ${unitTitle || 'Active Unit'}
+TARGET TOPIC: ${topic}
+TARGET UNIT: ${unitTitle || 'Active Unit'} ${unitDescription ? `(${unitDescription})` : ''}
+COURSE CONTEXT: ${moduleTitle || 'Computer Science Training Module'}
 LANGUAGE: ${language}
 EXERCISE TYPE: ${exerciseType}
 DIFFICULTY: ${difficulty}
 SCAFFOLD LEVEL: ${scaffoldLevel}
 BLOOM'S TAXONOMY LEVEL: ${bloomsLevel}
 ADDITIONAL INSTRUCTIONS: ${customPrompt || 'None'}
+
+${unitTitle ? `UNIT ALIGNMENT MANDATE: The exercise MUST directly evaluate and reinforce the skills of Unit "${unitTitle}". Do not generate general/unrelated questions outside this unit's scope.` : ''}
+
+${documentText ? `DOCUMENT GROUNDING CONTEXT:
+---
+${documentText.slice(0, 10000)}
+---
+STRICT GROUNDING: Draw the exercise scenario, code constructs, and variables directly from the concepts and examples in this uploaded reference material.` : ''}
 
 ${typeInstruction}
 
