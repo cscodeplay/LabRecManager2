@@ -12,6 +12,7 @@ const { uploadToCloudinary } = require('../utils/cloudinary');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const { spawnSync } = require('child_process');
+const aiService = require('../services/ai.service');
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -162,13 +163,14 @@ router.get('/modules/:id', authenticate, asyncHandler(async (req, res) => {
         ? {
             id: true, title: true, description: true, difficulty: true,
             scaffoldLevel: true, bloomsLevel: true, learningObjective: true,
-            isReviewExercise: true, xpReward: true,
+            isReviewExercise: true, xpReward: true, exerciseType: true,
             starterCode: true, solutionCode: true, testCases: true, hints: true,
             timeLimit: true, sequenceOrder: true
           }
         : {
-            id: true, title: true, difficulty: true,
-            scaffoldLevel: true, isReviewExercise: true, xpReward: true
+            id: true, title: true, difficulty: true, description: true,
+            scaffoldLevel: true, isReviewExercise: true, xpReward: true,
+            exerciseType: true, sequenceOrder: true
           };
 
     const moduleDetails = await prisma.trainingModule.findUnique({
@@ -190,11 +192,11 @@ router.get('/modules/:id', authenticate, asyncHandler(async (req, res) => {
         return res.status(404).json({ success: false, message: 'Module not found' });
     }
 
-    // Get student progress if requested by a student
+    // Get student/user progress
     let progress = null;
     let unitMasteries = [];
     
-    if (req.user.role === 'student') {
+    if (req.user?.id) {
         progress = await prisma.studentTrainingProgress.findUnique({
             where: {
                 studentId_moduleId: {
@@ -655,7 +657,11 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
     });
 
     // If passed, update Progress, Mastery & XP
-    if (passedAll && req.user.role === 'student') {
+    let updatedTotalXP = 0;
+    let nextExerciseId = null;
+    let isUnitMastered = false;
+
+    if (passedAll && req.user?.id) {
         const unitId = exercise.unitId;
         const moduleId = exercise.unit.moduleId;
 
@@ -673,14 +679,16 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
                     totalXP: exercise.xpReward || 10
                 }
             });
+            updatedTotalXP = exercise.xpReward || 10;
         } else {
-            await prisma.studentTrainingProgress.update({
+            const updated = await prisma.studentTrainingProgress.update({
                 where: { id: progress.id },
                 data: {
                     totalXP: { increment: exercise.xpReward || 10 },
                     lastActiveAt: new Date()
                 }
             });
+            updatedTotalXP = updated.totalXP;
         }
 
         // Update Mastery
@@ -692,7 +700,7 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
 
         const newDone = (mastery ? mastery.exercisesDone : 0) + 1;
         const newScore = totalExercisesInUnit > 0 ? (newDone / totalExercisesInUnit) * 100 : 100;
-        const isMastered = newScore >= (exercise.unit?.unlockThreshold || 80);
+        isUnitMastered = newScore >= (exercise.unit?.unlockThreshold || 80);
 
         if (!mastery) {
             await prisma.studentUnitMastery.create({
@@ -701,9 +709,9 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
                     unitId,
                     exercisesDone: newDone,
                     masteryScore: Math.min(newScore, 100),
-                    status: isMastered ? 'mastered' : 'in_progress',
+                    status: isUnitMastered ? 'mastered' : 'in_progress',
                     unlockedAt: new Date(),
-                    masteredAt: isMastered ? new Date() : null
+                    masteredAt: isUnitMastered ? new Date() : null
                 }
             });
         } else {
@@ -712,10 +720,32 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
                 data: {
                     exercisesDone: newDone,
                     masteryScore: Math.min(newScore, 100),
-                    status: isMastered ? 'mastered' : 'in_progress',
-                    masteredAt: isMastered ? (mastery.masteredAt || new Date()) : null
+                    status: isUnitMastered ? 'mastered' : 'in_progress',
+                    masteredAt: isUnitMastered ? (mastery.masteredAt || new Date()) : null
                 }
             });
+        }
+
+        // Find Next Exercise in module sequence
+        try {
+            const allUnits = await prisma.trainingUnit.findMany({
+                where: { moduleId },
+                orderBy: { sequenceOrder: 'asc' },
+                include: {
+                    exercises: {
+                        orderBy: { sequenceOrder: 'asc' },
+                        select: { id: true }
+                    }
+                }
+            });
+
+            const allExerciseIds = allUnits.flatMap(u => u.exercises.map(e => e.id));
+            const currentIdx = allExerciseIds.indexOf(exercise.id);
+            if (currentIdx !== -1 && currentIdx + 1 < allExerciseIds.length) {
+                nextExerciseId = allExerciseIds[currentIdx + 1];
+            }
+        } catch (seqErr) {
+            console.warn('[Training Submit] Next exercise lookup failed:', seqErr.message);
         }
     }
 
@@ -726,6 +756,9 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
             results,
             socraticReview,
             xpEarned: passedAll ? (exercise.xpReward || 10) : 0,
+            totalXP: updatedTotalXP,
+            nextExerciseId,
+            isUnitMastered,
             submissionId: submission.id
         }
     });
@@ -987,10 +1020,88 @@ router.get('/modules/:id/progress', authenticate, authorize('admin', 'principal'
         }
     });
 
-    res.json({
-        success: true,
-        data: { progress, unitMasteries }
-    });
+// ==========================================
+// AI LMS GENERATOR COPILOT ENDPOINT
+// ==========================================
+
+/**
+ * @route   POST /api/training/ai-assist
+ * @desc    Generate syllabus outlines, lesson theory with graphics, exercises (all 5 types), or socratic hints
+ * @access  Private (Admin/Instructor/Principal)
+ */
+router.post('/ai-assist', authenticate, asyncHandler(async (req, res) => {
+    const { action, payload = {}, provider = 'groq' } = req.body;
+
+    if (!action) {
+        return res.status(400).json({ success: false, message: 'AI action is required' });
+    }
+
+    try {
+        let result = null;
+
+        switch (action) {
+            case 'generate_outline':
+                result = await aiService.generateTrainingModuleOutline({
+                    topic: payload.topic || 'Python Programming',
+                    targetAudience: payload.targetAudience || '',
+                    language: payload.language || 'python',
+                    classLevel: payload.classLevel || 11,
+                    board: payload.board || 'PSEB',
+                    totalUnits: payload.totalUnits || 3,
+                    provider
+                });
+                break;
+
+            case 'generate_theory':
+                result = await aiService.generateTrainingTheoryAndGraphics({
+                    topic: payload.topic || 'Python Basics',
+                    unitTitle: payload.unitTitle || '',
+                    language: payload.language || 'python',
+                    classLevel: payload.classLevel || 11,
+                    provider
+                });
+                break;
+
+            case 'generate_exercise':
+                result = await aiService.generateTrainingExercise({
+                    topic: payload.topic || 'Functions and Loops',
+                    unitTitle: payload.unitTitle || '',
+                    language: payload.language || 'python',
+                    exerciseType: payload.exerciseType || 'coding',
+                    difficulty: payload.difficulty || 'beginner',
+                    scaffoldLevel: payload.scaffoldLevel || 'guided',
+                    bloomsLevel: payload.bloomsLevel || 'apply',
+                    customPrompt: payload.customPrompt || '',
+                    provider
+                });
+                break;
+
+            case 'socratic_hint':
+                result = await aiService.generateSocraticHint({
+                    problemTitle: payload.problemTitle || '',
+                    problemDescription: payload.problemDescription || '',
+                    studentCode: payload.studentCode || '',
+                    currentOutput: payload.currentOutput || '',
+                    failedTests: payload.failedTests || [],
+                    provider
+                });
+                break;
+
+            default:
+                return res.status(400).json({ success: false, message: `Unknown AI assist action: ${action}` });
+        }
+
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (err) {
+        console.error(`[Training AI Assist Error] ${action}:`, err.message);
+        res.status(500).json({
+            success: false,
+            message: err.message || 'AI LMS Assistant encountered an error'
+        });
+    }
 }));
 
 module.exports = router;

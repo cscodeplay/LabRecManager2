@@ -668,6 +668,9 @@ export const trainingAPI = {
     assignModule: (moduleId, data) => api.post(`/training/modules/${moduleId}/assign`, data),
     getModuleAssignments: (moduleId) => api.get(`/training/modules/${moduleId}/assignments`),
     getModuleProgress: (moduleId) => api.get(`/training/modules/${moduleId}/progress`),
+
+    // AI LMS Assistant
+    aiAssist: (data) => api.post('/training/ai-assist', data),
 };
 
 // AI Generator API

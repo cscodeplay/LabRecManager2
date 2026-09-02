@@ -1396,6 +1396,464 @@ Output ONLY a valid JSON object matching this schema:
         };
     }
 
+    /**
+     * Generate structured Training Module Outline (Curriculum & Units)
+     */
+    async generateTrainingModuleOutline({ topic, targetAudience = '', language = 'python', classLevel = 11, board = 'PSEB', totalUnits = 3, provider = 'groq' }) {
+        const systemPrompt = `You are a distinguished Computer Science educator and curriculum designer.
+Create a high-impact, pedagogy-aligned training course outline for the given topic.
+TOPIC: ${topic}
+PROGRAMMING LANGUAGE: ${language}
+CLASS LEVEL: Grade ${classLevel}
+BOARD / CURRICULUM: ${board}
+TARGET UNITS COUNT: ${totalUnits}
+TARGET AUDIENCE / FOCUS: ${targetAudience || 'School / College Computer Science Students'}
+
+Design a structured course with progressive mastery thresholds (recommended 80%).
+Output MUST be ONLY valid JSON matching this exact schema:
+{
+  "title": "Clear course title in English",
+  "titleHindi": "प्रशिक्षण पाठ्यक्रम का शीर्षक (Hindi translation)",
+  "description": "Detailed course overview explaining what students will master...",
+  "language": "${language}",
+  "boardAligned": "${board}",
+  "classLevel": ${Number(classLevel) || 11},
+  "pedagogyConfig": {
+    "useBlooms": true,
+    "useObjectives": true,
+    "useTimeLimit": false
+  },
+  "units": [
+    {
+      "unitNumber": 1,
+      "title": "Unit 1: Fundamentals...",
+      "description": "Core concepts covered in this unit...",
+      "expectedHours": 4,
+      "unlockThreshold": 80,
+      "keyConcepts": ["Concept A", "Concept B"],
+      "suggestedExerciseTypes": ["coding", "mcq", "fill_blank"]
+    }
+  ]
+}`;
+
+        // 1. Try Groq
+        if ((provider === 'groq' || provider === 'auto') && this.groq) {
+            try {
+                const completion = await this.groq.chat.completions.create({
+                    model: 'llama-3.3-70b-versatile',
+                    messages: [
+                        { role: 'system', content: 'You are an educational AI assistant. Output ONLY valid JSON matching the schema. No markdown code blocks.' },
+                        { role: 'user', content: systemPrompt }
+                    ],
+                    temperature: 0.2
+                });
+                return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+            } catch (err) {
+                console.warn('[AIService] Groq training outline failed:', err.message);
+            }
+        }
+
+        // 2. Try Gemini
+        if (this.genAI) {
+            try {
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+                const result = await model.generateContent(systemPrompt);
+                return this.parseJSONResponse(result.response.text());
+            } catch (err) {
+                console.warn('[AIService] Gemini training outline failed:', err.message);
+            }
+        }
+
+        // 3. Fallback
+        return {
+            title: `${topic} Mastery Course`,
+            titleHindi: `${topic} प्रशिक्षण`,
+            description: `A structured training module covering ${topic} with hands-on labs, quizzes, and real-world exercises.`,
+            language,
+            boardAligned: board,
+            classLevel: Number(classLevel) || 11,
+            pedagogyConfig: { useBlooms: true, useObjectives: true, useTimeLimit: false },
+            units: [
+                {
+                    unitNumber: 1,
+                    title: `Unit 1: Introduction to ${topic}`,
+                    description: `Foundational syntax, principles, and introductory concepts of ${topic}.`,
+                    expectedHours: 3,
+                    unlockThreshold: 80,
+                    keyConcepts: ['Syntax & Basics', 'Core Constructs', 'Practical Examples'],
+                    suggestedExerciseTypes: ['coding', 'mcq']
+                },
+                {
+                    unitNumber: 2,
+                    title: `Unit 2: Core Implementation & Problem Solving`,
+                    description: `Intermediate algorithms, data manipulation, and structured programming in ${topic}.`,
+                    expectedHours: 5,
+                    unlockThreshold: 80,
+                    keyConcepts: ['Control Flow', 'Functions & Modular Code', 'Error Handling'],
+                    suggestedExerciseTypes: ['coding', 'fill_blank', 'bug_fix']
+                },
+                {
+                    unitNumber: 3,
+                    title: `Unit 3: Capstone Projects & Real-world Applications`,
+                    description: `Comprehensive project building, optimization, and industry case studies.`,
+                    expectedHours: 6,
+                    unlockThreshold: 80,
+                    keyConcepts: ['Architecture Design', 'Optimization', 'Capstone Project'],
+                    suggestedExerciseTypes: ['coding', 'case_study']
+                }
+            ]
+        };
+    }
+
+    /**
+     * Generate rich Lesson Theory, Markdown Notes, and Educational SVG Graphics / Mermaid Diagrams
+     */
+    async generateTrainingTheoryAndGraphics({ topic, unitTitle = '', language = 'python', classLevel = 11, provider = 'groq' }) {
+        const systemPrompt = `You are an elite Computer Science instructional designer and technical illustrator.
+Generate comprehensive, student-friendly learning material for the following concept:
+TOPIC: ${topic}
+UNIT: ${unitTitle || 'General Unit'}
+LANGUAGE: ${language}
+CLASS LEVEL: Grade ${classLevel}
+
+REQUIREMENTS:
+1. "theoryMarkdown": Detailed, clean markdown with headings (##, ###), bullet points, bold keywords, code examples with syntax formatting, mental analogies, and memory tips.
+2. "svgGraphic": A self-contained, clean, modern educational SVG illustration (width="100%", viewBox="0 0 800 400") visualizing the concept (e.g., memory layout, data flow, stack/heap, recursion tree, variable box, or loop cycle) with dark-theme styled rects (#1e293b, #334155), vibrant accents (#6366f1, #10b981, #f59e0b, #38bdf8), and clear text labels. Must be valid SVG XML string.
+3. "mermaidDiagram": Clean Mermaid.js chart code (e.g. flowchart TD or sequenceDiagram).
+4. "keyTakeaways": Array of 3-4 concise takeaway bullets.
+5. "quickCheckQuestion": A fast 1-question self-check for the student with question and answer.
+
+Output MUST be ONLY valid JSON matching this schema:
+{
+  "title": "Lesson Title",
+  "theoryMarkdown": "Markdown string...",
+  "svgGraphic": "<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 800 360\\">...</svg>",
+  "mermaidDiagram": "flowchart TD\\nA[Input] --> B[Process] --> C[Output]",
+  "keyTakeaways": ["Key point 1", "Key point 2", "Key point 3"],
+  "quickCheckQuestion": {
+    "question": "What happens when...?",
+    "answer": "Explanation of expected behavior..."
+  }
+}`;
+
+        // 1. Try Groq
+        if ((provider === 'groq' || provider === 'auto') && this.groq) {
+            try {
+                const completion = await this.groq.chat.completions.create({
+                    model: 'llama-3.3-70b-versatile',
+                    messages: [
+                        { role: 'system', content: 'Output ONLY valid JSON. Escape quotes in SVG attributes properly.' },
+                        { role: 'user', content: systemPrompt }
+                    ],
+                    temperature: 0.2
+                });
+                return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+            } catch (err) {
+                console.warn('[AIService] Groq theory/graphics failed:', err.message);
+            }
+        }
+
+        // 2. Try Gemini
+        if (this.genAI) {
+            try {
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+                const result = await model.generateContent(systemPrompt);
+                return this.parseJSONResponse(result.response.text());
+            } catch (err) {
+                console.warn('[AIService] Gemini theory/graphics failed:', err.message);
+            }
+        }
+
+        // 3. Fallback
+        return {
+            title: `Understanding ${topic}`,
+            theoryMarkdown: `## 📘 Core Concept: ${topic}\n\n${topic} is a fundamental pillar of modern computing and programming in **${language}**.\n\n### 🔑 Key Principles\n- **Modularity:** Breaking complex logic into isolated, reusable blocks.\n- **Efficiency:** Optimizing execution flow and resource allocation.\n- **Clarity:** Writing self-documenting code with meaningful naming.\n\n\`\`\`${language}\n# Example demonstration\ndef demonstrate_${topic.toLowerCase().replace(/[^a-z0-9]/g, '_')}():\n    print("Executing ${topic} workflow...")\n    return True\n\`\`\``,
+            svgGraphic: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="100%" height="100%">
+  <rect width="800" height="300" rx="16" fill="#0f172a" />
+  <rect x="40" y="40" width="220" height="220" rx="12" fill="#1e293b" stroke="#6366f1" stroke-width="2" />
+  <text x="150" y="80" fill="#a5b4fc" font-size="16" font-family="sans-serif" font-weight="bold" text-anchor="middle">Input / State</text>
+  <circle cx="150" cy="150" r="40" fill="#312e81" stroke="#818cf8" stroke-width="2" />
+  <text x="150" y="155" fill="#ffffff" font-size="13" font-family="sans-serif" text-anchor="middle">Data</text>
+  <path d="M 270 150 L 350 150" stroke="#818cf8" stroke-width="3" marker-end="url(#arrow)" />
+  <rect x="360" y="40" width="220" height="220" rx="12" fill="#1e293b" stroke="#10b981" stroke-width="2" />
+  <text x="470" y="80" fill="#6ee7b7" font-size="16" font-family="sans-serif" font-weight="bold" text-anchor="middle">${topic}</text>
+  <rect x="390" y="120" width="160" height="60" rx="8" fill="#064e3b" stroke="#34d399" stroke-width="1.5" />
+  <text x="470" y="155" fill="#ffffff" font-size="13" font-family="sans-serif" text-anchor="middle">Logic Engine</text>
+  <path d="M 590 150 L 670 150" stroke="#34d399" stroke-width="3" />
+  <rect x="680" y="90" width="90" height="120" rx="12" fill="#1e293b" stroke="#38bdf8" stroke-width="2" />
+  <text x="725" y="155" fill="#38bdf8" font-size="14" font-family="sans-serif" font-weight="bold" text-anchor="middle">Result</text>
+</svg>`,
+            mermaidDiagram: `flowchart LR\n  Input[Input Data] --> Logic[${topic} Processing] --> Output[Verified Result]`,
+            keyTakeaways: [
+                `Mastering ${topic} enables robust architecture.`,
+                `Always validate edge cases and exception handling.`,
+                `Keep code idiomatic and follow standard conventions.`
+            ],
+            quickCheckQuestion: {
+                question: `What is the core benefit of utilizing ${topic}?`,
+                answer: `It enables structured, maintainable, and high-performance execution.`
+            }
+        };
+    }
+
+    /**
+     * Generate complete Training Exercises covering all 5 question types:
+     * - coding
+     * - mcq (Output Prediction / Conceptual MCQ)
+     * - fill_blank (Syntax Cloze)
+     * - bug_fix (PR Code Review / Bug Hunt)
+     * - case_study (MNC Incident Case Study)
+     */
+    async generateTrainingExercise({ topic, unitTitle = '', language = 'python', exerciseType = 'coding', difficulty = 'beginner', scaffoldLevel = 'guided', bloomsLevel = 'apply', customPrompt = '', provider = 'groq' }) {
+        let typeInstruction = '';
+        if (exerciseType === 'coding') {
+            typeInstruction = `Generate a standard CODING LAB exercise with:
+- "starterCode": Boilerplate with function signature and comments
+- "solutionCode": Complete working solution
+- "testCases": Array of at least 3 test cases: [{"input": "...", "expectedOutput": "...", "isHidden": false}, {"input": "...", "expectedOutput": "...", "isHidden": true}]
+- "hints": Array of 2-3 progressive Socratic hints`;
+        } else if (exerciseType === 'bug_fix') {
+            typeInstruction = `Generate a PR REVIEW / BUG HUNT exercise where student is given buggy code and must fix it:
+- "starterCode": Code containing a subtle logical or syntax bug with comments like "# FIX THE BUG HERE"
+- "solutionCode": The clean, corrected code
+- "testCases": Array of 3 test cases that fail on buggy code but pass on corrected code
+- "hints": Array of 2 hints pointing toward the bug's cause`;
+        } else if (exerciseType === 'mcq') {
+            typeInstruction = `Generate a CODE TRACING / OUTPUT PREDICTION MCQ:
+- "testCases": {
+    "question": "What is the exact output of this code snippet?",
+    "codeSnippet": "Code snippet in ${language} demonstrating a tricky concept or edge case",
+    "options": ["Option A (Incorrect)", "Option B (Correct)", "Option C (Distractor)", "Option D (Distractor)"],
+    "correctOption": 1 (0-indexed integer corresponding to correct option),
+    "explanation": "Detailed explanation of why Option B is correct and why others fail."
+  }
+- "starterCode": null
+- "solutionCode": null`;
+        } else if (exerciseType === 'fill_blank') {
+            typeInstruction = `Generate a SYNTAX CLOZE / FILL-IN-THE-BLANKS exercise:
+- "testCases": {
+    "instruction": "Fill in the missing tokens in the code template below.",
+    "template": "Code snippet with placeholders like {{BLANK_1}} and {{BLANK_2}}",
+    "blanks": [
+      { "id": "BLANK_1", "correctAnswer": "exactToken", "hint": "Brief hint for blank 1" },
+      { "id": "BLANK_2", "correctAnswer": "exactToken", "hint": "Brief hint for blank 2" }
+    ],
+    "explanation": "Detailed explanation of the completed code syntax."
+  }`;
+        } else if (exerciseType === 'case_study') {
+            typeInstruction = `Generate a REAL-WORLD MNC INCIDENT CASE STUDY:
+- "testCases": {
+    "company": "Fictional Tech Company / Team",
+    "incident": "Incident description (e.g. Production latency spike during peak checkout)",
+    "scenarioCode": "Relevant architectural or backend code snippet",
+    "questions": [
+      {
+        "id": "q1",
+        "prompt": "What architectural flaw causes this behavior?",
+        "options": ["Option A", "Option B", "Option C", "Option D"],
+        "correctOption": 0,
+        "explanation": "Root cause analysis..."
+      }
+    ]
+  }`;
+        }
+
+        const systemPrompt = `You are an expert pedagogy and computer science challenge architect.
+Create an exercise with the following parameters:
+TOPIC: ${topic}
+UNIT: ${unitTitle || 'Active Unit'}
+LANGUAGE: ${language}
+EXERCISE TYPE: ${exerciseType}
+DIFFICULTY: ${difficulty}
+SCAFFOLD LEVEL: ${scaffoldLevel}
+BLOOM'S TAXONOMY LEVEL: ${bloomsLevel}
+ADDITIONAL INSTRUCTIONS: ${customPrompt || 'None'}
+
+${typeInstruction}
+
+Output MUST be ONLY valid JSON matching this schema:
+{
+  "title": "Concise, descriptive problem title",
+  "description": "Clear problem statement and instructions for students",
+  "theory": "Brief theoretical background explaining the concept before the student begins",
+  "exerciseType": "${exerciseType}",
+  "difficulty": "${difficulty}",
+  "scaffoldLevel": "${scaffoldLevel}",
+  "bloomsLevel": "${bloomsLevel}",
+  "learningObjective": "SWBAT...",
+  "xpReward": ${difficulty === 'advanced' ? 25 : difficulty === 'intermediate' ? 15 : 10},
+  "timeLimit": 5,
+  "isReviewExercise": false,
+  "starterCode": "...",
+  "solutionCode": "...",
+  "testCases": ...,
+  "hints": ["Hint 1", "Hint 2"]
+}`;
+
+        // 1. Try Groq
+        if ((provider === 'groq' || provider === 'auto') && this.groq) {
+            try {
+                const completion = await this.groq.chat.completions.create({
+                    model: 'llama-3.3-70b-versatile',
+                    messages: [
+                        { role: 'system', content: 'Output ONLY valid JSON. No markdown code block wrapping.' },
+                        { role: 'user', content: systemPrompt }
+                    ],
+                    temperature: 0.2
+                });
+                return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+            } catch (err) {
+                console.warn('[AIService] Groq exercise generation failed:', err.message);
+            }
+        }
+
+        // 2. Try Gemini
+        if (this.genAI) {
+            try {
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+                const result = await model.generateContent(systemPrompt);
+                return this.parseJSONResponse(result.response.text());
+            } catch (err) {
+                console.warn('[AIService] Gemini exercise generation failed:', err.message);
+            }
+        }
+
+        // 3. Fallback based on exercise type
+        if (exerciseType === 'mcq') {
+            return {
+                title: `${topic} Tracing Challenge`,
+                description: `Analyze the code snippet below and predict the expected output.`,
+                theory: `Tracing code step-by-step is a key debugging skill.`,
+                exerciseType: 'mcq',
+                difficulty,
+                scaffoldLevel,
+                bloomsLevel,
+                learningObjective: `SWBAT trace ${topic} execution.`,
+                xpReward: 10,
+                timeLimit: 5,
+                isReviewExercise: false,
+                testCases: {
+                    question: `What will the following ${language} code print?`,
+                    codeSnippet: language === 'python' ? `items = [10, 20, 30]\nresult = [x * 2 for x in items if x > 15]\nprint(result)` : `const items = [10, 20, 30];\nconst result = items.filter(x => x > 15).map(x => x * 2);\nconsole.log(result);`,
+                    options: ['[20, 40, 60]', '[40, 60]', '[20, 40]', '[10, 20]'],
+                    correctOption: 1,
+                    explanation: `Only elements > 15 (20 and 30) are selected and multiplied by 2, giving [40, 60].`
+                },
+                hints: [`Check the filter condition first, then the multiplication.`]
+            };
+        }
+
+        if (exerciseType === 'fill_blank') {
+            return {
+                title: `Syntax Cloze: ${topic}`,
+                description: `Fill in the missing tokens in the code snippet.`,
+                theory: `Mastering syntax tokens ensures clean execution.`,
+                exerciseType: 'fill_blank',
+                difficulty,
+                scaffoldLevel,
+                bloomsLevel,
+                learningObjective: `SWBAT complete ${topic} syntax patterns.`,
+                xpReward: 10,
+                timeLimit: 5,
+                isReviewExercise: false,
+                testCases: {
+                    instruction: `Fill in the missing keywords:`,
+                    template: language === 'python' ? `def process_data(data):\n    {{BLANK_1}} data is None:\n        return []\n    {{BLANK_2}} [x.strip() for x in data]` : `function processData(data) {\n    {{BLANK_1}} (!data) return [];\n    {{BLANK_2}} data.map(x => x.trim());\n}`,
+                    blanks: [
+                        { id: 'BLANK_1', correctAnswer: 'if', hint: 'Conditional check' },
+                        { id: 'BLANK_2', correctAnswer: 'return', hint: 'Output statement' }
+                    ],
+                    explanation: `We guard against None with 'if', and return the result using 'return'.`
+                },
+                hints: [`Look at standard conditional and return keywords.`]
+            };
+        }
+
+        return {
+            title: `Hands-on Lab: ${topic}`,
+            description: `Write a program that demonstrates ${topic}. Implement the required function and return the correct result.`,
+            theory: `## 📘 Learning Content\n\nUnderstand how ${topic} works before implementing your solution.`,
+            exerciseType: 'coding',
+            difficulty,
+            scaffoldLevel,
+            bloomsLevel,
+            learningObjective: `SWBAT implement ${topic} in ${language}.`,
+            xpReward: 15,
+            timeLimit: 5,
+            isReviewExercise: false,
+            starterCode: language === 'python' ? `# Implement your solution\ndef solve(n):\n    # TODO: Write code here\n    pass\n` : `// Implement solution\nfunction solve(n) {\n    // TODO\n}\n`,
+            solutionCode: language === 'python' ? `def solve(n):\n    return n * 2\n` : `function solve(n) {\n    return n * 2;\n}\n`,
+            testCases: [
+                { input: '5', expectedOutput: '10', isHidden: false },
+                { input: '12', expectedOutput: '24', isHidden: false },
+                { input: '0', expectedOutput: '0', isHidden: true }
+            ],
+            hints: [`Start by handling the base input case.`, `Ensure your return type matches expectations.`]
+        };
+    }
+
+    /**
+     * Generate interactive Socratic Hint for a student stuck on an exercise
+     */
+    async generateSocraticHint({ problemTitle, problemDescription, studentCode, currentOutput, failedTests = [], provider = 'groq' }) {
+        const systemPrompt = `You are a warm, encouraging Socratic Computer Science tutor.
+A student is working on the following problem and needs a hint:
+PROBLEM: ${problemTitle}
+DESCRIPTION: ${problemDescription}
+STUDENT CODE:
+\`\`\`
+${studentCode || 'No code written yet'}
+\`\`\`
+CURRENT OUTPUT / ERROR:
+${currentOutput || 'None'}
+FAILED TEST CASES:
+${JSON.stringify(failedTests)}
+
+RULES:
+1. NEVER give the complete solution code directly.
+2. Ask a guiding question that prompts the student to think about their logic or edge cases.
+3. Keep the feedback under 3 concise sentences.
+
+Output MUST be ONLY valid JSON:
+{
+  "socraticHint": "Encouraging guidance...",
+  "guidingQuestion": "What happens when...?",
+  "edgeCaseToConsider": "Consider testing with..."
+}`;
+
+        if ((provider === 'groq' || provider === 'auto') && this.groq) {
+            try {
+                const completion = await this.groq.chat.completions.create({
+                    model: 'llama-3.1-8b-instant',
+                    messages: [
+                        { role: 'system', content: 'Output ONLY valid JSON.' },
+                        { role: 'user', content: systemPrompt }
+                    ],
+                    temperature: 0.3
+                });
+                return this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+            } catch (err) {
+                console.warn('[AIService] Groq socratic hint failed:', err.message);
+            }
+        }
+
+        if (this.genAI) {
+            try {
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+                const result = await model.generateContent(systemPrompt);
+                return this.parseJSONResponse(result.response.text());
+            } catch (err) {
+                console.warn('[AIService] Gemini socratic hint failed:', err.message);
+            }
+        }
+
+        return {
+            socraticHint: `Take a close look at your variable initialization and the loop boundary conditions.`,
+            guidingQuestion: `What value does your function return when given the first test input?`,
+            edgeCaseToConsider: `Test with empty inputs or zero.`
+        };
+    }
+
     parseJSONResponse(text) {
         let cleanText = text.trim();
         cleanText = cleanText.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();

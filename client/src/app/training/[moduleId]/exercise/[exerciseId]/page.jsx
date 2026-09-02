@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
 import { trainingAPI } from '@/lib/api';
 import { 
     Play, CheckCircle2, XCircle, ArrowLeft, Lightbulb, Beaker, 
     Plus, Trash2, RotateCcw, ListOrdered, FileText, Sparkles,
-    CheckSquare, HelpCircle, Code2, BookOpen, AlertTriangle, Send, Award
+    CheckSquare, HelpCircle, Code2, BookOpen, AlertTriangle, Send, Award,
+    PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Flame, RefreshCw, 
+    Check, Undo2, Lock, CheckCircle, ArrowRight, X, Compass, Clock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Editor from '@monaco-editor/react';
@@ -36,8 +38,10 @@ function parseInputOccurrences(codeText) {
 export default function ExerciseEditorPage() {
     const { moduleId, exerciseId } = useParams();
     const router = useRouter();
-    const { isAuthenticated } = useAuthStore();
+    const { isAuthenticated, user } = useAuthStore();
     
+    // Module & Exercise state
+    const [moduleData, setModuleData] = useState(null);
     const [exercise, setExercise] = useState(null);
     const [code, setCode] = useState('');
     const [output, setOutput] = useState('');
@@ -49,7 +53,21 @@ export default function ExerciseEditorPage() {
     const [testResults, setTestResults] = useState(null);
     const [socraticReview, setSocraticReview] = useState(null);
     const [showHint, setShowHint] = useState(false);
+    
+    // Gamification & Progress state
     const [xpEarned, setXpEarned] = useState(0);
+    const [totalXP, setTotalXP] = useState(0);
+    const [streak, setStreak] = useState(1);
+    const [nextExerciseId, setNextExerciseId] = useState(null);
+    const [advanceCountdown, setAdvanceCountdown] = useState(null);
+    const [isUnitMastered, setIsUnitMastered] = useState(false);
+
+    // UX Enhancements state
+    const [isNavOpen, setIsNavOpen] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [showSocraticDrawer, setShowSocraticDrawer] = useState(false);
+    const [socraticLoading, setSocraticLoading] = useState(false);
+    const [socraticAdvice, setSocraticAdvice] = useState(null);
 
     // Multi-modal state variables
     const [selectedMcqOption, setSelectedMcqOption] = useState(null);
@@ -63,6 +81,47 @@ export default function ExerciseEditorPage() {
     const detectedPrompts = useMemo(() => {
         return parseInputOccurrences(code);
     }, [code]);
+
+    // Fullscreen change listener
+    useEffect(() => {
+        const handleFsChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+        document.addEventListener('fullscreenchange', handleFsChange);
+        return () => document.removeEventListener('fullscreenchange', handleFsChange);
+    }, []);
+
+    const toggleFullscreen = () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+            document.exitFullscreen().catch(() => {});
+        }
+    };
+
+    // Auto-advance countdown timer
+    useEffect(() => {
+        if (advanceCountdown === null) return;
+        if (advanceCountdown > 0) {
+            const timer = setTimeout(() => {
+                setAdvanceCountdown(c => (c !== null && c > 0 ? c - 1 : null));
+            }, 1000);
+            return () => clearTimeout(timer);
+        } else if (advanceCountdown === 0) {
+            if (nextExerciseId) {
+                setAdvanceCountdown(null);
+                router.push(`/training/${moduleId}/exercise/${nextExerciseId}`);
+            }
+        }
+    }, [advanceCountdown, nextExerciseId, moduleId, router]);
+
+    // Auto-save code draft
+    useEffect(() => {
+        if (!exerciseId || !code) return;
+        try {
+            localStorage.setItem(`training_draft_${exerciseId}`, code);
+        } catch {}
+    }, [code, exerciseId]);
 
     // Ensure occurrence inputs array has at least as many fields as detected input() statements
     useEffect(() => {
@@ -137,16 +196,43 @@ export default function ExerciseEditorPage() {
         }
     };
 
+    const handleResetCode = () => {
+        if (!exercise) return;
+        const initialCode = exercise.starterCode || '# Write your code here\n';
+        setCode(initialCode);
+        try {
+            localStorage.removeItem(`training_draft_${exerciseId}`);
+        } catch {}
+        toast.success('Reset to starter code template');
+    };
+
+    // Load exercise and parent module details
     useEffect(() => {
         if (!isAuthenticated) return;
         
-        const fetchExercise = async () => {
+        const fetchExerciseAndModule = async () => {
             try {
-                const res = await trainingAPI.getExercise(exerciseId);
-                const ex = res.data.data.exercise;
+                const [exRes, modRes] = await Promise.all([
+                    trainingAPI.getExercise(exerciseId),
+                    trainingAPI.getModuleDetails(moduleId).catch(() => null)
+                ]);
+
+                const ex = exRes.data.data.exercise;
                 setExercise(ex);
-                const initialCode = ex.starterCode || '# Write your code here\n';
+
+                // Restore draft if present
+                const savedDraft = localStorage.getItem(`training_draft_${exerciseId}`);
+                const initialCode = savedDraft || ex.starterCode || '# Write your code here\n';
                 setCode(initialCode);
+
+                if (modRes?.data?.data?.module) {
+                    const mod = modRes.data.data.module;
+                    setModuleData(mod);
+                    if (mod.studentProgress) {
+                        setTotalXP(mod.studentProgress.totalXP || 0);
+                        setStreak(mod.studentProgress.streak || 1);
+                    }
+                }
 
                 const exType = ex.exerciseType || 'coding';
 
@@ -169,12 +255,39 @@ export default function ExerciseEditorPage() {
             }
         };
 
-        fetchExercise();
+        fetchExerciseAndModule();
     }, [exerciseId, isAuthenticated, moduleId, router]);
+
+    const handleAskSocraticTutor = async () => {
+        setShowSocraticDrawer(true);
+        if (socraticAdvice) return;
+
+        setSocraticLoading(true);
+        try {
+            const res = await trainingAPI.aiAssist({
+                action: 'socratic_hint',
+                payload: {
+                    problemTitle: exercise?.title || '',
+                    problemDescription: exercise?.description || '',
+                    studentCode: code,
+                    currentOutput: output,
+                    failedTests: testResults ? testResults.filter(t => !t.passed) : []
+                }
+            });
+            if (res.data?.success && res.data?.data) {
+                setSocraticAdvice(res.data.data);
+            }
+        } catch (err) {
+            console.error('Socratic Tutor error:', err);
+            toast.error('AI Socratic Tutor unavailable at the moment');
+        } finally {
+            setSocraticLoading(false);
+        }
+    };
 
     const handleRun = async () => {
         setIsRunning(true);
-        setOutput('Running...');
+        setOutput('Running in sandbox...');
         
         if (exercise?.unit?.module?.language === 'html') {
             setOutput(code);
@@ -217,11 +330,26 @@ export default function ExerciseEditorPage() {
             setSocraticReview(data.socraticReview);
             setSubmittedData(data);
             setXpEarned(data.xpEarned || 0);
+
+            if (data.totalXP != null) {
+                setTotalXP(data.totalXP);
+            }
+            if (data.nextExerciseId) {
+                setNextExerciseId(data.nextExerciseId);
+            }
+            if (data.isUnitMastered) {
+                setIsUnitMastered(true);
+            }
             
             if (data.status === 'passed') {
-                toast.success(`🎉 Excellent! +${exercise.xpReward || 10} XP earned!`);
+                toast.success(`🎉 Excellent! +${data.xpEarned || exercise.xpReward || 10} XP earned!`);
+                // Trigger auto-advance countdown if next exercise exists
+                if (data.nextExerciseId) {
+                    setAdvanceCountdown(3);
+                }
             } else {
                 toast.error('Submission review needed. Check details below.');
+                setAdvanceCountdown(null);
             }
             
             setOutput('');
@@ -257,51 +385,190 @@ export default function ExerciseEditorPage() {
     }
 
     return (
-        <div className="h-screen flex flex-col bg-slate-900 border-t-4 border-indigo-500">
+        <div className="h-screen flex flex-col bg-slate-900 border-t-4 border-indigo-500 overflow-hidden">
             {/* Top Navigation Bar */}
-            <div className="h-14 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-4">
-                <div className="flex items-center gap-3 text-white">
-                    <button onClick={() => router.push(`/training/${moduleId}`)} className="p-2 hover:bg-slate-700 rounded-lg text-slate-300 transition" title="Back to Module">
-                        <ArrowLeft className="w-5 h-5" />
+            <div className="h-14 bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 flex items-center justify-between px-3 md:px-4 z-40 shrink-0">
+                
+                {/* Left section: Drawer Toggle + Back + Title */}
+                <div className="flex items-center gap-2.5 text-white min-w-0">
+                    <button 
+                        onClick={() => setIsNavOpen(prev => !prev)} 
+                        className={`p-2 rounded-xl transition ${
+                            isNavOpen 
+                                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30' 
+                                : 'hover:bg-slate-700 text-slate-300'
+                        }`} 
+                        title="Course Curriculum Navigator"
+                    >
+                        {isNavOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeftOpen className="w-5 h-5" />}
                     </button>
-                    <div className="flex items-center gap-2">
-                        <h1 className="font-semibold text-sm md:text-base truncate max-w-md">{exercise?.title || 'Training Exercise'}</h1>
+
+                    <button 
+                        onClick={() => router.push(`/training/${moduleId}`)} 
+                        className="p-2 hover:bg-slate-700 rounded-xl text-slate-300 transition" 
+                        title="Back to Module Outline"
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                    </button>
+
+                    <div className="flex items-center gap-2 min-w-0">
+                        <h1 className="font-bold text-xs md:text-sm text-slate-100 truncate max-w-xs md:max-w-md">
+                            {exercise?.title || 'Training Exercise'}
+                        </h1>
                         {getTypeBadge()}
                     </div>
-                    <span className="text-xs bg-slate-700 px-2 py-0.5 rounded text-slate-300 capitalize hidden sm:inline">
-                        {exercise?.scaffoldLevel?.replace('_', ' ')}
-                    </span>
-                    {exercise?.bloomsLevel && (
-                        <span className="text-xs bg-indigo-900/60 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded font-medium hidden md:inline">
-                            Bloom: {exercise.bloomsLevel}
-                        </span>
-                    )}
-                    <span className="text-xs bg-indigo-950 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded font-semibold shrink-0">
-                        +{exercise?.xpReward || 10} XP
+                </div>
+
+                {/* Center / Right Gamification Stats: Live XP & Streak */}
+                <div className="hidden lg:flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold shadow-sm">
+                        <Award className="w-3.5 h-3.5 text-amber-400" />
+                        <span>{totalXP} XP</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-bold shadow-sm">
+                        <Flame className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                        <span>{streak} Day Streak</span>
+                    </div>
+
+                    <span className="text-[11px] bg-indigo-950/80 text-indigo-300 border border-indigo-500/30 px-2.5 py-0.5 rounded-full font-semibold">
+                        +{exercise?.xpReward || 10} XP Reward
                     </span>
                 </div>
 
-                {/* Top Action Buttons */}
-                <div className="flex gap-3">
+                {/* Right Action Buttons */}
+                <div className="flex items-center gap-2">
+                    {/* Ask Socratic AI Tutor */}
+                    <button
+                        onClick={handleAskSocraticTutor}
+                        className="btn bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/30 text-indigo-300 hover:text-indigo-200 py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5 rounded-xl transition"
+                        title="Get Socratic Hints without spoiling the answer"
+                    >
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                        <span className="hidden sm:inline">Ask AI Tutor</span>
+                    </button>
+
+                    {/* Reset Code */}
+                    {(exerciseType === 'coding' || exerciseType === 'bug_fix') && (
+                        <button
+                            onClick={handleResetCode}
+                            className="p-2 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl transition hidden sm:flex"
+                            title="Reset Code to Starter Template"
+                        >
+                            <Undo2 className="w-4 h-4" />
+                        </button>
+                    )}
+
+                    {/* Fullscreen Toggle */}
+                    <button
+                        onClick={toggleFullscreen}
+                        className="p-2 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl transition"
+                        title={isFullscreen ? "Exit Fullscreen" : "Enter Distraction-Free Fullscreen"}
+                    >
+                        {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                    </button>
+
+                    {/* Run Code */}
                     {(exerciseType === 'coding' || exerciseType === 'bug_fix') && (
                         <button 
                             onClick={handleRun} 
                             disabled={isRunning || isSubmitting}
-                            className="btn bg-slate-700 hover:bg-slate-600 text-white border-none py-1.5 px-4 text-xs font-semibold flex items-center gap-1.5 rounded-lg transition"
-                            title="Execute code using custom occurrence inputs"
+                            className="btn bg-slate-700 hover:bg-slate-600 text-white border-none py-1.5 px-3.5 text-xs font-bold flex items-center gap-1.5 rounded-xl transition"
+                            title="Execute code with inputs"
                         >
-                            {isRunning ? 'Running...' : <><Play className="w-4 h-4 text-emerald-400" /> Run</>}
+                            {isRunning ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                                <Play className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400" />
+                            )}
+                            <span className="hidden sm:inline">Run</span>
                         </button>
                     )}
+
+                    {/* Submit Code */}
                     <button 
                         onClick={handleSubmit}
                         disabled={isRunning || isSubmitting}
-                        className="btn bg-indigo-600 hover:bg-indigo-500 text-white border-none py-1.5 px-6 font-bold text-xs flex items-center gap-1.5 rounded-lg shadow-lg shadow-indigo-600/20 transition"
+                        className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white border-none py-1.5 px-4 font-bold text-xs flex items-center gap-1.5 rounded-xl shadow-lg shadow-indigo-600/30 transition"
                     >
-                        {isSubmitting ? 'Evaluating...' : exerciseType === 'coding' || exerciseType === 'bug_fix' ? 'Submit Code' : 'Submit Answers'}
+                        {isSubmitting ? (
+                            <>
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                <span>Evaluating...</span>
+                            </>
+                        ) : (
+                            <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>{exerciseType === 'coding' || exerciseType === 'bug_fix' ? 'Submit' : 'Submit Answers'}</span>
+                            </>
+                        )}
                     </button>
                 </div>
             </div>
+
+            {/* Main Stage with Collapsible Drawer Layout */}
+            <div className="flex-1 flex overflow-hidden relative">
+
+                {/* Collapsible Course Curriculum Drawer */}
+                {isNavOpen && (
+                    <div className="w-72 bg-slate-900 border-r border-slate-800 flex flex-col z-30 shrink-0 shadow-2xl animate-in slide-in-from-left duration-200">
+                        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Compass className="w-4 h-4 text-indigo-400" />
+                                <span className="font-bold text-xs uppercase tracking-wider text-slate-300">Curriculum Flow</span>
+                            </div>
+                            <button onClick={() => setIsNavOpen(false)} className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-200">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-3 space-y-4">
+                            {moduleData?.units?.map((unit, uIdx) => (
+                                <div key={unit.id} className="space-y-1.5">
+                                    <div className="flex items-center justify-between text-xs px-2 py-1 font-bold text-slate-400">
+                                        <span className="truncate">Unit {unit.unitNumber}: {unit.title}</span>
+                                        <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">
+                                            ≥{unit.unlockThreshold}%
+                                        </span>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        {unit.exercises?.map((exItem, exIdx) => {
+                                            const isCurrent = exItem.id === exerciseId;
+                                            return (
+                                                <button
+                                                    key={exItem.id}
+                                                    onClick={() => {
+                                                        router.push(`/training/${moduleId}/exercise/${exItem.id}`);
+                                                        setIsNavOpen(false);
+                                                    }}
+                                                    className={`w-full text-left p-2.5 rounded-xl text-xs font-semibold transition flex items-center justify-between gap-2 ${
+                                                        isCurrent
+                                                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                                                            : 'bg-slate-800/60 hover:bg-slate-800 text-slate-300'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold ${
+                                                            isCurrent ? 'bg-white/20 text-white' : 'bg-slate-700 text-slate-400'
+                                                        }`}>
+                                                            {exIdx + 1}
+                                                        </span>
+                                                        <span className="truncate">{exItem.title}</span>
+                                                    </div>
+
+                                                    <span className="text-[10px] opacity-75 font-mono">
+                                                        +{exItem.xpReward || 10}XP
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
             {/* ========================================================================= */}
             {/* 1. MCQ MODE RENDERER                                                      */}
@@ -870,6 +1137,68 @@ export default function ExerciseEditorPage() {
                                 </div>
                             )}
 
+                            {/* Auto-Advance Celebratory Banner on Passing */}
+                            {submittedData?.status === 'passed' && (
+                                <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/80 via-indigo-950/80 to-slate-900 border border-emerald-500/40 shadow-xl space-y-3 animate-in fade-in zoom-in-95 duration-300">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-bold shadow-md shadow-emerald-500/30">
+                                                🎉
+                                            </div>
+                                            <div>
+                                                <h4 className="font-bold text-sm text-emerald-300">Exercise Mastered!</h4>
+                                                <p className="text-[11px] text-emerald-400/80">+{xpEarned || exercise.xpReward || 10} XP awarded to your profile</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="text-right">
+                                            <span className="text-xs font-bold text-amber-400 bg-amber-950/60 px-2.5 py-1 rounded-full border border-amber-500/30">
+                                                Total XP: {totalXP}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {nextExerciseId ? (
+                                        <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between gap-3">
+                                            <div className="text-xs text-slate-300 flex items-center gap-1.5">
+                                                <Clock className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
+                                                <span>
+                                                    {advanceCountdown !== null ? `Auto-advancing in ${advanceCountdown}s...` : 'Next challenge ready'}
+                                                </span>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                                {advanceCountdown !== null && (
+                                                    <button
+                                                        onClick={() => setAdvanceCountdown(null)}
+                                                        className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+                                                    >
+                                                        Stay Here
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => router.push(`/training/${moduleId}/exercise/${nextExerciseId}`)}
+                                                    className="btn bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs py-1 px-3.5 rounded-xl flex items-center gap-1 shadow-md shadow-emerald-500/20 transition"
+                                                >
+                                                    <span>Advance Now</span>
+                                                    <ArrowRight className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between text-xs text-indigo-300">
+                                            <span>🌟 Unit / Module Completed!</span>
+                                            <button
+                                                onClick={() => router.push(`/training/${moduleId}`)}
+                                                className="btn btn-secondary text-xs py-1 px-3"
+                                            >
+                                                Return to Course Overview
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Automated Submission Test Cases */}
                             {testResults && (
                                 <div className="space-y-3 pt-3">
@@ -937,6 +1266,88 @@ export default function ExerciseEditorPage() {
                                 }}
                             />
                         </div>
+                    </div>
+                </div>
+            )}
+
+            </div>
+
+            {/* Socratic AI Tutor Side Drawer */}
+            {showSocraticDrawer && (
+                <div className="fixed inset-y-0 right-0 w-96 bg-slate-900 border-l border-slate-700 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
+                    <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-indigo-950/40">
+                        <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold">
+                                💡
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-sm text-slate-100">AI Socratic Tutor</h3>
+                                <p className="text-[10px] text-indigo-300">Guiding questions without spoiling the code</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setShowSocraticDrawer(false)} className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white">
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+                        {socraticLoading ? (
+                            <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
+                                <RefreshCw className="w-7 h-7 text-indigo-500 animate-spin" />
+                                <span>Reflecting on your code structure...</span>
+                            </div>
+                        ) : socraticAdvice ? (
+                            <div className="space-y-4">
+                                <div className="p-3.5 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-200 leading-relaxed">
+                                    <h4 className="font-bold text-indigo-300 mb-1 flex items-center gap-1.5">
+                                        <Lightbulb className="w-4 h-4 text-amber-400" /> Socratic Guidance:
+                                    </h4>
+                                    <p className="whitespace-pre-wrap">{socraticAdvice.guidance}</p>
+                                </div>
+
+                                {socraticAdvice.questionsToAskYourself && (
+                                    <div className="space-y-2">
+                                        <h5 className="font-bold text-slate-300 uppercase tracking-wider text-[10px]">
+                                            Questions to Ask Yourself:
+                                        </h5>
+                                        <div className="space-y-1.5">
+                                            {socraticAdvice.questionsToAskYourself.map((q, qi) => (
+                                                <div key={qi} className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700 text-slate-200 flex items-start gap-2">
+                                                    <span className="text-indigo-400 font-bold">•</span>
+                                                    <span>{q}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {socraticAdvice.edgeCasesToConsider && (
+                                    <div className="space-y-2">
+                                        <h5 className="font-bold text-amber-400 uppercase tracking-wider text-[10px]">
+                                            Edge Cases to Consider:
+                                        </h5>
+                                        <div className="space-y-1.5">
+                                            {socraticAdvice.edgeCasesToConsider.map((e, ei) => (
+                                                <div key={ei} className="p-2.5 bg-amber-950/30 rounded-xl border border-amber-500/20 text-amber-200 flex items-start gap-2">
+                                                    <span className="text-amber-400 font-bold">⚠️</span>
+                                                    <span>{e}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="text-center py-12 text-slate-400">
+                                <p>Click the button below to get intelligent guiding prompts tailored to your current code.</p>
+                                <button
+                                    onClick={handleAskSocraticTutor}
+                                    className="mt-3 btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl"
+                                >
+                                    Ask for Hint
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

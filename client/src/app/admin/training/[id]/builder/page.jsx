@@ -7,12 +7,14 @@ import {
     BookOpen, Layers, Target, Unlock, ShieldAlert, Award,
     Lightbulb, Trash2, Edit3, Lock, Trophy, CheckCircle,
     AlertTriangle, XCircle, Sparkles, FlaskConical, Eye,
-    GripVertical, Send, Users, Calendar, Globe, Settings, Clock
+    GripVertical, Send, Users, Calendar, Globe, Settings, Clock,
+    CheckSquare, FileText, Code2, RefreshCw
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { trainingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { formatDate } from '@/lib/dateUtils';
+import AiTrainingCopilot from '@/components/AiTrainingCopilot';
 
 // --- Pedagogy Score Engine ---
 function computePedagogyScore(moduleData) {
@@ -157,16 +159,47 @@ export default function PedagogyBuilderPage() {
     const [loading, setLoading] = useState(true);
     const [activeUnitId, setActiveUnitId] = useState(null);
 
+    // AI Copilot state
+    const [showAiCopilot, setShowAiCopilot] = useState(false);
+    const [aiCopilotTab, setAiCopilotTab] = useState('exercise');
+
     // Modals
     const [showUnitModal, setShowUnitModal] = useState(false);
     const [unitForm, setUnitForm] = useState({ title: '', description: '', expectedHours: 5, unlockThreshold: 80, unitNumber: 1 });
 
     const [showExerciseModal, setShowExerciseModal] = useState(false);
     const [exerciseForm, setExerciseForm] = useState({
-        title: '', description: '', theory: '', difficulty: 'beginner', scaffoldLevel: 'guided',
+        title: '', description: '', theory: '', exerciseType: 'coding', difficulty: 'beginner', scaffoldLevel: 'guided',
         bloomsLevel: 'understand', learningObjective: '',
         isReviewExercise: false, timeLimit: 5, xpReward: 10, starterCode: '', solutionCode: '',
-        testCases: [], hints: []
+        testCases: [], hints: [],
+        mcqData: {
+            question: 'What is the output of this code snippet?',
+            codeSnippet: 'print("Hello World")',
+            options: ['Hello World', 'None', 'SyntaxError', 'undefined'],
+            correctOption: 0,
+            explanation: 'The print function writes to standard output.'
+        },
+        clozeData: {
+            instruction: 'Fill in the blank:',
+            template: 'for i in {{BLANK_1}}(5):\n    print(i)',
+            blanks: [{ id: 'BLANK_1', correctAnswer: 'range', hint: 'Sequence generator' }],
+            explanation: 'range(5) produces numbers 0 to 4'
+        },
+        caseStudyData: {
+            company: 'TechCorp Cloud',
+            incident: 'High memory usage during batch processing',
+            scenarioCode: '# Inefficient memory usage\ndata = [x for x in range(10000000)]',
+            questions: [
+                {
+                    id: 'q1',
+                    prompt: 'How would you fix memory consumption without eager list allocation?',
+                    options: ['Use a generator expression (x for x in range(...))', 'Use a global variable', 'Use recursion', 'Allocate larger swap space'],
+                    correctOption: 0,
+                    explanation: 'Generators yield items on demand with O(1) memory.'
+                }
+            ]
+        }
     });
 
     // Config Modal
@@ -239,26 +272,99 @@ export default function PedagogyBuilderPage() {
                 ? `## 📖 Learning Content\n\n${exerciseForm.theory}\n\n---\n\n## 🎯 Problem Statement\n\n${exerciseForm.description}`
                 : exerciseForm.description;
 
+            let processedTestCases = exerciseForm.testCases;
+            if (exerciseForm.exerciseType === 'mcq') {
+                processedTestCases = exerciseForm.mcqData;
+            } else if (exerciseForm.exerciseType === 'fill_blank') {
+                processedTestCases = exerciseForm.clozeData;
+            } else if (exerciseForm.exerciseType === 'case_study') {
+                processedTestCases = exerciseForm.caseStudyData;
+            }
+
             const payload = {
-                ...exerciseForm,
+                title: exerciseForm.title,
                 description: fullDescription,
-                testCases: JSON.stringify(exerciseForm.testCases),
+                exerciseType: exerciseForm.exerciseType,
+                difficulty: exerciseForm.difficulty,
+                scaffoldLevel: exerciseForm.scaffoldLevel,
+                bloomsLevel: exerciseForm.bloomsLevel,
+                learningObjective: exerciseForm.learningObjective,
+                isReviewExercise: exerciseForm.isReviewExercise,
+                timeLimit: exerciseForm.timeLimit,
+                xpReward: exerciseForm.xpReward,
+                starterCode: exerciseForm.starterCode,
+                solutionCode: exerciseForm.solutionCode,
+                testCases: JSON.stringify(processedTestCases),
                 hints: JSON.stringify(exerciseForm.hints),
             };
-            delete payload.theory;
+
             await trainingAPI.createExercise(activeUnitId, payload);
             toast.success('Exercise deployed with pedagogy rules');
             setShowExerciseModal(false);
             setExerciseForm({
-                title: '', description: '', theory: '', difficulty: 'beginner', scaffoldLevel: 'guided',
+                title: '', description: '', theory: '', exerciseType: 'coding', difficulty: 'beginner', scaffoldLevel: 'guided',
                 bloomsLevel: 'understand', learningObjective: '',
                 isReviewExercise: false, timeLimit: 5, xpReward: 10, starterCode: '', solutionCode: '',
-                testCases: [], hints: []
+                testCases: [], hints: [],
+                mcqData: {
+                    question: 'What is the output of this code snippet?',
+                    codeSnippet: 'print("Hello World")',
+                    options: ['Hello World', 'None', 'SyntaxError', 'undefined'],
+                    correctOption: 0,
+                    explanation: 'The print function writes to standard output.'
+                },
+                clozeData: {
+                    instruction: 'Fill in the blank:',
+                    template: 'for i in {{BLANK_1}}(5):\n    print(i)',
+                    blanks: [{ id: 'BLANK_1', correctAnswer: 'range', hint: 'Sequence generator' }],
+                    explanation: 'range(5) produces numbers 0 to 4'
+                },
+                caseStudyData: {
+                    company: 'TechCorp Cloud',
+                    incident: 'High memory usage during batch processing',
+                    scenarioCode: '# Inefficient memory usage\ndata = [x for x in range(10000000)]',
+                    questions: [
+                        {
+                            id: 'q1',
+                            prompt: 'How would you fix memory consumption without eager list allocation?',
+                            options: ['Use a generator expression (x for x in range(...))', 'Use a global variable', 'Use recursion', 'Allocate larger swap space'],
+                            correctOption: 0,
+                            explanation: 'Generators yield items on demand with O(1) memory.'
+                        }
+                    ]
+                }
             });
             loadData();
         } catch (error) {
             toast.error(error.response?.data?.message || 'Error adding exercise');
         }
+    };
+
+    const handleApplyAiExercise = (aiEx) => {
+        if (!aiEx) return;
+        const currentType = aiEx.exerciseType || 'coding';
+        setExerciseForm(prev => ({
+            ...prev,
+            title: aiEx.title || '',
+            description: aiEx.description || '',
+            theory: aiEx.theory || '',
+            exerciseType: currentType,
+            difficulty: aiEx.difficulty || 'beginner',
+            scaffoldLevel: aiEx.scaffoldLevel || 'guided',
+            bloomsLevel: aiEx.bloomsLevel || 'apply',
+            learningObjective: aiEx.learningObjective || '',
+            xpReward: aiEx.xpReward || 15,
+            timeLimit: aiEx.timeLimit || 5,
+            isReviewExercise: aiEx.isReviewExercise || false,
+            starterCode: aiEx.starterCode || '',
+            solutionCode: aiEx.solutionCode || '',
+            testCases: Array.isArray(aiEx.testCases) ? aiEx.testCases : prev.testCases,
+            hints: aiEx.hints || prev.hints,
+            mcqData: currentType === 'mcq' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.mcqData,
+            clozeData: currentType === 'fill_blank' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.clozeData,
+            caseStudyData: currentType === 'case_study' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.caseStudyData
+        }));
+        setShowExerciseModal(true);
     };
 
     // Test case helpers
@@ -323,6 +429,12 @@ export default function PedagogyBuilderPage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
+                            <button 
+                                onClick={() => { setAiCopilotTab('exercise'); setShowAiCopilot(true); }}
+                                className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white font-bold text-sm shadow-md shadow-indigo-500/25 flex items-center gap-1.5"
+                            >
+                                <Sparkles className="w-4 h-4" /> ✨ AI LMS Copilot
+                            </button>
                             <button onClick={() => setShowConfigModal(true)} className="btn btn-secondary text-sm">
                                 <Settings className="w-4 h-4" /> Configure UI
                             </button>
@@ -384,24 +496,18 @@ export default function PedagogyBuilderPage() {
                                         {/* Unit Node */}
                                         <button
                                             onClick={() => setActiveUnitId(unit.id)}
-                                            className={`w-full text-left p-3 rounded-xl transition-all ${
+                                            className={`w-full text-left p-3 rounded-xl border transition-all flex items-center gap-3 ${
                                                 isActive
-                                                    ? 'bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 shadow-sm'
-                                                    : 'hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent'
+                                                    ? 'bg-primary-50 dark:bg-primary-900/30 border-primary-500 text-primary-900 dark:text-primary-100 shadow-sm'
+                                                    : 'bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 hover:border-slate-300'
                                             }`}
                                         >
-                                            <div className="flex items-center gap-2.5">
-                                                <div className={`w-7 h-7 rounded-lg ${style.bg} flex items-center justify-center shrink-0`}>
-                                                    <span className={`text-xs font-bold ${style.text}`}>{unit.unitNumber}</span>
-                                                </div>
-                                                <div className="min-w-0">
-                                                    <p className={`text-sm font-semibold truncate ${isActive ? 'text-primary-700 dark:text-primary-400' : 'text-slate-800 dark:text-slate-200'}`}>
-                                                        {unit.title}
-                                                    </p>
-                                                    <p className="text-[10px] text-slate-400 mt-0.5">
-                                                        {unit.exercises?.length || 0} exercises • {unit.expectedHours || '—'}h
-                                                    </p>
-                                                </div>
+                                            <div className="w-7 h-7 rounded-lg bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 font-bold text-xs flex items-center justify-center shrink-0">
+                                                {unit.unitNumber}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-xs font-bold truncate">{unit.title}</div>
+                                                <div className="text-[10px] text-slate-400 mt-0.5">{unit.exercises?.length || 0} exercises</div>
                                             </div>
                                         </button>
 
@@ -434,151 +540,109 @@ export default function PedagogyBuilderPage() {
                     </button>
                 </div>
 
-                {/* Column 2: Exercise List */}
-                <div className="flex-1 overflow-y-auto p-6">
+                {/* Column 2: Active Unit Exercise Studio */}
+                <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950">
                     {activeUnit ? (
-                        <>
-                            {/* Unit Header */}
-                            <div className="mb-6">
-                                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{activeUnit.title}</h2>
-                                <div className="flex items-center gap-3 mt-1.5 text-sm text-slate-500">
-                                    <span>Unit {activeUnit.unitNumber}</span>
-                                    <span>•</span>
-                                    <span>{activeUnit.exercises?.length || 0} Exercises</span>
-                                    <span>•</span>
-                                    <span>{activeUnit.expectedHours || '—'} Hours</span>
-                                    <span>•</span>
-                                    <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-                                        <Unlock className="w-3.5 h-3.5" /> ≥ {activeUnit.unlockThreshold}% to unlock
-                                    </span>
+                        <div className="max-w-4xl mx-auto space-y-6">
+                            {/* Unit Overview Card */}
+                            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+                                <div className="flex items-start justify-between">
+                                    <div>
+                                        <div className="text-xs font-semibold text-primary-600 dark:text-primary-400 uppercase tracking-wider">Unit {activeUnit.unitNumber}</div>
+                                        <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{activeUnit.title}</h2>
+                                        {activeUnit.description && (
+                                            <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">{activeUnit.description}</p>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => { setAiCopilotTab('exercise'); setShowAiCopilot(true); }}
+                                            className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white font-bold text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 shadow-sm"
+                                        >
+                                            <Sparkles className="w-3.5 h-3.5" /> AI Synthesizer
+                                        </button>
+                                        <button onClick={() => setShowExerciseModal(true)} className="btn btn-primary text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 font-bold">
+                                            <Plus className="w-3.5 h-3.5" /> Add Exercise
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* Exercise Cards */}
+                            {/* Exercises List in Active Unit */}
                             <div className="space-y-3">
-                                {activeUnit.exercises?.map((ex, i) => {
-                                    const scaffoldStyle = SCAFFOLD_STYLES[ex.scaffoldLevel] || SCAFFOLD_STYLES.guided;
-                                    const diffStyle = DIFFICULTY_STYLES[ex.difficulty] || DIFFICULTY_STYLES.beginner;
-                                    let testCount = 0, hiddenCount = 0;
-                                    try {
-                                        const tests = JSON.parse(ex.testCases || '[]');
-                                        testCount = tests.length;
-                                        hiddenCount = tests.filter(t => t.isHidden).length;
-                                    } catch {}
-                                    let hintCount = 0;
-                                    try { hintCount = JSON.parse(ex.hints || '[]').length; } catch {}
+                                {activeUnit.exercises?.length === 0 ? (
+                                    <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-8">
+                                        <Code2 className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                                        <h4 className="font-bold text-slate-700 dark:text-slate-300 text-sm">No Exercises in this Unit</h4>
+                                        <p className="text-xs text-slate-400 mt-1">Use the buttons above to craft exercises across all 5 question types or synthesize them with AI.</p>
+                                    </div>
+                                ) : (
+                                    activeUnit.exercises?.map((ex, idx) => {
+                                        const typeBadges = {
+                                            coding: { label: '⚡ Coding Lab', bg: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' },
+                                            mcq: { label: '📝 Output MCQ', bg: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
+                                            fill_blank: { label: '🧩 Syntax Cloze', bg: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300' },
+                                            bug_fix: { label: '🐞 Bug Hunt', bg: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' },
+                                            case_study: { label: '🏢 Case Study', bg: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' },
+                                        };
+                                        const badge = typeBadges[ex.exerciseType] || typeBadges.coding;
 
-                                    return (
-                                        <div key={ex.id} className="card p-4 group hover:border-primary-200 dark:hover:border-primary-800 transition-all">
-                                            <div className="flex items-center justify-between">
+                                        return (
+                                            <div key={ex.id} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between gap-4">
                                                 <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center text-sm font-bold shrink-0">
-                                                        {i + 1}
+                                                    <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 font-bold text-xs text-slate-500 flex items-center justify-center shrink-0">
+                                                        {idx + 1}
                                                     </div>
                                                     <div className="min-w-0">
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            <h4 className="font-semibold text-slate-900 dark:text-white truncate">{ex.title}</h4>
-                                                            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${scaffoldStyle.bg} ${scaffoldStyle.text}`}>
-                                                                {scaffoldStyle.label}
+                                                            <h5 className="font-bold text-sm text-slate-900 dark:text-white truncate">{ex.title}</h5>
+                                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badge.bg}`}>
+                                                                {badge.label}
                                                             </span>
-                                                            <span className={`text-[10px] font-medium px-2 py-0.5 rounded border capitalize ${diffStyle}`}>
-                                                                {ex.difficulty}
+                                                            <span className="text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded capitalize">
+                                                                {ex.scaffoldLevel}
                                                             </span>
-                                                            {ex.isReviewExercise && (
-                                                                <span className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 px-2 py-0.5 rounded font-bold">
-                                                                    🔄 Spaced Repetition
-                                                                </span>
-                                                            )}
                                                         </div>
-                                                        {/* Metadata row */}
-                                                        <div className="flex items-center gap-3 mt-1.5 text-[11px] text-slate-400">
-                                                            {testCount > 0 && (
-                                                                <span className="flex items-center gap-1">
-                                                                    <FlaskConical className="w-3 h-3" /> {testCount} tests
-                                                                </span>
-                                                            )}
-                                                            {hiddenCount > 0 && (
-                                                                <span className="flex items-center gap-1 text-amber-500">
-                                                                    <EyeOff className="w-3 h-3" /> {hiddenCount} hidden
-                                                                </span>
-                                                            )}
-                                                            {hintCount > 0 && (
-                                                                <span className="flex items-center gap-1">
-                                                                    <Lightbulb className="w-3 h-3" /> {hintCount} hints
-                                                                </span>
-                                                            )}
-                                                        </div>
+                                                        <p className="text-xs text-slate-400 truncate mt-1">{ex.description}</p>
                                                     </div>
                                                 </div>
+
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     <span className="text-xs font-bold text-amber-500 flex items-center gap-1">
-                                                        <Award className="w-3.5 h-3.5" /> +{ex.xpReward} XP
+                                                        <Award className="w-3.5 h-3.5" /> +{ex.xpReward || 10} XP
                                                     </span>
                                                 </div>
                                             </div>
-                                        </div>
-                                    );
-                                })}
+                                        );
+                                    })
+                                )}
                             </div>
-
-                            {/* Add Exercise Button */}
-                            <button
-                                onClick={() => setShowExerciseModal(true)}
-                                className="w-full mt-4 py-4 border-2 border-dashed border-primary-200 dark:border-primary-800 rounded-2xl text-primary-600 dark:text-primary-400 font-medium hover:bg-primary-50 dark:hover:bg-primary-900/20 transition text-sm"
-                            >
-                                + Add Pedagogy Exercise
-                            </button>
-                        </>
+                        </div>
                     ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-center">
-                            <Layers className="w-16 h-16 text-slate-200 dark:text-slate-700 mb-4" />
-                            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Select a Unit</h3>
-                            <p className="text-slate-500 mt-1 max-w-sm">Click on a unit from the course flow timeline to view and manage its exercises.</p>
+                        <div className="text-center py-20 text-slate-400">
+                            <Layers className="w-12 h-12 mx-auto mb-2 text-slate-300" />
+                            <p className="text-sm">Select a unit from the left course flow to design exercises.</p>
                         </div>
                     )}
                 </div>
 
-                {/* Column 3: Design Coach Sidebar */}
-                <div className="w-[280px] shrink-0 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto p-4 space-y-5">
-                    {/* Pedagogy Score */}
+                {/* Column 3: Pedagogy Coach Sidebar */}
+                <div className="w-[300px] shrink-0 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto p-5 space-y-6">
                     <div>
-                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                            <Target className="w-3.5 h-3.5" /> Pedagogy Score
-                        </h3>
-                        <ScoreGauge score={pedagogyScore.score} />
+                        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Pedagogy Design Score</h3>
+                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-center">
+                            <div className="text-3xl font-extrabold text-indigo-600 dark:text-indigo-400">{pedagogyScore.score}/100</div>
+                            <p className="text-[11px] text-slate-500 mt-1">Real-time instructional design quality index</p>
+                        </div>
                     </div>
 
-                    {/* Checklist */}
-                    <div className="space-y-2">
-                        {pedagogyScore.checks.map((c, i) => (
-                            <div key={i} className="flex items-start gap-2 text-xs">
-                                <CheckCircle className="w-3.5 h-3.5 text-emerald-500 mt-0.5 shrink-0" />
-                                <span className="text-slate-600 dark:text-slate-400">{c}</span>
-                            </div>
-                        ))}
-                        {pedagogyScore.warnings.map((w, i) => (
-                            <div key={i} className="flex items-start gap-2 text-xs">
-                                <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
-                                <span className="text-slate-600 dark:text-slate-400">{w}</span>
-                            </div>
-                        ))}
-                        {pedagogyScore.errors.map((e, i) => (
-                            <div key={i} className="flex items-start gap-2 text-xs">
-                                <XCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" />
-                                <span className="text-slate-600 dark:text-slate-400">{e}</span>
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Design Tips */}
-                    <div className="border-t border-slate-100 dark:border-slate-800 pt-4">
-                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                            <Lightbulb className="w-3.5 h-3.5" /> Design Coach
-                        </h3>
-                        <div className="space-y-2.5">
+                    <div>
+                        <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Design Coach Advice</h4>
+                        <div className="space-y-2">
                             {designTips.map((tip, i) => (
-                                <div key={i} className="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-3 text-xs text-primary-800 dark:text-primary-300 leading-relaxed">
-                                    <span className="mr-1">{tip.icon}</span> {tip.text}
+                                <div key={i} className="p-2.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 text-xs text-indigo-900 dark:text-indigo-200 flex items-start gap-2">
+                                    <Sparkles className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
+                                    <span>{tip}</span>
                                 </div>
                             ))}
                         </div>
@@ -589,212 +653,303 @@ export default function PedagogyBuilderPage() {
             {/* ====== EXERCISE BUILDER MODAL ====== */}
             {showExerciseModal && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh] border border-slate-200 dark:border-slate-800">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[92vh] border border-slate-200 dark:border-slate-800 overflow-hidden">
                         {/* Header */}
-                        <div className="p-5 border-b border-slate-100 dark:border-slate-800 shrink-0">
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exercise Architecture</h3>
-                            <p className="text-xs text-slate-500 mt-0.5">Design a pedagogically sound exercise with scaffolding, hints, and test cases</p>
+                        <div className="p-5 border-b border-slate-200 dark:border-slate-800 shrink-0 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exercise Studio</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Design multi-modal challenges: Coding Labs, MCQs, Syntax Cloze, Bug Hunts, or Case Studies</p>
+                            </div>
+                            <button
+                                onClick={() => { setAiCopilotTab('exercise'); setShowAiCopilot(true); }}
+                                className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white font-bold text-xs py-2 px-3.5 rounded-xl shadow-md shadow-indigo-500/20 flex items-center gap-1.5"
+                            >
+                                <Sparkles className="w-3.5 h-3.5" /> ✨ AI Synthesizer
+                            </button>
                         </div>
 
                         {/* Body */}
-                        <div className="p-5 overflow-y-auto space-y-5">
-                            {/* Section 1: Basic Info */}
+                        <div className="p-6 overflow-y-auto space-y-5">
+                            {/* Question Type Selector */}
+                            <div>
+                                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2 block">
+                                    Challenge / Question Type
+                                </label>
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                                    {[
+                                        { id: 'coding', label: '⚡ Coding Lab' },
+                                        { id: 'mcq', label: '📝 Output MCQ' },
+                                        { id: 'fill_blank', label: '🧩 Syntax Cloze' },
+                                        { id: 'bug_fix', label: '🐞 Bug Hunt' },
+                                        { id: 'case_study', label: '🏢 Case Study' }
+                                    ].map(t => (
+                                        <button
+                                            key={t.id}
+                                            type="button"
+                                            onClick={() => setExerciseForm(f => ({ ...f, exerciseType: t.id }))}
+                                            className={`p-2.5 rounded-xl text-xs font-bold border transition ${
+                                                exerciseForm.exerciseType === t.id
+                                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/20'
+                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-transparent'
+                                            }`}
+                                        >
+                                            {t.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Basic Info */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="label">Problem Title *</label>
                                     <input type="text" className="input" value={exerciseForm.title}
                                         onChange={e => setExerciseForm(f => ({ ...f, title: e.target.value }))}
-                                        placeholder="e.g., Build a Calculator" />
+                                        placeholder="e.g., Detect Palindrome Substrings" />
                                 </div>
                                 <div>
                                     <label className="label">XP Reward</label>
                                     <div className="relative">
                                         <Award className="w-4 h-4 absolute left-3 top-3.5 text-amber-500" />
-                                        <input type="number" className="input pl-9" value={exerciseForm.xpReward}
+                                        <input type="number" className="input pl-9 font-bold text-amber-500" value={exerciseForm.xpReward}
                                             onChange={e => setExerciseForm(f => ({ ...f, xpReward: parseInt(e.target.value) || 10 }))} />
                                     </div>
                                 </div>
                             </div>
-                            {/* Learning Content (Theory / Teaching Material) */}
-                            <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded-xl p-4">
+
+                            {/* Learning Content (Theory) */}
+                            <div className="bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4">
                                 <label className="label flex items-center gap-2 text-emerald-800 dark:text-emerald-400">
-                                    <BookOpen className="w-4 h-4" /> Learning Content (Theory)
+                                    <BookOpen className="w-4 h-4" /> Learning Content (Lesson Theory / Explanation)
                                 </label>
-                                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mb-2">Explain the concept before the student attempts. This is shown as the teaching portion.</p>
-                                <textarea className="input h-24 font-mono text-sm border-white dark:border-slate-700" value={exerciseForm.theory}
+                                <textarea className="input h-20 font-mono text-xs border-emerald-200 dark:border-emerald-800 mt-1" value={exerciseForm.theory}
                                     onChange={e => setExerciseForm(f => ({ ...f, theory: e.target.value }))}
-                                    placeholder="e.g., An if-else statement lets you run different code based on a condition. Syntax:\n\nif condition:\n    # do something\nelse:\n    # do something else" />
-                            </div>
-                            <div>
-                                <label className="label">Problem Statement (What students must solve)</label>
-                                <textarea className="input h-20 font-mono text-sm" value={exerciseForm.description}
-                                    onChange={e => setExerciseForm(f => ({ ...f, description: e.target.value }))}
-                                    placeholder="Write exercise instructions..." />
+                                    placeholder="Explain concept before problem..." />
                             </div>
 
-                            {/* Section 2: Pedagogy Layer */}
-                            <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-100 dark:border-primary-800 rounded-xl p-4 space-y-4">
-                                <div className="flex items-center gap-2">
-                                    <BookOpen className="w-4 h-4 text-primary-700 dark:text-primary-400" />
-                                    <h4 className="font-bold text-sm text-primary-900 dark:text-primary-300">Pedagogy Design Layer</h4>
-                                </div>
+                            <div>
+                                <label className="label">Problem Statement / Instructions *</label>
+                                <textarea className="input h-20 text-xs" value={exerciseForm.description}
+                                    onChange={e => setExerciseForm(f => ({ ...f, description: e.target.value }))}
+                                    placeholder="What the student must achieve..." />
+                            </div>
+
+                            {/* Pedagogy Layer */}
+                            <div className="bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 rounded-2xl p-4 space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="text-xs font-semibold uppercase tracking-wider text-primary-800 dark:text-primary-400 mb-1 block">Scaffold Level</label>
-                                        <select className="input border-white dark:border-slate-700" value={exerciseForm.scaffoldLevel}
+                                        <label className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1 block">Scaffold Level</label>
+                                        <select className="input text-xs" value={exerciseForm.scaffoldLevel}
                                             onChange={e => setExerciseForm(f => ({ ...f, scaffoldLevel: e.target.value }))}>
-                                            <option value="guided">🟢 Guided (Heavy boilerplate)</option>
-                                            <option value="semi_guided">🔵 Semi-Guided (Skeleton code)</option>
-                                            <option value="independent">🟠 Independent (Blank canvas)</option>
-                                            <option value="project">🟣 Capstone Project (Complex)</option>
+                                            <option value="guided">🟢 Guided (Heavy Boilerplate)</option>
+                                            <option value="semi_guided">🔵 Semi-Guided (Skeleton Code)</option>
+                                            <option value="independent">🟠 Independent (Blank Canvas)</option>
+                                            <option value="project">🟣 Capstone Project</option>
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="text-xs font-semibold uppercase tracking-wider text-primary-800 dark:text-primary-400 mb-1 block">Spaced Repetition</label>
-                                        <select className="input border-white dark:border-slate-700"
-                                            value={exerciseForm.isReviewExercise ? 'true' : 'false'}
-                                            onChange={e => setExerciseForm(f => ({ ...f, isReviewExercise: e.target.value === 'true' }))}>
-                                            <option value="false">Standard Novel Exercise</option>
-                                            <option value="true">🔄 Review / Spaced Repetition</option>
+                                        <label className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1 block">Difficulty</label>
+                                        <select className="input text-xs capitalize" value={exerciseForm.difficulty}
+                                            onChange={e => setExerciseForm(f => ({ ...f, difficulty: e.target.value }))}>
+                                            <option value="beginner">Beginner</option>
+                                            <option value="intermediate">Intermediate</option>
+                                            <option value="advanced">Advanced</option>
                                         </select>
                                     </div>
                                 </div>
-                                {/* Difficulty pills */}
-                                <div>
-                                    <label className="text-xs font-semibold uppercase tracking-wider text-primary-800 dark:text-primary-400 mb-2 block">Difficulty</label>
-                                    <div className="flex gap-2">
-                                        {['beginner', 'intermediate', 'advanced'].map(d => (
-                                            <button key={d}
-                                                onClick={() => setExerciseForm(f => ({ ...f, difficulty: d }))}
-                                                className={`px-4 py-1.5 rounded-full text-xs font-semibold border transition capitalize ${
-                                                    exerciseForm.difficulty === d
-                                                        ? d === 'beginner' ? 'bg-emerald-500 text-white border-emerald-500'
-                                                        : d === 'intermediate' ? 'bg-amber-500 text-white border-amber-500'
-                                                        : 'bg-red-500 text-white border-red-500'
-                                                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                                                }`}
-                                            >
-                                                {d}
-                                            </button>
+                            </div>
+
+                            {/* Question Type Specific Panels */}
+                            {exerciseForm.exerciseType === 'mcq' && (
+                                <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                                    <h4 className="text-xs font-bold uppercase text-amber-600 flex items-center gap-1.5">
+                                        <CheckSquare className="w-4 h-4" /> MCQ Configuration
+                                    </h4>
+                                    <div>
+                                        <label className="text-xs font-semibold">Code Snippet to Trace:</label>
+                                        <textarea
+                                            value={exerciseForm.mcqData.codeSnippet}
+                                            onChange={e => setExerciseForm(f => ({
+                                                ...f,
+                                                mcqData: { ...f.mcqData, codeSnippet: e.target.value }
+                                            }))}
+                                            className="input h-20 font-mono text-xs mt-1"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-semibold">Multiple Choice Options (Select Correct Choice):</label>
+                                        {exerciseForm.mcqData.options.map((opt, oi) => (
+                                            <div key={oi} className="flex items-center gap-2">
+                                                <input
+                                                    type="radio"
+                                                    name="mcq_correct_option"
+                                                    checked={exerciseForm.mcqData.correctOption === oi}
+                                                    onChange={() => setExerciseForm(f => ({
+                                                        ...f,
+                                                        mcqData: { ...f.mcqData, correctOption: oi }
+                                                    }))}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={opt}
+                                                    onChange={e => {
+                                                        const nextOpts = [...exerciseForm.mcqData.options];
+                                                        nextOpts[oi] = e.target.value;
+                                                        setExerciseForm(f => ({
+                                                            ...f,
+                                                            mcqData: { ...f.mcqData, options: nextOpts }
+                                                        }));
+                                                    }}
+                                                    className="input text-xs py-1 flex-1 font-mono"
+                                                    placeholder={`Option ${String.fromCharCode(65 + oi)}`}
+                                                />
+                                            </div>
                                         ))}
                                     </div>
                                 </div>
-                            </div>
+                            )}
 
-                            {/* Dynamic Pedagogy Fields based on Config */}
-                            {(configForm.useBlooms || configForm.useObjectives || configForm.useTimeLimit) && (
-                                <div className="bg-white/50 dark:bg-slate-900/50 border border-primary-100 dark:border-primary-800 rounded-xl p-4 space-y-4">
-                                    <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Advanced Active Strategies</h5>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        {configForm.useBlooms && (
-                                            <div>
-                                                <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1 block">Bloom's Taxonomy</label>
-                                                <select className="input border-white dark:border-slate-700 text-sm py-1.5" value={exerciseForm.bloomsLevel} onChange={e => setExerciseForm(f => ({ ...f, bloomsLevel: e.target.value }))}>
-                                                    <option value="remember">🧠 Remember</option>
-                                                    <option value="understand">💡 Understand</option>
-                                                    <option value="apply">🛠 Apply</option>
-                                                    <option value="analyze">🔬 Analyze</option>
-                                                    <option value="evaluate">⚖️ Evaluate</option>
-                                                    <option value="create">✨ Create</option>
-                                                </select>
-                                            </div>
-                                        )}
-                                        {configForm.useTimeLimit && (
-                                            <div>
-                                                <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1"><Clock className="w-3 h-3" /> Time-Box (Mins)</label>
-                                                <input type="number" className="input border-white dark:border-slate-700 text-sm py-1.5" value={exerciseForm.timeLimit} onChange={e => setExerciseForm(f => ({ ...f, timeLimit: parseInt(e.target.value) || 5 }))} />
-                                            </div>
-                                        )}
+                            {exerciseForm.exerciseType === 'fill_blank' && (
+                                <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                                    <h4 className="text-xs font-bold uppercase text-cyan-600 flex items-center gap-1.5">
+                                        <FileText className="w-4 h-4" /> Syntax Cloze Configuration
+                                    </h4>
+                                    <div>
+                                        <label className="text-xs font-semibold">Code Template with {"{{BLANK_1}}"} Tokens:</label>
+                                        <textarea
+                                            value={exerciseForm.clozeData.template}
+                                            onChange={e => setExerciseForm(f => ({
+                                                ...f,
+                                                clozeData: { ...f.clozeData, template: e.target.value }
+                                            }))}
+                                            className="input h-20 font-mono text-xs mt-1"
+                                        />
                                     </div>
-                                    {configForm.useObjectives && (
-                                        <div>
-                                            <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1 block">Specific Learning Objective</label>
-                                            <input type="text" className="input border-white dark:border-slate-700 text-sm py-1.5" placeholder="e.g. SWBAT implement inheritance..." value={exerciseForm.learningObjective} onChange={e => setExerciseForm(f => ({ ...f, learningObjective: e.target.value }))} />
-                                        </div>
-                                    )}
                                 </div>
                             )}
 
-                            {/* Section 3: Code Editors */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="label">Starter Code</label>
-                                    <textarea className="w-full h-28 bg-slate-900 text-emerald-400 font-mono text-xs p-3 rounded-xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-                                        value={exerciseForm.starterCode}
-                                        onChange={e => setExerciseForm(f => ({ ...f, starterCode: e.target.value }))}
-                                        placeholder="# Starter code for students..." />
+                            {exerciseForm.exerciseType === 'case_study' && (
+                                <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                                    <h4 className="text-xs font-bold uppercase text-purple-600 flex items-center gap-1.5">
+                                        <BookOpen className="w-4 h-4" /> Real-World Case Study Scenario
+                                    </h4>
+                                    <div>
+                                        <label className="text-xs font-semibold">Target Company / Engineering Architecture Context:</label>
+                                        <input
+                                            type="text"
+                                            value={exerciseForm.caseStudyData.company}
+                                            onChange={e => setExerciseForm(f => ({
+                                                ...f,
+                                                caseStudyData: { ...f.caseStudyData, company: e.target.value }
+                                            }))}
+                                            className="input text-xs mt-1"
+                                            placeholder="e.g. Netflix Video Streaming Pipeline / AWS Cloudflare"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold">Production Scenario & Architectural Code:</label>
+                                        <textarea
+                                            value={exerciseForm.caseStudyData.scenarioCode}
+                                            onChange={e => setExerciseForm(f => ({
+                                                ...f,
+                                                caseStudyData: { ...f.caseStudyData, scenarioCode: e.target.value }
+                                            }))}
+                                            className="input h-24 font-mono text-xs mt-1"
+                                            placeholder="Production snippet with microservice architecture..."
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="label">Solution Code</label>
-                                    <textarea className="w-full h-28 bg-slate-900 text-blue-400 font-mono text-xs p-3 rounded-xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-                                        value={exerciseForm.solutionCode}
-                                        onChange={e => setExerciseForm(f => ({ ...f, solutionCode: e.target.value }))}
-                                        placeholder="# Solution code (hidden from students)..." />
-                                </div>
-                            </div>
+                            )}
 
-                            {/* Section 4: Visual Test Case Builder */}
-                            <div>
-                                <div className="flex items-center justify-between mb-2">
-                                    <label className="label flex items-center gap-2 mb-0">
-                                        <ShieldAlert className="w-4 h-4 text-primary-500" /> Test Cases
-                                    </label>
-                                    <span className="text-[10px] text-slate-400">Hidden tests teach edge-case thinking</span>
-                                </div>
-                                <div className="space-y-2">
-                                    {exerciseForm.testCases.map((tc, idx) => (
-                                        <div key={idx} className={`flex items-center gap-2 p-2 rounded-lg border ${tc.isHidden ? 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800'}`}>
-                                            <input type="text" placeholder="Input" className="input py-2 text-xs flex-1"
-                                                value={tc.input} onChange={e => updateTestCase(idx, 'input', e.target.value)} />
-                                            <span className="text-slate-400 text-xs">→</span>
-                                            <input type="text" placeholder="Expected Output" className="input py-2 text-xs flex-1"
-                                                value={tc.expectedOutput} onChange={e => updateTestCase(idx, 'expectedOutput', e.target.value)} />
+                            {(exerciseForm.exerciseType === 'coding' || exerciseForm.exerciseType === 'bug_fix') && (
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="label">Starter Code Template</label>
+                                            <textarea className="input h-24 font-mono text-xs" value={exerciseForm.starterCode}
+                                                onChange={e => setExerciseForm(f => ({ ...f, starterCode: e.target.value }))}
+                                                placeholder="def solution():\n    pass" />
+                                        </div>
+                                        <div>
+                                            <label className="label">Reference Solution / Buggy Code</label>
+                                            <textarea className="input h-24 font-mono text-xs" value={exerciseForm.solutionCode}
+                                                onChange={e => setExerciseForm(f => ({ ...f, solutionCode: e.target.value }))}
+                                                placeholder="def solution():\n    return True" />
+                                        </div>
+                                    </div>
+
+                                    {/* Test Cases */}
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                                                Test Cases ({exerciseForm.testCases.length})
+                                            </label>
                                             <button
-                                                onClick={() => updateTestCase(idx, 'isHidden', !tc.isHidden)}
-                                                className={`px-2 py-1 rounded text-[10px] font-bold border transition ${
-                                                    tc.isHidden
-                                                        ? 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-700'
-                                                        : 'bg-slate-50 text-slate-400 border-slate-200 dark:bg-slate-800 dark:text-slate-500 dark:border-slate-700'
-                                                }`}
-                                                title={tc.isHidden ? 'Hidden from student' : 'Visible to student'}
+                                                type="button"
+                                                onClick={handleAddTestCase}
+                                                className="btn btn-secondary text-xs py-1 px-2.5 h-auto flex items-center gap-1"
                                             >
-                                                {tc.isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                                            </button>
-                                            <button onClick={() => removeTestCase(idx)} className="p-1 text-slate-400 hover:text-red-500 transition">
-                                                <Trash2 className="w-3.5 h-3.5" />
+                                                <Plus className="w-3.5 h-3.5" /> Add Case
                                             </button>
                                         </div>
-                                    ))}
-                                </div>
-                                <button onClick={addTestCase} className="mt-2 text-xs text-primary-600 dark:text-primary-400 font-medium hover:underline">
-                                    + Add Test Case
-                                </button>
-                            </div>
 
-                            {/* Section 5: Hint Chain */}
-                            <div>
-                                <label className="label flex items-center gap-2">
-                                    <Lightbulb className="w-4 h-4 text-amber-500" /> Progressive Hints
-                                </label>
-                                <div className="space-y-2">
-                                    {exerciseForm.hints.map((hint, idx) => (
-                                        <div key={idx} className="flex items-center gap-2">
-                                            <span className="text-[10px] font-bold text-slate-400 w-6 text-center">{idx + 1}</span>
-                                            <input type="text" className="input py-2 text-xs flex-1" placeholder={`Hint ${idx + 1}...`}
-                                                value={hint} onChange={e => updateHint(idx, e.target.value)} />
-                                            <button onClick={() => removeHint(idx)} className="p-1 text-slate-400 hover:text-red-500 transition">
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
+                                        <div className="space-y-2">
+                                            {exerciseForm.testCases.map((tc, idx) => (
+                                                <div key={idx} className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Test Case #{idx + 1}</span>
+                                                        <div className="flex items-center gap-3">
+                                                            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={tc.isHidden}
+                                                                    onChange={e => handleTestCaseChange(idx, 'isHidden', e.target.checked)}
+                                                                    className="checkbox checkbox-xs"
+                                                                />
+                                                                <span>Hidden</span>
+                                                            </label>
+                                                            {exerciseForm.testCases.length > 1 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleRemoveTestCase(idx)}
+                                                                    className="text-red-500 hover:text-red-700 p-1"
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <span className="text-[10px] text-slate-500 uppercase font-semibold">Input (STDIN)</span>
+                                                            <input
+                                                                type="text"
+                                                                value={tc.input}
+                                                                onChange={e => handleTestCaseChange(idx, 'input', e.target.value)}
+                                                                placeholder="e.g. 5\n10"
+                                                                className="input text-xs font-mono py-1"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[10px] text-slate-500 uppercase font-semibold">Expected Output</span>
+                                                            <input
+                                                                type="text"
+                                                                value={tc.expectedOutput}
+                                                                onChange={e => handleTestCaseChange(idx, 'expectedOutput', e.target.value)}
+                                                                placeholder="e.g. 15"
+                                                                className="input text-xs font-mono py-1"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
-                                    ))}
+                                    </div>
                                 </div>
-                                <button onClick={addHint} className="mt-2 text-xs text-primary-600 dark:text-primary-400 font-medium hover:underline">
-                                    + Add Hint
-                                </button>
-                            </div>
+                            )}
                         </div>
 
-                        {/* Footer */}
                         <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex gap-3 shrink-0">
                             <button onClick={() => setShowExerciseModal(false)} className="btn btn-secondary flex-1">Cancel</button>
                             <button onClick={handleCreateExercise} className="btn btn-primary flex-1">Deploy Exercise</button>

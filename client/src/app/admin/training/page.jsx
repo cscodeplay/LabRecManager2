@@ -4,28 +4,22 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     Plus, BookOpen, GraduationCap, ChevronRight, Edit3, Trash2, 
-    BookCheck, AlertCircle, Sparkles, MoveRight
+    BookCheck, AlertCircle, Sparkles, MoveRight, Layers, Award
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import { trainingAPI } from '@/lib/api';
+import { trainingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import TrainingModuleWizard from '@/components/TrainingModuleWizard';
 
 export default function AdminTrainingModules() {
     const router = useRouter();
     const { user, isAuthenticated, _hasHydrated } = useAuthStore();
     
     const [modules, setModules] = useState([]);
+    const [classes, setClasses] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [form, setForm] = useState({
-        title: '',
-        titleHindi: '',
-        description: '',
-        language: 'python',
-        boardAligned: 'PSEB',
-        classLevel: 11
-    });
+    const [showWizard, setShowWizard] = useState(false);
 
     const isAdmin = user?.role === 'admin' || user?.role === 'principal' || user?.role === 'instructor';
 
@@ -33,14 +27,18 @@ export default function AdminTrainingModules() {
         if (!_hasHydrated) return;
         if (!isAuthenticated) { router.push('/login'); return; }
         if (!isAdmin) { router.push('/dashboard'); return; }
-        loadModules();
+        loadData();
     }, [isAuthenticated, _hasHydrated, isAdmin]);
 
-    const loadModules = async () => {
+    const loadData = async () => {
         setLoading(true);
         try {
-            const res = await trainingAPI.getModules();
-            setModules(res.data.data.modules || []);
+            const [modRes, classRes] = await Promise.all([
+                trainingAPI.getModules(),
+                classesAPI.getAll().catch(() => ({ data: { data: { classes: [] } } }))
+            ]);
+            setModules(modRes.data.data.modules || []);
+            setClasses(classRes.data?.data?.classes || []);
         } catch (error) {
             console.error('Error loading training modules:', error);
             toast.error('Failed to load training modules');
@@ -49,94 +47,109 @@ export default function AdminTrainingModules() {
         }
     };
 
-    const handleCreate = async () => {
-        if (!form.title || !form.language) {
-            toast.error('Title and language are required');
-            return;
-        }
-
-        try {
-            const res = await trainingAPI.createModule(form);
-            toast.success('Module created successfully');
-            setShowCreateModal(false);
-            router.push(`/admin/training/${res.data.data.module.id}/builder`);
-        } catch (error) {
-            toast.error(error.response?.data?.message || 'Failed to create module');
-        }
-    };
-
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
             <PageHeader title="Training Module Builder" titleHindi="प्रशिक्षण मॉड्यूल निर्माता">
-                <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
-                    <Plus className="w-4 h-4" /> Create New Module
-                </button>
+                <div className="flex items-center gap-2">
+                    <button 
+                        onClick={() => setShowWizard(true)} 
+                        className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold shadow-lg shadow-indigo-600/20 text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5"
+                    >
+                        <Sparkles className="w-4 h-4" /> ✨ AI Course Wizard
+                    </button>
+                    <button 
+                        onClick={() => setShowWizard(true)} 
+                        className="btn btn-primary text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 font-bold"
+                    >
+                        <Plus className="w-4 h-4" /> Create New Module
+                    </button>
+                </div>
             </PageHeader>
 
             <main className="max-w-7xl mx-auto px-4 lg:px-6 py-6 border-b border-slate-200">
-                <div className="mb-6 bg-indigo-50 border border-indigo-100 rounded-xl p-5 flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
-                        <Sparkles className="w-5 h-5 text-indigo-600" />
+                <div className="mb-6 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent border border-indigo-200 dark:border-indigo-800 rounded-3xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-indigo-600/25">
+                            <Sparkles className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-slate-900 dark:text-white text-base">Pedagogy Design & AI LMS Engine</h3>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                                Build mastery-based pedagogy courses with multi-modal challenges: <strong>Coding Labs</strong>, <strong>Predict Output MCQs</strong>, <strong>Syntax Cloze</strong>, <strong>PR Bug Hunts</strong>, and <strong>MNC Case Studies</strong> with automatic AI feedback and XP progression.
+                            </p>
+                        </div>
                     </div>
-                    <div>
-                        <h3 className="font-semibold text-indigo-900">Pedagogy Design Engine</h3>
-                        <p className="text-sm text-indigo-800/80 mt-1">
-                            Build industry-standard pedagogy courses utilizing Mastery-based Progression, Scaffolded Learning, Spaced Repetition, and AI Socratic Feedback. Modules created here can be formally assigned to classes in the Assignments tab.
-                        </p>
-                    </div>
+
+                    <button
+                        onClick={() => setShowWizard(true)}
+                        className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2.5 px-5 rounded-2xl shrink-0 shadow-md shadow-indigo-600/20 flex items-center gap-2"
+                    >
+                        <Plus className="w-4 h-4" /> Launch 5-Step Creator
+                    </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {modules.length === 0 && !loading && (
-                        <div className="col-span-full py-12 flex flex-col items-center justify-center text-center bg-white border border-slate-200 border-dashed rounded-xl">
-                            <GraduationCap className="w-12 h-12 text-slate-300 mb-3" />
-                            <h3 className="text-lg font-medium text-slate-900">No Modules Yet</h3>
-                            <p className="text-slate-500 max-w-sm mt-1">Create your first pedagogy-aligned training module to get started.</p>
-                            <button onClick={() => setShowCreateModal(true)} className="mt-4 btn bg-white border border-slate-300 text-slate-700">
-                                Create Module
+                        <div className="col-span-full py-16 flex flex-col items-center justify-center text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-dashed rounded-3xl p-8">
+                            <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center mb-4 text-indigo-500">
+                                <GraduationCap className="w-8 h-8" />
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">No Training Modules Yet</h3>
+                            <p className="text-slate-500 dark:text-slate-400 max-w-sm mt-1 text-xs">
+                                Create your first pedagogy-aligned course using the step-by-step wizard or AI curriculum synthesizer.
+                            </p>
+                            <button onClick={() => setShowWizard(true)} className="mt-5 btn btn-primary text-xs font-bold py-2.5 px-6 rounded-2xl">
+                                <Sparkles className="w-4 h-4" /> Create First Module
                             </button>
                         </div>
                     )}
                     
                     {modules.map(mod => (
-                        <div key={mod.id} className="card p-5 group flex flex-col hover:border-indigo-300 transition-all cursor-pointer" onClick={() => router.push(`/admin/training/${mod.id}/builder`)}>
-                            <div className="flex justify-between items-start mb-4">
-                                <div className={`px-2.5 py-1 rounded text-xs font-semibold uppercase tracking-wider ${
-                                    mod.language === 'python' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
-                                }`}>
-                                    {mod.language}
+                        <div 
+                            key={mod.id} 
+                            className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group flex flex-col justify-between" 
+                            onClick={() => router.push(`/admin/training/${mod.id}/builder`)}
+                        >
+                            <div>
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold uppercase tracking-wider ${
+                                        mod.language === 'python' ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300' : 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300'
+                                    }`}>
+                                        {mod.language}
+                                    </div>
+                                    {!mod.isPublished ? (
+                                        <span className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                            <Edit3 className="w-3 h-3" /> Draft
+                                        </span>
+                                    ) : (
+                                        <span className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                            <BookCheck className="w-3 h-3" /> Published
+                                        </span>
+                                    )}
                                 </div>
-                                {!mod.isPublished && (
-                                    <span className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
-                                        <Edit3 className="w-3 h-3" /> Draft
-                                    </span>
-                                )}
-                                {mod.isPublished && (
-                                    <span className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                                        <BookCheck className="w-3 h-3" /> Published
-                                    </span>
+                                
+                                <h3 className="text-base font-bold text-slate-900 dark:text-white line-clamp-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">
+                                    {mod.title}
+                                </h3>
+                                {mod.boardAligned && (
+                                    <p className="text-xs text-slate-500 font-medium mt-1">
+                                        {mod.boardAligned} mapped • Class {mod.classLevel}
+                                    </p>
                                 )}
                             </div>
                             
-                            <h3 className="text-lg font-bold text-slate-900 line-clamp-2">{mod.title}</h3>
-                            {mod.boardAligned && (
-                                <p className="text-xs text-slate-500 font-medium mt-1">
-                                    {mod.boardAligned} mapped • Class {mod.classLevel}
-                                </p>
-                            )}
-                            
-                            <div className="mt-auto pt-6 flex items-center justify-between">
+                            <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                                 <div className="flex gap-4">
-                                    <div className="text-center">
-                                        <div className="text-xl font-bold text-slate-700">{mod._count?.units || 0}</div>
-                                        <div className="text-[10px] text-slate-500 uppercase tracking-wide font-medium">Units</div>
+                                    <div>
+                                        <div className="text-lg font-bold text-slate-800 dark:text-slate-200">{mod._count?.units || mod.totalUnits || 0}</div>
+                                        <div className="text-[10px] text-slate-400 uppercase font-semibold">Units</div>
                                     </div>
-                                    <div className="text-center">
-                                        <div className="text-xl font-bold text-slate-700">{mod.totalExercises}</div>
-                                        <div className="text-[10px] text-slate-500 uppercase tracking-wide font-medium">Exercises</div>
+                                    <div>
+                                        <div className="text-lg font-bold text-slate-800 dark:text-slate-200">{mod.totalExercises || 0}</div>
+                                        <div className="text-[10px] text-slate-400 uppercase font-semibold">Exercises</div>
                                     </div>
                                 </div>
-                                <div className="w-8 h-8 rounded-full bg-slate-50 group-hover:bg-indigo-50 flex items-center justify-center transition-colors">
+                                <div className="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-800 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950 flex items-center justify-center transition-colors">
                                     <MoveRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600" />
                                 </div>
                             </div>
@@ -145,44 +158,14 @@ export default function AdminTrainingModules() {
                 </div>
             </main>
 
-            {/* Create Modal */}
-            {showCreateModal && (
-                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                 <div className="bg-white rounded-2xl max-w-md w-full shadow-xl overflow-hidden">
-                     <div className="p-6 border-b border-slate-200">
-                         <h3 className="text-xl font-semibold text-slate-900">Create Pedagogy Course</h3>
-                     </div>
-                     <div className="p-6 space-y-4">
-                         <div>
-                             <label className="text-sm font-medium text-slate-700 mb-1 block">Course Title *</label>
-                             <input type="text" value={form.title} onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))} className="input w-full" placeholder="e.g., Python Architecture Phase 1" />
-                         </div>
-                         <div>
-                             <label className="text-sm font-medium text-slate-700 mb-1 block">Language Engine *</label>
-                             <select value={form.language} onChange={(e) => setForm(f => ({ ...f, language: e.target.value }))} className="input w-full">
-                                 <option value="python">Python (Wandbox AI API)</option>
-                                 <option value="html">HTML5 (Visual Render)</option>
-                                 <option value="javascript">JavaScript (NodeJS)</option>
-                             </select>
-                         </div>
-                         <div className="grid grid-cols-2 gap-4">
-                             <div>
-                                 <label className="text-sm font-medium text-slate-700 mb-1 block">Board Mapping</label>
-                                 <input type="text" value={form.boardAligned} onChange={(e) => setForm(f => ({ ...f, boardAligned: e.target.value }))} className="input w-full" placeholder="PSEB" />
-                             </div>
-                             <div>
-                                 <label className="text-sm font-medium text-slate-700 mb-1 block">Class Level</label>
-                                 <input type="number" value={form.classLevel} onChange={(e) => setForm(f => ({ ...f, classLevel: e.target.value }))} className="input w-full" />
-                             </div>
-                         </div>
-                     </div>
-                     <div className="p-4 border-t border-slate-200 bg-slate-50 flex gap-3">
-                         <button onClick={() => setShowCreateModal(false)} className="btn bg-white border border-slate-300 text-slate-700 flex-1 hover:bg-slate-50">Cancel</button>
-                         <button onClick={handleCreate} className="btn bg-indigo-600 text-white flex-1 hover:bg-indigo-700">Create & Enter Builder</button>
-                     </div>
-                 </div>
-             </div>
-            )}
+            {/* 5-Step Training Module Creator Wizard */}
+            <TrainingModuleWizard
+                isOpen={showWizard}
+                onClose={() => setShowWizard(false)}
+                availableClasses={classes}
+                onSuccess={() => loadData()}
+            />
         </div>
     );
 }
+
