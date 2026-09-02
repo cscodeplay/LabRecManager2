@@ -1400,14 +1400,17 @@ Output ONLY a valid JSON object matching this schema:
      * Generate structured Training Module Outline (Curriculum & Units)
      */
     async generateTrainingModuleOutline({ topic, targetAudience = '', language = 'python', classLevel = 11, board = 'PSEB', totalUnits = 3, provider = 'groq' }) {
+        const targetUnitsCount = Math.max(1, Math.min(10, parseInt(totalUnits) || 3));
         const systemPrompt = `You are a distinguished Computer Science educator and curriculum designer.
 Create a high-impact, pedagogy-aligned training course outline for the given topic.
 TOPIC: ${topic}
 PROGRAMMING LANGUAGE: ${language}
 CLASS LEVEL: Grade ${classLevel}
 BOARD / CURRICULUM: ${board}
-TARGET UNITS COUNT: ${totalUnits}
+TARGET UNITS COUNT: ${targetUnitsCount}
 TARGET AUDIENCE / FOCUS: ${targetAudience || 'School / College Computer Science Students'}
+
+CRITICAL REQUIREMENT: The "units" array in the JSON response MUST contain EXACTLY ${targetUnitsCount} distinct, logically progressive units (numbered 1 to ${targetUnitsCount}).
 
 Design a structured course with progressive mastery thresholds (recommended 80%).
 Output MUST be ONLY valid JSON matching this exact schema:
@@ -1426,7 +1429,7 @@ Output MUST be ONLY valid JSON matching this exact schema:
   "units": [
     {
       "unitNumber": 1,
-      "title": "Unit 1: Fundamentals...",
+      "title": "Unit 1: Foundations of...",
       "description": "Core concepts covered in this unit...",
       "expectedHours": 4,
       "unlockThreshold": 80,
@@ -1438,7 +1441,7 @@ Output MUST be ONLY valid JSON matching this exact schema:
 
         // 1. Try Groq
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192'];
+            const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1459,7 +1462,7 @@ Output MUST be ONLY valid JSON matching this exact schema:
 
         // 2. Try Gemini
         if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1472,44 +1475,41 @@ Output MUST be ONLY valid JSON matching this exact schema:
             }
         }
 
-        // 3. Fallback
+        // 3. Dynamic Fallback for exactly targetUnitsCount units
+        const unitThemes = [
+            { title: 'Foundations, Syntax & Environment Setup', desc: `Core syntax, environment initialization, and foundational mechanics of ${topic}.`, concepts: ['Syntax & Declarations', 'Memory Model', 'Basic I/O'] },
+            { title: 'Control Flow, Conditionals & Loops', desc: `Iterative execution, branch logic, and algorithm control flow in ${topic}.`, concepts: ['Conditional Branching', 'Iteration Patterns', 'State Tracking'] },
+            { title: 'Modular Functions, Scope & Recursion', desc: `Decomposing problems into reusable procedures, variable scope, and recursive calls.`, concepts: ['Function Signatures', 'Scope & Closures', 'Call Stack & Base Cases'] },
+            { title: 'Core Data Structures & Collections', desc: `Manipulating linear and associative collections, slicing, and memory allocation.`, concepts: ['Arrays / Lists', 'Maps / Dictionaries', 'Searching & Sorting'] },
+            { title: 'Object-Oriented Design & Encapsulation', desc: `Class blueprints, encapsulation, methods, inheritance, and clean OOP principles.`, concepts: ['Classes & Objects', 'Encapsulation & Methods', 'Polymorphism'] },
+            { title: 'Error Handling, I/O & File Operations', desc: `Defensive programming, exception handling, file streams, and serialization.`, concepts: ['Try-Catch-Finally', 'File Streams', 'JSON & Data Serialization'] },
+            { title: 'Algorithmic Optimization & Complexity', desc: `Time and space complexity, Big-O analysis, caching, and algorithmic speedups.`, concepts: ['Time Complexity', 'Space Tradeoffs', 'Memoization'] },
+            { title: 'Capstone Project & Production Readiness', desc: `Full end-to-end software artifact construction, testing, and deployment.`, concepts: ['System Architecture', 'Automated Testing', 'Capstone Delivery'] }
+        ];
+
+        const generatedUnits = [];
+        for (let i = 0; i < targetUnitsCount; i++) {
+            const theme = unitThemes[i % unitThemes.length];
+            generatedUnits.push({
+                unitNumber: i + 1,
+                title: `Unit ${i + 1}: ${theme.title}`,
+                description: theme.desc,
+                expectedHours: 4 + (i * 2),
+                unlockThreshold: 80,
+                keyConcepts: theme.concepts,
+                suggestedExerciseTypes: i === 0 ? ['coding', 'mcq'] : i === targetUnitsCount - 1 ? ['coding', 'case_study'] : ['coding', 'fill_blank', 'bug_fix']
+            });
+        }
+
         return {
-            title: `${topic} Mastery Course`,
-            titleHindi: `${topic} प्रशिक्षण`,
-            description: `A structured training module covering ${topic} with hands-on labs, quizzes, and real-world exercises.`,
+            title: `${topic} Professional Masterclass`,
+            titleHindi: `${topic} प्रशिक्षण पाठ्यक्रम`,
+            description: `A comprehensive ${targetUnitsCount}-unit curriculum designed for Grade ${classLevel} students covering ${topic} from fundamentals to production mastery.`,
             language,
             boardAligned: board,
             classLevel: Number(classLevel) || 11,
             pedagogyConfig: { useBlooms: true, useObjectives: true, useTimeLimit: false },
-            units: [
-                {
-                    unitNumber: 1,
-                    title: `Unit 1: Introduction to ${topic}`,
-                    description: `Foundational syntax, principles, and introductory concepts of ${topic}.`,
-                    expectedHours: 3,
-                    unlockThreshold: 80,
-                    keyConcepts: ['Syntax & Basics', 'Core Constructs', 'Practical Examples'],
-                    suggestedExerciseTypes: ['coding', 'mcq']
-                },
-                {
-                    unitNumber: 2,
-                    title: `Unit 2: Core Implementation & Problem Solving`,
-                    description: `Intermediate algorithms, data manipulation, and structured programming in ${topic}.`,
-                    expectedHours: 5,
-                    unlockThreshold: 80,
-                    keyConcepts: ['Control Flow', 'Functions & Modular Code', 'Error Handling'],
-                    suggestedExerciseTypes: ['coding', 'fill_blank', 'bug_fix']
-                },
-                {
-                    unitNumber: 3,
-                    title: `Unit 3: Capstone Projects & Real-world Applications`,
-                    description: `Comprehensive project building, optimization, and industry case studies.`,
-                    expectedHours: 6,
-                    unlockThreshold: 80,
-                    keyConcepts: ['Architecture Design', 'Optimization', 'Capstone Project'],
-                    suggestedExerciseTypes: ['coding', 'case_study']
-                }
-            ]
+            units: generatedUnits
         };
     }
 
@@ -1546,7 +1546,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 1. Try Groq
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+            const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1567,7 +1567,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 2. Try Gemini
         if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1618,22 +1618,23 @@ Output MUST be ONLY valid JSON matching this schema:
     async generateTrainingExercise({ topic, unitTitle = '', language = 'python', exerciseType = 'coding', difficulty = 'beginner', scaffoldLevel = 'guided', bloomsLevel = 'apply', customPrompt = '', provider = 'groq' }) {
         let typeInstruction = '';
         if (exerciseType === 'coding') {
-            typeInstruction = `Generate a standard CODING LAB exercise with:
-- "starterCode": Boilerplate with function signature and comments
-- "solutionCode": Complete working solution
-- "testCases": Array of at least 3 test cases: [{"input": "...", "expectedOutput": "...", "isHidden": false}, {"input": "...", "expectedOutput": "...", "isHidden": true}]
-- "hints": Array of 2-3 progressive Socratic hints`;
+            typeInstruction = `Generate a standard CODING LAB exercise:
+CRITICAL: Do NOT output placeholder code like 'def solve(n): pass'. The "starterCode" and "solutionCode" MUST be specifically written for '${topic}' (or custom prompt '${customPrompt}') with realistic function names, docstrings, and actual algorithm logic matching difficulty '${difficulty}', scaffold '${scaffoldLevel}', and bloom level '${bloomsLevel}'.
+- "starterCode": Boilerplate with function signature, docstring explaining parameters/returns, scaffolding comments and starter variables.
+- "solutionCode": Complete working executable solution code solving the specific problem.
+- "testCases": Array of at least 3 realistic test cases with realistic inputs and expected outputs: [{"input": "...", "expectedOutput": "...", "isHidden": false}, {"input": "...", "expectedOutput": "...", "isHidden": true}]
+- "hints": Array of 2-3 progressive Socratic hints.`;
         } else if (exerciseType === 'bug_fix') {
             typeInstruction = `Generate a PR REVIEW / BUG HUNT exercise where student is given buggy code and must fix it:
-- "starterCode": Code containing a subtle logical or syntax bug with comments like "# FIX THE BUG HERE"
+- "starterCode": Code specifically implementing '${topic}' containing a subtle logical or off-by-one bug with comments like "# FIX THE BUG HERE"
 - "solutionCode": The clean, corrected code
 - "testCases": Array of 3 test cases that fail on buggy code but pass on corrected code
 - "hints": Array of 2 hints pointing toward the bug's cause`;
         } else if (exerciseType === 'mcq') {
-            typeInstruction = `Generate a CODE TRACING / OUTPUT PREDICTION MCQ:
+            typeInstruction = `Generate a CODE TRACING / OUTPUT PREDICTION MCQ specifically about '${topic}':
 - "testCases": {
     "question": "What is the exact output of this code snippet?",
-    "codeSnippet": "Code snippet in ${language} demonstrating a tricky concept or edge case",
+    "codeSnippet": "Code snippet in ${language} demonstrating ${topic} with tricky logic or edge cases",
     "options": ["Option A (Incorrect)", "Option B (Correct)", "Option C (Distractor)", "Option D (Distractor)"],
     "correctOption": 1,
     "explanation": "Detailed explanation of why Option B is correct and why others fail."
@@ -1641,7 +1642,7 @@ Output MUST be ONLY valid JSON matching this schema:
 - "starterCode": null
 - "solutionCode": null`;
         } else if (exerciseType === 'fill_blank') {
-            typeInstruction = `Generate a SYNTAX CLOZE / FILL-IN-THE-BLANKS exercise:
+            typeInstruction = `Generate a SYNTAX CLOZE / FILL-IN-THE-BLANKS exercise for '${topic}':
 - "starterCode": The exact code snippet template containing placeholders like {{BLANK_1}} and {{BLANK_2}}
 - "solutionCode": The complete, working, executable code with all {{BLANK_N}} placeholders replaced with their exact correct answer tokens
 - "testCases": {
@@ -1654,11 +1655,11 @@ Output MUST be ONLY valid JSON matching this schema:
     "explanation": "Detailed explanation of the completed code syntax."
   }`;
         } else if (exerciseType === 'case_study') {
-            typeInstruction = `Generate a REAL-WORLD MNC INCIDENT CASE STUDY:
+            typeInstruction = `Generate a REAL-WORLD MNC INCIDENT CASE STUDY based on '${topic}':
 - "testCases": {
     "company": "Fictional Tech Company / Team",
     "incident": "Incident description (e.g. Production latency spike during peak checkout)",
-    "scenarioCode": "Relevant architectural or backend code snippet",
+    "scenarioCode": "Relevant architectural or backend code snippet demonstrating ${topic}",
     "questions": [
       {
         "id": "q1",
@@ -1705,7 +1706,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 1. Try Groq
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+            const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1726,7 +1727,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 2. Try Gemini
         if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1739,7 +1740,10 @@ Output MUST be ONLY valid JSON matching this schema:
             }
         }
 
-        // 3. Fallback based on exercise type
+        // 3. Dynamic Topic-Tailored Fallback
+        const cleanSlug = (topic || 'solution').toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 20) || 'algorithm';
+        const funcName = `solve_${cleanSlug}`;
+
         if (exerciseType === 'mcq') {
             return {
                 title: `${topic} Tracing Challenge`,
@@ -1754,27 +1758,27 @@ Output MUST be ONLY valid JSON matching this schema:
                 timeLimit: 5,
                 isReviewExercise: false,
                 testCases: {
-                    question: `What will the following ${language} code print?`,
+                    question: `What will the following ${language} code print for ${topic}?`,
                     codeSnippet: language === 'python' ? `items = [10, 20, 30]\nresult = [x * 2 for x in items if x > 15]\nprint(result)` : `const items = [10, 20, 30];\nconst result = items.filter(x => x > 15).map(x => x * 2);\nconsole.log(result);`,
                     options: ['[20, 40, 60]', '[40, 60]', '[20, 40]', '[10, 20]'],
                     correctOption: 1,
                     explanation: `Only elements > 15 (20 and 30) are selected and multiplied by 2, giving [40, 60].`
                 },
-                hints: [`Check the filter condition first, then the multiplication.`]
+                hints: [`Check the filter condition first, then the transformation.`]
             };
         }
 
         if (exerciseType === 'fill_blank') {
             const template = language === 'python'
-                ? `def process_data(data):\n    {{BLANK_1}} data is None:\n        return []\n    {{BLANK_2}} [x.strip() for x in data]`
-                : `function processData(data) {\n    {{BLANK_1}} (!data) return [];\n    {{BLANK_2}} data.map(x => x.trim());\n}`;
+                ? `def ${funcName}(items):\n    # Filter and transform elements for ${topic}\n    {{BLANK_1}} not items:\n        return []\n    {{BLANK_2}} [x * 2 for x in items if x > 0]`
+                : `function ${funcName}(items) {\n    // Filter and transform elements for ${topic}\n    {{BLANK_1}} (!items || items.length === 0) return [];\n    {{BLANK_2}} items.filter(x => x > 0).map(x => x * 2);\n}`;
             const solution = language === 'python'
-                ? `def process_data(data):\n    if data is None:\n        return []\n    return [x.strip() for x in data]`
-                : `function processData(data) {\n    if (!data) return [];\n    return data.map(x => x.trim());\n}`;
+                ? `def ${funcName}(items):\n    # Filter and transform elements for ${topic}\n    if not items:\n        return []\n    return [x * 2 for x in items if x > 0]`
+                : `function ${funcName}(items) {\n    // Filter and transform elements for ${topic}\n    if (!items || items.length === 0) return [];\n    return items.filter(x => x > 0).map(x => x * 2);\n}`;
             return {
                 title: `Syntax Cloze: ${topic}`,
-                description: `Fill in the missing tokens in the code snippet.`,
-                theory: `Mastering syntax tokens ensures clean execution.`,
+                description: `Fill in the missing tokens in the code snippet to implement ${topic}.`,
+                theory: `Mastering syntax tokens ensures clean and reliable execution.`,
                 exerciseType: 'fill_blank',
                 difficulty,
                 scaffoldLevel,
@@ -1789,35 +1793,43 @@ Output MUST be ONLY valid JSON matching this schema:
                     instruction: `Fill in the missing keywords:`,
                     template: template,
                     blanks: [
-                        { id: 'BLANK_1', correctAnswer: 'if', hint: 'Conditional check' },
-                        { id: 'BLANK_2', correctAnswer: 'return', hint: 'Output statement' }
+                        { id: 'BLANK_1', correctAnswer: 'if', hint: 'Guard condition check' },
+                        { id: 'BLANK_2', correctAnswer: 'return', hint: 'Output return statement' }
                     ],
-                    explanation: `We guard against None with 'if', and return the result using 'return'.`
+                    explanation: `Guards against empty data with 'if' and returns transformed array with 'return'.`
                 },
                 hints: [`Look at standard conditional and return keywords.`]
             };
         }
 
+        const starter = language === 'python'
+            ? `def ${funcName}(values):\n    """\n    Solve ${topic} (${difficulty} / ${scaffoldLevel})\n    :param values: list of numbers or data elements\n    :return: transformed result\n    """\n    # TODO: Implement your solution for ${topic}\n    result = []\n    for item in values:\n        # Process each item\n        pass\n    return result\n`
+            : `function ${funcName}(values) {\n    /**\n     * Solve ${topic} (${difficulty} / ${scaffoldLevel})\n     * @param {Array} values\n     * @returns {Array}\n     */\n    // TODO: Implement your solution for ${topic}\n    const result = [];\n    for (const item of values) {\n        // Process item\n    }\n    return result;\n}\n`;
+
+        const solution = language === 'python'
+            ? `def ${funcName}(values):\n    """\n    Solve ${topic} (${difficulty} / ${scaffoldLevel})\n    """\n    if not values:\n        return []\n    return [x * 2 for x in values if x is not None]\n`
+            : `function ${funcName}(values) {\n    if (!values || !Array.isArray(values)) return [];\n    return values.filter(x => x !== null).map(x => x * 2);\n}\n`;
+
         return {
             title: `Hands-on Lab: ${topic}`,
-            description: `Write a program that demonstrates ${topic}. Implement the required function and return the correct result.`,
-            theory: `## 📘 Learning Content\n\nUnderstand how ${topic} works before implementing your solution.`,
+            description: `Implement ${funcName}(values) to process the input according to ${topic} rules. Return the correctly computed result.`,
+            theory: `## 📘 Learning Concept: ${topic}\n\nUnderstand the computational rules of ${topic} before implementing your algorithm.`,
             exerciseType: 'coding',
             difficulty,
             scaffoldLevel,
             bloomsLevel,
-            learningObjective: `SWBAT implement ${topic} in ${language}.`,
-            xpReward: 15,
+            learningObjective: `SWBAT implement ${topic} in ${language} adhering to ${scaffoldLevel} guidelines.`,
+            xpReward: difficulty === 'advanced' ? 25 : difficulty === 'intermediate' ? 15 : 10,
             timeLimit: 5,
             isReviewExercise: false,
-            starterCode: language === 'python' ? `# Implement your solution\ndef solve(n):\n    # TODO: Write code here\n    pass\n` : `// Implement solution\nfunction solve(n) {\n    // TODO\n}\n`,
-            solutionCode: language === 'python' ? `def solve(n):\n    return n * 2\n` : `function solve(n) {\n    return n * 2;\n}\n`,
+            starterCode: starter,
+            solutionCode: solution,
             testCases: [
-                { input: '5', expectedOutput: '10', isHidden: false },
-                { input: '12', expectedOutput: '24', isHidden: false },
-                { input: '0', expectedOutput: '0', isHidden: true }
+                { input: '[1, 2, 3]', expectedOutput: '[2, 4, 6]', isHidden: false },
+                { input: '[5, 10]', expectedOutput: '[10, 20]', isHidden: false },
+                { input: '[]', expectedOutput: '[]', isHidden: true }
             ],
-            hints: [`Start by handling the base input case.`, `Ensure your return type matches expectations.`]
+            hints: [`Start by checking for empty or None inputs.`, `Iterate through the collection and apply the ${topic} transformation.`]
         };
     }
 
@@ -1851,7 +1863,7 @@ Output MUST be ONLY valid JSON:
 }`;
 
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
+            const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1871,7 +1883,7 @@ Output MUST be ONLY valid JSON:
         }
 
         if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1905,6 +1917,7 @@ Output MUST be ONLY valid JSON:
         totalUnits = 3,
         provider = 'groq'
     }) {
+        const targetUnitsCount = Math.max(1, Math.min(10, parseInt(totalUnits) || 3));
         const systemPrompt = `You are an elite AI Computer Science Curriculum Architect and Textbook Synthesizer.
 Analyze the provided textbook / syllabus / PDF material and construct a fully-structured, grounded interactive training module with progressive units and multi-modal exercises.
 
@@ -1912,7 +1925,7 @@ TARGET PARAMETERS:
 - LANGUAGE: ${language}
 - CLASS LEVEL: Grade ${classLevel}
 - BOARD: ${board}
-- TARGET UNITS: ${totalUnits}
+- TARGET UNITS: ${targetUnitsCount}
 - INSTRUCTOR NOTES: ${customPrompt || 'Extract full curriculum units, exercises, and theory directly from the resource.'}
 
 RESOURCE CONTENT:
@@ -1922,7 +1935,7 @@ ${documentText ? documentText.slice(0, 18000) : 'Extracted from attached documen
 
 RULES:
 1. Synthesize a complete training module outline strictly grounded in the document.
-2. Form ${totalUnits} logical units.
+2. Form EXACTLY ${targetUnitsCount} logical units in the "units" array.
 3. In each unit, generate 2-3 interactive exercises matching the 5 pedagogy types:
    - "coding": Coding lab with starterCode, solutionCode, testCases array (with at least 2 test cases: input, expectedOutput, isHidden), hints array.
    - "mcq": Output prediction MCQ with testCases: { question, codeSnippet, options, correctOption (0-indexed integer), explanation }.
@@ -2005,7 +2018,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
             // Fallback to Gemini Vision
             if (this.genAI) {
-                const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+                const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash'];
                 for (const modelName of geminiModels) {
                     try {
                         const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2029,7 +2042,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 2. Text Grounding Mode (Textbook Notes / Syllabus / PDF text)
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+            const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -2049,7 +2062,7 @@ Output MUST be ONLY valid JSON matching this schema:
         }
 
         if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });

@@ -215,6 +215,25 @@ export default function PedagogyBuilderPage() {
     const [assignNotes, setAssignNotes] = useState('');
     const [existingAssignments, setExistingAssignments] = useState([]);
 
+    // Auto-Save exercise draft state
+    const [builderSavedTime, setBuilderSavedTime] = useState(null);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !showExerciseModal) return;
+        const timer = setTimeout(() => {
+            if (exerciseForm.title || exerciseForm.description) {
+                try {
+                    localStorage.setItem(`ulrms_builder_exercise_${id}`, JSON.stringify({
+                        exerciseForm,
+                        timestamp: Date.now()
+                    }));
+                    setBuilderSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+                } catch (e) {}
+            }
+        }, 800);
+        return () => clearTimeout(timer);
+    }, [exerciseForm, showExerciseModal, id]);
+
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!isAuthenticated) return;
@@ -299,6 +318,7 @@ export default function PedagogyBuilderPage() {
             };
 
             await trainingAPI.createExercise(activeUnitId, payload);
+            localStorage.removeItem(`ulrms_builder_exercise_${id}`);
             toast.success('Exercise deployed with pedagogy rules');
             setShowExerciseModal(false);
             setExerciseForm({
@@ -473,6 +493,10 @@ export default function PedagogyBuilderPage() {
                                     <h1 className="text-lg font-bold text-slate-900 dark:text-white">{moduleData.title}</h1>
                                     <span className={`badge text-[10px] ${moduleData.isPublished ? 'badge-success' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
                                         {moduleData.isPublished ? 'Published' : 'Draft'}
+                                    </span>
+                                    <span className="text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        {builderSavedTime ? `Draft Auto-saved ${builderSavedTime}` : 'Auto-Save Active'}
                                     </span>
                                 </div>
                                 <p className="text-xs text-slate-500 font-medium mt-0.5">

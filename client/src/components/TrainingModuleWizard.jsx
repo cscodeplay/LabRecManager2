@@ -121,6 +121,71 @@ export default function TrainingModuleWizard({
     const [deadline, setDeadline] = useState('');
     const [specialNotes, setSpecialNotes] = useState('');
 
+    // Auto-Save & Local Draft State
+    const [lastSavedTime, setLastSavedTime] = useState(null);
+    const [hasSavedDraft, setHasSavedDraft] = useState(false);
+
+    // Check for existing unsaved draft on mount
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        try {
+            const saved = localStorage.getItem('ulrms_training_wizard_draft');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (parsed && (parsed.moduleForm?.title || (parsed.units?.length > 1) || parsed.units?.[0]?.exercises?.length > 0)) {
+                    setHasSavedDraft(true);
+                }
+            }
+        } catch (e) {
+            console.error('Error reading draft:', e);
+        }
+    }, []);
+
+    // Debounced Auto-Save
+    useEffect(() => {
+        if (typeof window === 'undefined' || !isOpen) return;
+        const timer = setTimeout(() => {
+            try {
+                if (moduleForm.title || units.length > 1 || (units[0]?.exercises && units[0].exercises.length > 0)) {
+                    localStorage.setItem('ulrms_training_wizard_draft', JSON.stringify({
+                        moduleForm,
+                        units,
+                        currentStep,
+                        targetClasses,
+                        timestamp: Date.now()
+                    }));
+                    setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+                }
+            } catch (e) {
+                console.warn('Auto-save failed:', e);
+            }
+        }, 1000);
+        return () => clearTimeout(timer);
+    }, [moduleForm, units, currentStep, targetClasses, isOpen]);
+
+    const handleRestoreDraft = () => {
+        try {
+            const saved = localStorage.getItem('ulrms_training_wizard_draft');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (parsed.moduleForm) setModuleForm(parsed.moduleForm);
+                if (parsed.units) setUnits(parsed.units);
+                if (parsed.currentStep) setCurrentStep(parsed.currentStep);
+                if (parsed.targetClasses) setTargetClasses(parsed.targetClasses);
+                setHasSavedDraft(false);
+                toast.success('💾 Restored course draft from cache!');
+            }
+        } catch (e) {
+            toast.error('Failed to restore draft');
+        }
+    };
+
+    const handleDiscardDraft = () => {
+        localStorage.removeItem('ulrms_training_wizard_draft');
+        setHasSavedDraft(false);
+        toast.success('Draft cache discarded.');
+    };
+
     // Pedagogy Score Calculation
     const pedagogyStats = useMemo(() => {
         let score = 0;
@@ -411,6 +476,7 @@ export default function TrainingModuleWizard({
             }
 
             toast.success('🎉 Training Module Created Successfully!');
+            localStorage.removeItem('ulrms_training_wizard_draft');
             if (onSuccess) onSuccess(createdModule);
             onClose();
             router.push(`/admin/training/${moduleId}/builder`);
@@ -431,9 +497,15 @@ export default function TrainingModuleWizard({
                 {/* Top Stepper Bar */}
                 <div className="p-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
                     <div>
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
-                            Pedagogy Course Architect • Step {currentStep} of 5
-                        </span>
+                        <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
+                                Pedagogy Course Architect • Step {currentStep} of 5
+                            </span>
+                            <span className="text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                {lastSavedTime ? `Auto-saved ${lastSavedTime}` : 'Auto-save active'}
+                            </span>
+                        </div>
                         <h2 className="text-xl font-bold text-slate-900 dark:text-white">
                             {STEP_TITLES[currentStep - 1].title}
                         </h2>
@@ -459,6 +531,29 @@ export default function TrainingModuleWizard({
                         ))}
                     </div>
                 </div>
+
+                {/* Draft Recovery Banner */}
+                {hasSavedDraft && (
+                    <div className="px-6 py-2.5 bg-amber-500/10 border-b border-amber-500/20 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between">
+                        <span className="font-semibold flex items-center gap-1.5">
+                            💾 An unsaved course blueprint draft was found in local storage.
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleRestoreDraft}
+                                className="px-2.5 py-1 bg-amber-600 text-white hover:bg-amber-500 font-bold rounded-lg text-[11px] shadow transition"
+                            >
+                                Restore Draft
+                            </button>
+                            <button
+                                onClick={handleDiscardDraft}
+                                className="px-2 py-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-[11px] font-medium"
+                            >
+                                Discard
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Main Step Body */}
                 <div className="flex-1 overflow-y-auto p-6">
