@@ -356,7 +356,7 @@ export default function PedagogyBuilderPage() {
             xpReward: aiEx.xpReward || 15,
             timeLimit: aiEx.timeLimit || 5,
             isReviewExercise: aiEx.isReviewExercise || false,
-            starterCode: aiEx.starterCode || '',
+            starterCode: aiEx.starterCode || (currentType === 'fill_blank' && aiEx.testCases?.template ? aiEx.testCases.template : ''),
             solutionCode: aiEx.solutionCode || '',
             testCases: Array.isArray(aiEx.testCases) ? aiEx.testCases : prev.testCases,
             hints: aiEx.hints || prev.hints,
@@ -365,6 +365,58 @@ export default function PedagogyBuilderPage() {
             caseStudyData: currentType === 'case_study' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.caseStudyData
         }));
         setShowExerciseModal(true);
+    };
+
+    const handleApplyAiTheory = (theoryRes) => {
+        if (!theoryRes) return;
+        setExerciseForm(prev => ({
+            ...prev,
+            title: prev.title || theoryRes.title || '',
+            theory: theoryRes.theoryMarkdown || prev.theory
+        }));
+        setShowExerciseModal(true);
+    };
+
+    const handleApplyAiOutline = async (outlineRes) => {
+        if (!outlineRes || !outlineRes.units) return;
+        try {
+            for (const u of outlineRes.units) {
+                const uRes = await trainingAPI.createUnit(id, {
+                    unitNumber: u.unitNumber || (moduleData.units?.length || 0) + 1,
+                    title: u.title,
+                    description: u.description || '',
+                    expectedHours: u.expectedHours || 5,
+                    unlockThreshold: u.unlockThreshold || 80
+                });
+                const unitId = uRes.data.data.unit.id;
+                if (u.exercises && u.exercises.length > 0) {
+                    for (let eIdx = 0; eIdx < u.exercises.length; eIdx++) {
+                        const ex = u.exercises[eIdx];
+                        await trainingAPI.createExercise(unitId, {
+                            title: ex.title,
+                            description: ex.description,
+                            exerciseType: ex.exerciseType || 'coding',
+                            difficulty: ex.difficulty || 'beginner',
+                            scaffoldLevel: ex.scaffoldLevel || 'guided',
+                            bloomsLevel: ex.bloomsLevel || 'apply',
+                            learningObjective: ex.learningObjective || '',
+                            isReviewExercise: ex.isReviewExercise || false,
+                            xpReward: Number(ex.xpReward) || 15,
+                            timeLimit: Number(ex.timeLimit) || 5,
+                            sequenceOrder: eIdx,
+                            starterCode: ex.starterCode || null,
+                            solutionCode: ex.solutionCode || null,
+                            testCases: JSON.stringify(ex.testCases || []),
+                            hints: JSON.stringify(ex.hints || [])
+                        });
+                    }
+                }
+            }
+            toast.success('🎉 AI Blueprint Units & Exercises created in course!');
+            loadData();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to auto-deploy units');
+        }
     };
 
     // Test case helpers
@@ -1171,6 +1223,27 @@ export default function PedagogyBuilderPage() {
                     </div>
                 </div>
             )}
+
+            {/* AI LMS Writing & Graphics Copilot */}
+            <AiTrainingCopilot
+                isOpen={showAiCopilot}
+                onClose={() => setShowAiCopilot(false)}
+                activeTab={aiCopilotTab}
+                onInsertOutline={handleApplyAiOutline}
+                onInsertTheory={handleApplyAiTheory}
+                onInsertExercise={handleApplyAiExercise}
+                context={{
+                    language: moduleData?.language || 'python',
+                    classLevel: moduleData?.classLevel || 11,
+                    board: moduleData?.boardAligned || 'PSEB',
+                    unitTitle: moduleData?.units?.find(u => u.id === activeUnitId)?.title || '',
+                    topic: exerciseForm.title || moduleData?.units?.find(u => u.id === activeUnitId)?.title || moduleData?.title || '',
+                    exerciseType: exerciseForm.exerciseType,
+                    difficulty: exerciseForm.difficulty,
+                    scaffoldLevel: exerciseForm.scaffoldLevel,
+                    bloomsLevel: exerciseForm.bloomsLevel
+                }}
+            />
         </div>
     );
 }

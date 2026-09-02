@@ -1096,6 +1096,20 @@ router.post('/ai-assist', authenticate, asyncHandler(async (req, res) => {
                 });
                 break;
 
+            case 'generate_from_document':
+                result = await aiService.generateTrainingModuleFromDocument({
+                    documentText: payload.documentText || '',
+                    imageBase64: payload.imageBase64 || null,
+                    mimeType: payload.mimeType || 'image/jpeg',
+                    customPrompt: payload.customPrompt || '',
+                    language: payload.language || 'python',
+                    classLevel: payload.classLevel || 11,
+                    board: payload.board || 'CBSE',
+                    totalUnits: payload.totalUnits || 3,
+                    provider
+                });
+                break;
+
             default:
                 return res.status(400).json({ success: false, message: `Unknown AI assist action: ${action}` });
         }

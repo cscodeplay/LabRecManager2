@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     Sparkles, BookOpen, Code2, CheckSquare, FileText,
     Layers, Image as ImageIcon, Send, Copy, Check, Plus,
-    RefreshCw, AlertCircle, Award, Lightbulb, Zap, ArrowRight, X, Eye
+    RefreshCw, AlertCircle, Award, Lightbulb, Zap, ArrowRight, X, Eye,
+    UploadCloud, FileUp, Database, CheckCircle2, Bookmark
 } from 'lucide-react';
 import { trainingAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -50,32 +51,95 @@ const PRESETS = {
 export default function AiTrainingCopilot({
     isOpen,
     onClose,
-    activeTab = 'outline', // 'outline' | 'theory' | 'exercise'
+    activeTab = 'outline', // 'outline' | 'theory' | 'exercise' | 'rag'
     onInsertOutline,
     onInsertTheory,
     onInsertExercise,
-    context = {} // { language, classLevel, board, unitTitle, topic }
+    context = {} // { language, classLevel, board, unitTitle, topic, exerciseType, difficulty, scaffoldLevel, bloomsLevel }
 }) {
     const [tab, setTab] = useState(activeTab);
     const [subExerciseType, setSubExerciseType] = useState('coding'); // 'coding' | 'bug_fix' | 'mcq' | 'fill_blank' | 'case_study'
     const [prompt, setPrompt] = useState('');
-    const [language, setLanguage] = useState(context.language || 'python');
-    const [classLevel, setClassLevel] = useState(context.classLevel || 11);
-    const [board, setBoard] = useState(context.board || 'PSEB');
+    const [language, setLanguage] = useState('python');
+    const [classLevel, setClassLevel] = useState(11);
+    const [board, setBoard] = useState('PSEB');
     const [difficulty, setDifficulty] = useState('beginner');
     const [scaffoldLevel, setScaffoldLevel] = useState('guided');
     const [bloomsLevel, setBloomsLevel] = useState('apply');
     const [totalUnits, setTotalUnits] = useState(3);
     const [provider, setProvider] = useState('groq'); // 'groq' | 'gemini'
     
+    // RAG Document & Vision State
+    const [documentText, setDocumentText] = useState('');
+    const [uploadedFileName, setUploadedFileName] = useState('');
+    const [imageBase64, setImageBase64] = useState(null);
+    const [imageMimeType, setImageMimeType] = useState('image/jpeg');
+    const fileInputRef = useRef(null);
+
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState(null);
     const [copied, setCopied] = useState(false);
 
-    if (!isOpen) return null;
+    // Synchronize inputs from context props whenever modal opens or context changes
+    useEffect(() => {
+        if (!isOpen) return;
+        if (activeTab) setTab(activeTab);
+        if (context.language) setLanguage(context.language);
+        if (context.classLevel) setClassLevel(context.classLevel);
+        if (context.board) setBoard(context.board);
+        if (context.topic && !prompt) setPrompt(context.topic);
+        if (context.exerciseType) setSubExerciseType(context.exerciseType);
+        if (context.difficulty) setDifficulty(context.difficulty);
+        if (context.scaffoldLevel) setScaffoldLevel(context.scaffoldLevel);
+        if (context.bloomsLevel) setBloomsLevel(context.bloomsLevel);
+    }, [isOpen, activeTab, context]);
+
+    const handleFileUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setUploadedFileName(file.name);
+
+        if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const base64 = reader.result.split(',')[1];
+                setImageBase64(base64);
+                setImageMimeType(file.type);
+                toast.success(`📸 Image "${file.name}" loaded for Vision RAG`);
+            };
+            reader.readAsDataURL(file);
+        } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf') || file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const text = reader.result;
+                if (typeof text === 'string') {
+                    setDocumentText(text);
+                    toast.success(`📄 File "${file.name}" text loaded (${text.length} chars)`);
+                } else {
+                    const base64 = reader.result.split(',')[1];
+                    setImageBase64(base64);
+                    setImageMimeType(file.type || 'application/pdf');
+                    toast.success(`📄 Document "${file.name}" loaded for RAG processing`);
+                }
+            };
+            if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+                reader.readAsText(file);
+            } else {
+                reader.readAsDataURL(file);
+            }
+        } else {
+            toast.error('Supported formats: PDF, Images (PNG/JPG), TXT, Markdown');
+        }
+    };
 
     const handleGenerate = async () => {
-        if (!prompt.trim()) {
+        if (tab === 'rag' && !documentText.trim() && !imageBase64) {
+            toast.error('Please upload an ebook/PDF/image or paste document text');
+            return;
+        }
+
+        if (tab !== 'rag' && !prompt.trim()) {
             toast.error('Please enter a topic or instruction');
             return;
         }
@@ -116,6 +180,18 @@ export default function AiTrainingCopilot({
                     bloomsLevel,
                     customPrompt: prompt
                 };
+            } else if (tab === 'rag') {
+                action = 'generate_from_document';
+                payload = {
+                    documentText,
+                    imageBase64,
+                    mimeType: imageMimeType,
+                    customPrompt: prompt,
+                    language,
+                    classLevel,
+                    board,
+                    totalUnits
+                };
             }
 
             const res = await trainingAPI.aiAssist({
@@ -149,9 +225,9 @@ export default function AiTrainingCopilot({
     const handleApply = () => {
         if (!result) return;
 
-        if (tab === 'outline' && onInsertOutline) {
+        if ((tab === 'outline' || tab === 'rag') && onInsertOutline) {
             onInsertOutline(result);
-            toast.success('Applied Course Blueprint to Wizard!');
+            toast.success('Applied Course Blueprint & Units to Wizard!');
             onClose();
         } else if (tab === 'theory' && onInsertTheory) {
             onInsertTheory(result);
@@ -163,6 +239,8 @@ export default function AiTrainingCopilot({
             onClose();
         }
     };
+
+    if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
@@ -176,13 +254,13 @@ export default function AiTrainingCopilot({
                         </div>
                         <div>
                             <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                AI LMS Writing & Graphics Copilot
+                                AI LMS Pedagogy Copilot & RAG Synthesizer
                                 <span className="text-[10px] uppercase font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full">
-                                    {provider === 'groq' ? '⚡ Groq Llama 3.3 70B' : '✨ Gemini 2.5 Flash'}
+                                    {provider === 'groq' ? '⚡ Groq Llama 3.3 70B' : '✨ Gemini 1.5/2.0'}
                                 </span>
                             </h2>
                             <p className="text-xs text-slate-500 dark:text-slate-400">
-                                Generate pedagogical syllabus outlines, rich formatted lessons with SVG illustrations, and 5 types of exercises.
+                                Auto-syncs with wizard step fields • Multi-modal RAG grounding from Ebooks/PDFs • All 5 question types
                             </p>
                         </div>
                     </div>
@@ -203,36 +281,46 @@ export default function AiTrainingCopilot({
                 </div>
 
                 {/* Tab Navigation */}
-                <div className="flex border-b border-slate-200 dark:border-slate-800 px-6 bg-slate-50 dark:bg-slate-900/50 gap-2">
+                <div className="flex border-b border-slate-200 dark:border-slate-800 px-6 bg-slate-50 dark:bg-slate-900/50 gap-2 overflow-x-auto">
                     <button
                         onClick={() => { setTab('outline'); setResult(null); }}
-                        className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all ${
+                        className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap ${
                             tab === 'outline'
                                 ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-900 rounded-t-xl'
                                 : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                         }`}
                     >
-                        <Layers className="w-4 h-4" /> 1. Course Outline & Units
+                        <Layers className="w-4 h-4" /> 1. Course Blueprint
                     </button>
                     <button
                         onClick={() => { setTab('theory'); setResult(null); }}
-                        className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all ${
+                        className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap ${
                             tab === 'theory'
                                 ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-900 rounded-t-xl'
                                 : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                         }`}
                     >
-                        <BookOpen className="w-4 h-4" /> 2. Lesson Theory & SVG Graphics
+                        <BookOpen className="w-4 h-4" /> 2. Lesson Theory & Graphics
                     </button>
                     <button
                         onClick={() => { setTab('exercise'); setResult(null); }}
-                        className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all ${
+                        className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap ${
                             tab === 'exercise'
                                 ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-900 rounded-t-xl'
                                 : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                         }`}
                     >
-                        <Code2 className="w-4 h-4" /> 3. Exercises & Question Arena
+                        <Code2 className="w-4 h-4" /> 3. Exercise & Question Arena
+                    </button>
+                    <button
+                        onClick={() => { setTab('rag'); setResult(null); }}
+                        className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap ${
+                            tab === 'rag'
+                                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-900 rounded-t-xl'
+                                : 'border-transparent text-purple-600 hover:text-purple-700 dark:text-purple-400'
+                        }`}
+                    >
+                        <Database className="w-4 h-4" /> 📚 4. Ebook / PDF RAG Synthesizer
                     </button>
                 </div>
 
@@ -242,6 +330,49 @@ export default function AiTrainingCopilot({
                     {/* Left Panel: Inputs & Configuration */}
                     <div className="md:col-span-5 p-6 overflow-y-auto border-r border-slate-200 dark:border-slate-800 space-y-4 bg-slate-50/50 dark:bg-slate-900/30">
                         
+                        {/* Tab 4: RAG Resource Upload Box */}
+                        {tab === 'rag' && (
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="text-xs font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300 mb-1.5 flex items-center justify-between">
+                                        <span>Upload Textbook / PDF / Syllabus *</span>
+                                        <span className="text-[10px] text-slate-400">OCR & Vision Grounded</span>
+                                    </label>
+                                    
+                                    <input 
+                                        type="file" 
+                                        ref={fileInputRef} 
+                                        onChange={handleFileUpload} 
+                                        accept=".pdf,.png,.jpg,.jpeg,.txt,.md" 
+                                        className="hidden" 
+                                    />
+
+                                    <div 
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="p-4 border-2 border-dashed border-purple-300 dark:border-purple-800 hover:border-purple-500 rounded-2xl bg-purple-50/40 dark:bg-purple-950/20 text-center cursor-pointer transition"
+                                    >
+                                        <UploadCloud className="w-7 h-7 text-purple-600 dark:text-purple-400 mx-auto mb-1.5" />
+                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block">
+                                            {uploadedFileName ? `Attached: ${uploadedFileName}` : 'Click to Upload Ebook / PDF / Image'}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400">PDF, PNG, JPG, TXT up to 15MB</span>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 block">
+                                        Or Paste Resource Text / Chapter Notes
+                                    </label>
+                                    <textarea
+                                        value={documentText}
+                                        onChange={e => setDocumentText(e.target.value)}
+                                        placeholder="Paste chapter excerpts, lab manual experiments, syllabus topics, or code examples here..."
+                                        className="w-full h-24 p-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono focus:ring-2 focus:ring-purple-500/20 outline-none"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
                         {/* Tab 3 Exercise Sub-Type selector */}
                         {tab === 'exercise' && (
                             <div>
@@ -276,8 +407,8 @@ export default function AiTrainingCopilot({
                         {/* Prompt Input */}
                         <div>
                             <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5 flex items-center justify-between">
-                                <span>Topic / Instructions *</span>
-                                <span className="text-[10px] font-normal text-slate-400">Natural language prompt</span>
+                                <span>{tab === 'rag' ? 'Additional Instructions (Optional)' : 'Topic / Problem Statement *'}</span>
+                                <span className="text-[10px] font-normal text-slate-400">Auto-filled from wizard</span>
                             </label>
                             <textarea
                                 value={prompt}
@@ -287,37 +418,41 @@ export default function AiTrainingCopilot({
                                         ? "e.g. Python Object-Oriented Programming for Class 11..."
                                         : tab === 'theory'
                                         ? "e.g. How Recursion Call Stack works with visual SVG diagram..."
+                                        : tab === 'rag'
+                                        ? "e.g. Emphasize binary trees and include 3 coding challenges with test cases..."
                                         : "e.g. Function to find two numbers that sum up to target with test cases..."
                                 }
-                                className="w-full h-24 p-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition"
+                                className="w-full h-20 p-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition"
                             />
                         </div>
 
                         {/* Quick Presets Pills */}
-                        <div>
-                            <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1.5 block">
-                                Quick Example Prompts:
-                            </label>
-                            <div className="flex flex-wrap gap-1.5">
-                                {(
-                                    tab === 'outline' ? PRESETS.outline :
-                                    tab === 'theory' ? PRESETS.theory :
-                                    subExerciseType === 'mcq' ? PRESETS.exercise_mcq :
-                                    subExerciseType === 'fill_blank' ? PRESETS.exercise_cloze :
-                                    subExerciseType === 'case_study' ? PRESETS.exercise_case_study :
-                                    PRESETS.exercise_coding
-                                ).map((p, idx) => (
-                                    <button
-                                        key={idx}
-                                        type="button"
-                                        onClick={() => setPrompt(p)}
-                                        className="text-[11px] bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-left transition"
-                                    >
-                                        + {p}
-                                    </button>
-                                ))}
+                        {tab !== 'rag' && (
+                            <div>
+                                <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1.5 block">
+                                    Quick Example Prompts:
+                                </label>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {(
+                                        tab === 'outline' ? PRESETS.outline :
+                                        tab === 'theory' ? PRESETS.theory :
+                                        subExerciseType === 'mcq' ? PRESETS.exercise_mcq :
+                                        subExerciseType === 'fill_blank' ? PRESETS.exercise_cloze :
+                                        subExerciseType === 'case_study' ? PRESETS.exercise_case_study :
+                                        PRESETS.exercise_coding
+                                    ).map((p, idx) => (
+                                        <button
+                                            key={idx}
+                                            type="button"
+                                            onClick={() => setPrompt(p)}
+                                            className="text-[11px] bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-left transition"
+                                        >
+                                            + {p}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         {/* Config Controls */}
                         <div className="grid grid-cols-2 gap-3 pt-2">
@@ -347,7 +482,7 @@ export default function AiTrainingCopilot({
                             </div>
                         </div>
 
-                        {tab === 'outline' && (
+                        {(tab === 'outline' || tab === 'rag') && (
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-[10px] font-bold uppercase text-slate-500">Board</label>
@@ -408,18 +543,18 @@ export default function AiTrainingCopilot({
                         <div className="pt-3">
                             <button
                                 onClick={handleGenerate}
-                                disabled={loading || !prompt.trim()}
+                                disabled={loading || (tab === 'rag' ? (!documentText.trim() && !imageBase64) : !prompt.trim())}
                                 className="w-full btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-3 rounded-2xl shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50"
                             >
                                 {loading ? (
                                     <>
                                         <RefreshCw className="w-4 h-4 animate-spin" />
-                                        <span>Synthesizing Pedagogical Content...</span>
+                                        <span>{tab === 'rag' ? 'Extracting & Grounding with RAG...' : 'Synthesizing Content...'}</span>
                                     </>
                                 ) : (
                                     <>
                                         <Sparkles className="w-4 h-4" />
-                                        <span>Generate with AI</span>
+                                        <span>{tab === 'rag' ? 'Synthesize Grounded Module' : 'Generate with AI'}</span>
                                     </>
                                 )}
                             </button>
@@ -438,6 +573,11 @@ export default function AiTrainingCopilot({
                                         {result.titleHindi && (
                                             <p className="text-xs text-slate-500 font-medium">{result.titleHindi}</p>
                                         )}
+                                        {result.extractedSummary && (
+                                            <p className="text-[11px] text-purple-600 dark:text-purple-400 font-medium mt-0.5">
+                                                📚 {result.extractedSummary}
+                                            </p>
+                                        )}
                                     </div>
 
                                     <div className="flex items-center gap-2">
@@ -452,7 +592,7 @@ export default function AiTrainingCopilot({
                                 </div>
 
                                 {/* Preview based on Tab */}
-                                {tab === 'outline' && (
+                                {(tab === 'outline' || tab === 'rag') && (
                                     <div className="space-y-4">
                                         <p className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                                             {result.description}
@@ -482,6 +622,11 @@ export default function AiTrainingCopilot({
                                                                         {c}
                                                                     </span>
                                                                 ))}
+                                                            </div>
+                                                        )}
+                                                        {u.exercises && u.exercises.length > 0 && (
+                                                            <div className="mt-2 text-[10px] font-bold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
+                                                                <CheckCircle2 className="w-3 h-3" /> Includes {u.exercises.length} grounded exercises
                                                             </div>
                                                         )}
                                                     </div>
@@ -544,7 +689,8 @@ export default function AiTrainingCopilot({
                                             {result.description}
                                         </p>
 
-                                        {result.exerciseType === 'coding' || result.exerciseType === 'bug_fix' ? (
+                                        {/* Coding / Bug Fix */}
+                                        {(result.exerciseType === 'coding' || result.exerciseType === 'bug_fix') && (
                                             <div className="grid grid-cols-2 gap-3">
                                                 <div>
                                                     <span className="text-[10px] font-bold text-slate-500 uppercase">Starter Code</span>
@@ -559,7 +705,51 @@ export default function AiTrainingCopilot({
                                                     </pre>
                                                 </div>
                                             </div>
-                                        ) : result.exerciseType === 'mcq' ? (
+                                        )}
+
+                                        {/* Syntax Cloze / Fill in the Blanks */}
+                                        {result.exerciseType === 'fill_blank' && (
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider block mb-1">
+                                                        🧩 Cloze Code Template (with Blank Placeholders)
+                                                    </span>
+                                                    <pre className="bg-slate-950 text-amber-300 text-xs p-3 rounded-xl overflow-x-auto max-h-32 font-mono">
+                                                        {result.testCases?.template || result.starterCode}
+                                                    </pre>
+                                                </div>
+
+                                                {/* Blanks key */}
+                                                {result.testCases?.blanks && (
+                                                    <div>
+                                                        <span className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Answer Key & Hints:</span>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {result.testCases.blanks.map((b, bi) => (
+                                                                <div key={bi} className="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs flex items-center justify-between">
+                                                                    <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{b.id}</span>
+                                                                    <span className="font-mono bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded font-bold">{b.correctAnswer}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Full Solution Code */}
+                                                {result.solutionCode && (
+                                                    <div>
+                                                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block mb-1">
+                                                            ✅ Complete Solution (Working Executable Code)
+                                                        </span>
+                                                        <pre className="bg-slate-950 text-emerald-400 text-xs p-3 rounded-xl overflow-x-auto max-h-32 font-mono">
+                                                            {result.solutionCode}
+                                                        </pre>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* MCQ */}
+                                        {result.exerciseType === 'mcq' && (
                                             <div className="p-3.5 bg-slate-900 text-slate-100 rounded-xl space-y-2 text-xs">
                                                 <span className="font-bold text-amber-400">MCQ Code Snippet:</span>
                                                 <pre className="bg-black/50 p-2 rounded text-emerald-300 font-mono text-[11px]">
@@ -576,10 +766,14 @@ export default function AiTrainingCopilot({
                                                     ))}
                                                 </div>
                                             </div>
-                                        ) : (
-                                            <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
-                                                <pre className="whitespace-pre-wrap font-mono text-[11px] text-slate-700 dark:text-slate-300">
-                                                    {JSON.stringify(result.testCases, null, 2)}
+                                        )}
+
+                                        {/* Case Study */}
+                                        {result.exerciseType === 'case_study' && (
+                                            <div className="p-3.5 bg-slate-900 text-slate-100 rounded-xl space-y-2 text-xs">
+                                                <span className="font-bold text-purple-400">Incident Code:</span>
+                                                <pre className="bg-black/50 p-2 rounded text-purple-300 font-mono text-[11px]">
+                                                    {result.testCases?.scenarioCode}
                                                 </pre>
                                             </div>
                                         )}
@@ -591,9 +785,13 @@ export default function AiTrainingCopilot({
                                 <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center mb-3">
                                     <Sparkles className="w-8 h-8 text-indigo-500" />
                                 </div>
-                                <h4 className="font-bold text-slate-700 dark:text-slate-200">AI Assistant Ready</h4>
+                                <h4 className="font-bold text-slate-700 dark:text-slate-200">
+                                    {tab === 'rag' ? 'Upload Ebook / PDF to Extract Course' : 'AI Assistant Ready'}
+                                </h4>
                                 <p className="text-xs text-slate-500 max-w-sm mt-1">
-                                    Type your prompt or click a quick example on the left, then click <strong>Generate with AI</strong>.
+                                    {tab === 'rag'
+                                        ? 'Upload a chapter PDF, textbook photo, or paste syllabus notes to synthesize a complete course module with units and labs.'
+                                        : 'Select your topic and click Generate with AI.'}
                                 </p>
                             </div>
                         )}
@@ -610,7 +808,7 @@ export default function AiTrainingCopilot({
                                 >
                                     <Plus className="w-4 h-4" />
                                     <span>
-                                        {tab === 'outline' ? 'Apply Blueprint to Wizard' : tab === 'theory' ? 'Insert Theory & Graphics' : 'Insert Exercise into Module'}
+                                        {tab === 'outline' || tab === 'rag' ? 'Apply Full Blueprint & Units to Wizard' : tab === 'theory' ? 'Insert Theory & Graphics' : 'Insert Exercise into Module'}
                                     </span>
                                 </button>
                             </div>

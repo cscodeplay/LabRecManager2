@@ -273,13 +273,33 @@ export default function TrainingModuleWizard({
 
         if (aiOutline.units && Array.isArray(aiOutline.units) && aiOutline.units.length > 0) {
             setUnits(aiOutline.units.map((u, i) => ({
-                id: `ai_unit_${i + 1}_${Date.now()}`,
+                id: `ai_unit_${i + 1}_${Date.now()}_${Math.random()}`,
                 unitNumber: u.unitNumber || i + 1,
                 title: u.title,
                 description: u.description,
                 expectedHours: u.expectedHours || 4,
                 unlockThreshold: u.unlockThreshold || 80,
-                exercises: []
+                exercises: (u.exercises || []).map((ex, eIdx) => ({
+                    id: `ai_ex_${eIdx + 1}_${Date.now()}_${Math.random()}`,
+                    title: ex.title,
+                    description: ex.description,
+                    theory: ex.theory || '',
+                    exerciseType: ex.exerciseType || 'coding',
+                    difficulty: ex.difficulty || 'beginner',
+                    scaffoldLevel: ex.scaffoldLevel || 'guided',
+                    bloomsLevel: ex.bloomsLevel || 'apply',
+                    learningObjective: ex.learningObjective || '',
+                    xpReward: ex.xpReward || 15,
+                    timeLimit: ex.timeLimit || 5,
+                    isReviewExercise: ex.isReviewExercise || false,
+                    starterCode: ex.starterCode || (ex.testCases?.template ? ex.testCases.template : ''),
+                    solutionCode: ex.solutionCode || '',
+                    testCases: Array.isArray(ex.testCases) ? ex.testCases : [],
+                    hints: ex.hints || [],
+                    mcqData: ex.exerciseType === 'mcq' && typeof ex.testCases === 'object' ? ex.testCases : null,
+                    clozeData: ex.exerciseType === 'fill_blank' && typeof ex.testCases === 'object' ? ex.testCases : null,
+                    caseStudyData: ex.exerciseType === 'case_study' && typeof ex.testCases === 'object' ? ex.testCases : null
+                }))
             })));
             setSelectedUnitIdx(0);
         }
@@ -301,7 +321,7 @@ export default function TrainingModuleWizard({
             xpReward: aiEx.xpReward || 15,
             timeLimit: aiEx.timeLimit || 5,
             isReviewExercise: aiEx.isReviewExercise || false,
-            starterCode: aiEx.starterCode || '',
+            starterCode: aiEx.starterCode || (currentType === 'fill_blank' && aiEx.testCases?.template ? aiEx.testCases.template : ''),
             solutionCode: aiEx.solutionCode || '',
             testCases: Array.isArray(aiEx.testCases) ? aiEx.testCases : prev.testCases,
             hints: aiEx.hints || prev.hints,
@@ -1148,7 +1168,15 @@ export default function TrainingModuleWizard({
                     classLevel: moduleForm.classLevel,
                     board: moduleForm.boardAligned,
                     unitTitle: units[selectedUnitIdx]?.title,
-                    topic: moduleForm.title
+                    topic: currentStep === 1
+                        ? (moduleForm.title || moduleForm.description)
+                        : currentStep === 2
+                        ? (units[selectedUnitIdx]?.title || moduleForm.title)
+                        : (exerciseForm.title || units[selectedUnitIdx]?.title || moduleForm.title),
+                    exerciseType: exerciseForm.exerciseType,
+                    difficulty: exerciseForm.difficulty,
+                    scaffoldLevel: exerciseForm.scaffoldLevel,
+                    bloomsLevel: exerciseForm.bloomsLevel
                 }}
             />
         </div>

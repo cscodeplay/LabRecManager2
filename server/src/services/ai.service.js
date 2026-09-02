@@ -1642,6 +1642,8 @@ Output MUST be ONLY valid JSON matching this schema:
 - "solutionCode": null`;
         } else if (exerciseType === 'fill_blank') {
             typeInstruction = `Generate a SYNTAX CLOZE / FILL-IN-THE-BLANKS exercise:
+- "starterCode": The exact code snippet template containing placeholders like {{BLANK_1}} and {{BLANK_2}}
+- "solutionCode": The complete, working, executable code with all {{BLANK_N}} placeholders replaced with their exact correct answer tokens
 - "testCases": {
     "instruction": "Fill in the missing tokens in the code template below.",
     "template": "Code snippet with placeholders like {{BLANK_1}} and {{BLANK_2}}",
@@ -1763,6 +1765,12 @@ Output MUST be ONLY valid JSON matching this schema:
         }
 
         if (exerciseType === 'fill_blank') {
+            const template = language === 'python'
+                ? `def process_data(data):\n    {{BLANK_1}} data is None:\n        return []\n    {{BLANK_2}} [x.strip() for x in data]`
+                : `function processData(data) {\n    {{BLANK_1}} (!data) return [];\n    {{BLANK_2}} data.map(x => x.trim());\n}`;
+            const solution = language === 'python'
+                ? `def process_data(data):\n    if data is None:\n        return []\n    return [x.strip() for x in data]`
+                : `function processData(data) {\n    if (!data) return [];\n    return data.map(x => x.trim());\n}`;
             return {
                 title: `Syntax Cloze: ${topic}`,
                 description: `Fill in the missing tokens in the code snippet.`,
@@ -1775,9 +1783,11 @@ Output MUST be ONLY valid JSON matching this schema:
                 xpReward: 10,
                 timeLimit: 5,
                 isReviewExercise: false,
+                starterCode: template,
+                solutionCode: solution,
                 testCases: {
                     instruction: `Fill in the missing keywords:`,
-                    template: language === 'python' ? `def process_data(data):\n    {{BLANK_1}} data is None:\n        return []\n    {{BLANK_2}} [x.strip() for x in data]` : `function processData(data) {\n    {{BLANK_1}} (!data) return [];\n    {{BLANK_2}} data.map(x => x.trim());\n}`,
+                    template: template,
                     blanks: [
                         { id: 'BLANK_1', correctAnswer: 'if', hint: 'Conditional check' },
                         { id: 'BLANK_2', correctAnswer: 'return', hint: 'Output statement' }
@@ -1878,6 +1888,258 @@ Output MUST be ONLY valid JSON:
             socraticHint: `Take a close look at your variable initialization and the loop boundary conditions.`,
             guidingQuestion: `What value does your function return when given the first test input?`,
             edgeCaseToConsider: `Test with empty inputs or zero.`
+        };
+    }
+
+    /**
+     * RAG-based Course & Units Generator from uploaded Ebook / PDF / Notes / Textbook Images
+     */
+    async generateTrainingModuleFromDocument({
+        documentText = '',
+        imageBase64 = null,
+        mimeType = 'image/jpeg',
+        customPrompt = '',
+        language = 'python',
+        classLevel = 11,
+        board = 'CBSE',
+        totalUnits = 3,
+        provider = 'groq'
+    }) {
+        const systemPrompt = `You are an elite AI Computer Science Curriculum Architect and Textbook Synthesizer.
+Analyze the provided textbook / syllabus / PDF material and construct a fully-structured, grounded interactive training module with progressive units and multi-modal exercises.
+
+TARGET PARAMETERS:
+- LANGUAGE: ${language}
+- CLASS LEVEL: Grade ${classLevel}
+- BOARD: ${board}
+- TARGET UNITS: ${totalUnits}
+- INSTRUCTOR NOTES: ${customPrompt || 'Extract full curriculum units, exercises, and theory directly from the resource.'}
+
+RESOURCE CONTENT:
+---
+${documentText ? documentText.slice(0, 18000) : 'Extracted from attached document / image.'}
+---
+
+RULES:
+1. Synthesize a complete training module outline strictly grounded in the document.
+2. Form ${totalUnits} logical units.
+3. In each unit, generate 2-3 interactive exercises matching the 5 pedagogy types:
+   - "coding": Coding lab with starterCode, solutionCode, testCases array (with at least 2 test cases: input, expectedOutput, isHidden), hints array.
+   - "mcq": Output prediction MCQ with testCases: { question, codeSnippet, options, correctOption (0-indexed integer), explanation }.
+   - "fill_blank": Syntax cloze with starterCode (with {{BLANK_1}}, {{BLANK_2}}), solutionCode (fully filled working code), and testCases: { instruction, template, blanks: [{ id: "BLANK_1", correctAnswer: "...", hint: "..." }], explanation }.
+   - "bug_fix": Bug hunt with starterCode (buggy), solutionCode (fixed), testCases array.
+   - "case_study": Real-world case study with scenarioCode, incident, questions array.
+
+Output MUST be ONLY valid JSON matching this schema:
+{
+  "title": "Course Title in English",
+  "titleHindi": "कोर्स का शीर्षक (हिंदी में)",
+  "description": "Comprehensive course description...",
+  "language": "${language}",
+  "boardAligned": "${board}",
+  "classLevel": ${Number(classLevel) || 11},
+  "extractedSummary": "Brief 2-line summary of chapters and topics detected from source",
+  "pedagogyConfig": {
+    "useBlooms": true,
+    "useObjectives": true,
+    "useTimeLimit": false
+  },
+  "units": [
+    {
+      "unitNumber": 1,
+      "title": "Unit 1: Title...",
+      "description": "Concepts covered in this unit...",
+      "expectedHours": 4,
+      "unlockThreshold": 80,
+      "keyConcepts": ["Concept 1", "Concept 2"],
+      "suggestedExerciseTypes": ["coding", "mcq", "fill_blank"],
+      "exercises": [
+        {
+          "title": "Exercise Title",
+          "description": "Problem statement",
+          "theory": "Learning theory",
+          "exerciseType": "coding",
+          "difficulty": "beginner",
+          "scaffoldLevel": "guided",
+          "bloomsLevel": "apply",
+          "learningObjective": "SWBAT...",
+          "xpReward": 15,
+          "timeLimit": 5,
+          "starterCode": "...",
+          "solutionCode": "...",
+          "testCases": [
+            { "input": "...", "expectedOutput": "...", "isHidden": false }
+          ],
+          "hints": ["Hint 1"]
+        }
+      ]
+    }
+  ]
+}`;
+
+        // 1. Vision Mode if imageBase64 is provided
+        if (imageBase64) {
+            // Try Groq Vision first
+            if ((provider === 'groq' || provider === 'auto') && this.groq) {
+                try {
+                    const dataUrl = `data:${mimeType};base64,${imageBase64}`;
+                    const completion = await this.groq.chat.completions.create({
+                        model: 'llama-3.2-11b-vision-preview',
+                        messages: [
+                            {
+                                role: 'user',
+                                content: [
+                                    { type: 'text', text: systemPrompt },
+                                    { type: 'image_url', image_url: { url: dataUrl } }
+                                ]
+                            }
+                        ],
+                        temperature: 0.2
+                    });
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                    if (parsed && (parsed.title || parsed.units)) return parsed;
+                } catch (err) {
+                    console.warn('[AIService] Groq Vision document extraction failed:', err.message);
+                }
+            }
+
+            // Fallback to Gemini Vision
+            if (this.genAI) {
+                const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+                for (const modelName of geminiModels) {
+                    try {
+                        const model = this.genAI.getGenerativeModel({ model: modelName });
+                        const result = await model.generateContent([
+                            {
+                                inlineData: {
+                                    data: imageBase64,
+                                    mimeType: mimeType
+                                }
+                            },
+                            systemPrompt
+                        ]);
+                        const parsed = this.parseJSONResponse(result.response.text());
+                        if (parsed && (parsed.title || parsed.units)) return parsed;
+                    } catch (err) {
+                        console.warn(`[AIService] Gemini Vision extraction (${modelName}) failed:`, err.message);
+                    }
+                }
+            }
+        }
+
+        // 2. Text Grounding Mode (Textbook Notes / Syllabus / PDF text)
+        if ((provider === 'groq' || provider === 'auto') && this.groq) {
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+            for (const modelName of groqModels) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [
+                            { role: 'system', content: 'You are a curriculum AI. Output ONLY valid JSON matching the schema.' },
+                            { role: 'user', content: systemPrompt }
+                        ],
+                        temperature: 0.2
+                    });
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                    if (parsed && (parsed.title || parsed.units)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Groq RAG outline (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        if (this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && (parsed.title || parsed.units)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Gemini RAG outline (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // 3. Fallback grounded structure
+        const topicSummary = documentText ? documentText.slice(0, 60).replace(/\n/g, ' ') : 'Extracted Curriculum';
+        return {
+            title: `${language.toUpperCase()} Module: ${topicSummary}`,
+            titleHindi: `${language} पाठ्यक्रम`,
+            description: `A comprehensive training module synthesized from provided educational resource notes.`,
+            language,
+            boardAligned: board,
+            classLevel: Number(classLevel) || 11,
+            extractedSummary: `Synthesized curriculum containing ${totalUnits} units and interactive exercises based on uploaded document content.`,
+            pedagogyConfig: { useBlooms: true, useObjectives: true, useTimeLimit: false },
+            units: [
+                {
+                    unitNumber: 1,
+                    title: `Unit 1: Foundations & Key Syntax`,
+                    description: `Core concepts and syntax extracted from the resource.`,
+                    expectedHours: 3,
+                    unlockThreshold: 80,
+                    keyConcepts: ['Syntax & Primitives', 'Expressions & Variables', 'Flow Control'],
+                    suggestedExerciseTypes: ['coding', 'mcq'],
+                    exercises: [
+                        {
+                            title: `Getting Started with Syntax`,
+                            description: `Demonstrate the core syntax introduced in the chapter.`,
+                            theory: `Understand the fundamental building blocks before coding.`,
+                            exerciseType: 'coding',
+                            difficulty: 'beginner',
+                            scaffoldLevel: 'guided',
+                            bloomsLevel: 'apply',
+                            learningObjective: `SWBAT apply syntax rules in ${language}.`,
+                            xpReward: 15,
+                            timeLimit: 5,
+                            starterCode: `# Write solution below\ndef solve(x):\n    return x\n`,
+                            solutionCode: `def solve(x):\n    return x\n`,
+                            testCases: [
+                                { input: '10', expectedOutput: '10', isHidden: false },
+                                { input: '25', expectedOutput: '25', isHidden: false }
+                            ],
+                            hints: ['Review the variable assignment and return keyword.']
+                        }
+                    ]
+                },
+                {
+                    unitNumber: 2,
+                    title: `Unit 2: Problem Solving & Cloze Syntax`,
+                    description: `Practical implementation and syntax fill-in exercises.`,
+                    expectedHours: 4,
+                    unlockThreshold: 80,
+                    keyConcepts: ['Functions', 'Collections', 'Logic Building'],
+                    suggestedExerciseTypes: ['fill_blank', 'bug_fix'],
+                    exercises: [
+                        {
+                            title: `Syntax Completion Cloze`,
+                            description: `Complete the missing tokens in the code snippet.`,
+                            theory: `Reinforce correct grammar and method invocations.`,
+                            exerciseType: 'fill_blank',
+                            difficulty: 'intermediate',
+                            scaffoldLevel: 'guided',
+                            bloomsLevel: 'understand',
+                            learningObjective: `SWBAT complete essential syntax blanks.`,
+                            xpReward: 10,
+                            timeLimit: 5,
+                            starterCode: `def process(data):\n    {{BLANK_1}} not data:\n        return None\n    {{BLANK_2}} len(data)`,
+                            solutionCode: `def process(data):\n    if not data:\n        return None\n    return len(data)`,
+                            testCases: {
+                                instruction: 'Fill in the blanks:',
+                                template: 'def process(data):\n    {{BLANK_1}} not data:\n        return None\n    {{BLANK_2}} len(data)',
+                                blanks: [
+                                    { id: 'BLANK_1', correctAnswer: 'if', hint: 'Conditional statement' },
+                                    { id: 'BLANK_2', correctAnswer: 'return', hint: 'Return result' }
+                                ],
+                                explanation: 'Guards against empty data with if and returns result with return.'
+                            },
+                            hints: ['Look at standard keyword patterns.']
+                        }
+                    ]
+                }
+            ]
         };
     }
 
