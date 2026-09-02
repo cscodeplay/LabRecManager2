@@ -1020,6 +1020,15 @@ router.get('/modules/:id/progress', authenticate, authorize('admin', 'principal'
         }
     });
 
+    res.json({
+        success: true,
+        data: {
+            progress,
+            unitMasteries
+        }
+    });
+}));
+
 // ==========================================
 // AI LMS GENERATOR COPILOT ENDPOINT
 // ==========================================
