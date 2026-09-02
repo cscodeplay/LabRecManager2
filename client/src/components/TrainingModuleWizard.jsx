@@ -121,8 +121,6 @@ export default function TrainingModuleWizard({
     const [deadline, setDeadline] = useState('');
     const [specialNotes, setSpecialNotes] = useState('');
 
-    if (!isOpen) return null;
-
     // Pedagogy Score Calculation
     const pedagogyStats = useMemo(() => {
         let score = 0;
@@ -403,6 +401,8 @@ export default function TrainingModuleWizard({
             setIsSubmitting(false);
         }
     };
+
+    if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
