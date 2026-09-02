@@ -1397,7 +1397,7 @@ export default function ExerciseEditorPage() {
                                             {socraticAdvice.questionsToAskYourself.map((q, qi) => (
                                                 <div key={qi} className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700 text-slate-200 flex items-start gap-2">
                                                     <span className="text-indigo-400 font-bold">•</span>
-                                                    <span>{q}</span>
+                                                    <span>{typeof q === 'object' ? (q.prompt || q.question || JSON.stringify(q)) : String(q)}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -1413,7 +1413,7 @@ export default function ExerciseEditorPage() {
                                             {socraticAdvice.edgeCasesToConsider.map((e, ei) => (
                                                 <div key={ei} className="p-2.5 bg-amber-950/30 rounded-xl border border-amber-500/20 text-amber-200 flex items-start gap-2">
                                                     <span className="text-amber-400 font-bold">⚠️</span>
-                                                    <span>{e}</span>
+                                                    <span>{typeof e === 'object' ? (e.description || (e.input ? `Input: ${e.input}` : JSON.stringify(e))) : String(e)}</span>
                                                 </div>
                                             ))}
                                         </div>

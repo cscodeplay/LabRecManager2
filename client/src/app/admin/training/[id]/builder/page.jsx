@@ -717,8 +717,8 @@ export default function PedagogyBuilderPage() {
                         <div className="space-y-2">
                             {designTips.map((tip, i) => (
                                 <div key={i} className="p-2.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 text-xs text-indigo-900 dark:text-indigo-200 flex items-start gap-2">
-                                    <Sparkles className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
-                                    <span>{tip}</span>
+                                    <span className="shrink-0 text-sm mt-0.5">{typeof tip === 'object' && tip.icon ? tip.icon : '✨'}</span>
+                                    <span className="leading-relaxed">{typeof tip === 'object' && tip.text ? tip.text : String(tip)}</span>
                                 </div>
                             ))}
                         </div>
