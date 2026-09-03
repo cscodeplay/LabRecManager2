@@ -73,6 +73,8 @@ export default function ExerciseEditorPage() {
     const [selectedMcqOption, setSelectedMcqOption] = useState(null);
     const [blankAnswers, setBlankAnswers] = useState([]);
     const [scenarioAnswers, setScenarioAnswers] = useState({});
+    const [traceRows, setTraceRows] = useState([]);
+    const [flaggedLine, setFlaggedLine] = useState(null);
     const [submittedData, setSubmittedData] = useState(null);
 
     const exerciseType = exercise?.exerciseType || 'coding';
@@ -355,7 +357,9 @@ export default function ExerciseEditorPage() {
                 code,
                 selectedOption: selectedMcqOption,
                 blankAnswers,
-                scenarioAnswers
+                scenarioAnswers,
+                traceRows,
+                flaggedLine
             };
 
             const res = await trainingAPI.submitCode(exerciseId, payload);
@@ -415,6 +419,12 @@ export default function ExerciseEditorPage() {
                 return <span className="text-xs bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><BookOpen className="w-3 h-3"/> MNC Case Study</span>;
             case 'bug_fix':
                 return <span className="text-xs bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> PR Bug Hunt</span>;
+            case 'assertion_reason':
+                return <span className="text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><Compass className="w-3 h-3"/> Assertion-Reason</span>;
+            case 'code_trace':
+                return <span className="text-xs bg-teal-500/20 text-teal-300 border border-teal-500/30 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><ListOrdered className="w-3 h-3"/> Dry-Run Trace</span>;
+            case 'code_debug':
+                return <span className="text-xs bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> CBSE Error Debug</span>;
             default:
                 return <span className="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded font-semibold flex items-center gap-1"><Code2 className="w-3 h-3"/> Coding Lab</span>;
         }
@@ -492,6 +502,18 @@ export default function ExerciseEditorPage() {
                         <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
                         <span className="hidden sm:inline">Ask AI Tutor</span>
                     </button>
+
+                    {/* Unit Theory Reader */}
+                    {exercise?.unitId && (
+                        <button
+                            onClick={() => router.push(`/training/${moduleId}/unit/${exercise.unitId}/theory`)}
+                            className="btn bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 hover:text-white py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5 rounded-xl transition"
+                            title="Read Pre-Lab Theory & Concept Notes"
+                        >
+                            <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+                            <span className="hidden sm:inline">Unit Theory</span>
+                        </button>
+                    )}
 
                     {/* Reset Code */}
                     {(exerciseType === 'coding' || exerciseType === 'bug_fix') && (
@@ -1027,7 +1049,337 @@ export default function ExerciseEditorPage() {
             )}
 
             {/* ========================================================================= */}
-            {/* 4. CODING & PR BUG-FIX MODE RENDERER                                      */}
+            {/* 4. CBSE ASSERTION-REASONING MODE RENDERER                                */}
+            {/* ========================================================================= */}
+            {exerciseType === 'assertion_reason' && (
+                <div className="flex-1 flex overflow-hidden">
+                    {/* Left Column: Context & Guidelines */}
+                    <div className="w-5/12 bg-slate-800/95 border-r border-slate-700 p-6 overflow-y-auto space-y-4">
+                        <div className="text-slate-200">
+                            <h2 className="text-sm font-bold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                <Compass className="w-4 h-4" /> CBSE Assertion & Reason
+                            </h2>
+                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
+                                {exercise.description}
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-indigo-950/40 border border-indigo-500/20 rounded-2xl space-y-2 text-xs text-indigo-200">
+                            <span className="font-bold flex items-center gap-1.5 text-indigo-300">
+                                <Lightbulb className="w-4 h-4 text-amber-400" /> CBSE Strategy Tip:
+                            </span>
+                            <p>1. Check if Assertion (A) is a true statement on its own.</p>
+                            <p>2. Check if Reason (R) is a true statement on its own.</p>
+                            <p>3. If both are true, evaluate: does Reason (R) correctly explain WHY Assertion (A) occurs?</p>
+                        </div>
+
+                        {submittedData?.results?.[0]?.explanation && (
+                            <div className="p-4 bg-slate-900 border border-slate-700 rounded-2xl space-y-2">
+                                <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                                    <Sparkles className="w-3.5 h-3.5" /> Conceptual Explanation:
+                                </span>
+                                <p className="text-xs text-slate-300 leading-relaxed">
+                                    {submittedData.results[0].explanation}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Right Column: Assertion Card, Reason Card, 4 CBSE Options */}
+                    <div className="flex-1 bg-slate-900 p-6 overflow-y-auto space-y-5">
+                        {/* Assertion Statement Card */}
+                        <div className="p-5 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px]">A</span>
+                                Assertion Statement:
+                            </span>
+                            <p className="text-sm font-semibold text-white leading-relaxed">
+                                {exercise.testCases?.assertion || exercise.description}
+                            </p>
+                        </div>
+
+                        {/* Reason Statement Card */}
+                        <div className="p-5 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+                                <span className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center text-[10px]">R</span>
+                                Reason Statement:
+                            </span>
+                            <p className="text-sm font-semibold text-white leading-relaxed">
+                                {exercise.testCases?.reason || 'Evaluate based on foundational language semantics and execution rules.'}
+                            </p>
+                        </div>
+
+                        {/* 4 Standard CBSE Options */}
+                        <div className="space-y-2.5 pt-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                                Select the Correct Assessment:
+                            </span>
+                            {[
+                                { id: 0, label: '(A) Both Assertion (A) and Reason (R) are true, and Reason (R) is the correct explanation of Assertion (A).' },
+                                { id: 1, label: '(B) Both Assertion (A) and Reason (R) are true, but Reason (R) is NOT the correct explanation of Assertion (A).' },
+                                { id: 2, label: '(C) Assertion (A) is true, but Reason (R) is false.' },
+                                { id: 3, label: '(D) Assertion (A) is false, but Reason (R) is true.' }
+                            ].map((opt) => {
+                                const isSelected = selectedMcqOption === opt.id;
+                                const result = submittedData?.results?.[0];
+                                const isTargetCorrect = result?.correctOption === opt.id;
+                                let style = 'bg-slate-800/60 border-slate-700 hover:border-indigo-500 text-slate-300';
+
+                                if (result) {
+                                    if (isTargetCorrect) {
+                                        style = 'bg-emerald-950/60 border-emerald-500 text-emerald-200 font-semibold';
+                                    } else if (isSelected && !result.passed) {
+                                        style = 'bg-rose-950/60 border-rose-500 text-rose-200';
+                                    }
+                                } else if (isSelected) {
+                                    style = 'bg-indigo-950/70 border-indigo-500 text-indigo-200 font-semibold shadow-sm';
+                                }
+
+                                return (
+                                    <button
+                                        key={opt.id}
+                                        disabled={isSubmitting}
+                                        onClick={() => setSelectedMcqOption(opt.id)}
+                                        className={`w-full p-4 rounded-2xl border text-left text-xs transition flex items-start gap-3 ${style}`}
+                                    >
+                                        <div className={`w-4 h-4 rounded-full border mt-0.5 shrink-0 flex items-center justify-center ${
+                                            isSelected ? 'border-indigo-400 bg-indigo-600 text-white' : 'border-slate-600'
+                                        }`}>
+                                            {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                        </div>
+                                        <span className="leading-relaxed">{opt.label}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div className="pt-3">
+                            <button
+                                onClick={handleSubmit}
+                                disabled={isSubmitting || selectedMcqOption === null}
+                                className="btn bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 px-6 rounded-xl font-bold text-xs transition disabled:opacity-50"
+                            >
+                                {isSubmitting ? 'Evaluating Assessment...' : 'Submit Assertion-Reason Answer'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* 5. CBSE DRY-RUN VARIABLE TRACING MODE RENDERER                           */}
+            {/* ========================================================================= */}
+            {exerciseType === 'code_trace' && (
+                <div className="flex-1 flex overflow-hidden">
+                    {/* Left Column: Problem, Target Code Snippet to Trace */}
+                    <div className="w-5/12 bg-slate-800/95 border-r border-slate-700 p-6 overflow-y-auto space-y-4">
+                        <div className="text-slate-200">
+                            <h2 className="text-sm font-bold text-teal-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                <ListOrdered className="w-4 h-4" /> CBSE Dry-Run Trace Table
+                            </h2>
+                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
+                                {exercise.description}
+                            </div>
+                        </div>
+
+                        {exercise.testCases?.codeSnippet && (
+                            <div className="space-y-1.5">
+                                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Trace Target Code:</span>
+                                <div className="bg-slate-950 border border-slate-700 rounded-xl p-4 font-mono text-xs text-teal-300 overflow-x-auto">
+                                    <pre className="whitespace-pre-wrap">{exercise.testCases.codeSnippet}</pre>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="p-4 bg-teal-950/30 border border-teal-500/20 rounded-2xl text-xs text-teal-200 space-y-1.5">
+                            <span className="font-bold flex items-center gap-1 text-teal-300">
+                                <Lightbulb className="w-3.5 h-3.5" /> Instructions:
+                            </span>
+                            <p>Fill in the values of each variable at every loop step/iteration in the table on the right.</p>
+                        </div>
+
+                        {submittedData?.results && (
+                            <div className="p-4 bg-slate-900 border border-slate-700 rounded-2xl space-y-2">
+                                <span className="text-xs font-bold text-teal-400">Execution Analysis:</span>
+                                <p className="text-xs text-slate-300">
+                                    {submittedData.status === 'passed' 
+                                        ? 'All rows correctly traced! You have mastered dry-run output prediction.' 
+                                        : 'Review the highlighted rows where variable states deviated from expected output.'}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Right Column: Trace Table Input */}
+                    <div className="flex-1 bg-slate-900 p-6 overflow-y-auto space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                <ListOrdered className="w-4 h-4 text-teal-400" />
+                                Dry-Run Variable State Table
+                            </h3>
+                            <span className="text-xs text-slate-400">Step-by-step Execution</span>
+                        </div>
+
+                        {/* Trace Table */}
+                        <div className="border border-slate-700 rounded-2xl overflow-hidden shadow-sm">
+                            <table className="w-full text-left text-xs text-slate-200">
+                                <thead className="bg-slate-800 text-slate-400 uppercase font-semibold text-[11px] border-b border-slate-700">
+                                    <tr>
+                                        {(exercise.testCases?.tableHeaders || ['Step', 'Variable 1', 'Variable 2']).map((th, hIdx) => (
+                                            <th key={hIdx} className="p-3 font-bold text-teal-300">
+                                                {th}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800 bg-slate-900/60 font-mono">
+                                    {(traceRows.length > 0 ? traceRows : [new Array(exercise.testCases?.tableHeaders?.length || 2).fill('')]).map((row, rIdx) => {
+                                        const rowResult = submittedData?.results?.[rIdx];
+                                        return (
+                                            <tr key={rIdx} className={rowResult ? (rowResult.isCorrect ? 'bg-emerald-950/20' : 'bg-rose-950/20') : ''}>
+                                                {row.map((cell, cIdx) => (
+                                                    <td key={cIdx} className="p-2">
+                                                        <input
+                                                            type="text"
+                                                            value={cell || ''}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                setTraceRows(prev => {
+                                                                    const base = prev.length > 0 ? prev : [new Array(exercise.testCases?.tableHeaders?.length || 2).fill('')];
+                                                                    const updated = [...base];
+                                                                    updated[rIdx] = [...(updated[rIdx] || [])];
+                                                                    updated[rIdx][cIdx] = val;
+                                                                    return updated;
+                                                                });
+                                                            }}
+                                                            placeholder={`Val ${cIdx + 1}`}
+                                                            className="w-full bg-slate-950 border border-slate-700 focus:border-teal-500 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                                                        />
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="flex items-center gap-3 pt-2">
+                            <button
+                                onClick={() => {
+                                    const colCount = exercise.testCases?.tableHeaders?.length || 2;
+                                    setTraceRows(prev => [...prev, new Array(colCount).fill('')]);
+                                }}
+                                className="btn btn-secondary text-xs py-1.5 px-3 rounded-xl flex items-center gap-1 font-semibold"
+                            >
+                                <Plus className="w-3.5 h-3.5" /> Add Step Row
+                            </button>
+                            <button
+                                onClick={handleSubmit}
+                                disabled={isSubmitting}
+                                className="btn bg-teal-600 hover:bg-teal-500 text-white py-2 px-6 rounded-xl font-bold text-xs transition disabled:opacity-50"
+                            >
+                                {isSubmitting ? 'Evaluating Trace Table...' : 'Submit Dry-Run Trace'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* 6. CBSE CODE DEBUGGING & ERROR SPOTTING MODE RENDERER                    */}
+            {/* ========================================================================= */}
+            {exerciseType === 'code_debug' && (
+                <div className="flex-1 flex overflow-hidden">
+                    {/* Left Column: Problem, Bug Spotting Instructions */}
+                    <div className="w-5/12 bg-slate-800/95 border-r border-slate-700 p-6 overflow-y-auto space-y-4">
+                        <div className="text-slate-200">
+                            <h2 className="text-sm font-bold text-rose-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                <AlertTriangle className="w-4 h-4" /> CBSE Error Spotting & Debugging
+                            </h2>
+                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
+                                {exercise.description}
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-rose-950/30 border border-rose-500/20 rounded-2xl text-xs text-rose-200 space-y-2">
+                            <span className="font-bold flex items-center gap-1.5 text-rose-300">
+                                <Lightbulb className="w-4 h-4 text-amber-400" /> Instructions:
+                            </span>
+                            <p>1. Spot the line with the syntax or logical bug on the right.</p>
+                            <p>2. Select the flagged line number or rewrite the corrected program.</p>
+                            <p>3. Run your corrected code to test it, then click Submit.</p>
+                        </div>
+
+                        {submittedData?.results?.[0]?.explanation && (
+                            <div className="p-4 bg-slate-900 border border-slate-700 rounded-2xl space-y-2">
+                                <span className="text-xs font-bold text-emerald-400">CBSE Solution Note:</span>
+                                <p className="text-xs text-slate-300 leading-relaxed">
+                                    {submittedData.results[0].explanation}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Right Column: Code Editor & Error Line Selector */}
+                    <div className="flex-1 bg-slate-900 flex flex-col overflow-hidden">
+                        {/* Top Toolbar */}
+                        <div className="h-12 bg-slate-800 border-b border-slate-700 px-4 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs font-bold text-slate-300">Flag Error Line:</span>
+                                <select
+                                    value={flaggedLine || ''}
+                                    onChange={(e) => setFlaggedLine(Number(e.target.value))}
+                                    className="bg-slate-950 border border-slate-700 text-xs rounded-lg px-2.5 py-1 text-rose-300 font-bold focus:border-rose-500"
+                                >
+                                    <option value="">Select Line #</option>
+                                    {Array.from({ length: (code || '').split('\n').length }, (_, i) => (
+                                        <option key={i + 1} value={i + 1}>Line {i + 1}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleRun}
+                                    disabled={isRunning}
+                                    className="btn bg-slate-700 hover:bg-slate-600 text-white text-xs py-1.5 px-3 rounded-lg font-bold flex items-center gap-1"
+                                >
+                                    <Play className="w-3.5 h-3.5 text-emerald-400" /> Run Fix
+                                </button>
+                                <button
+                                    onClick={handleSubmit}
+                                    disabled={isSubmitting}
+                                    className="btn bg-rose-600 hover:bg-rose-500 text-white text-xs py-1.5 px-4 rounded-lg font-bold flex items-center gap-1"
+                                >
+                                    {isSubmitting ? 'Evaluating Debug Fix...' : 'Submit Debug Fix'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Monaco Editor with Buggy / Editable Code */}
+                        <div className="flex-1 overflow-hidden">
+                            <Editor
+                                height="100%"
+                                language={moduleData?.language?.toLowerCase() || 'python'}
+                                theme="vs-dark"
+                                value={code}
+                                onChange={(val) => setCode(val || '')}
+                                options={{
+                                    minimap: { enabled: false },
+                                    fontSize: 13,
+                                    lineNumbers: 'on',
+                                    scrollBeyondLastLine: false,
+                                    automaticLayout: true
+                                }}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* 7. CODING & PR BUG-FIX MODE RENDERER                                      */}
             {/* ========================================================================= */}
             {(exerciseType === 'coding' || exerciseType === 'bug_fix') && (
                 <div className="flex-1 flex overflow-hidden">

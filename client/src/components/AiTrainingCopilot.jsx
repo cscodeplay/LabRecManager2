@@ -573,34 +573,53 @@ export default function AiTrainingCopilot({
                         )}
 
                         {tab === 'exercise' && (
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="space-y-2.5">
                                 <div>
-                                    <label className="text-[10px] font-bold uppercase text-slate-500">Difficulty</label>
-                                    <select value={difficulty} onChange={e => setDifficulty(e.target.value)} className="input w-full text-xs py-1.5 mt-1">
-                                        <option value="beginner">Beginner</option>
-                                        <option value="intermediate">Intermediate</option>
-                                        <option value="advanced">Advanced</option>
+                                    <label className="text-[10px] font-bold uppercase text-slate-500">Target Question Type</label>
+                                    <select
+                                        value={subExerciseType}
+                                        onChange={e => setSubExerciseType(e.target.value)}
+                                        className="input w-full text-xs py-1.5 mt-1 font-semibold text-indigo-600 dark:text-indigo-400"
+                                    >
+                                        <option value="coding">⚡ Coding Lab</option>
+                                        <option value="bug_fix">🐞 PR Bug Hunt</option>
+                                        <option value="mcq">📝 Output MCQ</option>
+                                        <option value="fill_blank">🧩 Syntax Cloze</option>
+                                        <option value="case_study">🏢 MNC Case Study</option>
+                                        <option value="assertion_reason">⚖️ CBSE Assertion-Reasoning</option>
+                                        <option value="code_trace">🔍 CBSE Dry-Run Trace Table</option>
+                                        <option value="code_debug">🐞 CBSE Error Spotting & Debug</option>
                                     </select>
                                 </div>
-                                <div>
-                                    <label className="text-[10px] font-bold uppercase text-slate-500">Scaffold</label>
-                                    <select value={scaffoldLevel} onChange={e => setScaffoldLevel(e.target.value)} className="input w-full text-xs py-1.5 mt-1">
-                                        <option value="guided">Guided</option>
-                                        <option value="semi_guided">Semi-Guided</option>
-                                        <option value="independent">Independent</option>
-                                        <option value="project">Project</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold uppercase text-slate-500">Bloom's</label>
-                                    <select value={bloomsLevel} onChange={e => setBloomsLevel(e.target.value)} className="input w-full text-xs py-1.5 mt-1">
-                                        <option value="remember">Remember</option>
-                                        <option value="understand">Understand</option>
-                                        <option value="apply">Apply</option>
-                                        <option value="analyze">Analyze</option>
-                                        <option value="evaluate">Evaluate</option>
-                                        <option value="create">Create</option>
-                                    </select>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div>
+                                        <label className="text-[10px] font-bold uppercase text-slate-500">Difficulty</label>
+                                        <select value={difficulty} onChange={e => setDifficulty(e.target.value)} className="input w-full text-xs py-1.5 mt-1">
+                                            <option value="beginner">Beginner</option>
+                                            <option value="intermediate">Intermediate</option>
+                                            <option value="advanced">Advanced</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold uppercase text-slate-500">Scaffold</label>
+                                        <select value={scaffoldLevel} onChange={e => setScaffoldLevel(e.target.value)} className="input w-full text-xs py-1.5 mt-1">
+                                            <option value="guided">Guided</option>
+                                            <option value="semi_guided">Semi-Guided</option>
+                                            <option value="independent">Independent</option>
+                                            <option value="project">Project</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold uppercase text-slate-500">Bloom's</label>
+                                        <select value={bloomsLevel} onChange={e => setBloomsLevel(e.target.value)} className="input w-full text-xs py-1.5 mt-1">
+                                            <option value="remember">Remember</option>
+                                            <option value="understand">Understand</option>
+                                            <option value="apply">Apply</option>
+                                            <option value="analyze">Analyze</option>
+                                            <option value="evaluate">Evaluate</option>
+                                            <option value="create">Create</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -840,6 +859,53 @@ export default function AiTrainingCopilot({
                                                 <span className="font-bold text-purple-400">Incident Code:</span>
                                                 <pre className="bg-black/50 p-2 rounded text-purple-300 font-mono text-[11px]">
                                                     {result.testCases?.scenarioCode}
+                                                </pre>
+                                            </div>
+                                        )}
+
+                                        {/* Assertion Reason Preview */}
+                                        {result.exerciseType === 'assertion_reason' && (
+                                            <div className="p-3.5 bg-indigo-950/40 border border-indigo-500/20 text-indigo-100 rounded-xl space-y-2 text-xs">
+                                                <div className="space-y-1">
+                                                    <span className="font-bold text-indigo-400">Assertion (A):</span>
+                                                    <p className="text-slate-200">{result.testCases?.assertion}</p>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <span className="font-bold text-purple-400">Reason (R):</span>
+                                                    <p className="text-slate-200">{result.testCases?.reason}</p>
+                                                </div>
+                                                <div className="text-[11px] text-emerald-400 font-semibold pt-1">
+                                                    Correct Option: Option {String.fromCharCode(65 + (result.testCases?.correctOption || 0))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Dry Run Trace Preview */}
+                                        {result.exerciseType === 'code_trace' && (
+                                            <div className="p-3.5 bg-teal-950/40 border border-teal-500/20 text-teal-100 rounded-xl space-y-2 text-xs">
+                                                <span className="font-bold text-teal-400">Trace Code:</span>
+                                                <pre className="bg-black/50 p-2 rounded text-teal-300 font-mono text-[11px] overflow-x-auto">
+                                                    {result.testCases?.codeSnippet}
+                                                </pre>
+                                                <span className="font-bold text-teal-400 block pt-1">Table Columns:</span>
+                                                <div className="flex gap-2">
+                                                    {(result.testCases?.tableHeaders || []).map((h, i) => (
+                                                        <span key={i} className="px-2 py-0.5 rounded bg-teal-900/50 text-[10px] font-mono">{h}</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Code Debug Preview */}
+                                        {result.exerciseType === 'code_debug' && (
+                                            <div className="p-3.5 bg-rose-950/40 border border-rose-500/20 text-rose-100 rounded-xl space-y-2 text-xs">
+                                                <span className="font-bold text-rose-400">Buggy Target Code:</span>
+                                                <pre className="bg-black/50 p-2 rounded text-rose-300 font-mono text-[11px] overflow-x-auto">
+                                                    {result.starterCode || result.testCases?.buggyCode}
+                                                </pre>
+                                                <span className="font-bold text-rose-400 block pt-1">Clean Solution:</span>
+                                                <pre className="bg-black/50 p-2 rounded text-emerald-300 font-mono text-[11px] overflow-x-auto">
+                                                    {result.solutionCode}
                                                 </pre>
                                             </div>
                                         )}

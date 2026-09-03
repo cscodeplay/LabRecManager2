@@ -92,14 +92,25 @@ export default function TrainingModulePage() {
                                         )}
                                         <h2 className="text-lg font-bold text-slate-800">Unit {unit.unitNumber}: {unit.title}</h2>
                                     </div>
-                                    <div className="text-sm">
-                                        {mastery ? (
-                                            <span className="px-3 py-1 bg-primary-100 text-primary-800 rounded-full font-medium">
-                                                Mastery: {Math.round(mastery.masteryScore)}%
-                                            </span>
-                                        ) : (
-                                            <span className="text-slate-500 text-xs">Unlock Threshold: {unit.unlockThreshold}%</span>
+                                    <div className="flex items-center gap-3">
+                                        {unlocked && (
+                                            <button
+                                                onClick={() => router.push(`/training/${moduleId}/unit/${unit.id}/theory`)}
+                                                className="btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 dark:text-indigo-300 text-xs py-1.5 px-3 rounded-xl font-bold flex items-center gap-1.5 transition border border-indigo-200 dark:border-indigo-800 shadow-xs"
+                                            >
+                                                <BookOpen className="w-3.5 h-3.5" />
+                                                <span>📖 Theory & Mini-Checks</span>
+                                            </button>
                                         )}
+                                        <div className="text-sm">
+                                            {mastery ? (
+                                                <span className="px-3 py-1 bg-primary-100 text-primary-800 rounded-full font-medium">
+                                                    Mastery: {Math.round(mastery.masteryScore)}%
+                                                </span>
+                                            ) : (
+                                                <span className="text-slate-500 text-xs">Unlock Threshold: {unit.unlockThreshold}%</span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                                 

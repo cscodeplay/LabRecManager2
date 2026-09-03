@@ -436,6 +436,150 @@ router.delete('/units/:id', authenticate, authorize('admin', 'principal', 'instr
 }));
 
 /**
+ * @route   GET /api/training/units/:id/theory
+ * @desc    Get unit theory notes, mini-checkpoints, and CBSE tips
+ * @access  Private
+ */
+router.get('/units/:id/theory', authenticate, asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const unit = await prisma.trainingUnit.findUnique({
+        where: { id },
+        include: {
+            module: {
+                select: { id: true, title: true, language: true, classLevel: true, boardAligned: true }
+            },
+            exercises: {
+                select: { id: true, title: true, exerciseType: true },
+                orderBy: { sequenceOrder: 'asc' }
+            }
+        }
+    });
+
+    if (!unit) return res.status(404).json({ success: false, message: 'Unit not found' });
+
+    let theoryData = {
+        title: unit.title,
+        unitNumber: unit.unitNumber,
+        summary: unit.description || '',
+        content: '',
+        miniCheckpoints: [],
+        cbseTips: []
+    };
+
+    if (unit.description) {
+        try {
+            const parsed = JSON.parse(unit.description);
+            if (parsed && typeof parsed === 'object') {
+                theoryData.summary = parsed.summary || '';
+                theoryData.content = parsed.content || parsed.text || '';
+                theoryData.miniCheckpoints = Array.isArray(parsed.miniCheckpoints) ? parsed.miniCheckpoints : [];
+                theoryData.cbseTips = Array.isArray(parsed.cbseTips) ? parsed.cbseTips : [];
+            }
+        } catch (e) {
+            theoryData.content = unit.description;
+        }
+    }
+
+    res.json({
+        success: true,
+        data: {
+            unit: {
+                id: unit.id,
+                title: unit.title,
+                unitNumber: unit.unitNumber,
+                moduleId: unit.moduleId,
+                module: unit.module,
+                firstExerciseId: unit.exercises?.[0]?.id || null,
+                ...theoryData
+            }
+        }
+    });
+}));
+
+/**
+ * @route   PUT /api/training/units/:id/theory
+ * @desc    Save/update unit theory notes, mini-checkpoints, and CBSE tips
+ * @access  Private
+ */
+router.put('/units/:id/theory', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { summary, content, miniCheckpoints, cbseTips } = req.body;
+
+    const existingUnit = await prisma.trainingUnit.findUnique({ where: { id } });
+    if (!existingUnit) return res.status(404).json({ success: false, message: 'Unit not found' });
+
+    const payload = {
+        summary: summary || '',
+        content: content || '',
+        miniCheckpoints: Array.isArray(miniCheckpoints) ? miniCheckpoints : [],
+        cbseTips: Array.isArray(cbseTips) ? cbseTips : []
+    };
+
+    const updatedUnit = await prisma.trainingUnit.update({
+        where: { id },
+        data: {
+            description: JSON.stringify(payload)
+        }
+    });
+
+    res.json({ success: true, data: { unit: updatedUnit } });
+}));
+
+/**
+ * @route   POST /api/training/units/:id/theory/complete
+ * @desc    Mark unit theory completed, award XP, update progress
+ * @access  Private
+ */
+router.post('/units/:id/theory/complete', authenticate, asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const studentId = req.user.id;
+
+    const unit = await prisma.trainingUnit.findUnique({
+        where: { id },
+        select: { moduleId: true, unitNumber: true, title: true }
+    });
+    if (!unit) return res.status(404).json({ success: false, message: 'Unit not found' });
+
+    const xpReward = 15;
+
+    let progress = await prisma.studentTrainingProgress.findUnique({
+        where: {
+            studentId_moduleId: {
+                studentId,
+                moduleId: unit.moduleId
+            }
+        }
+    });
+
+    if (progress) {
+        progress = await prisma.studentTrainingProgress.update({
+            where: { id: progress.id },
+            data: {
+                totalXP: { increment: xpReward },
+                lastActiveAt: new Date()
+            }
+        });
+    } else {
+        progress = await prisma.studentTrainingProgress.create({
+            data: {
+                studentId,
+                moduleId: unit.moduleId,
+                currentUnitId: id,
+                totalXP: xpReward
+            }
+        });
+    }
+
+    res.json({
+        success: true,
+        data: {
+            xpEarned: xpReward,
+            totalXP: progress.totalXP
+        }
+    });
+}));
+
+/**
  * @route   PUT /api/training/exercises/:id
  * @desc    Update an existing exercise
  * @access  Private
@@ -558,6 +702,34 @@ router.get('/exercises/:id', authenticate, asyncHandler(async (req, res) => {
                     category: q.category || 'technical'
                 })) : []
             };
+        } else if (exerciseType === 'assertion_reason') {
+            const rawTc = exercise.testCases || {};
+            exercise.testCases = {
+                assertion: rawTc.assertion || '',
+                reason: rawTc.reason || '',
+                topic: rawTc.topic || '',
+                explanation: undefined,
+                correctOption: undefined
+            };
+        } else if (exerciseType === 'code_trace') {
+            const rawTc = exercise.testCases || {};
+            exercise.testCases = {
+                codeSnippet: rawTc.codeSnippet || '',
+                tableHeaders: rawTc.tableHeaders || ['Step', 'Variables'],
+                rowCount: Array.isArray(rawTc.expectedRows) ? rawTc.expectedRows.length : 3,
+                explanation: undefined,
+                expectedRows: undefined
+            };
+        } else if (exerciseType === 'code_debug') {
+            const rawTc = exercise.testCases || {};
+            exercise.testCases = {
+                buggyCode: rawTc.buggyCode || exercise.starterCode || '',
+                lineCount: rawTc.buggyCode ? rawTc.buggyCode.split('\n').length : 10,
+                hint: rawTc.hint || '',
+                errors: undefined,
+                solutionCode: undefined,
+                explanation: undefined
+            };
         }
     }
 
@@ -623,7 +795,7 @@ router.post('/exercises/:id/run', authenticate, [
 router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res) => {
     const exerciseId = req.params.id;
     const studentId = req.user.id;
-    const { code, selectedOption, blankAnswers, scenarioAnswers } = req.body;
+    const { code, selectedOption, blankAnswers, scenarioAnswers, traceRows, flaggedLine } = req.body;
 
     // Fetch exercise with true test cases and solution data
     const exercise = await prisma.trainingExercise.findUnique({
@@ -735,7 +907,109 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
         }
     }
     // ==========================================
-    // 4. CODING & PR REVIEW (BUG FIX) EVALUATION
+    // 4. CBSE ASSERTION-REASONING (A-R) EVALUATION
+    // ==========================================
+    else if (exerciseType === 'assertion_reason') {
+        const arData = exercise.testCases || {};
+        const correctOpt = parseInt(arData.correctOption, 10);
+        const userOpt = parseInt(selectedOption, 10);
+
+        passedAll = (userOpt === correctOpt);
+        submissionCode = JSON.stringify({ selectedOption: userOpt });
+        submissionOutput = passedAll
+            ? 'Correct! You evaluated the Assertion and Reason accurately.'
+            : 'Incorrect option chosen for Assertion and Reason.';
+
+        results = [{
+            passed: passedAll,
+            selectedOption: userOpt,
+            correctOption: correctOpt,
+            explanation: arData.explanation || 'Analyze whether Assertion (A) and Reason (R) are individually true, and whether R directly explains A.'
+        }];
+
+        if (!passedAll) {
+            socraticReview = `Examine both statements independently first: is Assertion (A) true? Is Reason (R) true? If both are true, test if connecting them with "because" makes logical sense.`;
+        }
+    }
+    // ==========================================
+    // 5. CBSE DRY-RUN VARIABLE TRACING EVALUATION
+    // ==========================================
+    else if (exerciseType === 'code_trace') {
+        const traceData = exercise.testCases || {};
+        const expectedRows = Array.isArray(traceData.expectedRows) ? traceData.expectedRows : [];
+        const userRows = Array.isArray(traceRows) ? traceRows : (Array.isArray(blankAnswers) ? blankAnswers : []);
+
+        submissionCode = JSON.stringify({ traceRows: userRows });
+        let allRowsPassed = true;
+
+        results = expectedRows.map((expRow, rIdx) => {
+            const userRow = userRows[rIdx] || [];
+            const rowPassed = expRow.every((expCell, cIdx) => {
+                const userCell = String(userRow[cIdx] || '').trim().toLowerCase();
+                const cleanExpected = String(expCell || '').trim().toLowerCase();
+                return userCell === cleanExpected;
+            });
+
+            if (!rowPassed) allRowsPassed = false;
+
+            return {
+                step: rIdx + 1,
+                expected: expRow,
+                userAnswer: userRow,
+                isCorrect: rowPassed
+            };
+        });
+
+        passedAll = allRowsPassed && userRows.length >= expectedRows.length;
+        submissionOutput = passedAll
+            ? 'All variable dry-run trace steps calculated correctly.'
+            : 'One or more variable values in the trace table are incorrect.';
+
+        if (!passedAll) {
+            socraticReview = `Step through each loop iteration carefully. Track how each variable changes before moving to the next iteration.`;
+        }
+    }
+    // ==========================================
+    // 6. CBSE CODE DEBUGGING & ERROR SPOTTING
+    // ==========================================
+    else if (exerciseType === 'code_debug') {
+        const debugData = exercise.testCases || {};
+        const expectedErrors = Array.isArray(debugData.errors) ? debugData.errors : [];
+        const userFlaggedLine = parseInt(flaggedLine || selectedOption, 10);
+        const userFixCode = (code || '').trim();
+
+        let isLineCorrect = false;
+        if (expectedErrors.length > 0) {
+            isLineCorrect = expectedErrors.some(e => parseInt(e.line, 10) === userFlaggedLine);
+        }
+
+        let exeSuccess = false;
+        if (userFixCode) {
+            try {
+                const exe = await executePythonCode(userFixCode, '');
+                exeSuccess = !exe.stderr && (exe.code === 0 || exe.code === null);
+            } catch (e) {}
+        }
+
+        passedAll = exeSuccess || isLineCorrect;
+        submissionCode = userFixCode || JSON.stringify({ flaggedLine: userFlaggedLine });
+        submissionOutput = passedAll
+            ? 'Bug successfully spotted and resolved!'
+            : 'The code still contains errors or the wrong line was flagged.';
+
+        results = [{
+            passed: passedAll,
+            userFlaggedLine,
+            errors: expectedErrors,
+            explanation: debugData.explanation || 'Check syntax rules, indentation, and variable naming.'
+        }];
+
+        if (!passedAll) {
+            socraticReview = `Check for common Python syntax errors on the flagged lines: unclosed brackets, missing colons, or improper indentation.`;
+        }
+    }
+    // ==========================================
+    // 7. CODING & PR REVIEW (BUG FIX) EVALUATION
     // ==========================================
     else {
         const testCases = Array.isArray(exercise.testCases) ? exercise.testCases : [];

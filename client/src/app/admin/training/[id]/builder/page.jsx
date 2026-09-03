@@ -199,7 +199,42 @@ export default function PedagogyBuilderPage() {
                     explanation: 'Generators yield items on demand with O(1) memory.'
                 }
             ]
+        },
+        arData: {
+            assertion: 'In Python, strings are immutable sequences.',
+            reason: 'Individual character elements of a string cannot be modified via item assignment s[0] = "x".',
+            correctOption: 0,
+            explanation: 'Both statements are true facts, and Reason explains what immutability means.'
+        },
+        traceData: {
+            codeSnippet: 'a = 2\nb = 5\nfor i in range(1, 4):\n    a = a + i\n    b = b * 2',
+            tableHeaders: ['Step (i)', 'Value of a', 'Value of b'],
+            expectedRows: [
+                ['1', '3', '10'],
+                ['2', '5', '20'],
+                ['3', '8', '40']
+            ],
+            explanation: 'Variable values update sequentially during each loop iteration.'
+        },
+        debugData: {
+            buggyCode: 'def calculate(nums):\n    total = 0\n    for n in nums\n        total += n\n    return total',
+            errors: [
+                { line: 3, description: 'Missing colon at end of for loop statement', correctedLine: '    for n in nums:' }
+            ],
+            solutionCode: 'def calculate(nums):\n    total = 0\n    for n in nums:\n        total += n\n    return total',
+            explanation: 'Line 3 was missing a required colon (:).'
         }
+    });
+
+    // Unit Theory Modal
+    const [showTheoryModal, setShowTheoryModal] = useState(false);
+    const [theoryForm, setTheoryForm] = useState({
+        unitId: null,
+        title: '',
+        summary: '',
+        content: '',
+        miniCheckpoints: [],
+        cbseTips: []
     });
 
     // Config Modal
@@ -415,6 +450,9 @@ export default function PedagogyBuilderPage() {
         let mcq = null;
         let cloze = null;
         let caseStudy = null;
+        let ar = null;
+        let trace = null;
+        let debug = null;
 
         if (ex.testCases) {
             const raw = typeof ex.testCases === 'string' ? JSON.parse(ex.testCases) : ex.testCases;
@@ -424,6 +462,9 @@ export default function PedagogyBuilderPage() {
                 if (ex.exerciseType === 'mcq') mcq = raw;
                 else if (ex.exerciseType === 'fill_blank') cloze = raw;
                 else if (ex.exerciseType === 'case_study') caseStudy = raw;
+                else if (ex.exerciseType === 'assertion_reason') ar = raw;
+                else if (ex.exerciseType === 'code_trace') trace = raw;
+                else if (ex.exerciseType === 'code_debug') debug = raw;
             }
         }
 
@@ -467,6 +508,24 @@ export default function PedagogyBuilderPage() {
                 incident: '',
                 scenarioCode: '',
                 questions: []
+            },
+            arData: ar || {
+                assertion: '',
+                reason: '',
+                correctOption: 0,
+                explanation: ''
+            },
+            traceData: trace || {
+                codeSnippet: '',
+                tableHeaders: ['Step', 'Var A', 'Var B'],
+                expectedRows: [['1', '', '']],
+                explanation: ''
+            },
+            debugData: debug || {
+                buggyCode: '',
+                errors: [{ line: 1, description: '', correctedLine: '' }],
+                solutionCode: '',
+                explanation: ''
             }
         });
         setShowExerciseModal(true);
@@ -487,6 +546,12 @@ export default function PedagogyBuilderPage() {
                 processedTestCases = exerciseForm.clozeData;
             } else if (exerciseForm.exerciseType === 'case_study') {
                 processedTestCases = exerciseForm.caseStudyData;
+            } else if (exerciseForm.exerciseType === 'assertion_reason') {
+                processedTestCases = exerciseForm.arData;
+            } else if (exerciseForm.exerciseType === 'code_trace') {
+                processedTestCases = exerciseForm.traceData;
+            } else if (exerciseForm.exerciseType === 'code_debug') {
+                processedTestCases = exerciseForm.debugData;
             }
 
             const payload = {
@@ -533,6 +598,44 @@ export default function PedagogyBuilderPage() {
         }
     };
 
+    const handleOpenEditTheory = async (unit) => {
+        if (!unit) return;
+        try {
+            const res = await trainingAPI.getUnitTheory(unit.id);
+            const data = res.data?.data?.unit || {};
+            setTheoryForm({
+                unitId: unit.id,
+                title: data.title || unit.title,
+                summary: data.summary || '',
+                content: data.content || '',
+                miniCheckpoints: Array.isArray(data.miniCheckpoints) ? data.miniCheckpoints : [],
+                cbseTips: Array.isArray(data.cbseTips) ? data.cbseTips : []
+            });
+            setShowTheoryModal(true);
+        } catch (err) {
+            console.error(err);
+            toast.error('Failed to load unit theory');
+        }
+    };
+
+    const handleSaveTheory = async () => {
+        if (!theoryForm.unitId) return;
+        try {
+            await trainingAPI.updateUnitTheory(theoryForm.unitId, {
+                summary: theoryForm.summary,
+                content: theoryForm.content,
+                miniCheckpoints: theoryForm.miniCheckpoints,
+                cbseTips: theoryForm.cbseTips
+            });
+            toast.success('Unit theory notes & mini-checkpoints saved!');
+            setShowTheoryModal(false);
+            loadData();
+        } catch (err) {
+            console.error(err);
+            toast.error('Failed to save unit theory');
+        }
+    };
+
     const handleApplyAiExercise = (aiEx) => {
         if (!aiEx) return;
         const currentType = aiEx.exerciseType || 'coding';
@@ -555,7 +658,15 @@ export default function PedagogyBuilderPage() {
             hints: aiEx.hints || prev.hints,
             mcqData: currentType === 'mcq' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.mcqData,
             clozeData: currentType === 'fill_blank' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.clozeData,
-            caseStudyData: currentType === 'case_study' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.caseStudyData
+            caseStudyData: currentType === 'case_study' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.caseStudyData,
+            arData: currentType === 'assertion_reason' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.arData,
+            traceData: currentType === 'code_trace' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.traceData,
+            debugData: currentType === 'code_debug' && typeof aiEx.testCases === 'object' ? {
+                buggyCode: aiEx.starterCode || aiEx.testCases.buggyCode || '',
+                errors: aiEx.testCases.errors || [{ line: 1, description: '', correctedLine: '' }],
+                solutionCode: aiEx.solutionCode || aiEx.testCases.solutionCode || '',
+                explanation: aiEx.testCases.explanation || ''
+            } : prev.debugData
         }));
         setShowExerciseModal(true);
     };
@@ -832,6 +943,13 @@ export default function PedagogyBuilderPage() {
                                             <Edit3 className="w-3.5 h-3.5" /> Edit Unit
                                         </button>
                                         <button
+                                            onClick={() => handleOpenEditTheory(activeUnit)}
+                                            className="btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 dark:text-indigo-300 text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 font-bold border border-indigo-200 dark:border-indigo-800"
+                                            title="Edit Pre-Lab Concept Notes & Mini-Checkpoints"
+                                        >
+                                            <BookOpen className="w-3.5 h-3.5 text-indigo-500" /> Theory & Checks
+                                        </button>
+                                        <button
                                             onClick={() => handleDeleteUnit(activeUnit.id)}
                                             className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-slate-200 dark:border-slate-800 transition"
                                             title="Delete Unit"
@@ -867,6 +985,9 @@ export default function PedagogyBuilderPage() {
                                             fill_blank: { label: '🧩 Syntax Cloze', bg: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300' },
                                             bug_fix: { label: '🐞 Bug Hunt', bg: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' },
                                             case_study: { label: '🏢 Case Study', bg: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' },
+                                            assertion_reason: { label: '⚖️ Assertion-Reason', bg: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300' },
+                                            code_trace: { label: '🔍 Dry-Run Trace', bg: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300' },
+                                            code_debug: { label: '🐞 CBSE Error Debug', bg: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' },
                                         };
                                         const badge = typeBadges[ex.exerciseType] || typeBadges.coding;
 
@@ -985,13 +1106,16 @@ export default function PedagogyBuilderPage() {
                                 <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2 block">
                                     Challenge / Question Type
                                 </label>
-                                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                                     {[
                                         { id: 'coding', label: '⚡ Coding Lab' },
                                         { id: 'mcq', label: '📝 Output MCQ' },
                                         { id: 'fill_blank', label: '🧩 Syntax Cloze' },
                                         { id: 'bug_fix', label: '🐞 Bug Hunt' },
-                                        { id: 'case_study', label: '🏢 Case Study' }
+                                        { id: 'case_study', label: '🏢 Case Study' },
+                                        { id: 'assertion_reason', label: '⚖️ Assertion-Reason' },
+                                        { id: 'code_trace', label: '🔍 Dry-Run Trace' },
+                                        { id: 'code_debug', label: '🐞 CBSE Error Debug' }
                                     ].map(t => (
                                         <button
                                             key={t.id}
@@ -1166,6 +1290,181 @@ export default function PedagogyBuilderPage() {
                                             }))}
                                             className="input h-24 font-mono text-xs mt-1"
                                             placeholder="Production snippet with microservice architecture..."
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* CBSE Assertion & Reasoning Sub-Form */}
+                            {exerciseForm.exerciseType === 'assertion_reason' && (
+                                <div className="space-y-4 p-4 rounded-xl border border-indigo-200 dark:border-indigo-900 bg-indigo-50/30 dark:bg-indigo-950/20">
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-400 flex items-center gap-1.5">
+                                        ⚖️ CBSE Assertion-Reasoning Configuration
+                                    </h4>
+                                    <div>
+                                        <label className="text-xs font-semibold block mb-1">Assertion Statement (A):</label>
+                                        <textarea
+                                            value={exerciseForm.arData.assertion}
+                                            onChange={e => setExerciseForm(f => ({ ...f, arData: { ...f.arData, assertion: e.target.value } }))}
+                                            className="input h-20 text-xs"
+                                            placeholder="e.g., In Python, lists are mutable while tuples are immutable."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold block mb-1">Reason Statement (R):</label>
+                                        <textarea
+                                            value={exerciseForm.arData.reason}
+                                            onChange={e => setExerciseForm(f => ({ ...f, arData: { ...f.arData, reason: e.target.value } }))}
+                                            className="input h-20 text-xs"
+                                            placeholder="e.g., Tuple elements cannot be reassigned once created in memory."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold block mb-1">Correct CBSE Assessment Option:</label>
+                                        <select
+                                            value={exerciseForm.arData.correctOption}
+                                            onChange={e => setExerciseForm(f => ({ ...f, arData: { ...f.arData, correctOption: Number(e.target.value) } }))}
+                                            className="input text-xs"
+                                        >
+                                            <option value={0}>(A) Both A and R are true, and R is correct explanation of A</option>
+                                            <option value={1}>(B) Both A and R are true, but R is NOT correct explanation of A</option>
+                                            <option value={2}>(C) A is true, but R is false</option>
+                                            <option value={3}>(D) A is false, but R is true</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold block mb-1">Conceptual Explanation / Marking Guide:</label>
+                                        <textarea
+                                            value={exerciseForm.arData.explanation}
+                                            onChange={e => setExerciseForm(f => ({ ...f, arData: { ...f.arData, explanation: e.target.value } }))}
+                                            className="input h-16 text-xs"
+                                            placeholder="Explain why this option is correct for the student review..."
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* CBSE Dry-Run Trace Table Sub-Form */}
+                            {exerciseForm.exerciseType === 'code_trace' && (
+                                <div className="space-y-4 p-4 rounded-xl border border-teal-200 dark:border-teal-900 bg-teal-50/30 dark:bg-teal-950/20">
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400 flex items-center gap-1.5">
+                                        🔍 CBSE Dry-Run Trace Table Configuration
+                                    </h4>
+                                    <div>
+                                        <label className="text-xs font-semibold block mb-1">Code Snippet to Trace:</label>
+                                        <textarea
+                                            value={exerciseForm.traceData.codeSnippet}
+                                            onChange={e => setExerciseForm(f => ({ ...f, traceData: { ...f.traceData, codeSnippet: e.target.value } }))}
+                                            className="input h-24 font-mono text-xs"
+                                            placeholder="a = 5&#10;for i in range(1, 4):&#10;    a = a + i"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold block mb-1">Table Headers (comma-separated):</label>
+                                        <input
+                                            type="text"
+                                            value={exerciseForm.traceData.tableHeaders.join(', ')}
+                                            onChange={e => setExerciseForm(f => ({
+                                                ...f,
+                                                traceData: {
+                                                    ...f.traceData,
+                                                    tableHeaders: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                                                }
+                                            }))}
+                                            className="input text-xs"
+                                            placeholder="Iteration, a, i"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold block mb-1">Expected Dry-Run Step Rows (Row per line, values comma-separated):</label>
+                                        <textarea
+                                            value={exerciseForm.traceData.expectedRows.map(r => r.join(', ')).join('\n')}
+                                            onChange={e => {
+                                                const rows = e.target.value.split('\n').map(line => line.split(',').map(s => s.trim()));
+                                                setExerciseForm(f => ({ ...f, traceData: { ...f.traceData, expectedRows: rows } }));
+                                            }}
+                                            className="input h-24 font-mono text-xs"
+                                            placeholder="1, 6, 1&#10;2, 8, 2&#10;3, 11, 3"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold block mb-1">Tracing Walkthrough / Explanation:</label>
+                                        <textarea
+                                            value={exerciseForm.traceData.explanation}
+                                            onChange={e => setExerciseForm(f => ({ ...f, traceData: { ...f.traceData, explanation: e.target.value } }))}
+                                            className="input h-16 text-xs"
+                                            placeholder="Step-by-step trace walkthrough..."
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* CBSE Error Spotting & Debugging Sub-Form */}
+                            {exerciseForm.exerciseType === 'code_debug' && (
+                                <div className="space-y-4 p-4 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50/30 dark:bg-rose-950/20">
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400 flex items-center gap-1.5">
+                                        🐞 CBSE Error Spotting & Debugging Configuration
+                                    </h4>
+                                    <div>
+                                        <label className="text-xs font-semibold block mb-1">Buggy Code Snippet (Shown to Student):</label>
+                                        <textarea
+                                            value={exerciseForm.debugData.buggyCode}
+                                            onChange={e => setExerciseForm(f => ({ ...f, debugData: { ...f.debugData, buggyCode: e.target.value } }))}
+                                            className="input h-24 font-mono text-xs"
+                                            placeholder="def check(x):&#10;    if x > 0&#10;        return True"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-xs font-semibold block mb-1">Buggy Line #:</label>
+                                            <input
+                                                type="number"
+                                                value={exerciseForm.debugData.errors[0]?.line || 1}
+                                                onChange={e => {
+                                                    const line = Number(e.target.value);
+                                                    setExerciseForm(f => {
+                                                        const errs = [...f.debugData.errors];
+                                                        errs[0] = { ...errs[0], line };
+                                                        return { ...f, debugData: { ...f.debugData, errors: errs } };
+                                                    });
+                                                }}
+                                                className="input text-xs"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-semibold block mb-1">Corrected Line Code:</label>
+                                            <input
+                                                type="text"
+                                                value={exerciseForm.debugData.errors[0]?.correctedLine || ''}
+                                                onChange={e => {
+                                                    const correctedLine = e.target.value;
+                                                    setExerciseForm(f => {
+                                                        const errs = [...f.debugData.errors];
+                                                        errs[0] = { ...errs[0], correctedLine };
+                                                        return { ...f, debugData: { ...f.debugData, errors: errs } };
+                                                    });
+                                                }}
+                                                className="input font-mono text-xs"
+                                                placeholder="    if x > 0:"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold block mb-1">Clean Reference Solution Code:</label>
+                                        <textarea
+                                            value={exerciseForm.debugData.solutionCode}
+                                            onChange={e => setExerciseForm(f => ({ ...f, debugData: { ...f.debugData, solutionCode: e.target.value } }))}
+                                            className="input h-24 font-mono text-xs"
+                                            placeholder="def check(x):&#10;    if x > 0:&#10;        return True"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold block mb-1">CBSE Marking Scheme & Explanation:</label>
+                                        <textarea
+                                            value={exerciseForm.debugData.explanation}
+                                            onChange={e => setExerciseForm(f => ({ ...f, debugData: { ...f.debugData, explanation: e.target.value } }))}
+                                            className="input h-16 text-xs"
+                                            placeholder="Missing colon syntax error on line 2..."
                                         />
                                     </div>
                                 </div>
@@ -1490,7 +1789,252 @@ export default function PedagogyBuilderPage() {
                                 }} 
                                 className="btn btn-primary flex-1"
                             >
-                                <Save className="w-4 h-4" /> Save Configuration
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Unit Pre-Lab Theory & Mini-Checkpoints Modal */}
+            {showTheoryModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                        {/* Modal Header */}
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-indigo-50/50 dark:bg-indigo-950/20">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-lg shadow-indigo-600/20">
+                                    <BookOpen className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                                        Pre-Lab Theory & Interactive Checkpoints
+                                    </h3>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        {theoryForm.title} • CBSE Concept Grounding
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowTheoryModal(false)}
+                                className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-600 transition"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-6 overflow-y-auto space-y-5 flex-1">
+                            <div>
+                                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 block">
+                                    Unit Concept Summary
+                                </label>
+                                <input
+                                    type="text"
+                                    value={theoryForm.summary}
+                                    onChange={e => setTheoryForm(f => ({ ...f, summary: e.target.value }))}
+                                    className="input text-xs"
+                                    placeholder="Brief 1-2 sentence core concept takeaway..."
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 block">
+                                    Full Theory & Concept Markdown Notes
+                                </label>
+                                <textarea
+                                    value={theoryForm.content}
+                                    onChange={e => setTheoryForm(f => ({ ...f, content: e.target.value }))}
+                                    className="input h-48 font-mono text-xs"
+                                    placeholder="## 📘 Concept Heading&#10;&#10;Explain syntax, memory layout, and operational rules here..."
+                                />
+                            </div>
+
+                            {/* Mini-Checkpoints Section */}
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                        Interactive Mini-Checkpoints ({theoryForm.miniCheckpoints.length})
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTheoryForm(f => ({
+                                            ...f,
+                                            miniCheckpoints: [
+                                                ...f.miniCheckpoints,
+                                                {
+                                                    id: `cp_${Date.now()}`,
+                                                    question: '',
+                                                    codeSnippet: '',
+                                                    options: ['', '', '', ''],
+                                                    correctOption: 0,
+                                                    explanation: ''
+                                                }
+                                            ]
+                                        }))}
+                                        className="btn btn-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 font-semibold"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> Add Mini-Checkpoint
+                                    </button>
+                                </div>
+
+                                {theoryForm.miniCheckpoints.map((cp, cpIdx) => (
+                                    <div key={cp.id || cpIdx} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                                                Mini-Checkpoint #{cpIdx + 1}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setTheoryForm(f => ({
+                                                    ...f,
+                                                    miniCheckpoints: f.miniCheckpoints.filter((_, i) => i !== cpIdx)
+                                                }))}
+                                                className="text-rose-500 hover:text-rose-600 text-xs flex items-center gap-1"
+                                            >
+                                                <Trash2 className="w-3 h-3" /> Remove
+                                            </button>
+                                        </div>
+
+                                        <input
+                                            type="text"
+                                            value={cp.question}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setTheoryForm(f => {
+                                                    const cps = [...f.miniCheckpoints];
+                                                    cps[cpIdx] = { ...cps[cpIdx], question: val };
+                                                    return { ...f, miniCheckpoints: cps };
+                                                });
+                                            }}
+                                            placeholder="Question prompt..."
+                                            className="input text-xs"
+                                        />
+
+                                        <textarea
+                                            value={cp.codeSnippet || ''}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setTheoryForm(f => {
+                                                    const cps = [...f.miniCheckpoints];
+                                                    cps[cpIdx] = { ...cps[cpIdx], codeSnippet: val };
+                                                    return { ...f, miniCheckpoints: cps };
+                                                });
+                                            }}
+                                            placeholder="Optional code snippet..."
+                                            className="input h-16 font-mono text-xs"
+                                        />
+
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {(cp.options || ['', '', '', '']).map((opt, oIdx) => (
+                                                <div key={oIdx} className="flex items-center gap-2">
+                                                    <input
+                                                        type="radio"
+                                                        name={`correct_${cp.id || cpIdx}`}
+                                                        checked={cp.correctOption === oIdx}
+                                                        onChange={() => {
+                                                            setTheoryForm(f => {
+                                                                const cps = [...f.miniCheckpoints];
+                                                                cps[cpIdx] = { ...cps[cpIdx], correctOption: oIdx };
+                                                                return { ...f, miniCheckpoints: cps };
+                                                            });
+                                                        }}
+                                                        className="accent-indigo-600 shrink-0"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        value={opt}
+                                                        onChange={e => {
+                                                            const val = e.target.value;
+                                                            setTheoryForm(f => {
+                                                                const cps = [...f.miniCheckpoints];
+                                                                const opts = [...(cps[cpIdx].options || [])];
+                                                                opts[oIdx] = val;
+                                                                cps[cpIdx] = { ...cps[cpIdx], options: opts };
+                                                                return { ...f, miniCheckpoints: cps };
+                                                            });
+                                                        }}
+                                                        placeholder={`Option ${String.fromCharCode(65 + oIdx)}`}
+                                                        className="input text-xs py-1"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <input
+                                            type="text"
+                                            value={cp.explanation || ''}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setTheoryForm(f => {
+                                                    const cps = [...f.miniCheckpoints];
+                                                    cps[cpIdx] = { ...cps[cpIdx], explanation: val };
+                                                    return { ...f, miniCheckpoints: cps };
+                                                });
+                                            }}
+                                            placeholder="Explanation for students after answering..."
+                                            className="input text-xs"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* CBSE Tips Section */}
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                        CBSE Exam Tips & Pitfalls ({theoryForm.cbseTips.length})
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTheoryForm(f => ({ ...f, cbseTips: [...f.cbseTips, ''] }))}
+                                        className="btn btn-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 font-semibold"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> Add CBSE Tip
+                                    </button>
+                                </div>
+                                {theoryForm.cbseTips.map((tip, tIdx) => (
+                                    <div key={tIdx} className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            value={tip}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setTheoryForm(f => {
+                                                    const tips = [...f.cbseTips];
+                                                    tips[tIdx] = val;
+                                                    return { ...f, cbseTips: tips };
+                                                });
+                                            }}
+                                            placeholder="e.g., Common exam trap: mutable default arguments in Python"
+                                            className="input text-xs py-1.5 flex-1"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setTheoryForm(f => ({ ...f, cbseTips: f.cbseTips.filter((_, i) => i !== tIdx) }))}
+                                            className="text-rose-500 hover:text-rose-600 p-1.5"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowTheoryModal(false)}
+                                className="btn btn-secondary text-xs py-2 px-4 rounded-xl"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSaveTheory}
+                                className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-5 rounded-xl shadow-md shadow-indigo-600/20"
+                            >
+                                Save Theory & Checkpoints
                             </button>
                         </div>
                     </div>

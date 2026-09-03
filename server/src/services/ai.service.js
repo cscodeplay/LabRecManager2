@@ -1545,6 +1545,18 @@ REQUIREMENTS:
 3. "mermaidDiagram": Clean Mermaid.js chart code (e.g. flowchart TD or sequenceDiagram).
 4. "keyTakeaways": Array of 3-4 concise takeaway bullets.
 5. "quickCheckQuestion": A fast 1-question self-check for the student with question and answer.
+6. "miniCheckpoints": Array of 2-3 interactive bite-sized checkpoints for students:
+   [
+     {
+       "id": "cp1",
+       "question": "Quick Concept Check question...",
+       "codeSnippet": "optional short code snippet",
+       "options": ["Option A", "Option B", "Option C", "Option D"],
+       "correctOption": 0,
+       "explanation": "Clear explanation..."
+     }
+   ]
+7. "cbseTips": Array of 2-3 common CBSE board exam traps, pitfalls, and previous year exam tips for this concept.
 
 Output MUST be ONLY valid JSON matching this schema:
 {
@@ -1553,6 +1565,16 @@ Output MUST be ONLY valid JSON matching this schema:
   "svgGraphic": "<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 800 360\\">...</svg>",
   "mermaidDiagram": "flowchart TD\\nA[Input] --> B[Process] --> C[Output]",
   "keyTakeaways": ["Key point 1", "Key point 2", "Key point 3"],
+  "miniCheckpoints": [
+    {
+      "id": "cp1",
+      "question": "Quick question?",
+      "options": ["Opt 1", "Opt 2", "Opt 3", "Opt 4"],
+      "correctOption": 0,
+      "explanation": "Why Opt 1 is correct"
+    }
+  ],
+  "cbseTips": ["CBSE trap note 1", "CBSE trap note 2"],
   "quickCheckQuestion": {
     "question": "What happens when...?",
     "answer": "Explanation of expected behavior..."
@@ -1608,17 +1630,35 @@ Output MUST be ONLY valid JSON matching this schema:
   <path d="M 270 150 L 350 150" stroke="#818cf8" stroke-width="3" />
   <rect x="360" y="40" width="220" height="220" rx="12" fill="#1e293b" stroke="#10b981" stroke-width="2" />
   <text x="470" y="80" fill="#6ee7b7" font-size="16" font-family="sans-serif" font-weight="bold" text-anchor="middle">${topic}</text>
-  <rect x="390" y="120" width="160" height="60" rx="8" fill="#064e3b" stroke="#34d399" stroke-width="1.5" />
-  <text x="470" y="155" fill="#ffffff" font-size="13" font-family="sans-serif" text-anchor="middle">Logic Engine</text>
+  <circle cx="470" cy="150" r="40" fill="#064e3b" stroke="#34d399" stroke-width="2" />
+  <text x="470" y="155" fill="#ffffff" font-size="13" font-family="sans-serif" text-anchor="middle">Computed</text>
   <path d="M 590 150 L 670 150" stroke="#34d399" stroke-width="3" />
-  <rect x="680" y="90" width="90" height="120" rx="12" fill="#1e293b" stroke="#38bdf8" stroke-width="2" />
-  <text x="725" y="155" fill="#38bdf8" font-size="14" font-family="sans-serif" font-weight="bold" text-anchor="middle">Result</text>
+  <rect x="680" y="40" width="80" height="220" rx="12" fill="#1e293b" stroke="#f59e0b" stroke-width="2" />
+  <text x="720" y="155" fill="#fde68a" font-size="14" font-family="sans-serif" font-weight="bold" text-anchor="middle">Result</text>
 </svg>`,
-            mermaidDiagram: `flowchart LR\n  Input[Input Data] --> Logic[${topic} Processing] --> Output[Verified Result]`,
+            mermaidDiagram: `flowchart LR\n    A[Input State] --> B[Execute ${topic}]\n    B --> C[Validated Output]`,
             keyTakeaways: [
-                `Mastering ${topic} enables robust architecture.`,
+                `Break down the logic into modular, single-responsibility functions.`,
                 `Always validate edge cases and exception handling.`,
                 `Keep code idiomatic and follow standard conventions.`
+            ],
+            miniCheckpoints: [
+                {
+                    id: "cp1",
+                    question: `What is the primary role of ${topic}?`,
+                    options: [
+                        `To structure logic cleanly and avoid redundant code`,
+                        `To bypass syntax checking entirely`,
+                        `To slow down runtime execution`,
+                        `To force global state mutation`
+                    ],
+                    correctOption: 0,
+                    explanation: `${topic} provides modularity, clarity, and robust computational structure.`
+                }
+            ],
+            cbseTips: [
+                `Pay special attention to variable scope and mutation boundaries.`,
+                `In CBSE board practicals, always write clean comments and indent consistently.`
             ],
             quickCheckQuestion: {
                 question: `What is the core benefit of utilizing ${topic}?`,
@@ -1684,6 +1724,42 @@ CRITICAL: Do NOT output placeholder code like 'def solve(n): pass'. The "starter
         "explanation": "Root cause analysis..."
       }
     ]
+  }`;
+        } else if (exerciseType === 'assertion_reason') {
+            typeInstruction = `Generate a CBSE CLASS 11/12 ASSERTION-REASONING challenge based on '${topic}' for unit '${unitTitle}':
+- "testCases": {
+    "assertion": "Assertion statement about ${topic} syntax or behavior",
+    "reason": "Reason statement explaining the underlying compiler/runtime rule",
+    "correctOption": 0,
+    "explanation": "Clear explanation of whether each statement is true and whether Reason logically explains Assertion."
+  }
+- "starterCode": null
+- "solutionCode": null`;
+        } else if (exerciseType === 'code_trace') {
+            typeInstruction = `Generate a CBSE DRY-RUN / VARIABLE TRACING TABLE challenge for '${topic}' in unit '${unitTitle}':
+- "testCases": {
+    "codeSnippet": "Short, tricky code loop or function in ${language} demonstrating ${topic}",
+    "tableHeaders": ["Iteration / Step", "Variable 1", "Variable 2"],
+    "expectedRows": [
+      ["1", "val1", "val2"],
+      ["2", "val3", "val4"],
+      ["3", "val5", "val6"]
+    ],
+    "explanation": "Step-by-step dry-run walkthrough showing variable values at each step."
+  }
+- "starterCode": null
+- "solutionCode": null`;
+        } else if (exerciseType === 'code_debug') {
+            typeInstruction = `Generate a CBSE CODE DEBUGGING & ERROR SPOTTING challenge for '${topic}' in unit '${unitTitle}':
+- "starterCode": "Code snippet with 1-2 syntax or logical errors on specific line(s)",
+- "solutionCode": "Clean, corrected code that compiles and runs properly",
+- "testCases": {
+    "buggyCode": "Code snippet with 1-2 deliberate errors",
+    "errors": [
+      { "line": 3, "description": "Syntax/logical error description", "correctedLine": "corrected line code" }
+    ],
+    "solutionCode": "clean code",
+    "explanation": "Clear explanation of each bug, line numbers, and how to fix them."
   }`;
         }
 
@@ -1823,6 +1899,91 @@ Output MUST be ONLY valid JSON matching this schema:
                     explanation: `Guards against empty data with 'if' and returns transformed array with 'return'.`
                 },
                 hints: [`Look at standard conditional and return keywords.`]
+            };
+        }
+
+        if (exerciseType === 'assertion_reason') {
+            return {
+                title: `CBSE Assertion & Reason: ${topic}`,
+                description: `Assess Assertion (A) and Reason (R) statements regarding ${topic} in ${language}.`,
+                theory: `Carefully examine the truth value of both statements before assessing causal connection.`,
+                exerciseType: 'assertion_reason',
+                difficulty,
+                scaffoldLevel,
+                bloomsLevel,
+                learningObjective: `SWBAT evaluate Assertion-Reasoning logic for ${topic}.`,
+                xpReward: 15,
+                timeLimit: 5,
+                isReviewExercise: false,
+                testCases: {
+                    assertion: `In ${language}, understanding ${topic} is required for structured program control.`,
+                    reason: `${topic} dictates the computational sequence and data flow within execution scopes.`,
+                    correctOption: 0,
+                    explanation: `Both statements are true, and the Reason correctly explains why ${topic} determines program control.`
+                },
+                hints: [`Determine if Assertion is true, then if Reason is true, then check if Reason explains Assertion.`]
+            };
+        }
+
+        if (exerciseType === 'code_trace') {
+            return {
+                title: `Dry-Run Trace Table: ${topic}`,
+                description: `Trace the variable state transformations step-by-step for the given ${topic} snippet.`,
+                theory: `Dry running on paper or trace table is an essential CBSE examination skill.`,
+                exerciseType: 'code_trace',
+                difficulty,
+                scaffoldLevel,
+                bloomsLevel,
+                learningObjective: `SWBAT dry-run and trace variable values for ${topic}.`,
+                xpReward: 15,
+                timeLimit: 5,
+                isReviewExercise: false,
+                testCases: {
+                    codeSnippet: language === 'python'
+                        ? `a = 2\nb = 5\nfor i in range(1, 4):\n    a = a + i\n    b = b * 2`
+                        : `let a = 2;\nlet b = 5;\nfor (let i = 1; i <= 3; i++) {\n    a = a + i;\n    b = b * 2;\n}`,
+                    tableHeaders: ['Step (i)', 'Value of a', 'Value of b'],
+                    expectedRows: [
+                        ['1', '3', '10'],
+                        ['2', '5', '20'],
+                        ['3', '8', '40']
+                    ],
+                    explanation: `At i=1: a=3, b=10. At i=2: a=5, b=20. At i=3: a=8, b=40.`
+                },
+                hints: [`Track each variable's new state after each iteration.`]
+            };
+        }
+
+        if (exerciseType === 'code_debug') {
+            const buggy = language === 'python'
+                ? `def calculate(values):\n    total = 0\n    for v in values\n        total += v\n    return total`
+                : `function calculate(values) {\n    let total = 0;\n    for (let v of values {\n        total += v;\n    }\n    return total;\n}`;
+            const clean = language === 'python'
+                ? `def calculate(values):\n    total = 0\n    for v in values:\n        total += v\n    return total`
+                : `function calculate(values) {\n    let total = 0;\n    for (let v of values) {\n        total += v;\n    }\n    return total;\n}`;
+            return {
+                title: `Error Spotting & Debugging: ${topic}`,
+                description: `Identify and fix the syntax/logical error in the ${topic} function.`,
+                theory: `Spotting syntax errors on specific lines is a core CBSE Board Practical assessment skill.`,
+                exerciseType: 'code_debug',
+                difficulty,
+                scaffoldLevel,
+                bloomsLevel,
+                learningObjective: `SWBAT debug syntax and logical errors in ${topic}.`,
+                xpReward: 15,
+                timeLimit: 5,
+                isReviewExercise: false,
+                starterCode: buggy,
+                solutionCode: clean,
+                testCases: {
+                    buggyCode: buggy,
+                    errors: [
+                        { line: 3, description: `Missing colon/bracket on loop header`, correctedLine: language === 'python' ? `    for v in values:` : `    for (let v of values) {` }
+                    ],
+                    solutionCode: clean,
+                    explanation: `Line 3 had a syntax error in the loop declaration.`
+                },
+                hints: [`Look at line 3 for missing delimiters.`]
             };
         }
 
