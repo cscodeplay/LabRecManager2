@@ -206,6 +206,10 @@ export default function PedagogyBuilderPage() {
     const [showConfigModal, setShowConfigModal] = useState(false);
     const [configForm, setConfigForm] = useState({ useBlooms: false, useObjectives: false, useTimeLimit: false });
 
+    // Editing State Trackers
+    const [editingUnitId, setEditingUnitId] = useState(null);
+    const [editingExerciseId, setEditingExerciseId] = useState(null);
+
     // Assign modal
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [classes, setClasses] = useState([]);
@@ -217,6 +221,28 @@ export default function PedagogyBuilderPage() {
 
     // Auto-Save exercise draft state
     const [builderSavedTime, setBuilderSavedTime] = useState(null);
+
+    // Test Cases handlers
+    const handleAddTestCase = () => {
+        setExerciseForm(f => ({
+            ...f,
+            testCases: [...(f.testCases || []), { input: '', expectedOutput: '', isHidden: false }]
+        }));
+    };
+
+    const handleTestCaseChange = (index, field, value) => {
+        setExerciseForm(f => ({
+            ...f,
+            testCases: (f.testCases || []).map((tc, i) => i === index ? { ...tc, [field]: value } : tc)
+        }));
+    };
+
+    const handleRemoveTestCase = (index) => {
+        setExerciseForm(f => ({
+            ...f,
+            testCases: (f.testCases || []).filter((_, i) => i !== index)
+        }));
+    };
 
     useEffect(() => {
         if (typeof window === 'undefined' || !showExerciseModal) return;
@@ -271,20 +297,183 @@ export default function PedagogyBuilderPage() {
     const pedagogyScore = useMemo(() => computePedagogyScore(moduleData), [moduleData]);
     const designTips = useMemo(() => getDesignTips(moduleData, activeUnit), [moduleData, activeUnit]);
 
-    const handleCreateUnit = async () => {
+    // Unit Actions
+    const handleOpenCreateUnit = () => {
+        setEditingUnitId(null);
+        setUnitForm({
+            title: '',
+            description: '',
+            expectedHours: 5,
+            unlockThreshold: 80,
+            unitNumber: (moduleData?.units?.length || 0) + 1
+        });
+        setShowUnitModal(true);
+    };
+
+    const handleOpenEditUnit = (unit) => {
+        if (!unit) return;
+        setEditingUnitId(unit.id);
+        setUnitForm({
+            title: unit.title || '',
+            description: unit.description || '',
+            expectedHours: unit.expectedHours || 5,
+            unlockThreshold: unit.unlockThreshold ?? 80,
+            unitNumber: unit.unitNumber || 1
+        });
+        setShowUnitModal(true);
+    };
+
+    const handleSaveUnit = async () => {
         try {
-            await trainingAPI.createUnit(id, unitForm);
-            toast.success('Unit created with mastery gate');
+            if (editingUnitId) {
+                await trainingAPI.updateUnit(editingUnitId, unitForm);
+                toast.success('Unit updated successfully');
+            } else {
+                await trainingAPI.createUnit(id, unitForm);
+                toast.success('Unit created with mastery gate');
+            }
             setShowUnitModal(false);
+            setEditingUnitId(null);
             setUnitForm({ title: '', description: '', expectedHours: 5, unlockThreshold: 80, unitNumber: (moduleData?.units?.length || 0) + 2 });
             loadData();
         } catch (error) {
-            toast.error(error.response?.data?.message || 'Error creating unit');
+            toast.error(error.response?.data?.message || 'Error saving unit');
         }
     };
 
-    const handleCreateExercise = async () => {
-        if (!activeUnitId) return;
+    const handleDeleteUnit = async (unitId) => {
+        if (!confirm('Are you sure you want to delete this unit and all its exercises?')) return;
+        try {
+            await trainingAPI.deleteUnit(unitId);
+            toast.success('Unit deleted');
+            if (activeUnitId === unitId) {
+                setActiveUnitId(null);
+            }
+            loadData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Error deleting unit');
+        }
+    };
+
+    // Exercise Actions
+    const handleOpenCreateExercise = () => {
+        setEditingExerciseId(null);
+        setExerciseForm({
+            title: '',
+            description: '',
+            theory: '',
+            exerciseType: 'coding',
+            difficulty: 'beginner',
+            scaffoldLevel: 'guided',
+            bloomsLevel: 'understand',
+            learningObjective: '',
+            isReviewExercise: false,
+            timeLimit: 5,
+            xpReward: 10,
+            starterCode: '',
+            solutionCode: '',
+            testCases: [
+                { input: '', expectedOutput: '', isHidden: false }
+            ],
+            hints: [''],
+            mcqData: {
+                question: 'What is the output of this code snippet?',
+                codeSnippet: 'print("Hello World")',
+                options: ['Hello World', 'None', 'SyntaxError', 'undefined'],
+                correctOption: 0,
+                explanation: 'The print function writes to standard output.'
+            },
+            clozeData: {
+                instruction: 'Fill in the blank:',
+                template: 'for i in {{BLANK_1}}(5):\n    print(i)',
+                blanks: [{ id: 'BLANK_1', correctAnswer: 'range', hint: 'Sequence generator' }],
+                explanation: 'range(5) produces numbers 0 to 4'
+            },
+            caseStudyData: {
+                company: 'TechCorp Cloud',
+                incident: 'High memory usage during batch processing',
+                scenarioCode: '# Inefficient memory usage\ndata = [x for x in range(10000000)]',
+                questions: [
+                    {
+                        id: 'q1',
+                        prompt: 'How would you fix memory consumption without eager list allocation?',
+                        options: ['Use a generator expression (x for x in range(...))', 'Use a global variable', 'Use recursion', 'Allocate larger swap space'],
+                        correctOption: 0,
+                        explanation: 'Generators yield items on demand with O(1) memory.'
+                    }
+                ]
+            }
+        });
+        setShowExerciseModal(true);
+    };
+
+    const handleOpenEditExercise = (ex) => {
+        if (!ex) return;
+        setEditingExerciseId(ex.id);
+
+        let parsedTestCases = [];
+        let mcq = null;
+        let cloze = null;
+        let caseStudy = null;
+
+        if (ex.testCases) {
+            const raw = typeof ex.testCases === 'string' ? JSON.parse(ex.testCases) : ex.testCases;
+            if (Array.isArray(raw)) {
+                parsedTestCases = raw;
+            } else if (typeof raw === 'object') {
+                if (ex.exerciseType === 'mcq') mcq = raw;
+                else if (ex.exerciseType === 'fill_blank') cloze = raw;
+                else if (ex.exerciseType === 'case_study') caseStudy = raw;
+            }
+        }
+
+        let parsedHints = [];
+        if (ex.hints) {
+            parsedHints = typeof ex.hints === 'string' ? JSON.parse(ex.hints) : ex.hints;
+            if (!Array.isArray(parsedHints)) parsedHints = [String(parsedHints)];
+        }
+
+        setExerciseForm({
+            title: ex.title || '',
+            description: ex.description || '',
+            theory: '',
+            exerciseType: ex.exerciseType || 'coding',
+            difficulty: ex.difficulty || 'beginner',
+            scaffoldLevel: ex.scaffoldLevel || 'guided',
+            bloomsLevel: ex.bloomsLevel || 'apply',
+            learningObjective: ex.learningObjective || '',
+            isReviewExercise: ex.isReviewExercise || false,
+            timeLimit: ex.timeLimit || 5,
+            xpReward: ex.xpReward || 10,
+            starterCode: ex.starterCode || '',
+            solutionCode: ex.solutionCode || '',
+            testCases: parsedTestCases.length > 0 ? parsedTestCases : [{ input: '', expectedOutput: '', isHidden: false }],
+            hints: parsedHints.length > 0 ? parsedHints : [''],
+            mcqData: mcq || {
+                question: 'What is the output of this code snippet?',
+                codeSnippet: '',
+                options: ['', '', '', ''],
+                correctOption: 0,
+                explanation: ''
+            },
+            clozeData: cloze || {
+                instruction: 'Fill in the blank:',
+                template: '',
+                blanks: [{ id: 'BLANK_1', correctAnswer: '', hint: '' }],
+                explanation: ''
+            },
+            caseStudyData: caseStudy || {
+                company: '',
+                incident: '',
+                scenarioCode: '',
+                questions: []
+            }
+        });
+        setShowExerciseModal(true);
+    };
+
+    const handleSaveExercise = async () => {
+        if (!activeUnitId && !editingExerciseId) return;
         try {
             // Merge theory into description if provided
             const fullDescription = exerciseForm.theory
@@ -317,46 +506,30 @@ export default function PedagogyBuilderPage() {
                 hints: JSON.stringify(exerciseForm.hints),
             };
 
-            await trainingAPI.createExercise(activeUnitId, payload);
+            if (editingExerciseId) {
+                await trainingAPI.updateExercise(editingExerciseId, payload);
+                toast.success('Exercise updated successfully');
+            } else {
+                await trainingAPI.createExercise(activeUnitId, payload);
+                toast.success('Exercise deployed with pedagogy rules');
+            }
             localStorage.removeItem(`ulrms_builder_exercise_${id}`);
-            toast.success('Exercise deployed with pedagogy rules');
             setShowExerciseModal(false);
-            setExerciseForm({
-                title: '', description: '', theory: '', exerciseType: 'coding', difficulty: 'beginner', scaffoldLevel: 'guided',
-                bloomsLevel: 'understand', learningObjective: '',
-                isReviewExercise: false, timeLimit: 5, xpReward: 10, starterCode: '', solutionCode: '',
-                testCases: [], hints: [],
-                mcqData: {
-                    question: 'What is the output of this code snippet?',
-                    codeSnippet: 'print("Hello World")',
-                    options: ['Hello World', 'None', 'SyntaxError', 'undefined'],
-                    correctOption: 0,
-                    explanation: 'The print function writes to standard output.'
-                },
-                clozeData: {
-                    instruction: 'Fill in the blank:',
-                    template: 'for i in {{BLANK_1}}(5):\n    print(i)',
-                    blanks: [{ id: 'BLANK_1', correctAnswer: 'range', hint: 'Sequence generator' }],
-                    explanation: 'range(5) produces numbers 0 to 4'
-                },
-                caseStudyData: {
-                    company: 'TechCorp Cloud',
-                    incident: 'High memory usage during batch processing',
-                    scenarioCode: '# Inefficient memory usage\ndata = [x for x in range(10000000)]',
-                    questions: [
-                        {
-                            id: 'q1',
-                            prompt: 'How would you fix memory consumption without eager list allocation?',
-                            options: ['Use a generator expression (x for x in range(...))', 'Use a global variable', 'Use recursion', 'Allocate larger swap space'],
-                            correctOption: 0,
-                            explanation: 'Generators yield items on demand with O(1) memory.'
-                        }
-                    ]
-                }
-            });
+            setEditingExerciseId(null);
             loadData();
         } catch (error) {
-            toast.error(error.response?.data?.message || 'Error adding exercise');
+            toast.error(error.response?.data?.message || 'Error saving exercise');
+        }
+    };
+
+    const handleDeleteExercise = async (exerciseId) => {
+        if (!confirm('Are you sure you want to delete this exercise?')) return;
+        try {
+            await trainingAPI.deleteExercise(exerciseId);
+            toast.success('Exercise deleted');
+            loadData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Error deleting exercise');
         }
     };
 
@@ -529,7 +702,7 @@ export default function PedagogyBuilderPage() {
                             <button onClick={() => setShowAssignModal(true)} className="btn bg-gradient-to-r from-primary-600 to-primary-500 text-white shadow-lg shadow-primary-500/25 hover:shadow-xl text-sm">
                                 <Send className="w-4 h-4" /> Assign to Class
                             </button>
-                            <button onClick={() => setShowUnitModal(true)} className="btn btn-primary text-sm">
+                            <button onClick={handleOpenCreateUnit} className="btn btn-primary text-sm">
                                 <Plus className="w-4 h-4" /> Add Unit
                             </button>
                         </div>
@@ -558,7 +731,7 @@ export default function PedagogyBuilderPage() {
                                 const isActive = activeUnitId === unit.id;
 
                                 return (
-                                    <div key={unit.id}>
+                                    <div key={unit.id} className="group relative">
                                         {/* Mastery Gate */}
                                         {idx > 0 && (
                                             <div className="flex items-center justify-center py-1.5">
@@ -570,22 +743,35 @@ export default function PedagogyBuilderPage() {
                                         )}
 
                                         {/* Unit Node */}
-                                        <button
+                                        <div
                                             onClick={() => setActiveUnitId(unit.id)}
-                                            className={`w-full text-left p-3 rounded-xl border transition-all flex items-center gap-3 ${
+                                            className={`w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
                                                 isActive
                                                     ? 'bg-primary-50 dark:bg-primary-900/30 border-primary-500 text-primary-900 dark:text-primary-100 shadow-sm'
                                                     : 'bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 hover:border-slate-300'
                                             }`}
                                         >
-                                            <div className="w-7 h-7 rounded-lg bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 font-bold text-xs flex items-center justify-center shrink-0">
-                                                {unit.unitNumber}
+                                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                                <div className="w-7 h-7 rounded-lg bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 font-bold text-xs flex items-center justify-center shrink-0">
+                                                    {unit.unitNumber}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="text-xs font-bold truncate">{unit.title}</div>
+                                                    <div className="text-[10px] text-slate-400 mt-0.5">{unit.exercises?.length || 0} exercises</div>
+                                                </div>
                                             </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="text-xs font-bold truncate">{unit.title}</div>
-                                                <div className="text-[10px] text-slate-400 mt-0.5">{unit.exercises?.length || 0} exercises</div>
-                                            </div>
-                                        </button>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleOpenEditUnit(unit);
+                                                }}
+                                                className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-slate-400 hover:text-primary-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                                title="Edit Unit"
+                                            >
+                                                <Edit3 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
 
                                         {/* Connector line */}
                                         {idx < moduleData.units.length - 1 && (
@@ -609,10 +795,10 @@ export default function PedagogyBuilderPage() {
                     )}
 
                     <button
-                        onClick={() => setShowUnitModal(true)}
-                        className="w-full mt-4 py-2.5 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-500 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                        onClick={handleOpenCreateUnit}
+                        className="w-full mt-4 py-2.5 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-500 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center justify-center gap-1.5"
                     >
-                        + Add Unit
+                        <Plus className="w-4 h-4" /> Add Unit
                     </button>
                 </div>
 
@@ -622,22 +808,43 @@ export default function PedagogyBuilderPage() {
                         <div className="max-w-4xl mx-auto space-y-6">
                             {/* Unit Overview Card */}
                             <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-                                <div className="flex items-start justify-between">
-                                    <div>
-                                        <div className="text-xs font-semibold text-primary-600 dark:text-primary-400 uppercase tracking-wider">Unit {activeUnit.unitNumber}</div>
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-semibold text-primary-600 dark:text-primary-400 uppercase tracking-wider">Unit {activeUnit.unitNumber}</span>
+                                            {activeUnit.unlockThreshold > 0 && (
+                                                <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-full font-bold">
+                                                    Mastery Gate: {activeUnit.unlockThreshold}%
+                                                </span>
+                                            )}
+                                        </div>
                                         <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{activeUnit.title}</h2>
                                         {activeUnit.description && (
                                             <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">{activeUnit.description}</p>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <button
+                                            onClick={() => handleOpenEditUnit(activeUnit)}
+                                            className="btn btn-secondary text-xs py-2 px-3 rounded-xl flex items-center gap-1 font-bold"
+                                            title="Edit Unit Title / Description"
+                                        >
+                                            <Edit3 className="w-3.5 h-3.5" /> Edit Unit
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeleteUnit(activeUnit.id)}
+                                            className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-slate-200 dark:border-slate-800 transition"
+                                            title="Delete Unit"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
                                         <button
                                             onClick={() => { setAiCopilotTab('exercise'); setShowAiCopilot(true); }}
                                             className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white font-bold text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 shadow-sm"
                                         >
                                             <Sparkles className="w-3.5 h-3.5" /> AI Synthesizer
                                         </button>
-                                        <button onClick={() => setShowExerciseModal(true)} className="btn btn-primary text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 font-bold">
+                                        <button onClick={handleOpenCreateExercise} className="btn btn-primary text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 font-bold">
                                             <Plus className="w-3.5 h-3.5" /> Add Exercise
                                         </button>
                                     </div>
@@ -664,14 +871,18 @@ export default function PedagogyBuilderPage() {
                                         const badge = typeBadges[ex.exerciseType] || typeBadges.coding;
 
                                         return (
-                                            <div key={ex.id} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between gap-4">
+                                            <div
+                                                key={ex.id}
+                                                onClick={() => handleOpenEditExercise(ex)}
+                                                className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 shadow-sm flex items-center justify-between gap-4 cursor-pointer transition group"
+                                            >
                                                 <div className="flex items-center gap-3 min-w-0">
                                                     <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 font-bold text-xs text-slate-500 flex items-center justify-center shrink-0">
                                                         {idx + 1}
                                                     </div>
                                                     <div className="min-w-0">
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            <h5 className="font-bold text-sm text-slate-900 dark:text-white truncate">{ex.title}</h5>
+                                                            <h5 className="font-bold text-sm text-slate-900 dark:text-white truncate group-hover:text-indigo-600 transition">{ex.title}</h5>
                                                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badge.bg}`}>
                                                                 {badge.label}
                                                             </span>
@@ -684,9 +895,30 @@ export default function PedagogyBuilderPage() {
                                                 </div>
 
                                                 <div className="flex items-center gap-2 shrink-0">
-                                                    <span className="text-xs font-bold text-amber-500 flex items-center gap-1">
+                                                    <span className="text-xs font-bold text-amber-500 flex items-center gap-1 mr-2">
                                                         <Award className="w-3.5 h-3.5" /> +{ex.xpReward || 10} XP
                                                     </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleOpenEditExercise(ex);
+                                                        }}
+                                                        className="btn btn-secondary text-xs py-1.5 px-3 rounded-xl flex items-center gap-1 font-semibold"
+                                                    >
+                                                        <Edit3 className="w-3.5 h-3.5" /> Edit
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDeleteExercise(ex.id);
+                                                        }}
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
+                                                        title="Delete Exercise"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
                                                 </div>
                                             </div>
                                         );
@@ -733,7 +965,9 @@ export default function PedagogyBuilderPage() {
                         {/* Header */}
                         <div className="p-5 border-b border-slate-200 dark:border-slate-800 shrink-0 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
                             <div>
-                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exercise Studio</h3>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                                    {editingExerciseId ? 'Edit Exercise / Challenge' : 'Exercise Studio'}
+                                </h3>
                                 <p className="text-xs text-slate-500 mt-0.5">Design multi-modal challenges: Coding Labs, MCQs, Syntax Cloze, Bug Hunts, or Case Studies</p>
                             </div>
                             <button
@@ -1027,8 +1261,10 @@ export default function PedagogyBuilderPage() {
                         </div>
 
                         <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex gap-3 shrink-0">
-                            <button onClick={() => setShowExerciseModal(false)} className="btn btn-secondary flex-1">Cancel</button>
-                            <button onClick={handleCreateExercise} className="btn btn-primary flex-1">Deploy Exercise</button>
+                            <button onClick={() => { setShowExerciseModal(false); setEditingExerciseId(null); }} className="btn btn-secondary flex-1">Cancel</button>
+                            <button onClick={handleSaveExercise} className="btn btn-primary flex-1">
+                                {editingExerciseId ? 'Save Changes' : 'Deploy Exercise'}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1037,15 +1273,26 @@ export default function PedagogyBuilderPage() {
             {/* ====== UNIT MODAL ====== */}
             {showUnitModal && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full shadow-xl border border-slate-200 dark:border-slate-800">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full shadow-xl border border-slate-200 dark:border-slate-800">
                         <div className="p-5 border-b border-slate-100 dark:border-slate-800">
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Course Unit Block</h3>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                                {editingUnitId ? 'Edit Course Unit' : 'Course Unit Block'}
+                            </h3>
                             <p className="text-xs text-slate-500 mt-0.5">Each unit represents a topic or concept in the learning path</p>
                         </div>
                         <div className="p-5 space-y-4">
                             <div>
-                                <label className="label">Title</label>
-                                <input type="text" className="input" value={unitForm.title} onChange={e => setUnitForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g., Control Flow" />
+                                <label className="label">Unit Title *</label>
+                                <input type="text" className="input" value={unitForm.title} onChange={e => setUnitForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g., Control Flow & Loops" />
+                            </div>
+                            <div>
+                                <label className="label">Description / Summary</label>
+                                <textarea
+                                    className="input h-20 text-xs"
+                                    value={unitForm.description || ''}
+                                    onChange={e => setUnitForm(f => ({ ...f, description: e.target.value }))}
+                                    placeholder="Overview of core concepts, objectives, and skills covered in this unit..."
+                                />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
@@ -1069,8 +1316,10 @@ export default function PedagogyBuilderPage() {
                             </div>
                         </div>
                         <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex gap-3">
-                            <button onClick={() => setShowUnitModal(false)} className="btn btn-secondary flex-1">Cancel</button>
-                            <button onClick={handleCreateUnit} className="btn btn-primary flex-1">Save Block</button>
+                            <button onClick={() => { setShowUnitModal(false); setEditingUnitId(null); }} className="btn btn-secondary flex-1">Cancel</button>
+                            <button onClick={handleSaveUnit} className="btn btn-primary flex-1">
+                                {editingUnitId ? 'Save Changes' : 'Save Block'}
+                            </button>
                         </div>
                     </div>
                 </div>

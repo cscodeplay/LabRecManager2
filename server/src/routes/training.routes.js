@@ -381,6 +381,121 @@ router.post('/units/:id/exercises', authenticate, authorize('admin', 'principal'
 }));
 
 /**
+ * @route   PUT /api/training/units/:id
+ * @desc    Update an existing unit
+ * @access  Private
+ */
+router.put('/units/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { title, description, unitNumber, expectedHours, unlockThreshold, sequenceOrder } = req.body;
+
+    const existingUnit = await prisma.trainingUnit.findUnique({ where: { id } });
+    if (!existingUnit) return res.status(404).json({ success: false, message: 'Unit not found' });
+
+    const updatedUnit = await prisma.trainingUnit.update({
+        where: { id },
+        data: {
+            title: title !== undefined ? title : existingUnit.title,
+            description: description !== undefined ? description : existingUnit.description,
+            unitNumber: unitNumber !== undefined ? parseInt(unitNumber) : existingUnit.unitNumber,
+            expectedHours: expectedHours !== undefined ? (expectedHours ? parseInt(expectedHours) : null) : existingUnit.expectedHours,
+            unlockThreshold: unlockThreshold !== undefined ? parseInt(unlockThreshold) : existingUnit.unlockThreshold,
+            sequenceOrder: sequenceOrder !== undefined ? parseInt(sequenceOrder) : existingUnit.sequenceOrder
+        }
+    });
+
+    res.json({ success: true, data: { unit: updatedUnit } });
+}));
+
+/**
+ * @route   DELETE /api/training/units/:id
+ * @desc    Delete a unit and its exercises
+ * @access  Private
+ */
+router.delete('/units/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const unit = await prisma.trainingUnit.findUnique({
+        where: { id },
+        include: { _count: { select: { exercises: true } } }
+    });
+    if (!unit) return res.status(404).json({ success: false, message: 'Unit not found' });
+
+    const exerciseCount = unit._count?.exercises || 0;
+
+    await prisma.trainingUnit.delete({ where: { id } });
+
+    await prisma.trainingModule.update({
+        where: { id: unit.moduleId },
+        data: {
+            totalUnits: { decrement: 1 },
+            totalExercises: { decrement: exerciseCount }
+        }
+    });
+
+    res.json({ success: true, message: 'Unit deleted successfully' });
+}));
+
+/**
+ * @route   PUT /api/training/exercises/:id
+ * @desc    Update an existing exercise
+ * @access  Private
+ */
+router.put('/exercises/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const existing = await prisma.trainingExercise.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ success: false, message: 'Exercise not found' });
+
+    const updatedExercise = await prisma.trainingExercise.update({
+        where: { id },
+        data: {
+            title: req.body.title !== undefined ? req.body.title : existing.title,
+            description: req.body.description !== undefined ? req.body.description : existing.description,
+            exerciseType: req.body.exerciseType !== undefined ? req.body.exerciseType : existing.exerciseType,
+            difficulty: req.body.difficulty !== undefined ? req.body.difficulty : existing.difficulty,
+            scaffoldLevel: req.body.scaffoldLevel !== undefined ? req.body.scaffoldLevel : existing.scaffoldLevel,
+            bloomsLevel: req.body.bloomsLevel !== undefined ? req.body.bloomsLevel : existing.bloomsLevel,
+            learningObjective: req.body.learningObjective !== undefined ? req.body.learningObjective : existing.learningObjective,
+            isReviewExercise: req.body.isReviewExercise !== undefined ? req.body.isReviewExercise : existing.isReviewExercise,
+            reviewsTopicId: req.body.reviewsTopicId !== undefined ? req.body.reviewsTopicId : existing.reviewsTopicId,
+            starterCode: req.body.starterCode !== undefined ? req.body.starterCode : existing.starterCode,
+            solutionCode: req.body.solutionCode !== undefined ? req.body.solutionCode : existing.solutionCode,
+            testCases: req.body.testCases !== undefined ? (typeof req.body.testCases === 'string' ? JSON.parse(req.body.testCases) : req.body.testCases) : existing.testCases,
+            hints: req.body.hints !== undefined ? (typeof req.body.hints === 'string' ? JSON.parse(req.body.hints) : req.body.hints) : existing.hints,
+            timeLimit: req.body.timeLimit !== undefined ? (parseInt(req.body.timeLimit) || 5) : existing.timeLimit,
+            sequenceOrder: req.body.sequenceOrder !== undefined ? (parseInt(req.body.sequenceOrder) || 1) : existing.sequenceOrder,
+            xpReward: req.body.xpReward !== undefined ? (parseInt(req.body.xpReward) || 10) : existing.xpReward
+        }
+    });
+
+    res.json({ success: true, data: { exercise: updatedExercise } });
+}));
+
+/**
+ * @route   DELETE /api/training/exercises/:id
+ * @desc    Delete an exercise
+ * @access  Private
+ */
+router.delete('/exercises/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const exercise = await prisma.trainingExercise.findUnique({
+        where: { id },
+        include: { unit: { select: { moduleId: true } } }
+    });
+    if (!exercise) return res.status(404).json({ success: false, message: 'Exercise not found' });
+
+    await prisma.trainingExercise.delete({ where: { id } });
+
+    if (exercise.unit?.moduleId) {
+        await prisma.trainingModule.update({
+            where: { id: exercise.unit.moduleId },
+            data: { totalExercises: { decrement: 1 } }
+        });
+    }
+
+    res.json({ success: true, message: 'Exercise deleted successfully' });
+}));
+
+/**
  * @route   GET /api/training/exercises/:id
  * @desc    Get specific exercise data for the editor / multi-modal player
  * @access  Private

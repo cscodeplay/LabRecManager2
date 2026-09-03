@@ -312,7 +312,51 @@ export default function TrainingModuleWizard({
 
         setShowExerciseFormModal(false);
         setEditingExerciseIdx(null);
-        toast.success('Exercise added to Unit!');
+        toast.success(editingExerciseIdx !== null ? 'Exercise updated!' : 'Exercise added to Unit!');
+    };
+
+    const handleOpenEditExercise = (exIdx) => {
+        const activeUnit = units[selectedUnitIdx];
+        if (!activeUnit || !activeUnit.exercises || !activeUnit.exercises[exIdx]) return;
+        const ex = activeUnit.exercises[exIdx];
+        setEditingExerciseIdx(exIdx);
+        setExerciseForm({
+            title: ex.title || '',
+            description: ex.description || '',
+            theory: ex.theory || '',
+            exerciseType: ex.exerciseType || 'coding',
+            difficulty: ex.difficulty || 'beginner',
+            scaffoldLevel: ex.scaffoldLevel || 'guided',
+            bloomsLevel: ex.bloomsLevel || 'apply',
+            learningObjective: ex.learningObjective || '',
+            isReviewExercise: ex.isReviewExercise || false,
+            timeLimit: ex.timeLimit || 5,
+            xpReward: ex.xpReward || 15,
+            starterCode: ex.starterCode || '',
+            solutionCode: ex.solutionCode || '',
+            testCases: Array.isArray(ex.testCases) ? ex.testCases : [{ input: '', expectedOutput: '', isHidden: false }],
+            hints: Array.isArray(ex.hints) ? ex.hints : [''],
+            mcqData: ex.mcqData || (ex.exerciseType === 'mcq' && typeof ex.testCases === 'object' ? ex.testCases : {
+                question: 'What is the output of this code snippet?',
+                codeSnippet: '',
+                options: ['', '', '', ''],
+                correctOption: 0,
+                explanation: ''
+            }),
+            clozeData: ex.clozeData || (ex.exerciseType === 'fill_blank' && typeof ex.testCases === 'object' ? ex.testCases : {
+                instruction: 'Fill in the blank:',
+                template: '',
+                blanks: [{ id: 'BLANK_1', correctAnswer: '', hint: '' }],
+                explanation: ''
+            }),
+            caseStudyData: ex.caseStudyData || (ex.exerciseType === 'case_study' && typeof ex.testCases === 'object' ? ex.testCases : {
+                company: '',
+                incident: '',
+                scenarioCode: '',
+                questions: []
+            })
+        });
+        setShowExerciseFormModal(true);
     };
 
     const handleRemoveExercise = (exIdx) => {
@@ -826,7 +870,8 @@ export default function TrainingModuleWizard({
                                                 return (
                                                     <div
                                                         key={exIdx}
-                                                        className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-4 shadow-sm"
+                                                        onClick={() => handleOpenEditExercise(exIdx)}
+                                                        className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-4 shadow-sm cursor-pointer transition group"
                                                     >
                                                         <div className="flex items-center gap-3 min-w-0">
                                                             <span className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-bold flex items-center justify-center shrink-0">
@@ -834,7 +879,7 @@ export default function TrainingModuleWizard({
                                                             </span>
                                                             <div className="min-w-0">
                                                                 <div className="flex items-center gap-2 flex-wrap">
-                                                                    <h5 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                                                                    <h5 className="font-bold text-sm text-slate-900 dark:text-white truncate group-hover:text-indigo-600 transition">
                                                                         {ex.title}
                                                                     </h5>
                                                                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badge.bg}`}>
@@ -851,12 +896,27 @@ export default function TrainingModuleWizard({
                                                         </div>
 
                                                         <div className="flex items-center gap-2 shrink-0">
-                                                            <span className="text-xs font-bold text-amber-500 flex items-center gap-1">
+                                                            <span className="text-xs font-bold text-amber-500 flex items-center gap-1 mr-1">
                                                                 <Award className="w-3.5 h-3.5" /> +{ex.xpReward || 15} XP
                                                             </span>
                                                             <button
-                                                                onClick={() => handleRemoveExercise(exIdx)}
-                                                                className="p-1.5 text-slate-400 hover:text-red-500 transition"
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleOpenEditExercise(exIdx);
+                                                                }}
+                                                                className="btn btn-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 font-semibold"
+                                                            >
+                                                                <Edit3 className="w-3.5 h-3.5" /> Edit
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleRemoveExercise(exIdx);
+                                                                }}
+                                                                className="p-1.5 text-slate-400 hover:text-red-500 transition rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                                                title="Delete Exercise"
                                                             >
                                                                 <Trash2 className="w-4 h-4" />
                                                             </button>

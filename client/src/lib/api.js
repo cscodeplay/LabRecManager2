@@ -660,7 +660,11 @@ export const trainingAPI = {
     
     // Builder APIs
     createUnit: (moduleId, data) => api.post(`/training/modules/${moduleId}/units`, data),
+    updateUnit: (unitId, data) => api.put(`/training/units/${unitId}`, data),
+    deleteUnit: (unitId) => api.delete(`/training/units/${unitId}`),
     createExercise: (unitId, data) => api.post(`/training/units/${unitId}/exercises`, data),
+    updateExercise: (exerciseId, data) => api.put(`/training/exercises/${exerciseId}`, data),
+    deleteExercise: (exerciseId) => api.delete(`/training/exercises/${exerciseId}`),
 
     // Publish / Assign / Config
     togglePublish: (moduleId) => api.put(`/training/modules/${moduleId}/publish`),
