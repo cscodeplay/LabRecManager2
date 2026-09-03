@@ -1,0 +1,56 @@
+# CBSE Class 11 & 12 Computer Science (083)
+## Unit III: Standard Python Libraries & Mathematical Modules (math module)
+### Authoritative Syllabus & Laboratory Practical Guidelines
+
+---
+
+### 1. Overview & Import Syntax
+Python provides the built-in "math" module that conforms to the C standard for mathematical functions.
+Unlike basic arithmetic operators (+, -, *, /), advanced scientific and algebraic calculations require importing the module:
+`import math` or `from math import ceil, floor, sqrt, pi`.
+All return values from math functions are floating-point numbers unless specified otherwise.
+
+---
+
+### 2. Mathematical Constants
+- `math.pi`: Mathematical constant π = 3.141592653589793 (ratio of circumference to diameter)
+- `math.e`: Euler’s number e = 2.718281828459045 (base of natural logarithms)
+- `math.tau`: Circle constant τ = 2π = 6.283185307179586
+- `math.inf`: Positive floating-point infinity (equivalent to float("inf"))
+- `math.nan`: Floating-point "Not a Number" (NaN) value for undefined operations
+
+---
+
+### 3. Number-Theoretic & Rounding Functions
+- `math.ceil(x)`: Returns the smallest integer greater than or equal to x (e.g. math.ceil(4.2) -> 5).
+- `math.floor(x)`: Returns the largest integer less than or equal to x (e.g. math.floor(4.9) -> 4).
+- `math.trunc(x)`: Returns the truncated integer value of x, removing all fractional digits towards zero.
+- `math.fabs(x)`: Returns the absolute value of x as a float (difference from abs() which preserves int type).
+- `math.factorial(n)`: Returns n! for non-negative integers (raises ValueError for negative numbers or floats).
+- `math.gcd(*integers)`: Returns the greatest common divisor of specified integer arguments.
+- `math.lcm(*integers)`: Returns the least common multiple of specified integer arguments.
+
+---
+
+### 4. Power, Root & Logarithmic Operations
+- `math.sqrt(x)`: Returns the square root of x. Raises ValueError if x < 0.
+- `math.isqrt(n)`: Returns the exact integer square root of a non-negative integer n.
+- `math.pow(x, y)`: Returns x raised to power y as a float (differs from x ** y which preserves integers).
+- `math.exp(x)`: Returns e raised to the power x (e^x).
+- `math.log(x, [base])`: Returns natural logarithm ln(x) if base omitted, or log to the specified base.
+- `math.log10(x)`: Returns the base-10 logarithm of x.
+
+---
+
+### 5. Trigonometry & Angular Conversions
+- Angles in all math trigonometric functions (sin, cos, tan) MUST be expressed in RADIANS, not degrees.
+- `math.radians(deg)`: Converts angle degrees to radians (e.g. math.radians(180) -> 3.141592653589793).
+- `math.degrees(rad)`: Converts angle radians to degrees (e.g. math.degrees(math.pi) -> 180.0).
+- `math.hypot(*coordinates)`: Returns the Euclidean norm / hypotenuse sqrt(x*x + y*y) from the origin.
+
+---
+
+### 6. Mandatory CBSE Laboratory Practical Exercises
+- Exercise 1 (Trigonometric Height Calculation): Write a Python program to compute the height of a tower given the distance from the observer and the angle of elevation in degrees using math.tan() and math.radians().
+- Exercise 2 (Euclidean Hypotenuse & Coordinates): Calculate the straight-line distance between two 2D points (x1, y1) and (x2, y2) using math.hypot(x2 - x1, y2 - y1).
+- Exercise 3 (Mathematical Assertion & Tracing): Understand the difference between math.floor(-3.2) = -4 vs math.trunc(-3.2) = -3.
