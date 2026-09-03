@@ -8,6 +8,7 @@ import {
     Highlighter, MoveRight, Pointer, Image as ImageIcon, ChevronLeft, ChevronRight,
     Plus, Video, VideoOff, Mic, MicOff, Camera, RotateCw, Move, Pipette, Scan,
     Triangle, Star, Hexagon, Scissors, Copy, Files, ClipboardPaste, LineChart, CalendarClock, RectangleHorizontal,
+    Diamond, Cloud, Spline, ArrowLeftRight, Waypoints, StickyNote as StickyNoteIcon, PaintBucket,
     BringToFront, SendToBack, AlignLeft, AlignCenterHorizontal, AlignRight,
     AlignStartVertical, AlignCenterVertical, AlignEndVertical,
     AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Group, Ungroup, Lock, Unlock, Users, MessageCircle, User
@@ -18,6 +19,7 @@ import AdminPermissionsPanel from './AdminPermissionsPanel';
 import RadialToolbar from './RadialToolbar';
 import { BRUSH_TYPES, renderCalligraphy, renderCrayon, renderWatercolor, renderFountainPen, floodFill, sampleColor } from './WhiteboardBrushEngine';
 import StickyNoteRenderer, { createStickyNoteObject, STICKY_COLORS } from './StickyNote';
+import ConnectorLine from './ConnectorLine';
 import TemplateGallery from './TemplateGallery';
 import api from '@/lib/api';
 import { toast } from 'react-hot-toast';
@@ -1724,7 +1726,10 @@ export default function Whiteboard({
     const handleRadialToolSelect = useCallback((toolId, options = {}) => {
         if (toolId === 'pen') {
             setTool('pen');
-            if (options.brushType) setBrushType(options.brushType);
+            if (options.brushType) {
+                setBrushType(options.brushType);
+                toast.success(`Brush: ${options.brushType}`, { icon: '🖌️' });
+            }
             if (options.strokeWidth) setStrokeWidth(options.strokeWidth);
         } else if (toolId === 'highlighter') {
             setTool('highlighter');
@@ -1735,12 +1740,21 @@ export default function Whiteboard({
                     blue: 'rgba(33, 150, 243, 0.4)',
                     pink: 'rgba(233, 30, 99, 0.4)',
                     orange: 'rgba(255, 152, 0, 0.4)',
+                    purple: 'rgba(168, 85, 247, 0.4)',
+                    cyan: 'rgba(6, 182, 212, 0.4)',
                 };
                 setHighlighterColor(colorMap[options.color] || colorMap.yellow);
             }
         } else if (toolId === 'eraser') {
-            setTool('eraser');
-            if (options.eraserSize) setEraserSize(options.eraserSize);
+            if (options.action === 'erase_all') {
+                handleClear();
+            } else if (options.eraserMode === 'object') {
+                setTool('select');
+                toast('Object Eraser: click or lasso objects to delete', { icon: '🗑️' });
+            } else {
+                setTool('eraser');
+                if (options.eraserSize) setEraserSize(options.eraserSize);
+            }
         } else if (toolId === 'shapes') {
             if (options.shapeType === 'sticky_note') {
                 const wrapper = canvasWrapperRef.current;
@@ -1754,13 +1768,48 @@ export default function Whiteboard({
                 setTool('select');
                 setSelectedShapeIds([newNote.id]);
                 toast.success('Sticky note added!', { icon: '📝' });
+            } else if (options.shapeType === 'connector') {
+                const wrapper = canvasWrapperRef.current;
+                const cx = wrapper ? wrapper.clientWidth / 2 : 300;
+                const cy = wrapper ? wrapper.clientHeight / 2 : 300;
+                const newConnector = {
+                    id: Date.now().toString(),
+                    type: 'connector',
+                    sourceId: null,
+                    targetId: null,
+                    sourcePoint: { x: cx - 90, y: cy },
+                    targetPoint: { x: cx + 90, y: cy },
+                    sourceAnchor: 'auto',
+                    targetAnchor: 'auto',
+                    pathType: 'straight',
+                    arrowStart: 'none',
+                    arrowEnd: 'arrow',
+                    color: color || '#6366f1',
+                    strokeWidth: 2,
+                    strokeStyle: 'solid'
+                };
+                setPageShapeObjects(prev => ({
+                    ...prev,
+                    [currentPage]: [...(prev[currentPage] || []), newConnector]
+                }));
+                setTool('select');
+                setSelectedShapeIds([newConnector.id]);
+                toast.success('Connector added! Drag endpoints to snap to shapes.', { icon: '🔗' });
             } else {
                 setTool('shape');
                 if (options.shapeType) setShapeType(options.shapeType);
             }
         } else if (toolId === 'select') {
             setTool('select');
-            if (options.selectMode) setSelectMode(options.selectMode);
+            if (options.action === 'select_all') {
+                const allShapes = (pageShapeObjects[currentPage] || []).map(s => s.id);
+                const allTexts = (pageTextObjects[currentPage] || []).map(t => t.id);
+                setSelectedShapeIds(allShapes);
+                setSelectedTextIds(allTexts);
+                toast.success('Selected all objects', { icon: '☑️' });
+            } else if (options.selectMode) {
+                setSelectMode(options.selectMode);
+            }
         } else if (toolId === 'line') {
             setTool('line');
             if (options.lineType) setLineType(options.lineType);
@@ -1771,12 +1820,16 @@ export default function Whiteboard({
                 setShowTemplateGallery(true);
             } else if (options.action === 'fill') {
                 setTool('fill');
-                toast('Click anywhere inside an area to fill', { icon: '🎨' });
+                toast('Paint Bucket: click anywhere to flood fill', { icon: '🎨' });
             } else if (options.action === 'eyedropper') {
                 setTool('eyedropper');
-                toast('Click on the canvas to pick a color', { icon: '✒️' });
+                toast('Color Picker: click on the canvas to sample a color', { icon: '✒️' });
             } else if (options.action === 'laser') {
                 setTool('laser');
+            } else if (options.action === 'undo') {
+                handleUndo();
+            } else if (options.action === 'redo') {
+                handleRedo();
             } else if (options.action === 'datetime') {
                 const now = new Date().toLocaleString();
                 const newTxt = {
@@ -1800,7 +1853,7 @@ export default function Whiteboard({
             }
         }
         setShowRadialMenu(false);
-    }, [currentPage, color, strokeWidth]);
+    }, [currentPage, color, strokeWidth, handleClear, handleUndo, handleRedo]);
 
     const handleApplyTemplate = useCallback((templateData) => {
         if (!templateData) return;
@@ -1819,9 +1872,10 @@ export default function Whiteboard({
             }));
         }
         if (background) {
+            const resolvedPattern = background.pattern === 'dots' ? 'dotted' : (background.pattern || 'plain');
             setPageBackgrounds(prev => ({
                 ...prev,
-                [currentPage]: { pattern: background.pattern || 'plain', color: background.color || '#ffffff' }
+                [currentPage]: { pattern: resolvedPattern, color: background.color || '#ffffff' }
             }));
         }
         setShowTemplateGallery(false);
@@ -2362,6 +2416,34 @@ export default function Whiteboard({
             return;
         }
 
+        // Handle fill bucket tool
+        if (tool === 'fill') {
+            const canvas = canvasRef.current;
+            if (canvas) {
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                floodFill(ctx, Math.round(pos.x), Math.round(pos.y), color, 32);
+                saveToHistory();
+                emitDrawEvent({ type: 'fill', x: pos.x, y: pos.y, color });
+                toast.success('Area filled!', { icon: '🎨' });
+            }
+            return;
+        }
+
+        // Handle eyedropper color picker tool
+        if (tool === 'eyedropper') {
+            const canvas = canvasRef.current;
+            if (canvas) {
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                const sampled = sampleColor(ctx, Math.round(pos.x), Math.round(pos.y));
+                if (sampled) {
+                    setColor(sampled);
+                    toast.success(`Color picked: ${sampled}`, { icon: '✒️' });
+                    setTool('pen');
+                }
+            }
+            return;
+        }
+
         // Handle text or shape tool - start drawing boundary area
         if (tool === 'text' || tool === 'shape') {
             setIsDrawing(true);
@@ -2565,7 +2647,40 @@ export default function Whiteboard({
                 return;
             }
             
-            pts.push(pos);
+            const ptObj = {
+                x: pos.x,
+                y: pos.y,
+                pressure: currentPressureRef.current || 0.5,
+                timestamp: Date.now()
+            };
+            pts.push(ptObj);
+
+            // If an advanced brush engine is active, render with realistic brush physics
+            if (tool === 'pen' && brushType && brushType !== 'normal') {
+                if (preStrokeImageDataRef.current) {
+                    ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+                }
+                const brushOpts = { color, strokeWidth, opacity: 1 };
+                if (brushType === 'calligraphy') {
+                    renderCalligraphy(ctx, pts, brushOpts);
+                } else if (brushType === 'crayon') {
+                    renderCrayon(ctx, pts, brushOpts);
+                } else if (brushType === 'watercolor') {
+                    renderWatercolor(ctx, pts, brushOpts);
+                } else if (brushType === 'fountain') {
+                    renderFountainPen(ctx, pts, brushOpts);
+                }
+                emitDrawEvent({
+                    type: 'path',
+                    isStart: false,
+                    x: pos.x,
+                    y: pos.y,
+                    color: color,
+                    strokeWidth: strokeWidth,
+                    brushType: brushType
+                });
+                return;
+            }
 
             ctx.beginPath();
             if (tool === 'eraser') {
@@ -2902,7 +3017,8 @@ export default function Whiteboard({
                     color: tool === 'highlighter' ? highlighterColor : color,
                     strokeWidth: tool === 'highlighter' ? strokeWidth * 4 : strokeWidth,
                     smooth: true,
-                    isHighlighter: tool === 'highlighter'
+                    isHighlighter: tool === 'highlighter',
+                    brushType: (tool === 'pen' ? brushType : 'normal') || 'normal'
                 };
                 setShapeObjects(prev => [...prev, newShapeObj]);
                 if (socket && sessionId) socket.emit('whiteboard:shape-add', { sessionId, shape: newShapeObj });
@@ -2919,13 +3035,17 @@ export default function Whiteboard({
             const w = Math.abs(startPos.x - pos.x) || 1;
             const h = Math.abs(startPos.y - pos.y) || 1;
 
+            const resolvedLineType = lineType === 'arrow' ? 'arrow' : (lineType === 'double_arrow' ? 'double_arrow' : (lineType === 'arc' ? 'arc' : (lineType === 'dashed' ? 'dashed_line' : 'line')));
+
             const newShapeObj = {
                 id: Date.now().toString(),
-                type: lineType === 'arrow' ? 'arrow' : 'line',
+                type: resolvedLineType,
                 x: minX,
                 y: minY,
                 width: w,
                 height: h,
+                originalWidth: w,
+                originalHeight: h,
                 startX: startPos.x - minX,
                 startY: startPos.y - minY,
                 endX: pos.x - minX,
@@ -4414,7 +4534,7 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'line' && showLinePicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[100px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 flex flex-col gap-1 w-[120px]`}>
                                         <button
                                             onClick={() => { setLineType('line'); setShowLinePicker(false); }}
                                             className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'line' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
@@ -4428,6 +4548,20 @@ export default function Whiteboard({
                                             title="Arrow"
                                         >
                                             <MoveRight className="w-3.5 h-3.5" /> Arrow
+                                        </button>
+                                        <button
+                                            onClick={() => { setLineType('double_arrow'); setShowLinePicker(false); }}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'double_arrow' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            title="Double Arrow"
+                                        >
+                                            <ArrowLeftRight className="w-3.5 h-3.5" /> 2-Way
+                                        </button>
+                                        <button
+                                            onClick={() => { setLineType('arc'); setShowLinePicker(false); }}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'arc' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            title="Curved Arc"
+                                        >
+                                            <Spline className="w-3.5 h-3.5" /> Curved Arc
                                         </button>
                                     </div>
                                 )}
@@ -4486,23 +4620,47 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'shape' && showShapePicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 grid grid-cols-2 gap-1 w-[120px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 z-50 grid grid-cols-3 gap-1 w-[180px]`}>
                                         {[
                                             { id: 'rectangle', icon: RectangleHorizontal, label: 'Rectangle' },
+                                            { id: 'rounded_rect', icon: RectangleHorizontal, label: 'Rounded' },
                                             { id: 'circle', icon: Circle, label: 'Circle' },
                                             { id: 'triangle', icon: Triangle, label: 'Triangle' },
+                                            { id: 'diamond', icon: Diamond, label: 'Diamond' },
                                             { id: 'star', icon: Star, label: 'Star' },
+                                            { id: 'hexagon', icon: Hexagon, label: 'Hexagon' },
+                                            { id: 'arc', icon: Spline, label: 'Curved Arc' },
+                                            { id: 'cloud', icon: Cloud, label: 'Cloud' },
+                                            { id: 'sticky_note', icon: StickyNoteIcon, label: 'Sticky Note' },
                                             { id: 'graph', icon: LineChart, label: '2D Graph' },
                                             { id: 'ruler', icon: Ruler, label: 'Ruler' },
                                             { id: 'protractor', icon: Compass, label: 'Protractor' },
                                         ].map(s => (
                                             <button
                                                 key={s.id}
-                                                onClick={() => { setShapeType(s.id); setShowShapePicker(false); }}
-                                                className={`flex flex-col items-center justify-center p-2 rounded-lg text-xs transition gap-1 ${shapeType === s.id ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                                onClick={() => {
+                                                    if (s.id === 'sticky_note') {
+                                                        const wrapper = canvasWrapperRef.current;
+                                                        const cx = wrapper ? wrapper.clientWidth / 2 - 100 : 200;
+                                                        const cy = wrapper ? wrapper.clientHeight / 2 - 100 : 200;
+                                                        const newNote = createStickyNoteObject(cx, cy, 'yellow');
+                                                        setPageShapeObjects(prev => ({
+                                                            ...prev,
+                                                            [currentPage]: [...(prev[currentPage] || []), newNote]
+                                                        }));
+                                                        setTool('select');
+                                                        setSelectedShapeIds([newNote.id]);
+                                                        toast.success('Sticky note added!', { icon: '📝' });
+                                                    } else {
+                                                        setShapeType(s.id);
+                                                    }
+                                                    setShowShapePicker(false);
+                                                }}
+                                                className={`flex flex-col items-center justify-center p-1.5 rounded-lg text-xs transition gap-0.5 ${shapeType === s.id ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
                                                 title={s.label}
                                             >
                                                 <s.icon className="w-4 h-4" />
+                                                <span className="text-[8.5px] truncate w-full text-center leading-tight">{s.label}</span>
                                             </button>
                                         ))}
                                     </div>
@@ -5659,8 +5817,13 @@ export default function Whiteboard({
                         >
                             <svg width="100%" height="100%" style={{ overflow: 'visible', pointerEvents: 'none' }}>
                                 {shapePreview.type === 'rectangle' && <rect x="0" y="0" width={shapePreview.width} height={shapePreview.height} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
+                                {shapePreview.type === 'rounded_rect' && <rect x="0" y="0" width={shapePreview.width} height={shapePreview.height} rx={Math.min(20, shapePreview.width/4, shapePreview.height/4)} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
                                 {shapePreview.type === 'circle' && <ellipse cx={shapePreview.width/2} cy={shapePreview.height/2} rx={shapePreview.width/2} ry={shapePreview.height/2} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} />}
                                 {shapePreview.type === 'triangle' && <polygon points={`${shapePreview.width/2},0 0,${shapePreview.height} ${shapePreview.width},${shapePreview.height}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
+                                {shapePreview.type === 'diamond' && <polygon points={`${shapePreview.width/2},0 ${shapePreview.width},${shapePreview.height/2} ${shapePreview.width/2},${shapePreview.height} 0,${shapePreview.height/2}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
+                                {shapePreview.type === 'hexagon' && <polygon points={`${shapePreview.width*0.25},0 ${shapePreview.width*0.75},0 ${shapePreview.width},${shapePreview.height*0.5} ${shapePreview.width*0.75},${shapePreview.height} ${shapePreview.width*0.25},${shapePreview.height} 0,${shapePreview.height*0.5}`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
+                                {shapePreview.type === 'arc' && <path d={`M 0 ${shapePreview.height} Q ${shapePreview.width/2} 0 ${shapePreview.width} ${shapePreview.height}`} fill="none" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinecap="round" />}
+                                {shapePreview.type === 'cloud' && <path d={`M ${shapePreview.width*0.2} ${shapePreview.height*0.7} C ${shapePreview.width*0.05} ${shapePreview.height*0.7} ${shapePreview.width*0.05} ${shapePreview.height*0.45} ${shapePreview.width*0.2} ${shapePreview.height*0.4} C ${shapePreview.width*0.15} ${shapePreview.height*0.15} ${shapePreview.width*0.45} ${shapePreview.height*0.1} ${shapePreview.width*0.5} ${shapePreview.height*0.3} C ${shapePreview.width*0.6} ${shapePreview.height*0.15} ${shapePreview.width*0.85} ${shapePreview.height*0.2} ${shapePreview.width*0.85} ${shapePreview.height*0.4} C ${shapePreview.width*0.98} ${shapePreview.height*0.45} ${shapePreview.width*0.98} ${shapePreview.height*0.7} ${shapePreview.width*0.8} ${shapePreview.height*0.7} Z`} fill="transparent" stroke={shapePreview.color} strokeWidth={shapePreview.strokeWidth} strokeLinejoin="round" />}
                                 {shapePreview.type === 'star' && (() => {
                                     const cx = shapePreview.width / 2;
                                     const cy = shapePreview.height / 2;
@@ -5719,6 +5882,39 @@ export default function Whiteboard({
                                     points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
                                 }
                                 return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={points.join(' ')} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                            } else if (shpObj.type === 'rounded_rect') {
+                                const r = Math.min(20, shpObj.width / 4, shpObj.height / 4);
+                                return <rect style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} x="0" y="0" width={shpObj.width} height={shpObj.height} rx={r} ry={r} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} />;
+                            } else if (shpObj.type === 'diamond') {
+                                const w = shpObj.width, h = shpObj.height;
+                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${w/2},0 ${w},${h/2} ${w/2},${h} 0,${h/2}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                            } else if (shpObj.type === 'hexagon') {
+                                const w = shpObj.width, h = shpObj.height;
+                                return <polygon style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }} points={`${w*0.25},0 ${w*0.75},0 ${w},${h*0.5} ${w*0.75},${h} ${w*0.25},${h} 0,${h*0.5}`} fill={fill} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinejoin="round" />;
+                            } else if (shpObj.type === 'arc' || shpObj.type === 'curved_line') {
+                                return (
+                                    <path
+                                        d={`M 0 ${shpObj.height} Q ${shpObj.width / 2} 0 ${shpObj.width} ${shpObj.height}`}
+                                        fill={fill}
+                                        stroke={shpObj.color}
+                                        strokeWidth={shpObj.strokeWidth}
+                                        strokeLinecap="round"
+                                        style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}
+                                    />
+                                );
+                            } else if (shpObj.type === 'cloud') {
+                                const w = shpObj.width, h = shpObj.height;
+                                return (
+                                    <path
+                                        d={`M ${w*0.2} ${h*0.7} C ${w*0.05} ${h*0.7} ${w*0.05} ${h*0.45} ${w*0.2} ${h*0.4} C ${w*0.15} ${h*0.15} ${w*0.45} ${h*0.1} ${w*0.5} ${h*0.3} C ${w*0.6} ${h*0.15} ${w*0.85} ${h*0.2} ${w*0.85} ${h*0.4} C ${w*0.98} ${h*0.45} ${w*0.98} ${h*0.7} ${w*0.8} ${h*0.7} Z`}
+                                        fill={fill}
+                                        stroke={shpObj.color}
+                                        strokeWidth={shpObj.strokeWidth}
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}
+                                    />
+                                );
                             } else if (shpObj.type === 'path') {
                                 if (!shpObj.points || shpObj.points.length === 0) return null;
                                 const pts = shpObj.points;
@@ -5789,6 +5985,28 @@ export default function Whiteboard({
                                         <polygon points={`${p1} ${p2} ${p3}`} fill={shpObj.color} stroke="none" />
                                     </g>
                                 );
+                            } else if (shpObj.type === 'double_arrow') {
+                                const localStartX = shpObj.startX;
+                                const localStartY = shpObj.startY;
+                                const localEndX = shpObj.endX;
+                                const localEndY = shpObj.endY;
+                                const angle = Math.atan2(localEndY - localStartY, localEndX - localStartX);
+                                const headLength = shpObj.strokeWidth * 4;
+                                const p1 = `${localEndX},${localEndY}`;
+                                const p2 = `${localEndX - headLength * Math.cos(angle - Math.PI / 6)},${localEndY - headLength * Math.sin(angle - Math.PI / 6)}`;
+                                const p3 = `${localEndX - headLength * Math.cos(angle + Math.PI / 6)},${localEndY - headLength * Math.sin(angle + Math.PI / 6)}`;
+                                const p4 = `${localStartX},${localStartY}`;
+                                const p5 = `${localStartX + headLength * Math.cos(angle - Math.PI / 6)},${localStartY + headLength * Math.sin(angle - Math.PI / 6)}`;
+                                const p6 = `${localStartX + headLength * Math.cos(angle + Math.PI / 6)},${localStartY + headLength * Math.sin(angle + Math.PI / 6)}`;
+                                return (
+                                    <g>
+                                        <line x1={localStartX} y1={localStartY} x2={localEndX} y2={localEndY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" />
+                                        <polygon points={`${p1} ${p2} ${p3}`} fill={shpObj.color} stroke="none" />
+                                        <polygon points={`${p4} ${p5} ${p6}`} fill={shpObj.color} stroke="none" />
+                                    </g>
+                                );
+                            } else if (shpObj.type === 'dashed_line') {
+                                return <line x1={shpObj.startX} y1={shpObj.startY} x2={shpObj.endX} y2={shpObj.endY} stroke={shpObj.color} strokeWidth={shpObj.strokeWidth} strokeLinecap="round" strokeDasharray="6,6" />;
                             } else if (shpObj.type === 'graph') {
                                 const step = shpObj.stepSize || 5;
                                 const xAxisY = shpObj.height / 2;
@@ -6335,6 +6553,29 @@ export default function Whiteboard({
                             }}
                         />
                     ))}
+
+                    {/* Smart Connector Lines Layer */}
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-15 overflow-visible">
+                        {(pageShapeObjects[currentPage] || []).filter(s => s.type === 'connector').map((conn) => (
+                            <ConnectorLine
+                                key={conn.id}
+                                connector={conn}
+                                shapes={(pageShapeObjects[currentPage] || []).filter(s => s.type !== 'connector')}
+                                isSelected={selectedShapeIds.includes(conn.id)}
+                                onSelect={(id) => {
+                                    setSelectedShapeIds([id]);
+                                    setSelectedImageId(null);
+                                    setSelectedTextIds([]);
+                                }}
+                                onUpdate={(id, updates) => {
+                                    setPageShapeObjects(prev => ({
+                                        ...prev,
+                                        [currentPage]: (prev[currentPage] || []).map(s => s.id === id ? { ...s, ...updates } : s)
+                                    }));
+                                }}
+                            />
+                        ))}
+                    </svg>
 
                     {/* Floating Radial FAB Button (Bottom-Left) */}
                     <button
