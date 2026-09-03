@@ -322,8 +322,9 @@ export default function PedagogyBuilderPage() {
         setInlineAiLoading(true);
         try {
             const activeUnit = moduleData?.units?.find(u => u.id === activeUnitId);
-            const res = await api.post('/training/ai/exercise', {
-                prompt: inlineAiPrompt,
+            const res = await trainingAPI.aiExercise({
+                topic: inlineAiPrompt,
+                customPrompt: inlineAiPrompt,
                 exerciseType: exerciseForm.exerciseType,
                 difficulty: exerciseForm.difficulty || 'beginner',
                 scaffoldLevel: exerciseForm.scaffoldLevel || 'guided',
@@ -331,12 +332,11 @@ export default function PedagogyBuilderPage() {
                 language: moduleData?.language || 'python',
                 classLevel: moduleData?.classLevel || 11,
                 board: moduleData?.boardAligned || 'CBSE',
-                unitTitle: activeUnit?.title || '',
-                provider: inlineAiProvider
-            });
+                unitTitle: activeUnit?.title || ''
+            }, inlineAiProvider);
 
-            if (res.data.success && res.data.data.exercise) {
-                const ex = res.data.data.exercise;
+            if (res.data.success && (res.data.data.exercise || res.data.data)) {
+                const ex = res.data.data.exercise || res.data.data;
                 handleApplyAiExercise(ex);
                 toast.success(`✨ Challenge for "${ex.title}" auto-filled into form!`);
             } else {
@@ -354,16 +354,15 @@ export default function PedagogyBuilderPage() {
         const topicToUse = inlineAiTheoryPrompt.trim() || theoryForm.title || 'Unit Theory';
         setInlineAiTheoryLoading(true);
         try {
-            const res = await api.post('/training/ai/theory', {
+            const res = await trainingAPI.aiTheory({
                 topic: topicToUse,
                 unitTitle: theoryForm.title,
                 language: moduleData?.language || 'python',
                 classLevel: moduleData?.classLevel || 11,
-                board: moduleData?.boardAligned || 'CBSE',
-                provider: 'groq'
-            });
-            if (res.data.success && res.data.data.theory) {
-                const t = res.data.data.theory;
+                board: moduleData?.boardAligned || 'CBSE'
+            }, 'groq');
+            if (res.data.success && (res.data.data.theory || res.data.data)) {
+                const t = res.data.data.theory || res.data.data;
                 setTheoryForm(prev => ({
                     ...prev,
                     summary: t.summary || prev.summary || `Core concepts of ${theoryForm.title}`,

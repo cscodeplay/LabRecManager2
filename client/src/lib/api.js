@@ -678,8 +678,12 @@ export const trainingAPI = {
     getModuleAssignments: (moduleId) => api.get(`/training/modules/${moduleId}/assignments`),
     getModuleProgress: (moduleId) => api.get(`/training/modules/${moduleId}/progress`),
 
-    // AI LMS Assistant
+    // AI LMS Assistant & Direct Endpoints
     aiAssist: (data) => api.post('/training/ai-assist', data),
+    aiOutline: (payload, provider = 'groq') => api.post('/training/ai/outline', { payload, provider }),
+    aiTheory: (payload, provider = 'groq') => api.post('/training/ai/theory', { payload, provider }),
+    aiExercise: (payload, provider = 'groq') => api.post('/training/ai/exercise', { payload, provider }),
+    aiFromDocument: (payload, provider = 'groq') => api.post('/training/ai/from-document', { payload, provider }),
 };
 
 // AI Generator API

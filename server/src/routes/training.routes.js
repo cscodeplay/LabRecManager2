@@ -1651,9 +1651,13 @@ router.post('/ai-assist', authenticate, asyncHandler(async (req, res) => {
                 return res.status(400).json({ success: false, message: `Unknown AI assist action: ${action}` });
         }
 
+        const enrichedData = typeof result === 'object' && result !== null
+            ? { ...result, outline: result, theory: result, exercise: result, module: result }
+            : result;
+
         res.json({
             success: true,
-            data: result
+            data: enrichedData
         });
     } catch (err) {
         console.error(`[Training AI Assist Error] ${action}:`, err.message);
@@ -1661,6 +1665,144 @@ router.post('/ai-assist', authenticate, asyncHandler(async (req, res) => {
             success: false,
             message: err.message || 'AI LMS Assistant encountered an error'
         });
+    }
+}));
+
+/**
+ * @route   POST /api/training/ai/outline
+ * @desc    Direct endpoint to generate Training Module Course Outline
+ */
+router.post('/ai/outline', authenticate, asyncHandler(async (req, res) => {
+    const payload = req.body.payload || req.body;
+    const provider = req.body.provider || payload.provider || 'groq';
+
+    try {
+        const result = await aiService.generateTrainingModuleOutline({
+            topic: payload.topic || 'Python Programming',
+            targetAudience: payload.targetAudience || '',
+            language: payload.language || 'python',
+            classLevel: payload.classLevel || 11,
+            board: payload.board || 'CBSE',
+            totalUnits: payload.totalUnits || 3,
+            documentText: payload.documentText || '',
+            provider
+        });
+
+        res.json({
+            success: true,
+            data: {
+                outline: result,
+                ...(typeof result === 'object' && result !== null ? result : {})
+            }
+        });
+    } catch (err) {
+        console.error('[AI Outline Error]:', err.message);
+        res.status(500).json({ success: false, message: err.message || 'Failed to synthesize outline' });
+    }
+}));
+
+/**
+ * @route   POST /api/training/ai/theory
+ * @desc    Direct endpoint to generate Pre-Lab Theory & Interactive Checkpoints
+ */
+router.post('/ai/theory', authenticate, asyncHandler(async (req, res) => {
+    const payload = req.body.payload || req.body;
+    const provider = req.body.provider || payload.provider || 'groq';
+
+    try {
+        const result = await aiService.generateTrainingTheoryAndGraphics({
+            topic: payload.topic || 'Python Basics',
+            unitTitle: payload.unitTitle || '',
+            unitDescription: payload.unitDescription || '',
+            moduleTitle: payload.moduleTitle || '',
+            documentText: payload.documentText || '',
+            language: payload.language || 'python',
+            classLevel: payload.classLevel || 11,
+            provider
+        });
+
+        res.json({
+            success: true,
+            data: {
+                theory: result,
+                ...(typeof result === 'object' && result !== null ? result : {})
+            }
+        });
+    } catch (err) {
+        console.error('[AI Theory Error]:', err.message);
+        res.status(500).json({ success: false, message: err.message || 'Failed to synthesize theory' });
+    }
+}));
+
+/**
+ * @route   POST /api/training/ai/exercise
+ * @desc    Direct endpoint to generate multi-modal Training Exercises
+ */
+router.post('/ai/exercise', authenticate, asyncHandler(async (req, res) => {
+    const payload = req.body.payload || req.body;
+    const provider = req.body.provider || payload.provider || 'groq';
+
+    try {
+        const result = await aiService.generateTrainingExercise({
+            topic: payload.topic || 'Functions and Loops',
+            unitTitle: payload.unitTitle || '',
+            unitDescription: payload.unitDescription || '',
+            moduleTitle: payload.moduleTitle || '',
+            documentText: payload.documentText || '',
+            language: payload.language || 'python',
+            exerciseType: payload.exerciseType || 'coding',
+            difficulty: payload.difficulty || 'beginner',
+            scaffoldLevel: payload.scaffoldLevel || 'guided',
+            bloomsLevel: payload.bloomsLevel || 'apply',
+            customPrompt: payload.customPrompt || '',
+            provider
+        });
+
+        res.json({
+            success: true,
+            data: {
+                exercise: result,
+                ...(typeof result === 'object' && result !== null ? result : {})
+            }
+        });
+    } catch (err) {
+        console.error('[AI Exercise Error]:', err.message);
+        res.status(500).json({ success: false, message: err.message || 'Failed to synthesize exercise' });
+    }
+}));
+
+/**
+ * @route   POST /api/training/ai/from-document
+ * @desc    RAG endpoint to synthesize complete Training Module from textbook/syllabus material
+ */
+router.post('/ai/from-document', authenticate, asyncHandler(async (req, res) => {
+    const payload = req.body.payload || req.body;
+    const provider = req.body.provider || payload.provider || 'groq';
+
+    try {
+        const result = await aiService.generateTrainingModuleFromDocument({
+            documentText: payload.documentText || '',
+            imageBase64: payload.imageBase64 || null,
+            mimeType: payload.mimeType || 'image/jpeg',
+            customPrompt: payload.customPrompt || '',
+            language: payload.language || 'python',
+            classLevel: payload.classLevel || 11,
+            board: payload.board || 'CBSE',
+            totalUnits: payload.totalUnits || 3,
+            provider
+        });
+
+        res.json({
+            success: true,
+            data: {
+                module: result,
+                outline: result,
+                ...(typeof result === 'object' && result !== null ? result : {})
+            }
+        });
+    } catch (err) {
+        console.error('[AI RAG Document Error]:', err.message);
+        res.status(500).json({ success: false, message: err.message || 'Failed to synthesize module from document' });
     }
 }));
 

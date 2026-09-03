@@ -1447,7 +1447,7 @@ Output MUST be ONLY valid JSON matching this exact schema:
 
         // 1. Try Groq
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b'];
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1468,7 +1468,7 @@ Output MUST be ONLY valid JSON matching this exact schema:
 
         // 2. Try Gemini
         if (this.genAI) {
-            const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash'];
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-3.6-flash'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1481,8 +1481,9 @@ Output MUST be ONLY valid JSON matching this exact schema:
             }
         }
 
-        // 3. Dynamic Fallback for exactly targetUnitsCount units
-        const unitThemes = [
+        // 3. Domain-Intelligent Fallback for exactly targetUnitsCount units
+        const lowerTopic = String(topic || '').toLowerCase();
+        let unitThemes = [
             { title: 'Foundations, Syntax & Environment Setup', desc: `Core syntax, environment initialization, and foundational mechanics of ${topic}.`, concepts: ['Syntax & Declarations', 'Memory Model', 'Basic I/O'] },
             { title: 'Control Flow, Conditionals & Loops', desc: `Iterative execution, branch logic, and algorithm control flow in ${topic}.`, concepts: ['Conditional Branching', 'Iteration Patterns', 'State Tracking'] },
             { title: 'Modular Functions, Scope & Recursion', desc: `Decomposing problems into reusable procedures, variable scope, and recursive calls.`, concepts: ['Function Signatures', 'Scope & Closures', 'Call Stack & Base Cases'] },
@@ -1492,6 +1493,24 @@ Output MUST be ONLY valid JSON matching this exact schema:
             { title: 'Algorithmic Optimization & Complexity', desc: `Time and space complexity, Big-O analysis, caching, and algorithmic speedups.`, concepts: ['Time Complexity', 'Space Tradeoffs', 'Memoization'] },
             { title: 'Capstone Project & Production Readiness', desc: `Full end-to-end software artifact construction, testing, and deployment.`, concepts: ['System Architecture', 'Automated Testing', 'Capstone Delivery'] }
         ];
+
+        // Specific curriculum tailored for OOP
+        if (lowerTopic.includes('object') || lowerTopic.includes('oop') || lowerTopic.includes('class') || lowerTopic.includes('oriented')) {
+            unitThemes = [
+                { title: 'Classes, Objects & State Modeling', desc: `Core OOP paradigms, creating class blueprints, instantiating objects, and modeling real-world entities in ${language}.`, concepts: ['Class Blueprint vs Instance', 'Instance Variables', 'Object State & Lifecycle'] },
+                { title: 'Constructors, Methods & Encapsulation', desc: `Special constructor methods, designing instance methods with self, data hiding, and access modifiers.`, concepts: ['__init__ Constructor', 'Instance Methods & self', 'Private vs Public Attributes'] },
+                { title: 'Inheritance Hierarchies & Code Reusability', desc: `Single and multiple inheritance, extending base classes, super() resolution, and method overriding.`, concepts: ['Base vs Derived Classes', 'Method Overriding', 'super() Function'] },
+                { title: 'Polymorphism & Operator Overloading', desc: `Dynamic method dispatch, duck typing, and overloading built-in operators using dunder magic methods.`, concepts: ['Polymorphic Functions', 'Magic Methods (__str__, __len__)', 'Operator Overloading'] },
+                { title: 'Abstraction, Interfaces & Clean Architecture', desc: `Abstract base classes, enforcing contracts, SOLID principles, and modular system composition.`, concepts: ['Abstract Base Classes (abc)', 'Loose Coupling', 'Modular OOP Design'] }
+            ];
+        } else if (lowerTopic.includes('data structure') || lowerTopic.includes('stack') || lowerTopic.includes('queue') || lowerTopic.includes('tree')) {
+            unitThemes = [
+                { title: 'Linear Structures: Lists, Arrays & Strings', desc: `Memory representation, slicing, indexing, time complexity, and dynamic array mechanics in ${language}.`, concepts: ['Contiguous Arrays', 'Index Arithmetic', 'Amortized Complexity'] },
+                { title: 'Stacks & Queues: LIFO & FIFO Processing', desc: `Implementing stacks and queues, expression evaluation, parentheses balancing, and BFS buffers.`, concepts: ['Stack Operations (Push/Pop)', 'Queue Mechanics (Enqueue/Dequeue)', 'Buffer Scheduling'] },
+                { title: 'Linked Lists & Pointer Traversal', desc: `Node construction, singly and doubly linked chains, insertion, deletion, and cycle detection.`, concepts: ['Node Pointers', 'Head/Tail Traversal', 'Pointer Manipulation'] },
+                { title: 'Trees, Graphs & Search Traversal', desc: `Binary search trees, graph adjacency, and depth-first/breadth-first traversal algorithms.`, concepts: ['Binary Search Trees (BST)', 'In-Order Traversal', 'Graph Adjacency'] }
+            ];
+        }
 
         const generatedUnits = [];
         for (let i = 0; i < targetUnitsCount; i++) {
@@ -1509,7 +1528,7 @@ Output MUST be ONLY valid JSON matching this exact schema:
 
         return {
             title: `${topic} Professional Masterclass`,
-            titleHindi: `${topic} प्रशिक्षण पाठ्यक्रम`,
+            titleHindi: `${topic} व्यावसायिक पाठ्यक्रम`,
             description: `A comprehensive ${targetUnitsCount}-unit curriculum designed for Grade ${classLevel} students covering ${topic} from fundamentals to production mastery.`,
             language,
             boardAligned: board,
@@ -1583,7 +1602,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 1. Try Groq
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1604,7 +1623,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 2. Try Gemini
         if (this.genAI) {
-            const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash'];
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-3.6-flash'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1806,7 +1825,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 1. Try Groq
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1827,7 +1846,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 2. Try Gemini
         if (this.genAI) {
-            const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash'];
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-3.6-flash'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2227,7 +2246,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 2. Text Grounding Mode (Textbook Notes / Syllabus / PDF text)
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -2247,7 +2266,7 @@ Output MUST be ONLY valid JSON matching this schema:
         }
 
         if (this.genAI) {
-            const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash'];
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-3.6-flash'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });

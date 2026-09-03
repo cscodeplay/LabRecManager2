@@ -34,6 +34,16 @@ export default function TrainingModuleWizard({
     const [wizardInlineAiOutlineProvider, setWizardInlineAiOutlineProvider] = useState('groq');
     const [wizardInlineAiOutlineLoading, setWizardInlineAiOutlineLoading] = useState(false);
 
+    // Step 1 AI & RAG Grounding Studio State
+    const [step1AiMode, setStep1AiMode] = useState('topic'); // 'topic' | 'rag'
+    const [step1AiPrompt, setStep1AiPrompt] = useState('');
+    const [step1AiProvider, setStep1AiProvider] = useState('groq');
+    const [step1AiLoading, setStep1AiLoading] = useState(false);
+    const [step1FileName, setStep1FileName] = useState('');
+    const [step1DocumentText, setStep1DocumentText] = useState('');
+    const [step1ImageBase64, setStep1ImageBase64] = useState(null);
+    const [step1MimeType, setStep1MimeType] = useState('image/jpeg');
+
     // Step 1 Form: Module Meta
     const [moduleForm, setModuleForm] = useState({
         title: initialData?.title || '',
@@ -269,6 +279,206 @@ export default function TrainingModuleWizard({
         };
     }, [units]);
 
+    // Step Completion Gating & Progressive Unlocking
+    const isStep1Complete = Boolean(moduleForm.title?.trim() && moduleForm.language);
+    const isStep2Complete = Boolean(units.length > 0 && units.every(u => u.title && u.title.trim().length > 0));
+    const totalExercises = useMemo(() => units.reduce((acc, u) => acc + (u.exercises?.length || 0), 0), [units]);
+    const isStep3Complete = totalExercises > 0;
+    const isStep4Complete = true;
+    const isStep5Complete = true;
+
+    const canAccessStep = (stepNumber) => {
+        if (stepNumber <= 1) return true;
+        if (stepNumber === 2) return isStep1Complete;
+        if (stepNumber === 3) return isStep1Complete && isStep2Complete;
+        if (stepNumber === 4) return isStep1Complete && isStep2Complete && isStep3Complete;
+        if (stepNumber === 5) return isStep1Complete && isStep2Complete && isStep3Complete;
+        return false;
+    };
+
+    const handleAttemptNavigateStep = (nextStep) => {
+        if (nextStep <= currentStep) {
+            setCurrentStep(nextStep);
+            return;
+        }
+        if (currentStep === 1 && !isStep1Complete) {
+            toast.error('Please enter a Course Title or click "✨ Auto-Generate Course Blueprint" to proceed.');
+            return;
+        }
+        if (currentStep === 2 && !isStep2Complete) {
+            toast.error('Please add at least one unit or click "✨ Generate Units" with AI.');
+            return;
+        }
+        if (currentStep === 3 && !isStep3Complete) {
+            toast.error('Please add at least one challenge or click "✨ Auto-Fill Challenge" to proceed.');
+            return;
+        }
+        setCurrentStep(nextStep);
+    };
+
+    // Step 1 RAG File Upload Handler
+    const handleStep1FileUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setStep1FileName(file.name);
+
+        if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const base64 = reader.result.split(',')[1];
+                setStep1ImageBase64(base64);
+                setStep1MimeType(file.type);
+                toast.success(`📸 Image "${file.name}" loaded for Vision RAG Grounding`);
+            };
+            reader.readAsDataURL(file);
+        } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf') || file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const text = reader.result;
+                if (typeof text === 'string') {
+                    setStep1DocumentText(text);
+                    toast.success(`📄 "${file.name}" loaded (${text.length} chars) for RAG Grounding`);
+                } else {
+                    const base64 = reader.result.split(',')[1];
+                    setStep1ImageBase64(base64);
+                    setStep1MimeType(file.type || 'application/pdf');
+                    toast.success(`📄 Document "${file.name}" loaded for RAG Grounding`);
+                }
+            };
+            if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+                reader.readAsText(file);
+            } else {
+                reader.readAsDataURL(file);
+            }
+        } else {
+            toast.error('Supported formats: PDF, Images (PNG/JPG), TXT, Markdown');
+        }
+    };
+
+    // Step 1 AI & RAG Course Synthesis Handler
+    const handleStep1AiGenerate = async () => {
+        const promptToUse = step1AiPrompt.trim() || moduleForm.title.trim() || 'Python Programming Masterclass';
+        setStep1AiLoading(true);
+
+        try {
+            if (step1AiMode === 'rag' && (step1DocumentText.trim() || step1ImageBase64)) {
+                // Mode B: Full Course RAG Grounding
+                const res = await trainingAPI.aiFromDocument({
+                    documentText: step1DocumentText,
+                    imageBase64: step1ImageBase64,
+                    mimeType: step1MimeType,
+                    customPrompt: promptToUse,
+                    language: moduleForm.language || 'python',
+                    classLevel: moduleForm.classLevel || 11,
+                    board: moduleForm.boardAligned || 'CBSE',
+                    totalUnits: 3
+                }, step1AiProvider);
+
+                const data = res.data?.data?.module || res.data?.data?.outline || res.data?.data;
+                if (data) {
+                    setModuleForm(prev => ({
+                        ...prev,
+                        title: data.title || prev.title || promptToUse,
+                        titleHindi: data.titleHindi || prev.titleHindi,
+                        description: data.description || prev.description,
+                        language: data.language || prev.language,
+                        boardAligned: data.boardAligned || prev.boardAligned,
+                        classLevel: data.classLevel || prev.classLevel
+                    }));
+
+                    if (Array.isArray(data.units) && data.units.length > 0) {
+                        setUnits(data.units.map((u, i) => ({
+                            id: `ai_unit_${i + 1}_${Date.now()}_${Math.random()}`,
+                            unitNumber: u.unitNumber || i + 1,
+                            title: u.title || `Unit ${i + 1}`,
+                            description: u.description || '',
+                            expectedHours: u.expectedHours || 4,
+                            unlockThreshold: u.unlockThreshold || 80,
+                            theoryData: {
+                                summary: u.description || `Key concepts of ${u.title}`,
+                                content: u.theory || (Array.isArray(u.keyConcepts) ? `## Key Concepts\n\n${u.keyConcepts.map(c => `- ${c}`).join('\n')}` : ''),
+                                miniCheckpoints: Array.isArray(u.miniCheckpoints) ? u.miniCheckpoints : [],
+                                cbseTips: Array.isArray(u.cbseTips) ? u.cbseTips : []
+                            },
+                            exercises: Array.isArray(u.exercises) ? u.exercises.map((ex, eIdx) => ({
+                                id: `ai_ex_${eIdx + 1}_${Date.now()}_${Math.random()}`,
+                                title: ex.title,
+                                description: ex.description,
+                                theory: ex.theory || '',
+                                exerciseType: ex.exerciseType || 'coding',
+                                difficulty: ex.difficulty || 'beginner',
+                                scaffoldLevel: ex.scaffoldLevel || 'guided',
+                                bloomsLevel: ex.bloomsLevel || 'apply',
+                                learningObjective: ex.learningObjective || '',
+                                xpReward: ex.xpReward || 15,
+                                timeLimit: ex.timeLimit || 5,
+                                isReviewExercise: ex.isReviewExercise || false,
+                                starterCode: ex.starterCode || '',
+                                solutionCode: ex.solutionCode || '',
+                                testCases: Array.isArray(ex.testCases) ? ex.testCases : [],
+                                hints: ex.hints || []
+                            })) : []
+                        })));
+                    }
+
+                    toast.success('✨ Grounded course blueprint, units & exercises synthesized!');
+                } else {
+                    toast.error('AI did not return content. Please retry.');
+                }
+            } else {
+                // Mode A: Quick Topic Blueprint & Units Synthesis
+                const res = await trainingAPI.aiOutline({
+                    topic: promptToUse,
+                    language: moduleForm.language || 'python',
+                    classLevel: moduleForm.classLevel || 11,
+                    board: moduleForm.boardAligned || 'CBSE',
+                    totalUnits: 3
+                }, step1AiProvider);
+
+                const data = res.data?.data?.outline || res.data?.data;
+                if (data) {
+                    setModuleForm(prev => ({
+                        ...prev,
+                        title: data.title || promptToUse,
+                        titleHindi: data.titleHindi || prev.titleHindi,
+                        description: data.description || prev.description,
+                        language: data.language || prev.language,
+                        boardAligned: data.boardAligned || prev.boardAligned,
+                        classLevel: data.classLevel || prev.classLevel
+                    }));
+
+                    if (Array.isArray(data.units) && data.units.length > 0) {
+                        setUnits(data.units.map((u, i) => ({
+                            id: `ai_unit_${i + 1}_${Date.now()}_${Math.random()}`,
+                            unitNumber: u.unitNumber || i + 1,
+                            title: u.title || `Unit ${i + 1}`,
+                            description: u.description || '',
+                            expectedHours: u.expectedHours || 4,
+                            unlockThreshold: u.unlockThreshold || 80,
+                            theoryData: {
+                                summary: u.description || `Key concepts of ${u.title}`,
+                                content: u.theory || (Array.isArray(u.keyConcepts) ? `## Key Concepts\n\n${u.keyConcepts.map(c => `- ${c}`).join('\n')}` : ''),
+                                miniCheckpoints: Array.isArray(u.miniCheckpoints) ? u.miniCheckpoints : [],
+                                cbseTips: Array.isArray(u.cbseTips) ? u.cbseTips : []
+                            },
+                            exercises: []
+                        })));
+                    }
+
+                    toast.success('✨ Course Blueprint & Curriculum Units synthesized!');
+                } else {
+                    toast.error('Failed to synthesize course outline');
+                }
+            }
+        } catch (err) {
+            console.error('Step 1 AI generation error:', err);
+            toast.error(err.response?.data?.message || 'AI course generation failed');
+        } finally {
+            setStep1AiLoading(false);
+        }
+    };
+
     // Handlers for Units
     const handleAddUnit = () => {
         const nextNum = units.length + 1;
@@ -341,15 +551,17 @@ export default function TrainingModuleWizard({
         const promptToUse = wizardInlineAiOutlinePrompt.trim() || moduleForm.title || moduleForm.description || 'CBSE Computer Science';
         setWizardInlineAiOutlineLoading(true);
         try {
-            const res = await api.post('/training/ai/outline', {
+            const res = await trainingAPI.aiOutline({
                 topic: promptToUse,
                 language: moduleForm.language || 'python',
                 classLevel: moduleForm.classLevel || 11,
                 board: moduleForm.boardAligned || 'CBSE',
-                provider: wizardInlineAiOutlineProvider
-            });
-            if (res.data.success && res.data.data.outline) {
-                handleApplyAiOutline(res.data.data.outline);
+                totalUnits: 3
+            }, wizardInlineAiOutlineProvider);
+
+            const data = res.data?.data?.outline || res.data?.data;
+            if (data && Array.isArray(data.units) && data.units.length > 0) {
+                handleApplyAiOutline(data);
                 toast.success('✨ Units outline generated and loaded in-place!');
             } else {
                 toast.error('AI did not return an outline');
@@ -366,22 +578,22 @@ export default function TrainingModuleWizard({
         const topicToUse = wizardInlineAiTheoryPrompt.trim() || wizardTheoryForm.title || moduleForm.title || 'Unit Theory';
         setWizardInlineAiTheoryLoading(true);
         try {
-            const res = await api.post('/training/ai/theory', {
+            const res = await trainingAPI.aiTheory({
                 topic: topicToUse,
                 unitTitle: wizardTheoryForm.title,
                 language: moduleForm.language || 'python',
                 classLevel: moduleForm.classLevel || 11,
-                board: moduleForm.boardAligned || 'CBSE',
-                provider: 'groq'
-            });
-            if (res.data.success && res.data.data.theory) {
-                const t = res.data.data.theory;
+                board: moduleForm.boardAligned || 'CBSE'
+            }, 'groq');
+
+            const data = res.data?.data?.theory || res.data?.data;
+            if (data) {
                 setWizardTheoryForm(prev => ({
                     ...prev,
-                    summary: t.summary || prev.summary || `Core concepts of ${wizardTheoryForm.title}`,
-                    content: t.contentMarkdown || t.theoryMarkdown || t.content || prev.content,
-                    miniCheckpoints: Array.isArray(t.miniCheckpoints) && t.miniCheckpoints.length > 0 ? t.miniCheckpoints : prev.miniCheckpoints,
-                    cbseTips: Array.isArray(t.cbseTips) && t.cbseTips.length > 0 ? t.cbseTips : prev.cbseTips
+                    summary: data.summary || prev.summary || `Core concepts of ${wizardTheoryForm.title}`,
+                    content: data.contentMarkdown || data.theoryMarkdown || data.content || prev.content,
+                    miniCheckpoints: Array.isArray(data.miniCheckpoints) && data.miniCheckpoints.length > 0 ? data.miniCheckpoints : prev.miniCheckpoints,
+                    cbseTips: Array.isArray(data.cbseTips) && data.cbseTips.length > 0 ? data.cbseTips : prev.cbseTips
                 }));
                 toast.success('✨ Pre-Lab notes & checkpoints generated into form!');
             } else {
@@ -400,8 +612,9 @@ export default function TrainingModuleWizard({
         setWizardInlineAiLoading(true);
         try {
             const activeUnit = units[selectedUnitIdx];
-            const res = await api.post('/training/ai/exercise', {
-                prompt: wizardInlineAiPrompt,
+            const res = await trainingAPI.aiExercise({
+                topic: wizardInlineAiPrompt,
+                customPrompt: wizardInlineAiPrompt,
                 exerciseType: exerciseForm.exerciseType,
                 difficulty: exerciseForm.difficulty || 'beginner',
                 scaffoldLevel: exerciseForm.scaffoldLevel || 'guided',
@@ -409,11 +622,11 @@ export default function TrainingModuleWizard({
                 language: moduleForm.language || 'python',
                 classLevel: moduleForm.classLevel || 11,
                 board: moduleForm.boardAligned || 'CBSE',
-                unitTitle: activeUnit?.title || '',
-                provider: wizardInlineAiProvider
-            });
-            if (res.data.success && res.data.data.exercise) {
-                const ex = res.data.data.exercise;
+                unitTitle: activeUnit?.title || ''
+            }, wizardInlineAiProvider);
+
+            const ex = res.data?.data?.exercise || res.data?.data;
+            if (ex) {
                 handleApplyAiExercise(ex);
                 toast.success(`✨ Challenge for "${ex.title}" auto-filled into form!`);
             } else {
@@ -864,22 +1077,36 @@ export default function TrainingModuleWizard({
 
                     {/* Step indicator pills */}
                     <div className="flex items-center gap-2">
-                        {STEP_TITLES.map(s => (
-                            <button
-                                key={s.step}
-                                onClick={() => setCurrentStep(s.step)}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                                    currentStep === s.step
-                                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
-                                        : s.step < currentStep
-                                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
-                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
-                                }`}
-                            >
-                                <span>{s.step}</span>
-                                <span className="hidden md:inline">{s.title.split(' ')[0]}</span>
-                            </button>
-                        ))}
+                        {STEP_TITLES.map(s => {
+                            const isCompleted = s.step === 1 ? isStep1Complete : s.step === 2 ? isStep2Complete : s.step === 3 ? isStep3Complete : true;
+                            const isAccessible = canAccessStep(s.step);
+
+                            return (
+                                <button
+                                    key={s.step}
+                                    onClick={() => handleAttemptNavigateStep(s.step)}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                                        currentStep === s.step
+                                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                                            : isCompleted
+                                            ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200'
+                                            : isAccessible
+                                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                            : 'bg-slate-100/60 dark:bg-slate-800/40 text-slate-400 opacity-60 cursor-not-allowed'
+                                    }`}
+                                    title={!isAccessible ? `Complete Step ${s.step - 1} first` : s.title}
+                                >
+                                    {isCompleted && currentStep !== s.step ? (
+                                        <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                    ) : !isAccessible ? (
+                                        <Lock className="w-3 h-3 text-slate-400" />
+                                    ) : (
+                                        <span>{s.step}</span>
+                                    )}
+                                    <span className="hidden md:inline">{s.title.split(' ')[0]}</span>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
 
@@ -914,22 +1141,169 @@ export default function TrainingModuleWizard({
                     {/* ========================================================= */}
                     {currentStep === 1 && (
                         <div className="space-y-5 max-w-3xl mx-auto">
-                            <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 rounded-2xl p-4 flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
-                                        <Sparkles className="w-5 h-5" />
+                            {/* In-Place AI Curriculum Architect & RAG Grounding Studio */}
+                            <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent border border-indigo-200 dark:border-indigo-800/80 rounded-2xl p-5 space-y-4 shadow-sm">
+                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/30">
+                                            <Sparkles className="w-4 h-4 animate-pulse" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                                AI Curriculum Architect & RAG Grounding Studio
+                                                <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold px-2 py-0.5 rounded-full">
+                                                    Step 1 ➔ 2 ➔ 3 Auto-Fill
+                                                </span>
+                                            </h4>
+                                            <p className="text-xs text-slate-500">
+                                                Generate the full course blueprint, curriculum units, and starter challenges in one click.
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h4 className="text-sm font-bold text-indigo-900 dark:text-indigo-200">AI Syllabus & Blueprint Generator</h4>
-                                        <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80">Generate complete module metadata, units, and learning objectives automatically.</p>
+
+                                    {/* Mode & Provider Pickers */}
+                                    <div className="flex items-center gap-2">
+                                        <div className="bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl flex items-center text-xs font-bold">
+                                            <button
+                                                type="button"
+                                                onClick={() => setStep1AiMode('topic')}
+                                                className={`px-3 py-1 rounded-lg transition ${
+                                                    step1AiMode === 'topic' ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                                }`}
+                                            >
+                                                ⚡ Quick Topic
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setStep1AiMode('rag')}
+                                                className={`px-3 py-1 rounded-lg transition flex items-center gap-1 ${
+                                                    step1AiMode === 'rag' ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                                }`}
+                                            >
+                                                <FileText className="w-3.5 h-3.5" /> 📄 Syllabus RAG
+                                            </button>
+                                        </div>
+
+                                        <select
+                                            value={step1AiProvider}
+                                            onChange={e => setStep1AiProvider(e.target.value)}
+                                            className="text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1 text-slate-700 dark:text-slate-300"
+                                        >
+                                            <option value="groq">⚡ Groq (Fast)</option>
+                                            <option value="gemini">✨ Gemini</option>
+                                        </select>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => { setAiCopilotTab('outline'); setShowAiCopilot(true); }}
-                                    className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shrink-0 flex items-center gap-1.5"
-                                >
-                                    <Sparkles className="w-3.5 h-3.5" /> AI Generate
-                                </button>
+
+                                {step1AiMode === 'topic' ? (
+                                    /* Mode 1: Quick Topic Prompt */
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            value={step1AiPrompt}
+                                            onChange={e => setStep1AiPrompt(e.target.value)}
+                                            placeholder="e.g. Python: Object Oriented Programming (Classes, Polymorphism & Inheritance)..."
+                                            className="input text-xs flex-1 py-2.5 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800 focus:ring-2 focus:ring-indigo-500/20"
+                                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleStep1AiGenerate(); } }}
+                                        />
+                                        <button
+                                            type="button"
+                                            disabled={step1AiLoading || (!step1AiPrompt.trim() && !moduleForm.title.trim())}
+                                            onClick={handleStep1AiGenerate}
+                                            className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2.5 px-5 rounded-xl shrink-0 flex items-center gap-2 shadow-md shadow-indigo-600/25 disabled:opacity-50 transition"
+                                        >
+                                            {step1AiLoading ? (
+                                                <>
+                                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                    <span>Synthesizing...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Sparkles className="w-4 h-4" />
+                                                    <span>✨ Synthesize Blueprint & Units</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    /* Mode 2: RAG Document / Notes Upload & Paste */
+                                    <div className="space-y-3 bg-white/70 dark:bg-slate-900/70 p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/50">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                                                    Attach Syllabus PDF / Notes / Textbook Image
+                                                </label>
+                                                <input
+                                                    type="file"
+                                                    accept=".pdf,.txt,.md,image/*"
+                                                    onChange={handleStep1FileUpload}
+                                                    className="text-xs file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-indigo-950 dark:file:text-indigo-300 w-full"
+                                                />
+                                                {step1FileName && (
+                                                    <div className="mt-1 flex items-center justify-between text-xs text-indigo-600 font-medium">
+                                                        <span className="truncate">📎 {step1FileName}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { setStep1FileName(''); setStep1DocumentText(''); setStep1ImageBase64(null); }}
+                                                            className="text-rose-500 hover:underline text-[11px]"
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div>
+                                                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                                                    Course Topic / Custom Guidance Hint
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={step1AiPrompt}
+                                                    onChange={e => setStep1AiPrompt(e.target.value)}
+                                                    placeholder="e.g. CBSE Class 11 Computer Science Unit 2"
+                                                    className="input text-xs py-1.5 bg-white dark:bg-slate-900"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                                                Or Paste Syllabus Curriculum Text Directly:
+                                            </label>
+                                            <textarea
+                                                value={step1DocumentText}
+                                                onChange={e => setStep1DocumentText(e.target.value)}
+                                                placeholder="Paste chapter excerpts, topic lists, syllabus learning outcomes here..."
+                                                className="input h-20 text-xs font-mono"
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center justify-between pt-1">
+                                            <span className="text-[10px] text-slate-400">
+                                                RAG extracts and grounds Blueprint, Units, Pre-Lab Theory, and multi-modal Challenges directly from your resource.
+                                            </span>
+                                            <button
+                                                type="button"
+                                                disabled={step1AiLoading || (!step1DocumentText.trim() && !step1ImageBase64 && !step1AiPrompt.trim())}
+                                                onClick={handleStep1AiGenerate}
+                                                className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-5 rounded-xl shrink-0 flex items-center gap-2 shadow-md shadow-indigo-600/25 disabled:opacity-50 transition"
+                                            >
+                                                {step1AiLoading ? (
+                                                    <>
+                                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                        <span>Extracting & Synthesizing...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Sparkles className="w-4 h-4" />
+                                                        <span>✨ Synthesize Grounded Course (RAG)</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2117,12 +2491,29 @@ export default function TrainingModuleWizard({
                                 </button>
 
                                 {currentStep < 5 ? (
-                                    <button
-                                        onClick={() => setCurrentStep(prev => prev + 1)}
-                                        className="btn btn-primary text-xs flex items-center gap-1.5 font-bold"
-                                    >
-                                        Next Step <ArrowRight className="w-4 h-4" />
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        {currentStep === 1 && !isStep1Complete && (
+                                            <span className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                                                <AlertTriangle className="w-3.5 h-3.5" /> Title Required
+                                            </span>
+                                        )}
+                                        {currentStep === 2 && !isStep2Complete && (
+                                            <span className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                                                <AlertTriangle className="w-3.5 h-3.5" /> Add Unit
+                                            </span>
+                                        )}
+                                        {currentStep === 3 && !isStep3Complete && (
+                                            <span className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                                                <AlertTriangle className="w-3.5 h-3.5" /> Add Exercise
+                                            </span>
+                                        )}
+                                        <button
+                                            onClick={() => handleAttemptNavigateStep(currentStep + 1)}
+                                            className="btn btn-primary text-xs flex items-center gap-1.5 font-bold shadow-md shadow-indigo-600/20"
+                                        >
+                                            Next Step <ArrowRight className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 ) : (
                                     <div className="flex items-center gap-2">
                                         <button
