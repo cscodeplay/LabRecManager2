@@ -301,6 +301,76 @@ router.post('/modules', authenticate, authorize('admin', 'principal', 'instructo
 }));
 
 /**
+ * @route   PUT /api/training/modules/:id
+ * @desc    Update a training module's metadata
+ * @access  Private (Admin/Instructor)
+ */
+router.put('/modules/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { title, titleHindi, description, language, boardAligned, classLevel, isPublished, pedagogyConfig } = req.body;
+
+    const existing = await prisma.trainingModule.findFirst({
+        where: { id, schoolId: req.user.schoolId }
+    });
+    if (!existing) {
+        return res.status(404).json({ success: false, message: 'Training module not found' });
+    }
+
+    const updated = await prisma.trainingModule.update({
+        where: { id },
+        data: {
+            title: title !== undefined ? title : existing.title,
+            titleHindi: titleHindi !== undefined ? titleHindi : existing.titleHindi,
+            description: description !== undefined ? description : existing.description,
+            language: language !== undefined ? language : existing.language,
+            boardAligned: boardAligned !== undefined ? boardAligned : existing.boardAligned,
+            classLevel: classLevel !== undefined ? (classLevel ? parseInt(classLevel) : null) : existing.classLevel,
+            isPublished: isPublished !== undefined ? isPublished : existing.isPublished,
+            pedagogyConfig: pedagogyConfig !== undefined ? pedagogyConfig : existing.pedagogyConfig
+        }
+    });
+
+    res.json({ success: true, data: { module: updated } });
+}));
+
+/**
+ * @route   DELETE /api/training/modules/:id
+ * @desc    Delete a training module and cleanup associated relations
+ * @access  Private (Admin/Instructor)
+ */
+router.delete('/modules/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const existing = await prisma.trainingModule.findFirst({
+        where: { id, schoolId: req.user.schoolId }
+    });
+    if (!existing) {
+        return res.status(404).json({ success: false, message: 'Training module not found' });
+    }
+
+    // Unlink any assignments referencing this training module
+    await prisma.assignment.updateMany({
+        where: { trainingModuleId: id },
+        data: { trainingModuleId: null }
+    });
+
+    // Cleanup student mastery and progress
+    await prisma.studentUnitMastery.deleteMany({
+        where: { unit: { moduleId: id } }
+    });
+    await prisma.studentTrainingProgress.deleteMany({
+        where: { moduleId: id }
+    });
+
+    // Cascade delete units (and exercises via Prisma cascade)
+    await prisma.trainingModule.delete({
+        where: { id }
+    });
+
+    res.json({ success: true, message: 'Training module deleted successfully' });
+}));
+
+/**
  * @route   POST /api/training/modules/:id/units
  * @desc    Create a new unit for a module
  * @access  Private

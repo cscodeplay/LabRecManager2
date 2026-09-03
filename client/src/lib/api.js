@@ -652,6 +652,8 @@ export const trainingAPI = {
     getModules: () => api.get('/training/modules'),
     getModuleDetails: (id) => api.get(`/training/modules/${id}`),
     createModule: (data) => api.post('/training/modules', data),
+    updateModule: (id, data) => api.put(`/training/modules/${id}`, data),
+    deleteModule: (id) => api.delete(`/training/modules/${id}`),
     
     getExercise: (id) => api.get(`/training/exercises/${id}`),
     runCode: (id, data) => api.post(`/training/exercises/${id}/run`, data),

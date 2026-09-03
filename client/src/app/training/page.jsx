@@ -68,13 +68,7 @@ export default function TrainingModulesPage() {
                             onClick={() => setShowWizard(true)}
                             className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs py-2 px-3.5 rounded-xl shadow-lg shadow-indigo-600/20 flex items-center gap-1.5 transition"
                         >
-                            <Sparkles className="w-4 h-4" /> ✨ AI Course Wizard
-                        </button>
-                        <button 
-                            onClick={() => setShowWizard(true)}
-                            className="btn btn-primary text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 font-bold"
-                        >
-                            <Plus className="w-4 h-4" /> Create Training Module
+                            <Sparkles className="w-4 h-4" /> ✨ Create Training Module
                         </button>
                         <Link 
                             href="/admin/training" 

@@ -11,7 +11,7 @@ import {
     CheckSquare, FileText, Code2, RefreshCw
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import { trainingAPI, classesAPI } from '@/lib/api';
+import api, { trainingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { formatDate } from '@/lib/dateUtils';
 import AiTrainingCopilot from '@/components/AiTrainingCopilot';
@@ -256,6 +256,120 @@ export default function PedagogyBuilderPage() {
 
     // Auto-Save exercise draft state
     const [builderSavedTime, setBuilderSavedTime] = useState(null);
+
+    // Inline AI Challenge Generation State (Exercise Modal)
+    const [inlineAiPrompt, setInlineAiPrompt] = useState('');
+    const [inlineAiProvider, setInlineAiProvider] = useState('groq');
+    const [inlineAiLoading, setInlineAiLoading] = useState(false);
+
+    // Inline AI Theory Generation State (Theory Modal)
+    const [inlineAiTheoryPrompt, setInlineAiTheoryPrompt] = useState('');
+    const [inlineAiTheoryLoading, setInlineAiTheoryLoading] = useState(false);
+
+    // Edit Course Meta Modal
+    const [showEditModuleModal, setShowEditModuleModal] = useState(false);
+    const [moduleEditForm, setModuleEditForm] = useState({
+        title: '',
+        titleHindi: '',
+        description: '',
+        language: 'python',
+        boardAligned: 'CBSE',
+        classLevel: 11
+    });
+
+    const handleOpenEditModule = () => {
+        setModuleEditForm({
+            title: moduleData?.title || '',
+            titleHindi: moduleData?.titleHindi || '',
+            description: moduleData?.description || '',
+            language: moduleData?.language || 'python',
+            boardAligned: moduleData?.boardAligned || 'CBSE',
+            classLevel: moduleData?.classLevel || 11
+        });
+        setShowEditModuleModal(true);
+    };
+
+    const handleSaveModuleMeta = async (e) => {
+        e.preventDefault();
+        if (!moduleEditForm.title.trim()) {
+            toast.error('Course title is required');
+            return;
+        }
+        try {
+            await trainingAPI.updateModule(id, moduleEditForm);
+            toast.success('Course settings updated successfully!');
+            setShowEditModuleModal(false);
+            loadData();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to update course settings');
+        }
+    };
+
+    const handleInlineAiGenerateExercise = async () => {
+        if (!inlineAiPrompt.trim()) return;
+        setInlineAiLoading(true);
+        try {
+            const activeUnit = moduleData?.units?.find(u => u.id === activeUnitId);
+            const res = await api.post('/training/ai/exercise', {
+                prompt: inlineAiPrompt,
+                exerciseType: exerciseForm.exerciseType,
+                difficulty: exerciseForm.difficulty || 'beginner',
+                scaffoldLevel: exerciseForm.scaffoldLevel || 'guided',
+                bloomsLevel: exerciseForm.bloomsLevel || 'apply',
+                language: moduleData?.language || 'python',
+                classLevel: moduleData?.classLevel || 11,
+                board: moduleData?.boardAligned || 'CBSE',
+                unitTitle: activeUnit?.title || '',
+                provider: inlineAiProvider
+            });
+
+            if (res.data.success && res.data.data.exercise) {
+                const ex = res.data.data.exercise;
+                handleApplyAiExercise(ex);
+                toast.success(`✨ Challenge for "${ex.title}" auto-filled into form!`);
+            } else {
+                toast.error('AI synthesis did not return an exercise');
+            }
+        } catch (err) {
+            console.error('Inline AI Exercise generation error:', err);
+            toast.error(err.response?.data?.message || 'Failed to synthesize exercise');
+        } finally {
+            setInlineAiLoading(false);
+        }
+    };
+
+    const handleInlineAiGenerateTheory = async () => {
+        const topicToUse = inlineAiTheoryPrompt.trim() || theoryForm.title || 'Unit Theory';
+        setInlineAiTheoryLoading(true);
+        try {
+            const res = await api.post('/training/ai/theory', {
+                topic: topicToUse,
+                unitTitle: theoryForm.title,
+                language: moduleData?.language || 'python',
+                classLevel: moduleData?.classLevel || 11,
+                board: moduleData?.boardAligned || 'CBSE',
+                provider: 'groq'
+            });
+            if (res.data.success && res.data.data.theory) {
+                const t = res.data.data.theory;
+                setTheoryForm(prev => ({
+                    ...prev,
+                    summary: t.summary || prev.summary || `Core concepts of ${theoryForm.title}`,
+                    content: t.contentMarkdown || t.theoryMarkdown || t.content || prev.content,
+                    miniCheckpoints: Array.isArray(t.miniCheckpoints) && t.miniCheckpoints.length > 0 ? t.miniCheckpoints : prev.miniCheckpoints,
+                    cbseTips: Array.isArray(t.cbseTips) && t.cbseTips.length > 0 ? t.cbseTips : prev.cbseTips
+                }));
+                toast.success('✨ Unit Pre-Lab notes, checkpoints & tips generated into form!');
+            } else {
+                toast.error('AI did not return theory content');
+            }
+        } catch (err) {
+            console.error('Inline AI Theory error:', err);
+            toast.error(err.response?.data?.message || 'Failed to synthesize theory');
+        } finally {
+            setInlineAiTheoryLoading(false);
+        }
+    };
 
     // Test Cases handlers
     const handleAddTestCase = () => {
@@ -795,6 +909,9 @@ export default function PedagogyBuilderPage() {
                             >
                                 <Sparkles className="w-4 h-4" /> ✨ AI LMS Copilot
                             </button>
+                            <button onClick={handleOpenEditModule} className="btn btn-secondary text-sm flex items-center gap-1.5">
+                                <Edit3 className="w-4 h-4 text-slate-500" /> Edit Course
+                            </button>
                             <button onClick={() => setShowConfigModal(true)} className="btn btn-secondary text-sm">
                                 <Settings className="w-4 h-4" /> Configure UI
                             </button>
@@ -1089,18 +1206,71 @@ export default function PedagogyBuilderPage() {
                                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                                     {editingExerciseId ? 'Edit Exercise / Challenge' : 'Exercise Studio'}
                                 </h3>
-                                <p className="text-xs text-slate-500 mt-0.5">Design multi-modal challenges: Coding Labs, MCQs, Syntax Cloze, Bug Hunts, or Case Studies</p>
+                                <p className="text-xs text-slate-500 mt-0.5">Design multi-modal challenges: Coding Labs, MCQs, Syntax Cloze, Bug Hunts, or CBSE Question Types</p>
                             </div>
                             <button
-                                onClick={() => { setAiCopilotTab('exercise'); setShowAiCopilot(true); }}
-                                className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white font-bold text-xs py-2 px-3.5 rounded-xl shadow-md shadow-indigo-500/20 flex items-center gap-1.5"
+                                type="button"
+                                onClick={() => setShowExerciseModal(false)}
+                                className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-600 transition"
                             >
-                                <Sparkles className="w-3.5 h-3.5" /> ✨ AI Synthesizer
+                                ✕
                             </button>
                         </div>
 
                         {/* Body */}
                         <div className="p-6 overflow-y-auto space-y-5">
+                            {/* Inline In-Place AI Generator Bar */}
+                            <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                                        <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
+                                        <span>AI In-Place Challenge Synthesizer</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] text-slate-500 font-medium">Model:</span>
+                                        <select
+                                            value={inlineAiProvider}
+                                            onChange={e => setInlineAiProvider(e.target.value)}
+                                            className="text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-0.5"
+                                        >
+                                            <option value="groq">⚡ Groq (Fast)</option>
+                                            <option value="gemini">✨ Gemini</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={inlineAiPrompt}
+                                        onChange={e => setInlineAiPrompt(e.target.value)}
+                                        placeholder={`Enter topic or concept (e.g., 'Trace while loop' or 'Assertion on list immutability')...`}
+                                        className="input text-xs flex-1 py-2 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800"
+                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineAiGenerateExercise(); } }}
+                                    />
+                                    <button
+                                        type="button"
+                                        disabled={inlineAiLoading || !inlineAiPrompt.trim()}
+                                        onClick={handleInlineAiGenerateExercise}
+                                        className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shrink-0 flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 transition"
+                                    >
+                                        {inlineAiLoading ? (
+                                            <>
+                                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                <span>Synthesizing...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles className="w-3.5 h-3.5" />
+                                                <span>✨ Auto-Fill Challenge</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-slate-400">
+                                    Auto-fills Title, Problem Statement, Solution, and {exerciseForm.exerciseType === 'assertion_reason' ? 'Assertion/Reason statements' : exerciseForm.exerciseType === 'code_trace' ? 'Dry-Run trace table' : exerciseForm.exerciseType === 'code_debug' ? 'Error line and corrected code' : 'Test cases'} directly into this form without switching screens.
+                                </p>
+                            </div>
+
                             {/* Question Type Selector */}
                             <div>
                                 <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2 block">
@@ -1824,6 +1994,45 @@ export default function PedagogyBuilderPage() {
 
                         {/* Modal Body */}
                         <div className="p-6 overflow-y-auto space-y-5 flex-1">
+                            {/* Inline AI Theory Synthesizer Bar */}
+                            <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                                        <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
+                                        <span>AI Pre-Lab Notes & Checkpoints Synthesizer</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-500 font-medium">Auto-populates Markdown, Checkpoints & CBSE Tips</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={inlineAiTheoryPrompt}
+                                        onChange={e => setInlineAiTheoryPrompt(e.target.value)}
+                                        placeholder={`Enter unit concept or CBSE chapter (e.g. '${theoryForm.title || "Control Structures & Loop Invariants"}')...`}
+                                        className="input text-xs flex-1 py-2 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800"
+                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineAiGenerateTheory(); } }}
+                                    />
+                                    <button
+                                        type="button"
+                                        disabled={inlineAiTheoryLoading}
+                                        onClick={handleInlineAiGenerateTheory}
+                                        className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shrink-0 flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 transition"
+                                    >
+                                        {inlineAiTheoryLoading ? (
+                                            <>
+                                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                <span>Synthesizing...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles className="w-3.5 h-3.5" />
+                                                <span>✨ Auto-Fill Theory</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+
                             <div>
                                 <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 block">
                                     Unit Concept Summary
@@ -2037,6 +2246,104 @@ export default function PedagogyBuilderPage() {
                                 Save Theory & Checkpoints
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Course Meta Modal */}
+            {showEditModuleModal && (
+                <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                            <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                                <Edit3 className="w-4 h-4 text-indigo-500" /> Edit Course Metadata & Settings
+                            </h3>
+                            <button onClick={() => setShowEditModuleModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSaveModuleMeta} className="p-6 space-y-4">
+                            <div>
+                                <label className="label">Course Title *</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={moduleEditForm.title}
+                                    onChange={e => setModuleEditForm(f => ({ ...f, title: e.target.value }))}
+                                    className="input font-bold"
+                                    placeholder="e.g. Python Data Structures & Algorithms"
+                                />
+                            </div>
+                            <div>
+                                <label className="label">Hindi Title (Optional)</label>
+                                <input
+                                    type="text"
+                                    value={moduleEditForm.titleHindi}
+                                    onChange={e => setModuleEditForm(f => ({ ...f, titleHindi: e.target.value }))}
+                                    className="input"
+                                    placeholder="e.g. पायथन डेटा संरचना और एल्गोरिदम"
+                                />
+                            </div>
+                            <div>
+                                <label className="label">Course Description</label>
+                                <textarea
+                                    value={moduleEditForm.description}
+                                    onChange={e => setModuleEditForm(f => ({ ...f, description: e.target.value }))}
+                                    className="input h-20 text-xs"
+                                    placeholder="Course objectives, prerequisites and scope..."
+                                />
+                            </div>
+                            <div className="grid grid-cols-3 gap-3">
+                                <div>
+                                    <label className="label">Language</label>
+                                    <select
+                                        value={moduleEditForm.language}
+                                        onChange={e => setModuleEditForm(f => ({ ...f, language: e.target.value }))}
+                                        className="input text-xs"
+                                    >
+                                        <option value="python">Python</option>
+                                        <option value="javascript">JavaScript</option>
+                                        <option value="cpp">C++</option>
+                                        <option value="java">Java</option>
+                                        <option value="sql">SQL</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="label">Board</label>
+                                    <select
+                                        value={moduleEditForm.boardAligned}
+                                        onChange={e => setModuleEditForm(f => ({ ...f, boardAligned: e.target.value }))}
+                                        className="input text-xs"
+                                    >
+                                        <option value="CBSE">CBSE</option>
+                                        <option value="PSEB">PSEB</option>
+                                        <option value="ICSE">ICSE</option>
+                                        <option value="Custom">Custom</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="label">Class Level</label>
+                                    <select
+                                        value={moduleEditForm.classLevel}
+                                        onChange={e => setModuleEditForm(f => ({ ...f, classLevel: Number(e.target.value) }))}
+                                        className="input text-xs"
+                                    >
+                                        <option value={11}>Class 11</option>
+                                        <option value={12}>Class 12</option>
+                                        <option value={10}>Class 10</option>
+                                        <option value={9}>Class 9</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="pt-2 flex justify-end gap-2">
+                                <button type="button" onClick={() => setShowEditModuleModal(false)} className="btn btn-secondary text-xs">
+                                    Cancel
+                                </button>
+                                <button type="submit" className="btn btn-primary text-xs font-bold">
+                                    Save Changes
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

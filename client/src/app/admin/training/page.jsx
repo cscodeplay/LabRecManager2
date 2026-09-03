@@ -20,6 +20,16 @@ export default function AdminTrainingModules() {
     const [classes, setClasses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showWizard, setShowWizard] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingModule, setEditingModule] = useState(null);
+    const [editForm, setEditForm] = useState({
+        title: '',
+        titleHindi: '',
+        description: '',
+        language: 'python',
+        boardAligned: 'CBSE',
+        classLevel: 11
+    });
 
     const isAdmin = user?.role === 'admin' || user?.role === 'principal' || user?.role === 'instructor';
 
@@ -47,45 +57,86 @@ export default function AdminTrainingModules() {
         }
     };
 
+    const handleOpenEditModule = (e, mod) => {
+        e.stopPropagation();
+        setEditingModule(mod);
+        setEditForm({
+            title: mod.title || '',
+            titleHindi: mod.titleHindi || '',
+            description: mod.description || '',
+            language: mod.language || 'python',
+            boardAligned: mod.boardAligned || 'CBSE',
+            classLevel: mod.classLevel || 11
+        });
+        setShowEditModal(true);
+    };
+
+    const handleSaveModule = async (e) => {
+        e.preventDefault();
+        if (!editForm.title.trim()) {
+            toast.error('Module title is required');
+            return;
+        }
+        try {
+            await trainingAPI.updateModule(editingModule.id, editForm);
+            toast.success('Course module settings updated!');
+            setShowEditModal(false);
+            setEditingModule(null);
+            loadData();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to update module');
+        }
+    };
+
+    const handleDeleteModule = async (e, modId, modTitle) => {
+        e.stopPropagation();
+        if (!confirm(`Are you sure you want to delete "${modTitle}"? All units, exercises, and student progress will be removed.`)) {
+            return;
+        }
+        try {
+            await trainingAPI.deleteModule(modId);
+            toast.success('Course module deleted successfully');
+            loadData();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to delete module');
+        }
+    };
+
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
             <PageHeader title="Training Module Builder" titleHindi="प्रशिक्षण मॉड्यूल निर्माता">
                 <div className="flex items-center gap-2">
                     <button 
                         onClick={() => setShowWizard(true)} 
-                        className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold shadow-lg shadow-indigo-600/20 text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5"
+                        className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold shadow-lg shadow-indigo-600/20 text-xs py-2 px-4 rounded-xl flex items-center gap-2 transition"
                     >
-                        <Sparkles className="w-4 h-4" /> ✨ AI Course Wizard
-                    </button>
-                    <button 
-                        onClick={() => setShowWizard(true)} 
-                        className="btn btn-primary text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 font-bold"
-                    >
-                        <Plus className="w-4 h-4" /> Create New Module
+                        <Sparkles className="w-4 h-4" /> ✨ Create Course Module
                     </button>
                 </div>
             </PageHeader>
 
-            <main className="max-w-7xl mx-auto px-4 lg:px-6 py-6 border-b border-slate-200">
+            <main className="max-w-7xl mx-auto px-4 lg:px-6 py-6 border-b border-slate-200 dark:border-slate-800">
                 <div className="mb-6 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent border border-indigo-200 dark:border-indigo-800 rounded-3xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                     <div className="flex items-start gap-4">
                         <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-indigo-600/25">
                             <Sparkles className="w-6 h-6" />
                         </div>
                         <div>
-                            <h3 className="font-bold text-slate-900 dark:text-white text-base">Pedagogy Design & AI LMS Engine</h3>
+                            <h3 className="font-bold text-slate-900 dark:text-white text-base">CBSE Pedagogy & AI Mastery LMS Engine</h3>
                             <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-2xl leading-relaxed">
-                                Build mastery-based pedagogy courses with multi-modal challenges: <strong>Coding Labs</strong>, <strong>Predict Output MCQs</strong>, <strong>Syntax Cloze</strong>, <strong>PR Bug Hunts</strong>, and <strong>MNC Case Studies</strong> with automatic AI feedback and XP progression.
+                                Build mastery-based pedagogy courses with multi-modal challenges: <strong>Coding Labs</strong>, <strong>Pre-Lab Theory & Mini-Checks</strong>, <strong>Assertion-Reasoning</strong>, <strong>Dry-Run Tracing</strong>, and <strong>CBSE Error Debugging</strong>.
                             </p>
                         </div>
                     </div>
 
-                    <button
-                        onClick={() => setShowWizard(true)}
-                        className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2.5 px-5 rounded-2xl shrink-0 shadow-md shadow-indigo-600/20 flex items-center gap-2"
-                    >
-                        <Plus className="w-4 h-4" /> Launch 5-Step Creator
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <span className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-semibold flex items-center gap-1.5">
+                            <BookCheck className="w-3.5 h-3.5" /> CBSE Class 11 & 12
+                        </span>
+                        <span className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 text-xs font-semibold flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5" /> AI Curriculum Synthesizer
+                        </span>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -117,15 +168,33 @@ export default function AdminTrainingModules() {
                                     }`}>
                                         {mod.language}
                                     </div>
-                                    {!mod.isPublished ? (
-                                        <span className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
-                                            <Edit3 className="w-3 h-3" /> Draft
-                                        </span>
-                                    ) : (
-                                        <span className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                                            <BookCheck className="w-3 h-3" /> Published
-                                        </span>
-                                    )}
+                                    <div className="flex items-center gap-1.5">
+                                        {!mod.isPublished ? (
+                                            <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                                Draft
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                                <BookCheck className="w-3 h-3" /> Published
+                                            </span>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={(e) => handleOpenEditModule(e, mod)}
+                                            className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                            title="Edit Course Settings"
+                                        >
+                                            <Edit3 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => handleDeleteModule(e, mod.id, mod.title)}
+                                            className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                            title="Delete Course Module"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
                                 </div>
                                 
                                 <h3 className="text-base font-bold text-slate-900 dark:text-white line-clamp-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">
@@ -157,6 +226,104 @@ export default function AdminTrainingModules() {
                     ))}
                 </div>
             </main>
+
+            {/* Quick Edit Module Metadata Modal */}
+            {showEditModal && (
+                <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                            <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                                <Edit3 className="w-4 h-4 text-indigo-500" /> Edit Course Settings
+                            </h3>
+                            <button onClick={() => setShowEditModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600">
+                                ✕
+                            </button>
+                        </div>
+                        <form onSubmit={handleSaveModule} className="p-6 space-y-4">
+                            <div>
+                                <label className="label">Course Title *</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={editForm.title}
+                                    onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))}
+                                    className="input font-bold"
+                                    placeholder="e.g. Python Data Structures & Algorithms"
+                                />
+                            </div>
+                            <div>
+                                <label className="label">Hindi Subtitle (Optional)</label>
+                                <input
+                                    type="text"
+                                    value={editForm.titleHindi}
+                                    onChange={e => setEditForm(f => ({ ...f, titleHindi: e.target.value }))}
+                                    className="input"
+                                    placeholder="e.g. पायथन डेटा संरचना और एल्गोरिदम"
+                                />
+                            </div>
+                            <div>
+                                <label className="label">Overview / Description</label>
+                                <textarea
+                                    value={editForm.description}
+                                    onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
+                                    className="input h-20 text-xs"
+                                    placeholder="Course description and learning objectives..."
+                                />
+                            </div>
+                            <div className="grid grid-cols-3 gap-3">
+                                <div>
+                                    <label className="label">Language</label>
+                                    <select
+                                        value={editForm.language}
+                                        onChange={e => setEditForm(f => ({ ...f, language: e.target.value }))}
+                                        className="input text-xs"
+                                    >
+                                        <option value="python">Python</option>
+                                        <option value="javascript">JavaScript</option>
+                                        <option value="cpp">C++</option>
+                                        <option value="java">Java</option>
+                                        <option value="sql">SQL</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="label">Board</label>
+                                    <select
+                                        value={editForm.boardAligned}
+                                        onChange={e => setEditForm(f => ({ ...f, boardAligned: e.target.value }))}
+                                        className="input text-xs"
+                                    >
+                                        <option value="CBSE">CBSE</option>
+                                        <option value="PSEB">PSEB</option>
+                                        <option value="ICSE">ICSE</option>
+                                        <option value="Custom">Custom</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="label">Class Level</label>
+                                    <select
+                                        value={editForm.classLevel}
+                                        onChange={e => setEditForm(f => ({ ...f, classLevel: Number(e.target.value) }))}
+                                        className="input text-xs"
+                                    >
+                                        <option value={11}>Class 11</option>
+                                        <option value={12}>Class 12</option>
+                                        <option value={10}>Class 10</option>
+                                        <option value={9}>Class 9</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="pt-2 flex justify-end gap-2">
+                                <button type="button" onClick={() => setShowEditModal(false)} className="btn btn-secondary text-xs">
+                                    Cancel
+                                </button>
+                                <button type="submit" className="btn btn-primary text-xs font-bold">
+                                    Save Changes
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* 5-Step Training Module Creator Wizard */}
             <TrainingModuleWizard

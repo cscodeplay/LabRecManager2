@@ -8,7 +8,7 @@ import {
     Clock, Award, Lock, Send, Users, Calendar, Trophy,
     AlertTriangle, X, Check, HelpCircle, Eye, EyeOff, CheckSquare, FileText
 } from 'lucide-react';
-import { trainingAPI, classesAPI } from '@/lib/api';
+import api, { trainingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import AiTrainingCopilot from './AiTrainingCopilot';
 
@@ -113,8 +113,52 @@ export default function TrainingModuleWizard({
                     explanation: 'A Hash Set provides O(1) average-time complexity lookups.'
                 }
             ]
+        },
+        arData: {
+            assertion: 'In Python, strings are immutable sequences.',
+            reason: 'Individual character elements of a string cannot be modified via item assignment s[0] = "x".',
+            correctOption: 0,
+            explanation: 'Both statements are true facts, and Reason explains what immutability means.'
+        },
+        traceData: {
+            codeSnippet: 'a = 2\nb = 5\nfor i in range(1, 4):\n    a = a + i\n    b = b * 2',
+            tableHeaders: ['Step (i)', 'Value of a', 'Value of b'],
+            expectedRows: [
+                ['1', '3', '10'],
+                ['2', '5', '20'],
+                ['3', '8', '40']
+            ],
+            explanation: 'Variable values update sequentially during each loop iteration.'
+        },
+        debugData: {
+            buggyCode: 'def calculate(nums):\n    total = 0\n    for n in nums\n        total += n\n    return total',
+            errors: [
+                { line: 3, description: 'Missing colon at end of for loop statement', correctedLine: '    for n in nums:' }
+            ],
+            solutionCode: 'def calculate(nums):\n    total = 0\n    for n in nums:\n        total += n\n    return total',
+            explanation: 'Line 3 was missing a required colon (:).'
         }
     });
+
+    // Wizard Unit Pre-Lab Theory Modal State
+    const [showWizardTheoryModal, setShowWizardTheoryModal] = useState(false);
+    const [wizardTheoryUnitIdx, setWizardTheoryUnitIdx] = useState(null);
+    const [wizardTheoryForm, setWizardTheoryForm] = useState({
+        title: '',
+        summary: '',
+        content: '',
+        miniCheckpoints: [],
+        cbseTips: []
+    });
+
+    // Inline AI Generation State for Wizard Exercise Modal
+    const [wizardInlineAiPrompt, setWizardInlineAiPrompt] = useState('');
+    const [wizardInlineAiProvider, setWizardInlineAiProvider] = useState('groq');
+    const [wizardInlineAiLoading, setWizardInlineAiLoading] = useState(false);
+
+    // Inline AI Generation State for Wizard Theory Modal
+    const [wizardInlineAiTheoryPrompt, setWizardInlineAiTheoryPrompt] = useState('');
+    const [wizardInlineAiTheoryLoading, setWizardInlineAiTheoryLoading] = useState(false);
 
     // Step 5 Form: Class Allocations
     const [targetClasses, setTargetClasses] = useState([]);
@@ -261,6 +305,105 @@ export default function TrainingModuleWizard({
         setUnits(prev => prev.map((u, i) => i === idx ? { ...u, [field]: value } : u));
     };
 
+    // Unit Pre-Lab Theory Handlers
+    const handleOpenWizardTheory = (uIdx) => {
+        const u = units[uIdx];
+        if (!u) return;
+        setWizardTheoryUnitIdx(uIdx);
+        setWizardTheoryForm({
+            title: u.title || `Unit ${uIdx + 1}`,
+            summary: u.theoryData?.summary || u.description || '',
+            content: u.theoryData?.content || u.theory || '',
+            miniCheckpoints: Array.isArray(u.theoryData?.miniCheckpoints) ? u.theoryData.miniCheckpoints : [],
+            cbseTips: Array.isArray(u.theoryData?.cbseTips) ? u.theoryData.cbseTips : []
+        });
+        setShowWizardTheoryModal(true);
+    };
+
+    const handleSaveWizardTheory = () => {
+        if (wizardTheoryUnitIdx === null) return;
+        setUnits(prev => prev.map((u, i) => {
+            if (i !== wizardTheoryUnitIdx) return u;
+            return {
+                ...u,
+                theoryData: {
+                    summary: wizardTheoryForm.summary,
+                    content: wizardTheoryForm.content,
+                    miniCheckpoints: wizardTheoryForm.miniCheckpoints,
+                    cbseTips: wizardTheoryForm.cbseTips
+                }
+            };
+        }));
+        setShowWizardTheoryModal(false);
+        setWizardTheoryUnitIdx(null);
+        toast.success('📖 Unit Pre-Lab Theory & Checkpoints saved!');
+    };
+
+    const handleInlineAiGenerateTheoryInWizard = async () => {
+        const topicToUse = wizardInlineAiTheoryPrompt.trim() || wizardTheoryForm.title || moduleForm.title || 'Unit Theory';
+        setWizardInlineAiTheoryLoading(true);
+        try {
+            const res = await api.post('/training/ai/theory', {
+                topic: topicToUse,
+                unitTitle: wizardTheoryForm.title,
+                language: moduleForm.language || 'python',
+                classLevel: moduleForm.classLevel || 11,
+                board: moduleForm.boardAligned || 'CBSE',
+                provider: 'groq'
+            });
+            if (res.data.success && res.data.data.theory) {
+                const t = res.data.data.theory;
+                setWizardTheoryForm(prev => ({
+                    ...prev,
+                    summary: t.summary || prev.summary || `Core concepts of ${wizardTheoryForm.title}`,
+                    content: t.contentMarkdown || t.theoryMarkdown || t.content || prev.content,
+                    miniCheckpoints: Array.isArray(t.miniCheckpoints) && t.miniCheckpoints.length > 0 ? t.miniCheckpoints : prev.miniCheckpoints,
+                    cbseTips: Array.isArray(t.cbseTips) && t.cbseTips.length > 0 ? t.cbseTips : prev.cbseTips
+                }));
+                toast.success('✨ Pre-Lab notes & checkpoints generated into form!');
+            } else {
+                toast.error('AI did not return theory content');
+            }
+        } catch (err) {
+            console.error('Wizard AI Theory error:', err);
+            toast.error(err.response?.data?.message || 'Failed to synthesize theory');
+        } finally {
+            setWizardInlineAiTheoryLoading(false);
+        }
+    };
+
+    const handleInlineAiGenerateExerciseInWizard = async () => {
+        if (!wizardInlineAiPrompt.trim()) return;
+        setWizardInlineAiLoading(true);
+        try {
+            const activeUnit = units[selectedUnitIdx];
+            const res = await api.post('/training/ai/exercise', {
+                prompt: wizardInlineAiPrompt,
+                exerciseType: exerciseForm.exerciseType,
+                difficulty: exerciseForm.difficulty || 'beginner',
+                scaffoldLevel: exerciseForm.scaffoldLevel || 'guided',
+                bloomsLevel: exerciseForm.bloomsLevel || 'apply',
+                language: moduleForm.language || 'python',
+                classLevel: moduleForm.classLevel || 11,
+                board: moduleForm.boardAligned || 'CBSE',
+                unitTitle: activeUnit?.title || '',
+                provider: wizardInlineAiProvider
+            });
+            if (res.data.success && res.data.data.exercise) {
+                const ex = res.data.data.exercise;
+                handleApplyAiExercise(ex);
+                toast.success(`✨ Challenge for "${ex.title}" auto-filled into form!`);
+            } else {
+                toast.error('AI did not return an exercise');
+            }
+        } catch (err) {
+            console.error('Wizard AI Exercise error:', err);
+            toast.error(err.response?.data?.message || 'Failed to synthesize exercise');
+        } finally {
+            setWizardInlineAiLoading(false);
+        }
+    };
+
     // Handlers for Exercises
     const handleSaveExercise = () => {
         if (!exerciseForm.title.trim()) {
@@ -272,12 +415,23 @@ export default function TrainingModuleWizard({
         if (!activeUnit) return;
 
         let processedTestCases = exerciseForm.testCases;
+        let processedStarterCode = exerciseForm.starterCode;
+        let processedSolutionCode = exerciseForm.solutionCode;
+
         if (exerciseForm.exerciseType === 'mcq') {
             processedTestCases = exerciseForm.mcqData;
         } else if (exerciseForm.exerciseType === 'fill_blank') {
             processedTestCases = exerciseForm.clozeData;
         } else if (exerciseForm.exerciseType === 'case_study') {
             processedTestCases = exerciseForm.caseStudyData;
+        } else if (exerciseForm.exerciseType === 'assertion_reason') {
+            processedTestCases = exerciseForm.arData;
+        } else if (exerciseForm.exerciseType === 'code_trace') {
+            processedTestCases = exerciseForm.traceData;
+        } else if (exerciseForm.exerciseType === 'code_debug') {
+            processedTestCases = exerciseForm.debugData;
+            processedStarterCode = exerciseForm.debugData?.buggyCode || exerciseForm.starterCode;
+            processedSolutionCode = exerciseForm.debugData?.solutionCode || exerciseForm.solutionCode;
         }
 
         const newEx = {
@@ -293,10 +447,13 @@ export default function TrainingModuleWizard({
             isReviewExercise: exerciseForm.isReviewExercise,
             xpReward: Number(exerciseForm.xpReward) || 15,
             timeLimit: Number(exerciseForm.timeLimit) || 5,
-            starterCode: exerciseForm.starterCode,
-            solutionCode: exerciseForm.solutionCode,
+            starterCode: processedStarterCode,
+            solutionCode: processedSolutionCode,
             testCases: processedTestCases,
-            hints: exerciseForm.hints
+            hints: exerciseForm.hints,
+            arData: exerciseForm.arData,
+            traceData: exerciseForm.traceData,
+            debugData: exerciseForm.debugData
         };
 
         setUnits(prev => prev.map((u, i) => {
@@ -313,50 +470,6 @@ export default function TrainingModuleWizard({
         setShowExerciseFormModal(false);
         setEditingExerciseIdx(null);
         toast.success(editingExerciseIdx !== null ? 'Exercise updated!' : 'Exercise added to Unit!');
-    };
-
-    const handleOpenEditExercise = (exIdx) => {
-        const activeUnit = units[selectedUnitIdx];
-        if (!activeUnit || !activeUnit.exercises || !activeUnit.exercises[exIdx]) return;
-        const ex = activeUnit.exercises[exIdx];
-        setEditingExerciseIdx(exIdx);
-        setExerciseForm({
-            title: ex.title || '',
-            description: ex.description || '',
-            theory: ex.theory || '',
-            exerciseType: ex.exerciseType || 'coding',
-            difficulty: ex.difficulty || 'beginner',
-            scaffoldLevel: ex.scaffoldLevel || 'guided',
-            bloomsLevel: ex.bloomsLevel || 'apply',
-            learningObjective: ex.learningObjective || '',
-            isReviewExercise: ex.isReviewExercise || false,
-            timeLimit: ex.timeLimit || 5,
-            xpReward: ex.xpReward || 15,
-            starterCode: ex.starterCode || '',
-            solutionCode: ex.solutionCode || '',
-            testCases: Array.isArray(ex.testCases) ? ex.testCases : [{ input: '', expectedOutput: '', isHidden: false }],
-            hints: Array.isArray(ex.hints) ? ex.hints : [''],
-            mcqData: ex.mcqData || (ex.exerciseType === 'mcq' && typeof ex.testCases === 'object' ? ex.testCases : {
-                question: 'What is the output of this code snippet?',
-                codeSnippet: '',
-                options: ['', '', '', ''],
-                correctOption: 0,
-                explanation: ''
-            }),
-            clozeData: ex.clozeData || (ex.exerciseType === 'fill_blank' && typeof ex.testCases === 'object' ? ex.testCases : {
-                instruction: 'Fill in the blank:',
-                template: '',
-                blanks: [{ id: 'BLANK_1', correctAnswer: '', hint: '' }],
-                explanation: ''
-            }),
-            caseStudyData: ex.caseStudyData || (ex.exerciseType === 'case_study' && typeof ex.testCases === 'object' ? ex.testCases : {
-                company: '',
-                incident: '',
-                scenarioCode: '',
-                questions: []
-            })
-        });
-        setShowExerciseFormModal(true);
     };
 
     const handleRemoveExercise = (exIdx) => {
@@ -388,6 +501,12 @@ export default function TrainingModuleWizard({
                 description: u.description,
                 expectedHours: u.expectedHours || 4,
                 unlockThreshold: u.unlockThreshold || 80,
+                theoryData: {
+                    summary: u.description || `Core concepts for ${u.title}`,
+                    content: u.theory || (Array.isArray(u.keyConcepts) ? `## Key Concepts\n\n${u.keyConcepts.map(c => `- ${c}`).join('\n')}` : ''),
+                    miniCheckpoints: Array.isArray(u.miniCheckpoints) ? u.miniCheckpoints : [],
+                    cbseTips: Array.isArray(u.cbseTips) ? u.cbseTips : []
+                },
                 exercises: (u.exercises || []).map((ex, eIdx) => ({
                     id: `ai_ex_${eIdx + 1}_${Date.now()}_${Math.random()}`,
                     title: ex.title,
@@ -407,7 +526,10 @@ export default function TrainingModuleWizard({
                     hints: ex.hints || [],
                     mcqData: ex.exerciseType === 'mcq' && typeof ex.testCases === 'object' ? ex.testCases : null,
                     clozeData: ex.exerciseType === 'fill_blank' && typeof ex.testCases === 'object' ? ex.testCases : null,
-                    caseStudyData: ex.exerciseType === 'case_study' && typeof ex.testCases === 'object' ? ex.testCases : null
+                    caseStudyData: ex.exerciseType === 'case_study' && typeof ex.testCases === 'object' ? ex.testCases : null,
+                    arData: ex.exerciseType === 'assertion_reason' && typeof ex.testCases === 'object' ? ex.testCases : null,
+                    traceData: ex.exerciseType === 'code_trace' && typeof ex.testCases === 'object' ? ex.testCases : null,
+                    debugData: ex.exerciseType === 'code_debug' && typeof ex.testCases === 'object' ? ex.testCases : null
                 }))
             })));
             setSelectedUnitIdx(0);
@@ -436,7 +558,10 @@ export default function TrainingModuleWizard({
             hints: aiEx.hints || prev.hints,
             mcqData: currentType === 'mcq' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.mcqData,
             clozeData: currentType === 'fill_blank' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.clozeData,
-            caseStudyData: currentType === 'case_study' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.caseStudyData
+            caseStudyData: currentType === 'case_study' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.caseStudyData,
+            arData: currentType === 'assertion_reason' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.arData,
+            traceData: currentType === 'code_trace' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.traceData,
+            debugData: currentType === 'code_debug' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.debugData
         }));
         setShowExerciseFormModal(true);
     };
@@ -451,7 +576,7 @@ export default function TrainingModuleWizard({
 
         setIsSubmitting(true);
         try {
-            // 1. Create Module
+            // 1. Create or Update Module
             const createPayload = {
                 ...moduleForm,
                 isPublished: shouldPublishNow || moduleForm.isPublished,
@@ -459,23 +584,49 @@ export default function TrainingModuleWizard({
                 totalExercises: pedagogyStats.totalExercises
             };
 
-            const modRes = await trainingAPI.createModule(createPayload);
-            const createdModule = modRes.data.data.module;
-            const moduleId = createdModule.id;
+            let moduleId = initialData?.id;
+            if (moduleId) {
+                await trainingAPI.updateModule(moduleId, createPayload);
+            } else {
+                const modRes = await trainingAPI.createModule(createPayload);
+                const createdModule = modRes.data.data.module;
+                moduleId = createdModule.id;
+            }
 
-            // 2. Create Units & Exercises in order
+            // 2. Create / Update Units & Exercises in order
             for (let uIdx = 0; uIdx < units.length; uIdx++) {
                 const u = units[uIdx];
-                const unitRes = await trainingAPI.createUnit(moduleId, {
-                    unitNumber: uIdx + 1,
-                    title: u.title,
-                    description: u.description,
-                    expectedHours: Number(u.expectedHours) || 4,
-                    unlockThreshold: Number(u.unlockThreshold) || 80,
-                    sequenceOrder: uIdx
-                });
+                let createdUnitId = u.id && !String(u.id).startsWith('temp_') && !String(u.id).startsWith('ai_') ? u.id : null;
 
-                const createdUnitId = unitRes.data.data.unit.id;
+                if (!createdUnitId) {
+                    const unitRes = await trainingAPI.createUnit(moduleId, {
+                        unitNumber: uIdx + 1,
+                        title: u.title,
+                        description: u.description,
+                        expectedHours: Number(u.expectedHours) || 4,
+                        unlockThreshold: Number(u.unlockThreshold) || 80,
+                        sequenceOrder: uIdx
+                    });
+                    createdUnitId = unitRes.data.data.unit.id;
+                } else {
+                    await trainingAPI.updateUnit(createdUnitId, {
+                        unitNumber: uIdx + 1,
+                        title: u.title,
+                        description: u.description,
+                        expectedHours: Number(u.expectedHours) || 4,
+                        unlockThreshold: Number(u.unlockThreshold) || 80,
+                        sequenceOrder: uIdx
+                    });
+                }
+
+                // Save Pre-Lab Theory & Checkpoints if available
+                if (u.theoryData) {
+                    try {
+                        await trainingAPI.updateUnitTheory(createdUnitId, u.theoryData);
+                    } catch (tErr) {
+                        console.warn('Could not save unit theory:', tErr.message);
+                    }
+                }
 
                 // Create Exercises for this unit
                 if (u.exercises && u.exercises.length > 0) {
@@ -783,6 +934,31 @@ export default function TrainingModuleWizard({
                                                 />
                                             </div>
                                         </div>
+
+                                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleOpenWizardTheory(idx)}
+                                                    className={`btn text-xs py-1.5 px-3 rounded-xl flex items-center gap-1.5 font-bold transition ${
+                                                        unit.theoryData?.content
+                                                            ? 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                                                            : 'bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
+                                                    }`}
+                                                >
+                                                    <BookOpen className="w-3.5 h-3.5" />
+                                                    {unit.theoryData?.content ? '📖 Theory & Checkpoints Set' : '📖 Pre-Lab Theory & Checks'}
+                                                </button>
+                                                {unit.theoryData?.miniCheckpoints?.length > 0 && (
+                                                    <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full font-semibold">
+                                                        {unit.theoryData.miniCheckpoints.length} checks
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <span className="text-[11px] text-slate-400">
+                                                {unit.exercises?.length || 0} exercises configured
+                                            </span>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -864,6 +1040,9 @@ export default function TrainingModuleWizard({
                                                     fill_blank: { label: '🧩 Syntax Cloze', bg: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300' },
                                                     bug_fix: { label: '🐞 Bug Hunt', bg: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' },
                                                     case_study: { label: '🏢 Case Study', bg: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' },
+                                                    assertion_reason: { label: '⚖️ Assertion-Reason', bg: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300' },
+                                                    code_trace: { label: '🔍 Dry-Run Trace', bg: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300' },
+                                                    code_debug: { label: '🐞 CBSE Error Debug', bg: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300' },
                                                 };
                                                 const badge = typeBadges[ex.exerciseType] || typeBadges.coding;
 
@@ -1139,16 +1318,71 @@ export default function TrainingModuleWizard({
                         </div>
 
                         <div className="p-6 overflow-y-auto space-y-4">
+                            {/* Inline In-Place AI Generator Bar */}
+                            <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                                        <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
+                                        <span>AI In-Place Challenge Synthesizer</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] text-slate-500 font-medium">Model:</span>
+                                        <select
+                                            value={wizardInlineAiProvider}
+                                            onChange={e => setWizardInlineAiProvider(e.target.value)}
+                                            className="text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-0.5"
+                                        >
+                                            <option value="groq">⚡ Groq (Fast)</option>
+                                            <option value="gemini">✨ Gemini</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={wizardInlineAiPrompt}
+                                        onChange={e => setWizardInlineAiPrompt(e.target.value)}
+                                        placeholder={`Enter topic or concept (e.g. 'Dry-Run trace loop' or 'Assertion on immutability')...`}
+                                        className="input text-xs flex-1 py-2 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800"
+                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineAiGenerateExerciseInWizard(); } }}
+                                    />
+                                    <button
+                                        type="button"
+                                        disabled={wizardInlineAiLoading || !wizardInlineAiPrompt.trim()}
+                                        onClick={handleInlineAiGenerateExerciseInWizard}
+                                        className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shrink-0 flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 transition"
+                                    >
+                                        {wizardInlineAiLoading ? (
+                                            <>
+                                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                <span>Synthesizing...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles className="w-3.5 h-3.5" />
+                                                <span>✨ Auto-Fill Challenge</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-slate-400">
+                                    Auto-fills Title, Problem Statement, Solution, and test data directly into this form without modal switching.
+                                </p>
+                            </div>
+
                             {/* Exercise Type Picker */}
                             <div>
                                 <label className="label">Question / Challenge Type</label>
-                                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                                     {[
                                         { id: 'coding', label: '⚡ Coding Lab' },
                                         { id: 'mcq', label: '📝 Output MCQ' },
                                         { id: 'fill_blank', label: '🧩 Syntax Cloze' },
                                         { id: 'bug_fix', label: '🐞 Bug Hunt' },
-                                        { id: 'case_study', label: '🏢 Case Study' }
+                                        { id: 'case_study', label: '🏢 Case Study' },
+                                        { id: 'assertion_reason', label: '⚖️ Assertion-Reason' },
+                                        { id: 'code_trace', label: '🔍 Dry-Run Trace' },
+                                        { id: 'code_debug', label: '🐞 CBSE Error Debug' }
                                     ].map(t => (
                                         <button
                                             key={t.id}
@@ -1297,6 +1531,133 @@ export default function TrainingModuleWizard({
                                     </div>
                                 </div>
                             )}
+
+                            {/* Assertion-Reason Sub-Form */}
+                            {exerciseForm.exerciseType === 'assertion_reason' && (
+                                <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/20 rounded-2xl border border-indigo-200 dark:border-indigo-800/60 space-y-3">
+                                    <h4 className="text-xs font-bold uppercase text-indigo-600 flex items-center gap-1.5">
+                                        ⚖️ CBSE Assertion-Reason Configuration
+                                    </h4>
+                                    <div>
+                                        <label className="text-xs font-semibold">Assertion Statement (A):</label>
+                                        <textarea
+                                            value={exerciseForm.arData?.assertion || ''}
+                                            onChange={e => setExerciseForm(f => ({
+                                                ...f,
+                                                arData: { ...f.arData, assertion: e.target.value }
+                                            }))}
+                                            className="input h-16 text-xs mt-1"
+                                            placeholder="Statement A to be evaluated..."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold">Reason Statement (R):</label>
+                                        <textarea
+                                            value={exerciseForm.arData?.reason || ''}
+                                            onChange={e => setExerciseForm(f => ({
+                                                ...f,
+                                                arData: { ...f.arData, reason: e.target.value }
+                                            }))}
+                                            className="input h-16 text-xs mt-1"
+                                            placeholder="Reason R to explain or support A..."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold block mb-1.5">Correct Relationship Option:</label>
+                                        {[
+                                            'Both A and R are true and R is the correct explanation of A',
+                                            'Both A and R are true but R is NOT the correct explanation of A',
+                                            'A is true but R is false',
+                                            'A is false but R is true'
+                                        ].map((opt, oi) => (
+                                            <label key={oi} className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 py-1 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="wizardArCorrect"
+                                                    checked={exerciseForm.arData?.correctOption === oi}
+                                                    onChange={() => setExerciseForm(f => ({
+                                                        ...f,
+                                                        arData: { ...f.arData, correctOption: oi }
+                                                    }))}
+                                                />
+                                                <span>Option {String.fromCharCode(65 + oi)}: {opt}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Dry-Run Trace Sub-Form */}
+                            {exerciseForm.exerciseType === 'code_trace' && (
+                                <div className="p-4 bg-teal-50/50 dark:bg-teal-950/20 rounded-2xl border border-teal-200 dark:border-teal-800/60 space-y-3">
+                                    <h4 className="text-xs font-bold uppercase text-teal-600 flex items-center gap-1.5">
+                                        🔍 Dry-Run Trace Table Configuration
+                                    </h4>
+                                    <div>
+                                        <label className="text-xs font-semibold">Code Snippet to Trace:</label>
+                                        <textarea
+                                            value={exerciseForm.traceData?.codeSnippet || ''}
+                                            onChange={e => setExerciseForm(f => ({
+                                                ...f,
+                                                traceData: { ...f.traceData, codeSnippet: e.target.value }
+                                            }))}
+                                            className="input font-mono text-xs h-24 mt-1"
+                                            placeholder="for i in range(1, 4): ..."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold">Table Headers (comma-separated):</label>
+                                        <input
+                                            type="text"
+                                            value={(exerciseForm.traceData?.tableHeaders || []).join(', ')}
+                                            onChange={e => {
+                                                const headers = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                                                setExerciseForm(f => ({
+                                                    ...f,
+                                                    traceData: { ...f.traceData, tableHeaders: headers }
+                                                }));
+                                            }}
+                                            className="input text-xs mt-1"
+                                            placeholder="Step (i), Value of a, Value of b"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* CBSE Code Debug Sub-Form */}
+                            {exerciseForm.exerciseType === 'code_debug' && (
+                                <div className="p-4 bg-red-50/50 dark:bg-red-950/20 rounded-2xl border border-red-200 dark:border-red-800/60 space-y-3">
+                                    <h4 className="text-xs font-bold uppercase text-red-600 flex items-center gap-1.5">
+                                        🐞 CBSE Code Debugging Configuration
+                                    </h4>
+                                    <div>
+                                        <label className="text-xs font-semibold">Buggy Code Given to Student:</label>
+                                        <textarea
+                                            value={exerciseForm.debugData?.buggyCode || ''}
+                                            onChange={e => setExerciseForm(f => ({
+                                                ...f,
+                                                debugData: { ...f.debugData, buggyCode: e.target.value },
+                                                starterCode: e.target.value
+                                            }))}
+                                            className="input font-mono text-xs h-24 mt-1"
+                                            placeholder="def total(a, b)\n  return a + b"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold">Corrected Solution Code:</label>
+                                        <textarea
+                                            value={exerciseForm.debugData?.solutionCode || ''}
+                                            onChange={e => setExerciseForm(f => ({
+                                                ...f,
+                                                debugData: { ...f.debugData, solutionCode: e.target.value },
+                                                solutionCode: e.target.value
+                                            }))}
+                                            className="input font-mono text-xs h-24 mt-1"
+                                            placeholder="def total(a, b):\n  return a + b"
+                                        />
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-end gap-3">
@@ -1305,6 +1666,197 @@ export default function TrainingModuleWizard({
                             </button>
                             <button onClick={handleSaveExercise} className="btn btn-primary text-xs font-bold">
                                 Save Exercise to Unit
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Wizard Unit Pre-Lab Theory Modal */}
+            {showWizardTheoryModal && (
+                <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-[120] p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh] overflow-hidden">
+                        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                                    <BookOpen className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                                        Pre-Lab Theory & Interactive Checkpoints
+                                    </h3>
+                                    <p className="text-xs text-slate-500">
+                                        {wizardTheoryForm.title} • CBSE Concept Grounding
+                                    </p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowWizardTheoryModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                            {/* Inline AI Theory Synthesizer Bar */}
+                            <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                                        <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
+                                        <span>AI Pre-Lab Notes & Checkpoints Synthesizer</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-500 font-medium">Auto-fills Markdown & Checkpoints</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={wizardInlineAiTheoryPrompt}
+                                        onChange={e => setWizardInlineAiTheoryPrompt(e.target.value)}
+                                        placeholder={`Enter unit concept (e.g. '${wizardTheoryForm.title}')...`}
+                                        className="input text-xs flex-1 py-2 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800"
+                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineAiGenerateTheoryInWizard(); } }}
+                                    />
+                                    <button
+                                        type="button"
+                                        disabled={wizardInlineAiTheoryLoading}
+                                        onClick={handleInlineAiGenerateTheoryInWizard}
+                                        className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shrink-0 flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 transition"
+                                    >
+                                        {wizardInlineAiTheoryLoading ? (
+                                            <>
+                                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                <span>Synthesizing...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles className="w-3.5 h-3.5" />
+                                                <span>✨ Auto-Fill Theory</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="label">Unit Concept Summary</label>
+                                <input
+                                    type="text"
+                                    value={wizardTheoryForm.summary}
+                                    onChange={e => setWizardTheoryForm(f => ({ ...f, summary: e.target.value }))}
+                                    className="input text-xs"
+                                    placeholder="Brief core concept takeaway..."
+                                />
+                            </div>
+
+                            <div>
+                                <label className="label">Full Concept Notes & Theory (Markdown)</label>
+                                <textarea
+                                    value={wizardTheoryForm.content}
+                                    onChange={e => setWizardTheoryForm(f => ({ ...f, content: e.target.value }))}
+                                    className="input h-36 font-mono text-xs"
+                                    placeholder="## Concept Overview&#10;&#10;Explain syntax, execution model, and edge cases..."
+                                />
+                            </div>
+
+                            {/* Mini Checkpoints */}
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                        Interactive Mini-Checkpoints ({wizardTheoryForm.miniCheckpoints?.length || 0})
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setWizardTheoryForm(f => ({
+                                            ...f,
+                                            miniCheckpoints: [
+                                                ...(f.miniCheckpoints || []),
+                                                {
+                                                    id: `cp_${Date.now()}`,
+                                                    question: '',
+                                                    options: ['', ''],
+                                                    correctOption: 0,
+                                                    explanation: ''
+                                                }
+                                            ]
+                                        }))}
+                                        className="btn btn-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 font-semibold"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> Add Checkpoint
+                                    </button>
+                                </div>
+
+                                {(wizardTheoryForm.miniCheckpoints || []).map((cp, cIdx) => (
+                                    <div key={cp.id || cIdx} className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                                                Checkpoint #{cIdx + 1}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setWizardTheoryForm(f => ({
+                                                    ...f,
+                                                    miniCheckpoints: f.miniCheckpoints.filter((_, i) => i !== cIdx)
+                                                }))}
+                                                className="text-rose-500 hover:text-rose-600 p-1"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            value={cp.question}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setWizardTheoryForm(f => {
+                                                    const cps = [...f.miniCheckpoints];
+                                                    cps[cIdx] = { ...cps[cIdx], question: val };
+                                                    return { ...f, miniCheckpoints: cps };
+                                                });
+                                            }}
+                                            placeholder="Quick comprehension check question..."
+                                            className="input text-xs"
+                                        />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {(cp.options || []).map((opt, oIdx) => (
+                                                <div key={oIdx} className="flex items-center gap-1.5">
+                                                    <input
+                                                        type="radio"
+                                                        name={`wiz_cp_${cIdx}`}
+                                                        checked={cp.correctOption === oIdx}
+                                                        onChange={() => setWizardTheoryForm(f => {
+                                                            const cps = [...f.miniCheckpoints];
+                                                            cps[cIdx] = { ...cps[cIdx], correctOption: oIdx };
+                                                            return { ...f, miniCheckpoints: cps };
+                                                        })}
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        value={opt}
+                                                        onChange={e => {
+                                                            const val = e.target.value;
+                                                            setWizardTheoryForm(f => {
+                                                                const cps = [...f.miniCheckpoints];
+                                                                const opts = [...cps[cIdx].options];
+                                                                opts[oIdx] = val;
+                                                                cps[cIdx] = { ...cps[cIdx], options: opts };
+                                                                return { ...f, miniCheckpoints: cps };
+                                                            });
+                                                        }}
+                                                        placeholder={`Option ${oIdx + 1}`}
+                                                        className="input text-xs py-1 flex-1"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-end gap-3">
+                            <button onClick={() => setShowWizardTheoryModal(false)} className="btn btn-secondary text-xs">
+                                Cancel
+                            </button>
+                            <button onClick={handleSaveWizardTheory} className="btn btn-primary text-xs font-bold">
+                                Save Pre-Lab Theory
                             </button>
                         </div>
                     </div>
