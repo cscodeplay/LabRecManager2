@@ -684,6 +684,9 @@ export const trainingAPI = {
     aiTheory: (payload, provider = 'groq') => api.post('/training/ai/theory', { payload, provider }),
     aiExercise: (payload, provider = 'groq') => api.post('/training/ai/exercise', { payload, provider }),
     aiFromDocument: (payload, provider = 'groq') => api.post('/training/ai/from-document', { payload, provider }),
+    uploadRagDocument: (formData) => api.post('/training/ai/rag/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    }),
 };
 
 // AI Generator API

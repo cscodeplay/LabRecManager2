@@ -13,6 +13,12 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const { spawnSync } = require('child_process');
 const aiService = require('../services/ai.service');
+const multer = require('multer');
+const { PDFParse } = require('pdf-parse');
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 }
+});
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -1803,6 +1809,105 @@ router.post('/ai/from-document', authenticate, asyncHandler(async (req, res) => 
     } catch (err) {
         console.error('[AI RAG Document Error]:', err.message);
         res.status(500).json({ success: false, message: err.message || 'Failed to synthesize module from document' });
+    }
+}));
+
+/**
+ * @route   POST /api/training/ai/rag/upload
+ * @desc    Upload syllabus document for RAG, save to Documents > RAG Documents folder, and extract text
+ * @access  Private (Admin/Instructor/Principal)
+ */
+router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ success: false, message: 'No file provided' });
+    }
+
+    const schoolId = req.user.schoolId;
+    const userId = req.user.id;
+    const originalName = req.file.originalname;
+    const safeName = `${Date.now()}_${originalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const ext = path.extname(originalName).toLowerCase().replace('.', '') || 'bin';
+
+    try {
+        // 1. Save to physical RAG folders
+        const rootRagDir = path.join(__dirname, '../../../RAG');
+        const publicRagDir = path.join(__dirname, '../../../client/public/RAG');
+        [rootRagDir, publicRagDir].forEach(d => {
+            if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+        });
+
+        const rootFilePath = path.join(rootRagDir, safeName);
+        const publicFilePath = path.join(publicRagDir, safeName);
+        fs.writeFileSync(rootFilePath, req.file.buffer);
+        fs.writeFileSync(publicFilePath, req.file.buffer);
+
+        // 2. Extract text if PDF, TXT, MD, etc.
+        let extractedText = '';
+        if (req.file.mimetype === 'application/pdf' || ext === 'pdf') {
+            try {
+                const parser = new PDFParse(new Uint8Array(req.file.buffer));
+                const parsed = await parser.getText();
+                extractedText = parsed.text || '';
+            } catch (pdfErr) {
+                console.warn('[RAG Upload] PDF parsing error:', pdfErr.message);
+            }
+        } else if (req.file.mimetype.startsWith('text/') || ['txt', 'md', 'json', 'py', 'csv'].includes(ext)) {
+            extractedText = req.file.buffer.toString('utf8');
+        }
+
+        // 3. Find or create "RAG Documents" folder in Documents system
+        let folder = await prisma.documentFolder.findFirst({
+            where: { schoolId, name: 'RAG Documents', deletedAt: null }
+        });
+
+        if (!folder) {
+            folder = await prisma.documentFolder.create({
+                data: {
+                    schoolId,
+                    name: 'RAG Documents',
+                    createdById: userId
+                }
+            });
+        }
+
+        // 4. Save record in documents table
+        const docName = originalName.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
+        const publicUrl = `/RAG/${safeName}`;
+
+        const doc = await prisma.document.create({
+            data: {
+                schoolId,
+                uploadedById: userId,
+                folderId: folder.id,
+                name: docName,
+                description: `Uploaded syllabus/curriculum resource for AI RAG course generation.`,
+                fileName: originalName,
+                fileType: ext,
+                mimeType: req.file.mimetype || 'application/octet-stream',
+                fileSize: req.file.size || req.file.buffer.length,
+                cloudinaryId: `local_rag_${safeName}`,
+                url: publicUrl,
+                category: 'curriculum',
+                isPublic: true
+            }
+        });
+
+        res.json({
+            success: true,
+            data: {
+                documentId: doc.id,
+                name: doc.name,
+                fileName: originalName,
+                url: publicUrl,
+                folderName: 'RAG Documents',
+                extractedText,
+                mimeType: req.file.mimetype,
+                imageBase64: req.file.mimetype.startsWith('image/') ? req.file.buffer.toString('base64') : null
+            }
+        });
+    } catch (uploadErr) {
+        console.error('[RAG Upload Error]:', uploadErr);
+        res.status(500).json({ success: false, message: uploadErr.message || 'Failed to process RAG document upload' });
     }
 }));
 

@@ -316,43 +316,54 @@ export default function TrainingModuleWizard({
         setCurrentStep(nextStep);
     };
 
-    // Step 1 RAG File Upload Handler
-    const handleStep1FileUpload = (e) => {
+    // Step 1 RAG File Upload Handler (Saves directly to Documents > RAG folder)
+    const handleStep1FileUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         setStep1FileName(file.name);
+        const toastId = toast.loading(`Uploading "${file.name}" & saving to Documents > RAG...`);
 
-        if (file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const base64 = reader.result.split(',')[1];
-                setStep1ImageBase64(base64);
-                setStep1MimeType(file.type);
-                toast.success(`📸 Image "${file.name}" loaded for Vision RAG Grounding`);
-            };
-            reader.readAsDataURL(file);
-        } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf') || file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const text = reader.result;
-                if (typeof text === 'string') {
-                    setStep1DocumentText(text);
-                    toast.success(`📄 "${file.name}" loaded (${text.length} chars) for RAG Grounding`);
-                } else {
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const uploadRes = await trainingAPI.uploadRagDocument(formData);
+
+            if (uploadRes.data?.success) {
+                const { extractedText, imageBase64, mimeType } = uploadRes.data.data;
+                if (extractedText) {
+                    setStep1DocumentText(extractedText);
+                }
+                if (imageBase64) {
+                    setStep1ImageBase64(imageBase64);
+                    setStep1MimeType(mimeType || file.type);
+                }
+                toast.success(`📁 "${file.name}" saved to Documents > RAG Documents & text extracted!`, { id: toastId });
+            } else {
+                throw new Error(uploadRes.data?.message || 'Upload failed');
+            }
+        } catch (uploadErr) {
+            console.warn('Backend RAG upload failed, falling back to client FileReader:', uploadErr);
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = () => {
                     const base64 = reader.result.split(',')[1];
                     setStep1ImageBase64(base64);
-                    setStep1MimeType(file.type || 'application/pdf');
-                    toast.success(`📄 Document "${file.name}" loaded for RAG Grounding`);
-                }
-            };
-            if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
-                reader.readAsText(file);
-            } else {
+                    setStep1MimeType(file.type);
+                    toast.success(`📸 Image "${file.name}" loaded for Vision RAG Grounding`, { id: toastId });
+                };
                 reader.readAsDataURL(file);
+            } else {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const text = reader.result;
+                    if (typeof text === 'string') {
+                        setStep1DocumentText(text);
+                        toast.success(`📄 "${file.name}" loaded (${text.length} chars) for RAG Grounding`, { id: toastId });
+                    }
+                };
+                reader.readAsText(file);
             }
-        } else {
-            toast.error('Supported formats: PDF, Images (PNG/JPG), TXT, Markdown');
         }
     };
 
@@ -1240,12 +1251,17 @@ export default function TrainingModuleWizard({
                                                     className="text-xs file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-indigo-950 dark:file:text-indigo-300 w-full"
                                                 />
                                                 {step1FileName && (
-                                                    <div className="mt-1 flex items-center justify-between text-xs text-indigo-600 font-medium">
-                                                        <span className="truncate">📎 {step1FileName}</span>
+                                                    <div className="mt-1.5 flex items-center justify-between text-xs bg-indigo-50/80 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 rounded-xl px-2.5 py-1.5 text-indigo-700 dark:text-indigo-300 font-medium">
+                                                        <span className="truncate flex items-center gap-1.5">
+                                                            📎 <span className="font-bold">{step1FileName}</span>
+                                                            <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold px-1.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800">
+                                                                ✓ Saved to Documents &gt; RAG
+                                                            </span>
+                                                        </span>
                                                         <button
                                                             type="button"
                                                             onClick={() => { setStep1FileName(''); setStep1DocumentText(''); setStep1ImageBase64(null); }}
-                                                            className="text-rose-500 hover:underline text-[11px]"
+                                                            className="text-rose-500 hover:underline text-[11px] font-semibold ml-2 shrink-0"
                                                         >
                                                             Remove
                                                         </button>
