@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import api, { trainingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
-import AiTrainingCopilot from './AiTrainingCopilot';
 
 const STEP_TITLES = [
     { step: 1, title: 'Blueprint & Meta', desc: 'Title, Language & Board' },
@@ -30,8 +29,10 @@ export default function TrainingModuleWizard({
     const router = useRouter();
     const [currentStep, setCurrentStep] = useState(1);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [showAiCopilot, setShowAiCopilot] = useState(false);
-    const [aiCopilotTab, setAiCopilotTab] = useState('outline');
+    // Inline AI Outliner State for Step 2
+    const [wizardInlineAiOutlinePrompt, setWizardInlineAiOutlinePrompt] = useState('');
+    const [wizardInlineAiOutlineProvider, setWizardInlineAiOutlineProvider] = useState('groq');
+    const [wizardInlineAiOutlineLoading, setWizardInlineAiOutlineLoading] = useState(false);
 
     // Step 1 Form: Module Meta
     const [moduleForm, setModuleForm] = useState({
@@ -66,7 +67,7 @@ export default function TrainingModuleWizard({
     const [selectedUnitIdx, setSelectedUnitIdx] = useState(0);
 
     // Exercise creation in Step 3
-    const [showExerciseFormModal, setShowExerciseFormModal] = useState(false);
+    const [isEditingExercise, setIsEditingExercise] = useState(false);
     const [editingExerciseIdx, setEditingExerciseIdx] = useState(null);
     const [exerciseForm, setExerciseForm] = useState({
         title: '',
@@ -140,8 +141,7 @@ export default function TrainingModuleWizard({
         }
     });
 
-    // Wizard Unit Pre-Lab Theory Modal State
-    const [showWizardTheoryModal, setShowWizardTheoryModal] = useState(false);
+    // Wizard Unit Pre-Lab Theory Inline Editing State
     const [wizardTheoryUnitIdx, setWizardTheoryUnitIdx] = useState(null);
     const [wizardTheoryForm, setWizardTheoryForm] = useState({
         title: '',
@@ -305,7 +305,7 @@ export default function TrainingModuleWizard({
         setUnits(prev => prev.map((u, i) => i === idx ? { ...u, [field]: value } : u));
     };
 
-    // Unit Pre-Lab Theory Handlers
+    // Unit Pre-Lab Theory Handlers (In-Place)
     const handleOpenWizardTheory = (uIdx) => {
         const u = units[uIdx];
         if (!u) return;
@@ -317,7 +317,6 @@ export default function TrainingModuleWizard({
             miniCheckpoints: Array.isArray(u.theoryData?.miniCheckpoints) ? u.theoryData.miniCheckpoints : [],
             cbseTips: Array.isArray(u.theoryData?.cbseTips) ? u.theoryData.cbseTips : []
         });
-        setShowWizardTheoryModal(true);
     };
 
     const handleSaveWizardTheory = () => {
@@ -334,9 +333,33 @@ export default function TrainingModuleWizard({
                 }
             };
         }));
-        setShowWizardTheoryModal(false);
         setWizardTheoryUnitIdx(null);
         toast.success('📖 Unit Pre-Lab Theory & Checkpoints saved!');
+    };
+
+    const handleInlineAiGenerateOutlineInWizard = async () => {
+        const promptToUse = wizardInlineAiOutlinePrompt.trim() || moduleForm.title || moduleForm.description || 'CBSE Computer Science';
+        setWizardInlineAiOutlineLoading(true);
+        try {
+            const res = await api.post('/training/ai/outline', {
+                topic: promptToUse,
+                language: moduleForm.language || 'python',
+                classLevel: moduleForm.classLevel || 11,
+                board: moduleForm.boardAligned || 'CBSE',
+                provider: wizardInlineAiOutlineProvider
+            });
+            if (res.data.success && res.data.data.outline) {
+                handleApplyAiOutline(res.data.data.outline);
+                toast.success('✨ Units outline generated and loaded in-place!');
+            } else {
+                toast.error('AI did not return an outline');
+            }
+        } catch (err) {
+            console.error('Wizard AI Outline error:', err);
+            toast.error(err.response?.data?.message || 'Failed to synthesize outline');
+        } finally {
+            setWizardInlineAiOutlineLoading(false);
+        }
     };
 
     const handleInlineAiGenerateTheoryInWizard = async () => {
@@ -467,7 +490,7 @@ export default function TrainingModuleWizard({
             return { ...u, exercises: updatedExercises };
         }));
 
-        setShowExerciseFormModal(false);
+        setIsEditingExercise(false);
         setEditingExerciseIdx(null);
         toast.success(editingExerciseIdx !== null ? 'Exercise updated!' : 'Exercise added to Unit!');
     };
@@ -478,6 +501,139 @@ export default function TrainingModuleWizard({
             return { ...u, exercises: u.exercises.filter((_, idx) => idx !== exIdx) };
         }));
     };
+
+    const handleOpenCreateExercise = () => {
+        setEditingExerciseIdx(null);
+        setExerciseForm({
+            title: '',
+            description: '',
+            theory: '',
+            exerciseType: 'coding',
+            difficulty: 'beginner',
+            scaffoldLevel: 'guided',
+            bloomsLevel: 'apply',
+            learningObjective: '',
+            isReviewExercise: false,
+            xpReward: 15,
+            timeLimit: 5,
+            starterCode: '# Write code here\n',
+            solutionCode: '# Solution\n',
+            testCases: [
+                { input: '5', expectedOutput: '10', isHidden: false },
+                { input: '0', expectedOutput: '0', isHidden: true }
+            ],
+            hints: ['Check your base case.'],
+            mcqData: {
+                question: 'What is the output of this code snippet?',
+                codeSnippet: 'print("Hello World")',
+                options: ['Hello World', 'None', 'SyntaxError', 'undefined'],
+                correctOption: 0,
+                explanation: 'The print function writes the string to standard output.'
+            },
+            clozeData: {
+                instruction: 'Fill in the blanks to complete the code:',
+                template: 'for i in {{BLANK_1}}(5):\n    print(i)',
+                blanks: [{ id: 'BLANK_1', correctAnswer: 'range', hint: 'Sequence generator function' }],
+                explanation: 'range(5) produces numbers from 0 to 4.'
+            },
+            caseStudyData: {
+                company: 'TechCorp Cloud Team',
+                incident: 'High latency observed during peak checkout hours.',
+                scenarioCode: '# Inefficient lookup\ndef lookup(items, target):\n    return [x for x in items if x == target]',
+                questions: [
+                    {
+                        id: 'q1',
+                        prompt: 'What data structure would optimize this lookup from O(N) to O(1)?',
+                        options: ['Hash Set / Dictionary', 'Linked List', 'Array', 'Stack'],
+                        correctOption: 0,
+                        explanation: 'A Hash Set provides O(1) average-time complexity lookups.'
+                    }
+                ]
+            },
+            arData: {
+                assertion: 'In Python, strings are immutable sequences.',
+                reason: 'Individual character elements of a string cannot be modified via item assignment s[0] = "x".',
+                correctOption: 0,
+                explanation: 'Both statements are true facts, and Reason explains what immutability means.'
+            },
+            traceData: {
+                codeSnippet: 'a = 2\nb = 5\nfor i in range(1, 4):\n    a = a + i\n    b = b * 2',
+                tableHeaders: ['Step (i)', 'Value of a', 'Value of b'],
+                expectedRows: [
+                    ['1', '3', '10'],
+                    ['2', '5', '20'],
+                    ['3', '8', '40']
+                ],
+                explanation: 'Variable values update sequentially during each loop iteration.'
+            },
+            debugData: {
+                buggyCode: 'def calculate(nums):\n    total = 0\n    for n in nums\n        total += n\n    return total',
+                errors: [
+                    { line: 3, description: 'Missing colon at end of for loop statement', correctedLine: '    for n in nums:' }
+                ],
+                solutionCode: 'def calculate(nums):\n    total = 0\n    for n in nums:\n        total += n\n    return total',
+                explanation: 'Line 3 was missing a required colon (:).'
+            }
+        });
+        setIsEditingExercise(true);
+    };
+
+    const handleOpenEditExercise = (exIdx) => {
+        const activeUnit = units[selectedUnitIdx];
+        if (!activeUnit || !activeUnit.exercises || !activeUnit.exercises[exIdx]) return;
+        const ex = activeUnit.exercises[exIdx];
+        setEditingExerciseIdx(exIdx);
+        setExerciseForm({
+            title: ex.title || '',
+            description: ex.description || '',
+            theory: ex.theory || '',
+            exerciseType: ex.exerciseType || 'coding',
+            difficulty: ex.difficulty || 'beginner',
+            scaffoldLevel: ex.scaffoldLevel || 'guided',
+            bloomsLevel: ex.bloomsLevel || 'apply',
+            learningObjective: ex.learningObjective || '',
+            isReviewExercise: ex.isReviewExercise || false,
+            xpReward: ex.xpReward || 15,
+            timeLimit: ex.timeLimit || 5,
+            starterCode: ex.starterCode || '',
+            solutionCode: ex.solutionCode || '',
+            testCases: Array.isArray(ex.testCases) ? ex.testCases : [
+                { input: '5', expectedOutput: '10', isHidden: false }
+            ],
+            hints: ex.hints || ['Check your logic.'],
+            mcqData: ex.mcqData || (ex.exerciseType === 'mcq' && typeof ex.testCases === 'object' ? ex.testCases : {
+                question: 'What is the output?',
+                options: ['Option A', 'Option B'],
+                correctOption: 0,
+                explanation: ''
+            }),
+            clozeData: ex.clozeData || (ex.exerciseType === 'fill_blank' && typeof ex.testCases === 'object' ? ex.testCases : {
+                instruction: 'Fill in the blanks:',
+                template: '{{BLANK_1}}',
+                blanks: [{ id: 'BLANK_1', correctAnswer: 'val' }]
+            }),
+            caseStudyData: ex.caseStudyData || (ex.exerciseType === 'case_study' && typeof ex.testCases === 'object' ? ex.testCases : {
+                company: 'TechCorp',
+                incident: '',
+                questions: []
+            }),
+            arData: ex.arData || (ex.exerciseType === 'assertion_reason' && typeof ex.testCases === 'object' ? ex.testCases : {
+                assertion: '',
+                reason: '',
+                correctOption: 0
+            }),
+            traceData: ex.traceData || (ex.exerciseType === 'code_trace' && typeof ex.testCases === 'object' ? ex.testCases : {
+                codeSnippet: '',
+                tableHeaders: ['Step', 'Value']
+            }),
+            debugData: ex.debugData || (ex.exerciseType === 'code_debug' && typeof ex.testCases === 'object' ? ex.testCases : {
+                buggyCode: '',
+                solutionCode: ''
+            })
+        });
+        setIsEditingExercise(true);
+    };
+
 
     // AI Copilot Integration Callbacks
     const handleApplyAiOutline = (aiOutline) => {
@@ -563,7 +719,7 @@ export default function TrainingModuleWizard({
             traceData: currentType === 'code_trace' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.traceData,
             debugData: currentType === 'code_debug' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.debugData
         }));
-        setShowExerciseFormModal(true);
+        setIsEditingExercise(true);
     };
 
     // Final Create & Deploy Handler
@@ -851,28 +1007,260 @@ export default function TrainingModuleWizard({
                     {/* ========================================================= */}
                     {/* STEP 2: UNITS & MASTERY GATES                             */}
                     {/* ========================================================= */}
+                    {/* ========================================================= */}
+                    {/* STEP 2: UNITS & MASTERY GATES (UNIFIED IN-PLACE)          */}
+                    {/* ========================================================= */}
                     {currentStep === 2 && (
                         <div className="space-y-4 max-w-4xl mx-auto">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-base font-bold text-slate-900 dark:text-white">Curriculum Units Hierarchy</h3>
-                                    <p className="text-xs text-slate-500">Each unit acts as a progressive learning milestone with a mastery unlock threshold.</p>
+                            {wizardTheoryUnitIdx !== null ? (
+                                /* In-Place Pre-Lab Theory Studio (Zero Modal Stacking) */
+                                <div className="space-y-4 bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm animate-in fade-in duration-150">
+                                    <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                                        <button
+                                            type="button"
+                                            onClick={() => setWizardTheoryUnitIdx(null)}
+                                            className="btn btn-secondary text-xs flex items-center gap-1.5 font-bold"
+                                        >
+                                            <ArrowLeft className="w-4 h-4" /> Back to Units List
+                                        </button>
+                                        <div className="text-center">
+                                            <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+                                                Pre-Lab Theory & Interactive Checkpoints
+                                            </h4>
+                                            <p className="text-xs text-slate-500">
+                                                {wizardTheoryForm.title} • CBSE Concept Grounding
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveWizardTheory}
+                                            className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-md"
+                                        >
+                                            Save Pre-Lab Theory
+                                        </button>
+                                    </div>
+
+                            {/* Inline AI Theory Synthesizer Bar */}
+                            <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                                        <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
+                                        <span>AI Pre-Lab Notes & Checkpoints Synthesizer</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-500 font-medium">Auto-fills Markdown & Checkpoints</span>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={wizardInlineAiTheoryPrompt}
+                                        onChange={e => setWizardInlineAiTheoryPrompt(e.target.value)}
+                                        placeholder={`Enter unit concept (e.g. '${wizardTheoryForm.title}')...`}
+                                        className="input text-xs flex-1 py-2 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800"
+                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineAiGenerateTheoryInWizard(); } }}
+                                    />
                                     <button
-                                        onClick={() => { setAiCopilotTab('outline'); setShowAiCopilot(true); }}
-                                        className="btn btn-secondary text-xs flex items-center gap-1.5"
+                                        type="button"
+                                        disabled={wizardInlineAiTheoryLoading}
+                                        onClick={handleInlineAiGenerateTheoryInWizard}
+                                        className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shrink-0 flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 transition"
                                     >
-                                        <Sparkles className="w-3.5 h-3.5 text-indigo-500" /> AI Outliner
-                                    </button>
-                                    <button
-                                        onClick={handleAddUnit}
-                                        className="btn btn-primary text-xs flex items-center gap-1.5"
-                                    >
-                                        <Plus className="w-3.5 h-3.5" /> Add Unit
+                                        {wizardInlineAiTheoryLoading ? (
+                                            <>
+                                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                <span>Synthesizing...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles className="w-3.5 h-3.5" />
+                                                <span>✨ Auto-Fill Theory</span>
+                                            </>
+                                        )}
                                     </button>
                                 </div>
                             </div>
+
+                            <div>
+                                <label className="label">Unit Concept Summary</label>
+                                <input
+                                    type="text"
+                                    value={wizardTheoryForm.summary}
+                                    onChange={e => setWizardTheoryForm(f => ({ ...f, summary: e.target.value }))}
+                                    className="input text-xs"
+                                    placeholder="Brief core concept takeaway..."
+                                />
+                            </div>
+
+                            <div>
+                                <label className="label">Full Concept Notes & Theory (Markdown)</label>
+                                <textarea
+                                    value={wizardTheoryForm.content}
+                                    onChange={e => setWizardTheoryForm(f => ({ ...f, content: e.target.value }))}
+                                    className="input h-36 font-mono text-xs"
+                                    placeholder="## Concept Overview&#10;&#10;Explain syntax, execution model, and edge cases..."
+                                />
+                            </div>
+
+                            {/* Mini Checkpoints */}
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                        Interactive Mini-Checkpoints ({wizardTheoryForm.miniCheckpoints?.length || 0})
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setWizardTheoryForm(f => ({
+                                            ...f,
+                                            miniCheckpoints: [
+                                                ...(f.miniCheckpoints || []),
+                                                {
+                                                    id: `cp_${Date.now()}`,
+                                                    question: '',
+                                                    options: ['', ''],
+                                                    correctOption: 0,
+                                                    explanation: ''
+                                                }
+                                            ]
+                                        }))}
+                                        className="btn btn-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 font-semibold"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> Add Checkpoint
+                                    </button>
+                                </div>
+
+                                {(wizardTheoryForm.miniCheckpoints || []).map((cp, cIdx) => (
+                                    <div key={cp.id || cIdx} className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                                                Checkpoint #{cIdx + 1}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setWizardTheoryForm(f => ({
+                                                    ...f,
+                                                    miniCheckpoints: f.miniCheckpoints.filter((_, i) => i !== cIdx)
+                                                }))}
+                                                className="text-rose-500 hover:text-rose-600 p-1"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            value={cp.question}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setWizardTheoryForm(f => {
+                                                    const cps = [...f.miniCheckpoints];
+                                                    cps[cIdx] = { ...cps[cIdx], question: val };
+                                                    return { ...f, miniCheckpoints: cps };
+                                                });
+                                            }}
+                                            placeholder="Quick comprehension check question..."
+                                            className="input text-xs"
+                                        />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {(cp.options || []).map((opt, oIdx) => (
+                                                <div key={oIdx} className="flex items-center gap-1.5">
+                                                    <input
+                                                        type="radio"
+                                                        name={`wiz_cp_${cIdx}`}
+                                                        checked={cp.correctOption === oIdx}
+                                                        onChange={() => setWizardTheoryForm(f => {
+                                                            const cps = [...f.miniCheckpoints];
+                                                            cps[cIdx] = { ...cps[cIdx], correctOption: oIdx };
+                                                            return { ...f, miniCheckpoints: cps };
+                                                        })}
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        value={opt}
+                                                        onChange={e => {
+                                                            const val = e.target.value;
+                                                            setWizardTheoryForm(f => {
+                                                                const cps = [...f.miniCheckpoints];
+                                                                const opts = [...cps[cIdx].options];
+                                                                opts[oIdx] = val;
+                                                                cps[cIdx] = { ...cps[cIdx], options: opts };
+                                                                return { ...f, miniCheckpoints: cps };
+                                                            });
+                                                        }}
+                                                        placeholder={`Option ${oIdx + 1}`}
+                                                        className="input text-xs py-1 flex-1"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                                </div>
+                            ) : (
+                                /* Curriculum Units Hierarchy */
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h3 className="text-base font-bold text-slate-900 dark:text-white">Curriculum Units Hierarchy</h3>
+                                            <p className="text-xs text-slate-500">Each unit acts as a progressive learning milestone with a mastery unlock threshold.</p>
+                                        </div>
+                                        <button
+                                            onClick={handleAddUnit}
+                                            className="btn btn-primary text-xs flex items-center gap-1.5"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" /> Add Unit
+                                        </button>
+                                    </div>
+
+                                    {/* Inline In-Place AI Course Outliner Bar */}
+                                    <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 space-y-2.5">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                                                <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
+                                                <span>AI Course Outliner & Unit Synthesizer</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] text-slate-500 font-medium">Model:</span>
+                                                <select
+                                                    value={wizardInlineAiOutlineProvider}
+                                                    onChange={e => setWizardInlineAiOutlineProvider(e.target.value)}
+                                                    className="text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-0.5"
+                                                >
+                                                    <option value="groq">⚡ Groq (Fast)</option>
+                                                    <option value="gemini">✨ Gemini</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="text"
+                                                value={wizardInlineAiOutlinePrompt}
+                                                onChange={e => setWizardInlineAiOutlinePrompt(e.target.value)}
+                                                placeholder="Enter course topic or chapter (e.g. 'Class 11 Python: Control Structures & Functions')..."
+                                                className="input text-xs flex-1 py-2 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800"
+                                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineAiGenerateOutlineInWizard(); } }}
+                                            />
+                                            <button
+                                                type="button"
+                                                disabled={wizardInlineAiOutlineLoading || !wizardInlineAiOutlinePrompt.trim()}
+                                                onClick={handleInlineAiGenerateOutlineInWizard}
+                                                className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shrink-0 flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 transition"
+                                            >
+                                                {wizardInlineAiOutlineLoading ? (
+                                                    <>
+                                                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                        <span>Synthesizing...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Sparkles className="w-3.5 h-3.5" />
+                                                        <span>✨ Generate Units</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400">
+                                            Synthesizes 3–5 pedagogical units with titles, milestones, expected hours, and mastery gates in-place.
+                                        </p>
+                                    </div>
 
                             <div className="space-y-3">
                                 {units.map((unit, idx) => (
@@ -962,362 +1350,43 @@ export default function TrainingModuleWizard({
                                     </div>
                                 ))}
                             </div>
-                        </div>
-                    )}
-
-                    {/* ========================================================= */}
-                    {/* STEP 3: EXERCISES ARENA                                   */}
-                    {/* ========================================================= */}
-                    {currentStep === 3 && (
-                        <div className="space-y-4 max-w-5xl mx-auto">
-                            {/* Unit selector pills */}
-                            <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200 dark:border-slate-800">
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">Select Unit:</span>
-                                {units.map((u, i) => (
-                                    <button
-                                        key={i}
-                                        onClick={() => setSelectedUnitIdx(i)}
-                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
-                                            selectedUnitIdx === i
-                                                ? 'bg-indigo-600 text-white shadow-sm'
-                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                                        }`}
-                                    >
-                                        <span>Unit {i + 1}</span>
-                                        <span className="text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full">
-                                            {u.exercises?.length || 0}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* Active Unit Exercises List */}
-                            {units[selectedUnitIdx] && (
-                                <div className="space-y-3">
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-                                                {units[selectedUnitIdx].title} Exercises
-                                            </h4>
-                                            <p className="text-xs text-slate-500">
-                                                Add all 5 question types: Coding Labs, MCQs, Syntax Cloze, Bug Hunts, and Case Studies.
-                                            </p>
-                                        </div>
-
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                onClick={() => { setAiCopilotTab('exercise'); setShowAiCopilot(true); }}
-                                                className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 font-bold shadow-sm"
-                                            >
-                                                <Sparkles className="w-3.5 h-3.5" /> AI Synthesize Exercise
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    setEditingExerciseIdx(null);
-                                                    setExerciseForm(f => ({ ...f, title: '', description: '', theory: '' }));
-                                                    setShowExerciseFormModal(true);
-                                                }}
-                                                className="btn btn-primary text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 font-bold"
-                                            >
-                                                <Plus className="w-3.5 h-3.5" /> + Add Exercise
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Exercise Cards */}
-                                    {(!units[selectedUnitIdx].exercises || units[selectedUnitIdx].exercises.length === 0) ? (
-                                        <div className="text-center py-12 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
-                                            <Code2 className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-                                            <h5 className="font-bold text-sm text-slate-700 dark:text-slate-300">No Exercises in this Unit Yet</h5>
-                                            <p className="text-xs text-slate-400 mt-1">Use the buttons above to manually add an exercise or generate one with AI.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            {units[selectedUnitIdx].exercises.map((ex, exIdx) => {
-                                                const typeBadges = {
-                                                    coding: { label: '⚡ Coding Lab', bg: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' },
-                                                    mcq: { label: '📝 Output MCQ', bg: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
-                                                    fill_blank: { label: '🧩 Syntax Cloze', bg: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300' },
-                                                    bug_fix: { label: '🐞 Bug Hunt', bg: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' },
-                                                    case_study: { label: '🏢 Case Study', bg: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' },
-                                                    assertion_reason: { label: '⚖️ Assertion-Reason', bg: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300' },
-                                                    code_trace: { label: '🔍 Dry-Run Trace', bg: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300' },
-                                                    code_debug: { label: '🐞 CBSE Error Debug', bg: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300' },
-                                                };
-                                                const badge = typeBadges[ex.exerciseType] || typeBadges.coding;
-
-                                                return (
-                                                    <div
-                                                        key={exIdx}
-                                                        onClick={() => handleOpenEditExercise(exIdx)}
-                                                        className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-4 shadow-sm cursor-pointer transition group"
-                                                    >
-                                                        <div className="flex items-center gap-3 min-w-0">
-                                                            <span className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-bold flex items-center justify-center shrink-0">
-                                                                {exIdx + 1}
-                                                            </span>
-                                                            <div className="min-w-0">
-                                                                <div className="flex items-center gap-2 flex-wrap">
-                                                                    <h5 className="font-bold text-sm text-slate-900 dark:text-white truncate group-hover:text-indigo-600 transition">
-                                                                        {ex.title}
-                                                                    </h5>
-                                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badge.bg}`}>
-                                                                        {badge.label}
-                                                                    </span>
-                                                                    <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded capitalize">
-                                                                        {ex.scaffoldLevel}
-                                                                    </span>
-                                                                </div>
-                                                                <p className="text-xs text-slate-400 truncate mt-0.5">
-                                                                    {ex.description}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex items-center gap-2 shrink-0">
-                                                            <span className="text-xs font-bold text-amber-500 flex items-center gap-1 mr-1">
-                                                                <Award className="w-3.5 h-3.5" /> +{ex.xpReward || 15} XP
-                                                            </span>
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleOpenEditExercise(exIdx);
-                                                                }}
-                                                                className="btn btn-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 font-semibold"
-                                                            >
-                                                                <Edit3 className="w-3.5 h-3.5" /> Edit
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleRemoveExercise(exIdx);
-                                                                }}
-                                                                className="p-1.5 text-slate-400 hover:text-red-500 transition rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                                                                title="Delete Exercise"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
                                 </div>
                             )}
                         </div>
                     )}
-
                     {/* ========================================================= */}
-                    {/* STEP 4: PEDAGOGY RULES & GAMIFICATION                     */}
+                    {/* STEP 3: EXERCISES ARENA (UNIFIED IN-PLACE)                */}
                     {/* ========================================================= */}
-                    {currentStep === 4 && (
-                        <div className="space-y-6 max-w-3xl mx-auto">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-                                {/* Pedagogy Score Gauge */}
-                                <div className="p-6 rounded-3xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-center space-y-3">
-                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                                        Calculated Pedagogy Score
-                                    </span>
-                                    <div className="text-4xl font-extrabold text-indigo-600 dark:text-indigo-400">
-                                        {pedagogyStats.score}<span className="text-base font-medium text-slate-400">/100</span>
-                                    </div>
-                                    <p className="text-xs text-slate-500">
-                                        {pedagogyStats.score >= 80 ? '🌟 Excellent! Strong pedagogical scaffolding and diversity.' : '💡 Add diverse question types & review exercises to boost score.'}
-                                    </p>
-                                </div>
-
-                                {/* Active Config Toggles */}
-                                <div className="space-y-3">
-                                    <label className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={moduleForm.pedagogyConfig.useBlooms}
-                                            onChange={e => setModuleForm(f => ({
-                                                ...f,
-                                                pedagogyConfig: { ...f.pedagogyConfig, useBlooms: e.target.checked }
-                                            }))}
-                                            className="rounded text-indigo-600 focus:ring-indigo-500"
-                                        />
-                                        <div>
-                                            <div className="font-bold text-xs text-slate-900 dark:text-white">Bloom's Taxonomy Cognitive Levels</div>
-                                            <div className="text-[11px] text-slate-500">Tag exercises with cognitive complexity.</div>
-                                        </div>
-                                    </label>
-
-                                    <label className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={moduleForm.pedagogyConfig.useObjectives}
-                                            onChange={e => setModuleForm(f => ({
-                                                ...f,
-                                                pedagogyConfig: { ...f.pedagogyConfig, useObjectives: e.target.checked }
-                                            }))}
-                                            className="rounded text-indigo-600 focus:ring-indigo-500"
-                                        />
-                                        <div>
-                                            <div className="font-bold text-xs text-slate-900 dark:text-white">Explicit Learning Objectives</div>
-                                            <div className="text-[11px] text-slate-500">Declare SWBAT goals per exercise.</div>
-                                        </div>
-                                    </label>
-
-                                    <label className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={moduleForm.pedagogyConfig.useTimeLimit}
-                                            onChange={e => setModuleForm(f => ({
-                                                ...f,
-                                                pedagogyConfig: { ...f.pedagogyConfig, useTimeLimit: e.target.checked }
-                                            }))}
-                                            className="rounded text-indigo-600 focus:ring-indigo-500"
-                                        />
-                                        <div>
-                                            <div className="font-bold text-xs text-slate-900 dark:text-white">Time-Boxed Practice</div>
-                                            <div className="text-[11px] text-slate-500">Enforce speed-challenge timers.</div>
-                                        </div>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ========================================================= */}
-                    {/* STEP 5: DEPLOY & ASSIGN                                   */}
-                    {/* ========================================================= */}
-                    {currentStep === 5 && (
-                        <div className="space-y-5 max-w-3xl mx-auto">
-                            <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-900">
-                                <h4 className="font-bold text-sm text-indigo-900 dark:text-indigo-200">Course Summary</h4>
-                                <div className="grid grid-cols-3 gap-2 mt-2 text-xs text-indigo-800 dark:text-indigo-300">
-                                    <div><strong>Title:</strong> {moduleForm.title || 'Untitled'}</div>
-                                    <div><strong>Language:</strong> {moduleForm.language}</div>
-                                    <div><strong>Units:</strong> {units.length}</div>
-                                    <div><strong>Total Exercises:</strong> {pedagogyStats.totalExercises}</div>
-                                    <div><strong>Class:</strong> {moduleForm.classLevel}</div>
-                                    <div><strong>Board:</strong> {moduleForm.boardAligned}</div>
-                                </div>
-                            </div>
-
-                            {/* Class Assignment Selector */}
-                            <div>
-                                <label className="label flex items-center gap-1.5">
-                                    <Users className="w-4 h-4 text-indigo-500" /> Assign to Classes (Optional)
-                                </label>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto p-1">
-                                    {availableClasses.map(cls => (
-                                        <label
-                                            key={cls.id}
-                                            className={`p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition flex items-center gap-2 ${
-                                                targetClasses.includes(cls.id)
-                                                    ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-500 text-indigo-700 dark:text-indigo-300'
-                                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                                            }`}
+                    {currentStep === 3 && (
+                        <div className="space-y-4 max-w-5xl mx-auto">
+                            {isEditingExercise ? (
+                                /* In-Place Exercise Studio (Zero Modal Stacking) */
+                                <div className="space-y-4 bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm animate-in fade-in duration-150">
+                                    <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                                        <button
+                                            type="button"
+                                            onClick={() => { setIsEditingExercise(false); setEditingExerciseIdx(null); }}
+                                            className="btn btn-secondary text-xs flex items-center gap-1.5 font-bold"
                                         >
-                                            <input
-                                                type="checkbox"
-                                                checked={targetClasses.includes(cls.id)}
-                                                onChange={e => {
-                                                    if (e.target.checked) setTargetClasses(prev => [...prev, cls.id]);
-                                                    else setTargetClasses(prev => prev.filter(c => c !== cls.id));
-                                                }}
-                                                className="rounded text-indigo-600"
-                                            />
-                                            <span className="truncate">{cls.name}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
+                                            <ArrowLeft className="w-4 h-4" /> Back to Exercise List
+                                        </button>
+                                        <div className="text-center">
+                                            <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+                                                {editingExerciseIdx !== null ? `Edit Challenge: ${exerciseForm.title || 'Untitled'}` : `Add Challenge to ${units[selectedUnitIdx]?.title || 'Unit'}`}
+                                            </h4>
+                                            <p className="text-xs text-slate-500">
+                                                Multi-Modal Assessment Studio (All 8 Question Types)
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveExercise}
+                                            className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-md"
+                                        >
+                                            Save Exercise to Unit
+                                        </button>
+                                    </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="label flex items-center gap-1.5">
-                                        <Calendar className="w-4 h-4 text-amber-500" /> Deadline (Optional)
-                                    </label>
-                                    <input
-                                        type="datetime-local"
-                                        value={deadline}
-                                        onChange={e => setDeadline(e.target.value)}
-                                        className="input"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="label">Special Instructions</label>
-                                    <input
-                                        type="text"
-                                        value={specialNotes}
-                                        onChange={e => setSpecialNotes(e.target.value)}
-                                        placeholder="e.g. Complete Unit 1 by Friday"
-                                        className="input"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Footer Navigation Bar */}
-                <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between px-6">
-                    <div>
-                        {currentStep > 1 && (
-                            <button
-                                onClick={() => setCurrentStep(prev => prev - 1)}
-                                className="btn btn-secondary text-xs flex items-center gap-1.5 font-bold"
-                            >
-                                <ArrowLeft className="w-4 h-4" /> Back
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                        <button onClick={onClose} className="btn btn-secondary text-xs font-bold">
-                            Cancel
-                        </button>
-
-                        {currentStep < 5 ? (
-                            <button
-                                onClick={() => setCurrentStep(prev => prev + 1)}
-                                className="btn btn-primary text-xs flex items-center gap-1.5 font-bold"
-                            >
-                                Next Step <ArrowRight className="w-4 h-4" />
-                            </button>
-                        ) : (
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => handleFinalDeploy(false)}
-                                    disabled={isSubmitting}
-                                    className="btn btn-secondary text-xs font-bold"
-                                >
-                                    Save as Draft
-                                </button>
-                                <button
-                                    onClick={() => handleFinalDeploy(true)}
-                                    disabled={isSubmitting}
-                                    className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white text-xs font-bold py-2.5 px-6 rounded-xl shadow-lg shadow-indigo-500/25 flex items-center gap-2"
-                                >
-                                    {isSubmitting ? 'Deploying Course...' : '🚀 Publish & Enter Builder'}
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {/* Exercise Builder Modal (All 5 Question Types) */}
-            {showExerciseFormModal && (
-                <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-[110] p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-4xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh] overflow-hidden">
-                        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                            <h3 className="font-bold text-base text-slate-900 dark:text-white">
-                                {editingExerciseIdx !== null ? 'Edit Exercise' : 'Add Exercise to Unit'}
-                            </h3>
-                            <button onClick={() => setShowExerciseFormModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        <div className="p-6 overflow-y-auto space-y-4">
                             {/* Inline In-Place AI Generator Bar */}
                             <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 space-y-2.5">
                                 <div className="flex items-center justify-between">
@@ -1658,236 +1727,425 @@ export default function TrainingModuleWizard({
                                     </div>
                                 </div>
                             )}
-                        </div>
-
-                        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-end gap-3">
-                            <button onClick={() => setShowExerciseFormModal(false)} className="btn btn-secondary text-xs">
-                                Cancel
-                            </button>
-                            <button onClick={handleSaveExercise} className="btn btn-primary text-xs font-bold">
-                                Save Exercise to Unit
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Wizard Unit Pre-Lab Theory Modal */}
-            {showWizardTheoryModal && (
-                <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-[120] p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh] overflow-hidden">
-                        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                                    <BookOpen className="w-5 h-5" />
                                 </div>
-                                <div>
-                                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                                        Pre-Lab Theory & Interactive Checkpoints
-                                    </h3>
-                                    <p className="text-xs text-slate-500">
-                                        {wizardTheoryForm.title} • CBSE Concept Grounding
-                                    </p>
-                                </div>
-                            </div>
-                            <button onClick={() => setShowWizardTheoryModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        <div className="p-6 overflow-y-auto space-y-4 flex-1">
-                            {/* Inline AI Theory Synthesizer Bar */}
-                            <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 space-y-2.5">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">
-                                        <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
-                                        <span>AI Pre-Lab Notes & Checkpoints Synthesizer</span>
-                                    </div>
-                                    <span className="text-[10px] text-slate-500 font-medium">Auto-fills Markdown & Checkpoints</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="text"
-                                        value={wizardInlineAiTheoryPrompt}
-                                        onChange={e => setWizardInlineAiTheoryPrompt(e.target.value)}
-                                        placeholder={`Enter unit concept (e.g. '${wizardTheoryForm.title}')...`}
-                                        className="input text-xs flex-1 py-2 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800"
-                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineAiGenerateTheoryInWizard(); } }}
-                                    />
-                                    <button
-                                        type="button"
-                                        disabled={wizardInlineAiTheoryLoading}
-                                        onClick={handleInlineAiGenerateTheoryInWizard}
-                                        className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shrink-0 flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 transition"
-                                    >
-                                        {wizardInlineAiTheoryLoading ? (
-                                            <>
-                                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                <span>Synthesizing...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Sparkles className="w-3.5 h-3.5" />
-                                                <span>✨ Auto-Fill Theory</span>
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="label">Unit Concept Summary</label>
-                                <input
-                                    type="text"
-                                    value={wizardTheoryForm.summary}
-                                    onChange={e => setWizardTheoryForm(f => ({ ...f, summary: e.target.value }))}
-                                    className="input text-xs"
-                                    placeholder="Brief core concept takeaway..."
-                                />
-                            </div>
-
-                            <div>
-                                <label className="label">Full Concept Notes & Theory (Markdown)</label>
-                                <textarea
-                                    value={wizardTheoryForm.content}
-                                    onChange={e => setWizardTheoryForm(f => ({ ...f, content: e.target.value }))}
-                                    className="input h-36 font-mono text-xs"
-                                    placeholder="## Concept Overview&#10;&#10;Explain syntax, execution model, and edge cases..."
-                                />
-                            </div>
-
-                            {/* Mini Checkpoints */}
-                            <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                                        Interactive Mini-Checkpoints ({wizardTheoryForm.miniCheckpoints?.length || 0})
-                                    </label>
-                                    <button
-                                        type="button"
-                                        onClick={() => setWizardTheoryForm(f => ({
-                                            ...f,
-                                            miniCheckpoints: [
-                                                ...(f.miniCheckpoints || []),
-                                                {
-                                                    id: `cp_${Date.now()}`,
-                                                    question: '',
-                                                    options: ['', ''],
-                                                    correctOption: 0,
-                                                    explanation: ''
-                                                }
-                                            ]
-                                        }))}
-                                        className="btn btn-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 font-semibold"
-                                    >
-                                        <Plus className="w-3.5 h-3.5" /> Add Checkpoint
-                                    </button>
-                                </div>
-
-                                {(wizardTheoryForm.miniCheckpoints || []).map((cp, cIdx) => (
-                                    <div key={cp.id || cIdx} className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                                                Checkpoint #{cIdx + 1}
-                                            </span>
+                            ) : (
+                                /* Exercise Cards List View */
+                                <div className="space-y-4">
+                                    {/* Unit selector pills */}
+                                    <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200 dark:border-slate-800">
+                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">Select Unit:</span>
+                                        {units.map((u, i) => (
                                             <button
-                                                type="button"
-                                                onClick={() => setWizardTheoryForm(f => ({
-                                                    ...f,
-                                                    miniCheckpoints: f.miniCheckpoints.filter((_, i) => i !== cIdx)
-                                                }))}
-                                                className="text-rose-500 hover:text-rose-600 p-1"
+                                                key={i}
+                                                onClick={() => setSelectedUnitIdx(i)}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                                                    selectedUnitIdx === i
+                                                        ? 'bg-indigo-600 text-white shadow-sm'
+                                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                                }`}
                                             >
-                                                <Trash2 className="w-3.5 h-3.5" />
+                                                <span>Unit {i + 1}</span>
+                                                <span className="text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full">
+                                                    {u.exercises?.length || 0}
+                                                </span>
                                             </button>
-                                        </div>
-                                        <input
-                                            type="text"
-                                            value={cp.question}
-                                            onChange={e => {
-                                                const val = e.target.value;
-                                                setWizardTheoryForm(f => {
-                                                    const cps = [...f.miniCheckpoints];
-                                                    cps[cIdx] = { ...cps[cIdx], question: val };
-                                                    return { ...f, miniCheckpoints: cps };
-                                                });
-                                            }}
-                                            placeholder="Quick comprehension check question..."
-                                            className="input text-xs"
-                                        />
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {(cp.options || []).map((opt, oIdx) => (
-                                                <div key={oIdx} className="flex items-center gap-1.5">
-                                                    <input
-                                                        type="radio"
-                                                        name={`wiz_cp_${cIdx}`}
-                                                        checked={cp.correctOption === oIdx}
-                                                        onChange={() => setWizardTheoryForm(f => {
-                                                            const cps = [...f.miniCheckpoints];
-                                                            cps[cIdx] = { ...cps[cIdx], correctOption: oIdx };
-                                                            return { ...f, miniCheckpoints: cps };
-                                                        })}
-                                                    />
+                                        ))}
+                                    </div>
+
+                                    {/* Active Unit Header & Actions */}
+                                    {units[selectedUnitIdx] && (
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+                                                        {units[selectedUnitIdx].title} Exercises
+                                                    </h4>
+                                                    <p className="text-xs text-slate-500">
+                                                        Add all 8 question types: Coding Labs, MCQs, Syntax Cloze, Bug Hunts, Case Studies, and CBSE Questions.
+                                                    </p>
+                                                </div>
+
+                                                <button
+                                                    onClick={handleOpenCreateExercise}
+                                                    className="btn btn-primary text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 font-bold shadow-sm"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" /> + Add Exercise
+                                                </button>
+                                            </div>
+
+                                            {/* Inline In-Place AI Challenge Synthesizer Bar */}
+                                            <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 space-y-2.5">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                                                        <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
+                                                        <span>AI In-Place Challenge Synthesizer</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] text-slate-500 font-medium">Model:</span>
+                                                        <select
+                                                            value={wizardInlineAiProvider}
+                                                            onChange={e => setWizardInlineAiProvider(e.target.value)}
+                                                            className="text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-0.5"
+                                                        >
+                                                            <option value="groq">⚡ Groq (Fast)</option>
+                                                            <option value="gemini">✨ Gemini</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
                                                     <input
                                                         type="text"
-                                                        value={opt}
-                                                        onChange={e => {
-                                                            const val = e.target.value;
-                                                            setWizardTheoryForm(f => {
-                                                                const cps = [...f.miniCheckpoints];
-                                                                const opts = [...cps[cIdx].options];
-                                                                opts[oIdx] = val;
-                                                                cps[cIdx] = { ...cps[cIdx], options: opts };
-                                                                return { ...f, miniCheckpoints: cps };
-                                                            });
-                                                        }}
-                                                        placeholder={`Option ${oIdx + 1}`}
-                                                        className="input text-xs py-1 flex-1"
+                                                        value={wizardInlineAiPrompt}
+                                                        onChange={e => setWizardInlineAiPrompt(e.target.value)}
+                                                        placeholder="Enter topic or concept (e.g. 'Dry-Run trace loop' or 'Assertion on immutability')..."
+                                                        className="input text-xs flex-1 py-2 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800"
+                                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineAiGenerateExerciseInWizard(); } }}
                                                     />
+                                                    <button
+                                                        type="button"
+                                                        disabled={wizardInlineAiLoading || !wizardInlineAiPrompt.trim()}
+                                                        onClick={handleInlineAiGenerateExerciseInWizard}
+                                                        className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shrink-0 flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 transition"
+                                                    >
+                                                        {wizardInlineAiLoading ? (
+                                                            <>
+                                                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                                <span>Synthesizing...</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Sparkles className="w-3.5 h-3.5" />
+                                                                <span>✨ Auto-Fill Challenge</span>
+                                                            </>
+                                                        )}
+                                                    </button>
                                                 </div>
-                                            ))}
+                                                <p className="text-[10px] text-slate-400">
+                                                    Auto-fills Title, Problem Statement, Solution, and test data directly into this form without modal switching.
+                                                </p>
+                                            </div>
+
+                                    {/* Exercise Cards */}
+                                    {(!units[selectedUnitIdx].exercises || units[selectedUnitIdx].exercises.length === 0) ? (
+                                        <div className="text-center py-12 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
+                                            <Code2 className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                                            <h5 className="font-bold text-sm text-slate-700 dark:text-slate-300">No Exercises in this Unit Yet</h5>
+                                            <p className="text-xs text-slate-400 mt-1">Use the buttons above to manually add an exercise or generate one with AI.</p>
                                         </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {units[selectedUnitIdx].exercises.map((ex, exIdx) => {
+                                                const typeBadges = {
+                                                    coding: { label: '⚡ Coding Lab', bg: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' },
+                                                    mcq: { label: '📝 Output MCQ', bg: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
+                                                    fill_blank: { label: '🧩 Syntax Cloze', bg: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300' },
+                                                    bug_fix: { label: '🐞 Bug Hunt', bg: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' },
+                                                    case_study: { label: '🏢 Case Study', bg: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' },
+                                                    assertion_reason: { label: '⚖️ Assertion-Reason', bg: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300' },
+                                                    code_trace: { label: '🔍 Dry-Run Trace', bg: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300' },
+                                                    code_debug: { label: '🐞 CBSE Error Debug', bg: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300' },
+                                                };
+                                                const badge = typeBadges[ex.exerciseType] || typeBadges.coding;
+
+                                                return (
+                                                    <div
+                                                        key={exIdx}
+                                                        onClick={() => handleOpenEditExercise(exIdx)}
+                                                        className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-4 shadow-sm cursor-pointer transition group"
+                                                    >
+                                                        <div className="flex items-center gap-3 min-w-0">
+                                                            <span className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-bold flex items-center justify-center shrink-0">
+                                                                {exIdx + 1}
+                                                            </span>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <h5 className="font-bold text-sm text-slate-900 dark:text-white truncate group-hover:text-indigo-600 transition">
+                                                                        {ex.title}
+                                                                    </h5>
+                                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badge.bg}`}>
+                                                                        {badge.label}
+                                                                    </span>
+                                                                    <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded capitalize">
+                                                                        {ex.scaffoldLevel}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-xs text-slate-400 truncate mt-0.5">
+                                                                    {ex.description}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-2 shrink-0">
+                                                            <span className="text-xs font-bold text-amber-500 flex items-center gap-1 mr-1">
+                                                                <Award className="w-3.5 h-3.5" /> +{ex.xpReward || 15} XP
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleOpenEditExercise(exIdx);
+                                                                }}
+                                                                className="btn btn-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 font-semibold"
+                                                            >
+                                                                <Edit3 className="w-3.5 h-3.5" /> Edit
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleRemoveExercise(exIdx);
+                                                                }}
+                                                                className="p-1.5 text-slate-400 hover:text-red-500 transition rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                                                title="Delete Exercise"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    {currentStep === 4 && (
+                        <div className="space-y-6 max-w-3xl mx-auto">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                                {/* Pedagogy Score Gauge */}
+                                <div className="p-6 rounded-3xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-center space-y-3">
+                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                                        Calculated Pedagogy Score
+                                    </span>
+                                    <div className="text-4xl font-extrabold text-indigo-600 dark:text-indigo-400">
+                                        {pedagogyStats.score}<span className="text-base font-medium text-slate-400">/100</span>
                                     </div>
-                                ))}
+                                    <p className="text-xs text-slate-500">
+                                        {pedagogyStats.score >= 80 ? '🌟 Excellent! Strong pedagogical scaffolding and diversity.' : '💡 Add diverse question types & review exercises to boost score.'}
+                                    </p>
+                                </div>
+
+                                {/* Active Config Toggles */}
+                                <div className="space-y-3">
+                                    <label className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={moduleForm.pedagogyConfig.useBlooms}
+                                            onChange={e => setModuleForm(f => ({
+                                                ...f,
+                                                pedagogyConfig: { ...f.pedagogyConfig, useBlooms: e.target.checked }
+                                            }))}
+                                            className="rounded text-indigo-600 focus:ring-indigo-500"
+                                        />
+                                        <div>
+                                            <div className="font-bold text-xs text-slate-900 dark:text-white">Bloom's Taxonomy Cognitive Levels</div>
+                                            <div className="text-[11px] text-slate-500">Tag exercises with cognitive complexity.</div>
+                                        </div>
+                                    </label>
+
+                                    <label className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={moduleForm.pedagogyConfig.useObjectives}
+                                            onChange={e => setModuleForm(f => ({
+                                                ...f,
+                                                pedagogyConfig: { ...f.pedagogyConfig, useObjectives: e.target.checked }
+                                            }))}
+                                            className="rounded text-indigo-600 focus:ring-indigo-500"
+                                        />
+                                        <div>
+                                            <div className="font-bold text-xs text-slate-900 dark:text-white">Explicit Learning Objectives</div>
+                                            <div className="text-[11px] text-slate-500">Declare SWBAT goals per exercise.</div>
+                                        </div>
+                                    </label>
+
+                                    <label className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={moduleForm.pedagogyConfig.useTimeLimit}
+                                            onChange={e => setModuleForm(f => ({
+                                                ...f,
+                                                pedagogyConfig: { ...f.pedagogyConfig, useTimeLimit: e.target.checked }
+                                            }))}
+                                            className="rounded text-indigo-600 focus:ring-indigo-500"
+                                        />
+                                        <div>
+                                            <div className="font-bold text-xs text-slate-900 dark:text-white">Time-Boxed Practice</div>
+                                            <div className="text-[11px] text-slate-500">Enforce speed-challenge timers.</div>
+                                        </div>
+                                    </label>
+                                </div>
                             </div>
                         </div>
+                    )}
 
-                        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-end gap-3">
-                            <button onClick={() => setShowWizardTheoryModal(false)} className="btn btn-secondary text-xs">
-                                Cancel
+                    {/* ========================================================= */}
+                    {/* STEP 5: DEPLOY & ASSIGN                                   */}
+                    {/* ========================================================= */}
+                    {currentStep === 5 && (
+                        <div className="space-y-5 max-w-3xl mx-auto">
+                            <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-900">
+                                <h4 className="font-bold text-sm text-indigo-900 dark:text-indigo-200">Course Summary</h4>
+                                <div className="grid grid-cols-3 gap-2 mt-2 text-xs text-indigo-800 dark:text-indigo-300">
+                                    <div><strong>Title:</strong> {moduleForm.title || 'Untitled'}</div>
+                                    <div><strong>Language:</strong> {moduleForm.language}</div>
+                                    <div><strong>Units:</strong> {units.length}</div>
+                                    <div><strong>Total Exercises:</strong> {pedagogyStats.totalExercises}</div>
+                                    <div><strong>Class:</strong> {moduleForm.classLevel}</div>
+                                    <div><strong>Board:</strong> {moduleForm.boardAligned}</div>
+                                </div>
+                            </div>
+
+                            {/* Class Assignment Selector */}
+                            <div>
+                                <label className="label flex items-center gap-1.5">
+                                    <Users className="w-4 h-4 text-indigo-500" /> Assign to Classes (Optional)
+                                </label>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto p-1">
+                                    {availableClasses.map(cls => (
+                                        <label
+                                            key={cls.id}
+                                            className={`p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition flex items-center gap-2 ${
+                                                targetClasses.includes(cls.id)
+                                                    ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-500 text-indigo-700 dark:text-indigo-300'
+                                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                                            }`}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={targetClasses.includes(cls.id)}
+                                                onChange={e => {
+                                                    if (e.target.checked) setTargetClasses(prev => [...prev, cls.id]);
+                                                    else setTargetClasses(prev => prev.filter(c => c !== cls.id));
+                                                }}
+                                                className="rounded text-indigo-600"
+                                            />
+                                            <span className="truncate">{cls.name}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="label flex items-center gap-1.5">
+                                        <Calendar className="w-4 h-4 text-amber-500" /> Deadline (Optional)
+                                    </label>
+                                    <input
+                                        type="datetime-local"
+                                        value={deadline}
+                                        onChange={e => setDeadline(e.target.value)}
+                                        className="input"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="label">Special Instructions</label>
+                                    <input
+                                        type="text"
+                                        value={specialNotes}
+                                        onChange={e => setSpecialNotes(e.target.value)}
+                                        placeholder="e.g. Complete Unit 1 by Friday"
+                                        className="input"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer Navigation Bar */}
+                <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between px-6">
+                    {wizardTheoryUnitIdx !== null ? (
+                        <div className="flex items-center justify-between w-full">
+                            <button
+                                type="button"
+                                onClick={() => setWizardTheoryUnitIdx(null)}
+                                className="btn btn-secondary text-xs flex items-center gap-1.5 font-bold"
+                            >
+                                <ArrowLeft className="w-3.5 h-3.5" /> Back to Units List
                             </button>
-                            <button onClick={handleSaveWizardTheory} className="btn btn-primary text-xs font-bold">
+                            <span className="text-xs text-slate-500 font-medium">
+                                Editing Pre-Lab Theory for Unit {wizardTheoryUnitIdx + 1}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={handleSaveWizardTheory}
+                                className="btn bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 px-4 rounded-xl shadow-md"
+                            >
                                 Save Pre-Lab Theory
                             </button>
                         </div>
-                    </div>
-                </div>
-            )}
+                    ) : isEditingExercise ? (
+                        <div className="flex items-center justify-between w-full">
+                            <button
+                                type="button"
+                                onClick={() => { setIsEditingExercise(false); setEditingExerciseIdx(null); }}
+                                className="btn btn-secondary text-xs flex items-center gap-1.5 font-bold"
+                            >
+                                <ArrowLeft className="w-3.5 h-3.5" /> Back to Exercise List
+                            </button>
+                            <span className="text-xs text-slate-500 font-medium">
+                                {editingExerciseIdx !== null ? 'Editing Challenge' : 'Creating New Challenge'}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={handleSaveExercise}
+                                className="btn bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 px-4 rounded-xl shadow-md"
+                            >
+                                Save Exercise to Unit
+                            </button>
+                        </div>
+                    ) : (
+                        <>
+                            <div>
+                                {currentStep > 1 && (
+                                    <button
+                                        onClick={() => setCurrentStep(prev => prev - 1)}
+                                        className="btn btn-secondary text-xs flex items-center gap-1.5 font-bold"
+                                    >
+                                        <ArrowLeft className="w-4 h-4" /> Back
+                                    </button>
+                                )}
+                            </div>
 
-            {/* AI LMS Copilot Drawer */}
-            <AiTrainingCopilot
-                isOpen={showAiCopilot}
-                onClose={() => setShowAiCopilot(false)}
-                activeTab={aiCopilotTab}
-                onInsertOutline={handleApplyAiOutline}
-                onInsertExercise={handleApplyAiExercise}
-                context={{
-                    language: moduleForm.language,
-                    classLevel: moduleForm.classLevel,
-                    board: moduleForm.boardAligned,
-                    unitTitle: units[selectedUnitIdx]?.title,
-                    unitDescription: units[selectedUnitIdx]?.description || '',
-                    moduleTitle: moduleForm.title || '',
-                    topic: currentStep === 1
-                        ? (moduleForm.title || moduleForm.description)
-                        : currentStep === 2
-                        ? (units[selectedUnitIdx]?.title || moduleForm.title)
-                        : (exerciseForm.title || units[selectedUnitIdx]?.title || moduleForm.title),
-                    exerciseType: exerciseForm.exerciseType,
-                    difficulty: exerciseForm.difficulty,
-                    scaffoldLevel: exerciseForm.scaffoldLevel,
-                    bloomsLevel: exerciseForm.bloomsLevel
-                }}
-            />
+                            <div className="flex items-center gap-3">
+                                <button onClick={onClose} className="btn btn-secondary text-xs font-bold">
+                                    Cancel
+                                </button>
+
+                                {currentStep < 5 ? (
+                                    <button
+                                        onClick={() => setCurrentStep(prev => prev + 1)}
+                                        className="btn btn-primary text-xs flex items-center gap-1.5 font-bold"
+                                    >
+                                        Next Step <ArrowRight className="w-4 h-4" />
+                                    </button>
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => handleFinalDeploy(false)}
+                                            disabled={isSubmitting}
+                                            className="btn btn-secondary text-xs font-bold"
+                                        >
+                                            Save as Draft
+                                        </button>
+                                        <button
+                                            onClick={() => handleFinalDeploy(true)}
+                                            disabled={isSubmitting}
+                                            className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white text-xs font-bold py-2.5 px-6 rounded-xl shadow-lg shadow-indigo-500/25 flex items-center gap-2"
+                                        >
+                                            {isSubmitting ? 'Deploying Course...' : '🚀 Publish & Enter Builder'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
         </div>
     );
 }

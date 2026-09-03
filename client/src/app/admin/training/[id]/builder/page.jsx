@@ -277,7 +277,19 @@ export default function PedagogyBuilderPage() {
         classLevel: 11
     });
 
+    // Enforce SINGLE active modal at any given time (Zero Modal Stacking)
+    const closeAllModals = () => {
+        setShowAiCopilot(false);
+        setShowExerciseModal(false);
+        setShowTheoryModal(false);
+        setShowUnitModal(false);
+        setShowConfigModal(false);
+        setShowAssignModal(false);
+        setShowEditModuleModal(false);
+    };
+
     const handleOpenEditModule = () => {
+        closeAllModals();
         setModuleEditForm({
             title: moduleData?.title || '',
             titleHindi: moduleData?.titleHindi || '',
@@ -448,6 +460,7 @@ export default function PedagogyBuilderPage() {
 
     // Unit Actions
     const handleOpenCreateUnit = () => {
+        closeAllModals();
         setEditingUnitId(null);
         setUnitForm({
             title: '',
@@ -461,6 +474,7 @@ export default function PedagogyBuilderPage() {
 
     const handleOpenEditUnit = (unit) => {
         if (!unit) return;
+        closeAllModals();
         setEditingUnitId(unit.id);
         setUnitForm({
             title: unit.title || '',
@@ -506,6 +520,7 @@ export default function PedagogyBuilderPage() {
 
     // Exercise Actions
     const handleOpenCreateExercise = () => {
+        closeAllModals();
         setEditingExerciseId(null);
         setExerciseForm({
             title: '',
@@ -558,6 +573,7 @@ export default function PedagogyBuilderPage() {
 
     const handleOpenEditExercise = (ex) => {
         if (!ex) return;
+        closeAllModals();
         setEditingExerciseId(ex.id);
 
         let parsedTestCases = [];
@@ -714,6 +730,7 @@ export default function PedagogyBuilderPage() {
 
     const handleOpenEditTheory = async (unit) => {
         if (!unit) return;
+        closeAllModals();
         try {
             const res = await trainingAPI.getUnitTheory(unit.id);
             const data = res.data?.data?.unit || {};
@@ -741,7 +758,7 @@ export default function PedagogyBuilderPage() {
                 miniCheckpoints: theoryForm.miniCheckpoints,
                 cbseTips: theoryForm.cbseTips
             });
-            toast.success('Unit theory notes & mini-checkpoints saved!');
+            toast.success('📖 Unit Pre-Lab Theory & Checkpoints saved!');
             setShowTheoryModal(false);
             loadData();
         } catch (err) {
@@ -752,21 +769,18 @@ export default function PedagogyBuilderPage() {
 
     const handleApplyAiExercise = (aiEx) => {
         if (!aiEx) return;
-        const currentType = aiEx.exerciseType || 'coding';
+        closeAllModals();
+        const currentType = aiEx.exerciseType || exerciseForm.exerciseType || 'coding';
         setExerciseForm(prev => ({
             ...prev,
-            title: aiEx.title || '',
-            description: aiEx.description || '',
-            theory: aiEx.theory || '',
+            title: aiEx.title || prev.title,
+            description: aiEx.problemStatement || aiEx.description || prev.description,
             exerciseType: currentType,
-            difficulty: aiEx.difficulty || 'beginner',
-            scaffoldLevel: aiEx.scaffoldLevel || 'guided',
-            bloomsLevel: aiEx.bloomsLevel || 'apply',
-            learningObjective: aiEx.learningObjective || '',
-            xpReward: aiEx.xpReward || 15,
-            timeLimit: aiEx.timeLimit || 5,
-            isReviewExercise: aiEx.isReviewExercise || false,
-            starterCode: aiEx.starterCode || (currentType === 'fill_blank' && aiEx.testCases?.template ? aiEx.testCases.template : ''),
+            difficulty: aiEx.difficulty || prev.difficulty,
+            scaffoldLevel: aiEx.scaffoldLevel || prev.scaffoldLevel,
+            bloomsLevel: aiEx.bloomsLevel || prev.bloomsLevel,
+            theory: aiEx.theory || prev.theory,
+            starterCode: aiEx.starterCode || '',
             solutionCode: aiEx.solutionCode || '',
             testCases: Array.isArray(aiEx.testCases) ? aiEx.testCases : prev.testCases,
             hints: aiEx.hints || prev.hints,
@@ -787,6 +801,7 @@ export default function PedagogyBuilderPage() {
 
     const handleApplyAiTheory = (theoryRes) => {
         if (!theoryRes) return;
+        closeAllModals();
         setExerciseForm(prev => ({
             ...prev,
             title: prev.title || theoryRes.title || '',
@@ -797,6 +812,7 @@ export default function PedagogyBuilderPage() {
 
     const handleApplyAiOutline = async (outlineRes) => {
         if (!outlineRes || !outlineRes.units) return;
+        closeAllModals();
         try {
             for (const u of outlineRes.units) {
                 const uRes = await trainingAPI.createUnit(id, {
@@ -904,7 +920,7 @@ export default function PedagogyBuilderPage() {
                         </div>
                         <div className="flex items-center gap-2">
                             <button 
-                                onClick={() => { setAiCopilotTab('exercise'); setShowAiCopilot(true); }}
+                                onClick={() => { closeAllModals(); setAiCopilotTab('outline'); setShowAiCopilot(true); }}
                                 className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white font-bold text-sm shadow-md shadow-indigo-500/25 flex items-center gap-1.5"
                             >
                                 <Sparkles className="w-4 h-4" /> ✨ AI LMS Copilot
@@ -912,7 +928,7 @@ export default function PedagogyBuilderPage() {
                             <button onClick={handleOpenEditModule} className="btn btn-secondary text-sm flex items-center gap-1.5">
                                 <Edit3 className="w-4 h-4 text-slate-500" /> Edit Course
                             </button>
-                            <button onClick={() => setShowConfigModal(true)} className="btn btn-secondary text-sm">
+                            <button onClick={() => { closeAllModals(); setShowConfigModal(true); }} className="btn btn-secondary text-sm">
                                 <Settings className="w-4 h-4" /> Configure UI
                             </button>
                             <button
@@ -927,7 +943,7 @@ export default function PedagogyBuilderPage() {
                             >
                                 <Globe className="w-4 h-4" /> {moduleData.isPublished ? 'Unpublish' : 'Publish'}
                             </button>
-                            <button onClick={() => setShowAssignModal(true)} className="btn bg-gradient-to-r from-primary-600 to-primary-500 text-white shadow-lg shadow-primary-500/25 hover:shadow-xl text-sm">
+                            <button onClick={() => { closeAllModals(); setShowAssignModal(true); }} className="btn bg-gradient-to-r from-primary-600 to-primary-500 text-white shadow-lg shadow-primary-500/25 hover:shadow-xl text-sm">
                                 <Send className="w-4 h-4" /> Assign to Class
                             </button>
                             <button onClick={handleOpenCreateUnit} className="btn btn-primary text-sm">
@@ -1074,10 +1090,10 @@ export default function PedagogyBuilderPage() {
                                             <Trash2 className="w-3.5 h-3.5" />
                                         </button>
                                         <button
-                                            onClick={() => { setAiCopilotTab('exercise'); setShowAiCopilot(true); }}
+                                            onClick={handleOpenCreateExercise}
                                             className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white font-bold text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 shadow-sm"
                                         >
-                                            <Sparkles className="w-3.5 h-3.5" /> AI Synthesizer
+                                            <Sparkles className="w-3.5 h-3.5" /> AI Challenge Studio
                                         </button>
                                         <button onClick={handleOpenCreateExercise} className="btn btn-primary text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 font-bold">
                                             <Plus className="w-3.5 h-3.5" /> Add Exercise
