@@ -1778,6 +1778,41 @@ router.post('/ai/exercise', authenticate, asyncHandler(async (req, res) => {
 }));
 
 /**
+ * @route   POST /api/training/ai/exercises/batch
+ * @desc    Generate batch of exercises for checked topics or from RAG document
+ */
+router.post('/ai/exercises/batch', authenticate, asyncHandler(async (req, res) => {
+    const payload = req.body.payload || req.body;
+    const provider = req.body.provider || payload.provider || 'groq';
+
+    try {
+        const result = await aiService.generateTrainingExerciseBatch({
+            topics: payload.topics || [],
+            unitTitle: payload.unitTitle || '',
+            language: payload.language || 'python',
+            classLevel: payload.classLevel || 11,
+            board: payload.board || 'CBSE',
+            count: payload.count || 3,
+            source: payload.source || 'topics',
+            documentText: payload.documentText || '',
+            exerciseType: payload.exerciseType || 'mixed',
+            provider
+        });
+
+        res.json({
+            success: true,
+            data: {
+                exercises: result.exercises || [],
+                ...(typeof result === 'object' && result !== null ? result : {})
+            }
+        });
+    } catch (err) {
+        console.error('[AI Exercise Batch Error]:', err.message);
+        res.status(500).json({ success: false, message: err.message || 'Failed to generate exercises batch' });
+    }
+}));
+
+/**
  * @route   POST /api/training/ai/from-document
  * @desc    RAG endpoint to synthesize complete Training Module from textbook/syllabus material
  */

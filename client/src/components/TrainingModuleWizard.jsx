@@ -6,7 +6,8 @@ import {
     Sparkles, BookOpen, Layers, Code2, CheckCircle2,
     ArrowRight, ArrowLeft, Plus, Trash2, Edit3, ShieldAlert,
     Clock, Award, Lock, Send, Users, Calendar, Trophy,
-    AlertTriangle, X, Check, HelpCircle, Eye, EyeOff, CheckSquare, FileText
+    AlertTriangle, X, Check, HelpCircle, Eye, EyeOff, CheckSquare, FileText,
+    ChevronDown, ChevronUp
 } from 'lucide-react';
 import api, { trainingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -170,6 +171,12 @@ export default function TrainingModuleWizard({
     const [wizardInlineAiTheoryPrompt, setWizardInlineAiTheoryPrompt] = useState('');
     const [wizardInlineAiTheoryLoading, setWizardInlineAiTheoryLoading] = useState(false);
 
+    // Step 3 Collapsible Theory & Checked Topics Batch Generation State
+    const [checkedTopicsByUnit, setCheckedTopicsByUnit] = useState({});
+    const [isTheoryCollapsed, setIsTheoryCollapsed] = useState(false);
+    const [batchAiLoading, setBatchAiLoading] = useState(false);
+    const [batchExerciseType, setBatchExerciseType] = useState('mixed');
+
     // Step 5 Form: Class Allocations
     const [targetClasses, setTargetClasses] = useState([]);
     const [deadline, setDeadline] = useState('');
@@ -281,18 +288,18 @@ export default function TrainingModuleWizard({
 
     // Step Completion Gating & Progressive Unlocking
     const isStep1Complete = Boolean(moduleForm.title?.trim() && moduleForm.language);
-    const isStep2Complete = Boolean(units.length > 0 && units.every(u => u.title && u.title.trim().length > 0));
+    const isStep2Complete = Boolean(isStep1Complete && units.length > 0 && units.every(u => u.title && u.title.trim().length > 0));
     const totalExercises = useMemo(() => units.reduce((acc, u) => acc + (u.exercises?.length || 0), 0), [units]);
-    const isStep3Complete = totalExercises > 0;
-    const isStep4Complete = true;
-    const isStep5Complete = true;
+    const isStep3Complete = Boolean(isStep2Complete && totalExercises > 0);
+    const isStep4Complete = Boolean(isStep3Complete && currentStep > 4);
+    const isStep5Complete = false;
 
     const canAccessStep = (stepNumber) => {
         if (stepNumber <= 1) return true;
         if (stepNumber === 2) return isStep1Complete;
         if (stepNumber === 3) return isStep1Complete && isStep2Complete;
         if (stepNumber === 4) return isStep1Complete && isStep2Complete && isStep3Complete;
-        if (stepNumber === 5) return isStep1Complete && isStep2Complete && isStep3Complete;
+        if (stepNumber === 5) return isStep1Complete && isStep2Complete && isStep3Complete && currentStep >= 4;
         return false;
     };
 
@@ -301,19 +308,237 @@ export default function TrainingModuleWizard({
             setCurrentStep(nextStep);
             return;
         }
-        if (currentStep === 1 && !isStep1Complete) {
-            toast.error('Please enter a Course Title or click "✨ Auto-Generate Course Blueprint" to proceed.');
-            return;
-        }
-        if (currentStep === 2 && !isStep2Complete) {
-            toast.error('Please add at least one unit or click "✨ Generate Units" with AI.');
-            return;
-        }
-        if (currentStep === 3 && !isStep3Complete) {
-            toast.error('Please add at least one challenge or click "✨ Auto-Fill Challenge" to proceed.');
-            return;
+        if (!canAccessStep(nextStep)) {
+            if (!isStep1Complete) {
+                toast.error('Please enter a Course Title or click "✨ Auto-Generate Course Blueprint" to proceed.');
+                return;
+            }
+            if (!isStep2Complete) {
+                toast.error('Please add at least one unit with a title or click "✨ Generate Units" with AI.');
+                return;
+            }
+            if (!isStep3Complete) {
+                toast.error('Please create at least one exercise in Step 3 before proceeding to Pedagogy & Deploy.');
+                return;
+            }
         }
         setCurrentStep(nextStep);
+    };
+
+    // Helper to extract checklist topics from a unit's theoryData and title
+    const extractTopicsFromUnit = useCallback((unit) => {
+        if (!unit) return [];
+        const topics = [];
+
+        // 1. From Mini Checkpoints
+        if (Array.isArray(unit.theoryData?.miniCheckpoints)) {
+            unit.theoryData.miniCheckpoints.forEach((cp, idx) => {
+                if (cp.question) {
+                    topics.push(`Checkpoint ${idx + 1}: ${cp.question.replace(/\?$/, '')}`);
+                }
+            });
+        }
+
+        // 2. From Theory Content lines / bullet points
+        if (unit.theoryData?.content && typeof unit.theoryData.content === 'string') {
+            const lines = unit.theoryData.content.split('\n');
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+                    const clean = trimmed.replace(/^[-*]\s+/, '').replace(/[*_`]/g, '').trim();
+                    if (clean.length > 4 && clean.length < 85 && !topics.includes(clean)) {
+                        topics.push(clean);
+                    }
+                } else if (trimmed.startsWith('### ')) {
+                    const clean = trimmed.replace(/^###\s+/, '').replace(/[*_`]/g, '').trim();
+                    if (clean.length > 3 && clean.length < 65 && !topics.includes(clean)) {
+                        topics.push(clean);
+                    }
+                }
+            });
+        }
+
+        // 3. From CBSE Tips
+        if (Array.isArray(unit.theoryData?.cbseTips)) {
+            unit.theoryData.cbseTips.forEach(tip => {
+                if (tip && typeof tip === 'string') {
+                    const clean = tip.replace(/^[-*]\s+/, '').replace(/[*_`]/g, '').trim();
+                    if (clean.length > 4 && clean.length < 80 && !topics.includes(clean)) {
+                        topics.push(`Exam Tip: ${clean}`);
+                    }
+                }
+            });
+        }
+
+        // 4. Fallback topics from unit title & description
+        if (topics.length === 0) {
+            const titleParts = (unit.title || 'Core Programming').split(/[,:&]/).map(s => s.trim()).filter(Boolean);
+            titleParts.forEach(tp => topics.push(tp));
+            if (unit.description) {
+                const descParts = unit.description.split(/[,.;]/).map(s => s.trim()).filter(s => s.length > 4 && s.length < 60);
+                descParts.slice(0, 3).forEach(dp => {
+                    if (!topics.includes(dp)) topics.push(dp);
+                });
+            }
+        }
+
+        return topics.slice(0, 12);
+    }, []);
+
+    // Current unit's available topics and selected topics for Step 3
+    const activeUnitForTopics = units[selectedUnitIdx];
+    const availableUnitTopics = useMemo(() => {
+        return extractTopicsFromUnit(activeUnitForTopics);
+    }, [activeUnitForTopics, extractTopicsFromUnit]);
+
+    const currentSelectedTopics = useMemo(() => {
+        const selected = checkedTopicsByUnit[selectedUnitIdx];
+        if (selected !== undefined) return selected;
+        return availableUnitTopics;
+    }, [checkedTopicsByUnit, selectedUnitIdx, availableUnitTopics]);
+
+    const handleToggleTopic = (topic) => {
+        setCheckedTopicsByUnit(prev => {
+            const curr = prev[selectedUnitIdx] !== undefined ? prev[selectedUnitIdx] : availableUnitTopics;
+            const updated = curr.includes(topic)
+                ? curr.filter(t => t !== topic)
+                : [...curr, topic];
+            return { ...prev, [selectedUnitIdx]: updated };
+        });
+    };
+
+    const handleToggleSelectAllTopics = () => {
+        setCheckedTopicsByUnit(prev => {
+            const curr = prev[selectedUnitIdx] !== undefined ? prev[selectedUnitIdx] : availableUnitTopics;
+            const isAll = curr.length === availableUnitTopics.length;
+            return { ...prev, [selectedUnitIdx]: isAll ? [] : [...availableUnitTopics] };
+        });
+    };
+
+    // Generate batch exercises from checked topics
+    const handleGenerateFromCheckedTopics = async () => {
+        if (!activeUnitForTopics) return;
+        if (currentSelectedTopics.length === 0) {
+            toast.error('Please check at least one topic or checkpoint to generate exercises.');
+            return;
+        }
+
+        setBatchAiLoading(true);
+        const toastId = toast.loading(`Generating exercises for ${currentSelectedTopics.length} checked topics...`);
+
+        try {
+            const res = await trainingAPI.aiExerciseBatch({
+                topics: currentSelectedTopics,
+                unitTitle: activeUnitForTopics.title,
+                source: 'topics',
+                count: Math.min(Math.max(currentSelectedTopics.length, 2), 4),
+                exerciseType: batchExerciseType,
+                language: moduleForm.language || 'python',
+                classLevel: moduleForm.classLevel || 11,
+                board: moduleForm.boardAligned || 'CBSE'
+            }, wizardInlineAiProvider);
+
+            if (res.data?.success && Array.isArray(res.data.data?.exercises) && res.data.data.exercises.length > 0) {
+                const newExercises = res.data.data.exercises.map((ex, i) => ({
+                    id: `ex_${Date.now()}_${i}`,
+                    title: ex.title || `Exercise ${i + 1}`,
+                    description: ex.description || '',
+                    exerciseType: ex.exerciseType || 'coding',
+                    difficulty: ex.difficulty || 'beginner',
+                    scaffoldLevel: ex.scaffoldLevel || 'guided',
+                    bloomsLevel: ex.bloomsLevel || 'apply',
+                    learningObjective: ex.learningObjective || '',
+                    xpReward: ex.xpReward || 20,
+                    timeLimit: ex.timeLimit || 5,
+                    starterCode: ex.starterCode || '',
+                    solutionCode: ex.solutionCode || '',
+                    testCases: ex.testCases || [],
+                    hints: ex.hints || []
+                }));
+
+                setUnits(prev => {
+                    const next = [...prev];
+                    const existing = next[selectedUnitIdx]?.exercises || [];
+                    next[selectedUnitIdx] = {
+                        ...next[selectedUnitIdx],
+                        exercises: [...existing, ...newExercises]
+                    };
+                    return next;
+                });
+
+                toast.success(`✨ Added ${newExercises.length} challenges for checked topics!`, { id: toastId });
+            } else {
+                throw new Error(res.data?.message || 'Failed to synthesize exercises');
+            }
+        } catch (err) {
+            console.error('Batch generation error:', err);
+            toast.error(`Exercise generation failed: ${err.message}`, { id: toastId });
+        } finally {
+            setBatchAiLoading(false);
+        }
+    };
+
+    // Generate batch exercises from RAG Ebook / Document
+    const handleGenerateFromRagDocument = async () => {
+        if (!activeUnitForTopics) return;
+        if (!step1DocumentText.trim() && !step1FileName) {
+            toast.error('No RAG document found. Please attach a syllabus PDF or paste text in Step 1 first.');
+            return;
+        }
+
+        setBatchAiLoading(true);
+        const toastId = toast.loading(`Extracting practice exercises from RAG ebook for "${activeUnitForTopics.title}"...`);
+
+        try {
+            const res = await trainingAPI.aiExerciseBatch({
+                source: 'rag',
+                documentText: step1DocumentText,
+                unitTitle: activeUnitForTopics.title,
+                count: 3,
+                exerciseType: batchExerciseType,
+                language: moduleForm.language || 'python',
+                classLevel: moduleForm.classLevel || 11,
+                board: moduleForm.boardAligned || 'CBSE'
+            }, wizardInlineAiProvider);
+
+            if (res.data?.success && Array.isArray(res.data.data?.exercises) && res.data.data.exercises.length > 0) {
+                const newExercises = res.data.data.exercises.map((ex, i) => ({
+                    id: `ex_rag_${Date.now()}_${i}`,
+                    title: ex.title || `RAG Challenge ${i + 1}`,
+                    description: ex.description || '',
+                    exerciseType: ex.exerciseType || 'coding',
+                    difficulty: ex.difficulty || 'beginner',
+                    scaffoldLevel: ex.scaffoldLevel || 'guided',
+                    bloomsLevel: ex.bloomsLevel || 'apply',
+                    learningObjective: ex.learningObjective || '',
+                    xpReward: ex.xpReward || 20,
+                    timeLimit: ex.timeLimit || 5,
+                    starterCode: ex.starterCode || '',
+                    solutionCode: ex.solutionCode || '',
+                    testCases: ex.testCases || [],
+                    hints: ex.hints || []
+                }));
+
+                setUnits(prev => {
+                    const next = [...prev];
+                    const existing = next[selectedUnitIdx]?.exercises || [];
+                    next[selectedUnitIdx] = {
+                        ...next[selectedUnitIdx],
+                        exercises: [...existing, ...newExercises]
+                    };
+                    return next;
+                });
+
+                toast.success(`📄 Extracted & added ${newExercises.length} chapter exercises from RAG ebook!`, { id: toastId });
+            } else {
+                throw new Error(res.data?.message || 'Failed to extract exercises from document');
+            }
+        } catch (err) {
+            console.error('RAG exercise extraction error:', err);
+            toast.error(`RAG extraction failed: ${err.message}`, { id: toastId });
+        } finally {
+            setBatchAiLoading(false);
+        }
     };
 
     // Step 1 RAG File Upload Handler (Saves directly to Documents > RAG folder)
@@ -1089,7 +1314,7 @@ export default function TrainingModuleWizard({
                     {/* Step indicator pills */}
                     <div className="flex items-center gap-2">
                         {STEP_TITLES.map(s => {
-                            const isCompleted = s.step === 1 ? isStep1Complete : s.step === 2 ? isStep2Complete : s.step === 3 ? isStep3Complete : true;
+                            const isCompleted = s.step === 1 ? isStep1Complete : s.step === 2 ? isStep2Complete : s.step === 3 ? isStep3Complete : s.step === 4 ? isStep4Complete : isStep5Complete;
                             const isAccessible = canAccessStep(s.step);
 
                             return (
@@ -1658,8 +1883,8 @@ export default function TrainingModuleWizard({
                                         key={unit.id || idx}
                                         className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-3"
                                     >
-                                        <div className="flex items-start justify-between gap-4">
-                                            <div className="flex items-center gap-3">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="flex items-center gap-3 flex-1 min-w-0">
                                                 <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 font-bold text-sm flex items-center justify-center shrink-0">
                                                     {idx + 1}
                                                 </div>
@@ -1667,14 +1892,14 @@ export default function TrainingModuleWizard({
                                                     type="text"
                                                     value={unit.title}
                                                     onChange={e => handleUpdateUnit(idx, 'title', e.target.value)}
-                                                    className="input font-bold text-sm"
-                                                    placeholder="Unit Title..."
+                                                    className="input font-bold text-sm flex-1 w-full"
+                                                    placeholder="Unit Title (e.g. 'Constants, Rounding & Number-Theoretic Functions')..."
                                                 />
                                             </div>
 
                                             <button
                                                 onClick={() => handleRemoveUnit(idx)}
-                                                className="p-2 text-slate-400 hover:text-red-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                                className="p-2 text-slate-400 hover:text-red-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition shrink-0"
                                             >
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
@@ -2123,20 +2348,24 @@ export default function TrainingModuleWizard({
                                 <div className="space-y-4">
                                     {/* Unit selector pills */}
                                     <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200 dark:border-slate-800">
-                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">Select Unit:</span>
+                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">Units:</span>
                                         {units.map((u, i) => (
                                             <button
                                                 key={i}
                                                 onClick={() => setSelectedUnitIdx(i)}
-                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                                                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-2 max-w-sm ${
                                                     selectedUnitIdx === i
-                                                        ? 'bg-indigo-600 text-white shadow-sm'
-                                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400'
+                                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                                                 }`}
+                                                title={u.title}
                                             >
-                                                <span>Unit {i + 1}</span>
-                                                <span className="text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full">
-                                                    {u.exercises?.length || 0}
+                                                <span className="shrink-0 w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[11px]">
+                                                    {i + 1}
+                                                </span>
+                                                <span className="truncate text-left">{u.title || `Unit ${i + 1}`}</span>
+                                                <span className="text-[10px] bg-black/15 dark:bg-white/15 px-2 py-0.5 rounded-full shrink-0 font-semibold">
+                                                    {u.exercises?.length || 0} ex
                                                 </span>
                                             </button>
                                         ))}
@@ -2145,30 +2374,157 @@ export default function TrainingModuleWizard({
                                     {/* Active Unit Header & Actions */}
                                     {units[selectedUnitIdx] && (
                                         <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <div>
-                                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-                                                        {units[selectedUnitIdx].title} Exercises
+                                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                                                        <span className="text-indigo-600 dark:text-indigo-400 shrink-0">Unit {selectedUnitIdx + 1}:</span>
+                                                        <span className="break-words">{units[selectedUnitIdx].title}</span>
                                                     </h4>
                                                     <p className="text-xs text-slate-500">
-                                                        Add all 8 question types: Coding Labs, MCQs, Syntax Cloze, Bug Hunts, Case Studies, and CBSE Questions.
+                                                        {units[selectedUnitIdx].exercises?.length || 0} challenges configured • Use the topics below to auto-generate targeted exercises
                                                     </p>
                                                 </div>
 
                                                 <button
                                                     onClick={handleOpenCreateExercise}
-                                                    className="btn btn-primary text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 font-bold shadow-sm"
+                                                    className="btn btn-secondary text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 font-bold shrink-0 border border-slate-200 dark:border-slate-700 shadow-sm"
                                                 >
-                                                    <Plus className="w-3.5 h-3.5" /> + Add Exercise
+                                                    <Plus className="w-3.5 h-3.5" /> + Manual Exercise
                                                 </button>
                                             </div>
 
-                                            {/* Inline In-Place AI Challenge Synthesizer Bar */}
+                                            {/* Collapsible Unit Knowledge Base & Checkpoint Selector Studio */}
+                                            <div className="bg-slate-50 dark:bg-slate-900/70 rounded-2xl border border-indigo-200 dark:border-indigo-900/60 p-4 space-y-3 shadow-sm">
+                                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs">
+                                                            <BookOpen className="w-3.5 h-3.5" />
+                                                        </div>
+                                                        <div>
+                                                            <h5 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                                                Pre-Lab Theory & Practice Checkpoints
+                                                                <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full font-semibold">
+                                                                    {currentSelectedTopics.length} of {availableUnitTopics.length} selected
+                                                                </span>
+                                                            </h5>
+                                                            <p className="text-[11px] text-slate-500">
+                                                                Check topics/checkpoints to use as the base for generating relevant exercises
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleToggleSelectAllTopics}
+                                                            className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-bold px-1"
+                                                        >
+                                                            {currentSelectedTopics.length === availableUnitTopics.length ? 'Deselect All' : 'Select All'}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setIsTheoryCollapsed(!isTheoryCollapsed)}
+                                                            className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition"
+                                                            title={isTheoryCollapsed ? 'Expand Knowledge Base' : 'Collapse Knowledge Base'}
+                                                        >
+                                                            {isTheoryCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {!isTheoryCollapsed && (
+                                                    <div className="space-y-3 pt-1 border-t border-slate-200 dark:border-slate-800/80">
+                                                        {availableUnitTopics.length === 0 ? (
+                                                            <p className="text-xs text-slate-400 italic py-2">
+                                                                No specific theory bullet points detected. The generator will use the unit title and description.
+                                                            </p>
+                                                        ) : (
+                                                            <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1 bg-white/60 dark:bg-slate-950/40 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+                                                                {availableUnitTopics.map((topic, tIdx) => {
+                                                                    const isChecked = currentSelectedTopics.includes(topic);
+                                                                    return (
+                                                                        <label
+                                                                            key={tIdx}
+                                                                            className={`cursor-pointer px-3 py-1.5 rounded-xl text-xs flex items-center gap-2 border transition select-none ${
+                                                                                isChecked
+                                                                                    ? 'bg-indigo-50 dark:bg-indigo-950/80 border-indigo-300 dark:border-indigo-700 text-indigo-900 dark:text-indigo-200 font-semibold shadow-xs'
+                                                                                    : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                                                                            }`}
+                                                                        >
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={isChecked}
+                                                                                onChange={() => handleToggleTopic(topic)}
+                                                                                className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                                                                            />
+                                                                            <span className="truncate max-w-xs">{topic}</span>
+                                                                        </label>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Batch Action Toolbar */}
+                                                        <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between flex-wrap gap-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[11px] font-semibold text-slate-500">Exercise Type:</span>
+                                                                <select
+                                                                    value={batchExerciseType}
+                                                                    onChange={e => setBatchExerciseType(e.target.value)}
+                                                                    className="text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-slate-700 dark:text-slate-200"
+                                                                >
+                                                                    <option value="mixed">⚡ Mixed (Coding + MCQ + Debug)</option>
+                                                                    <option value="coding">⚡ Coding Labs Only</option>
+                                                                    <option value="mcq">📝 MCQs & Quizzes Only</option>
+                                                                    <option value="bug_fix">🐞 Bug Hunts & Debug Only</option>
+                                                                    <option value="assertion_reason">⚖️ Assertion-Reason Only</option>
+                                                                </select>
+                                                            </div>
+
+                                                            <div className="flex items-center gap-2">
+                                                                {/* Button 1: Generate from Checked Topics */}
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={batchAiLoading || currentSelectedTopics.length === 0}
+                                                                    onClick={handleGenerateFromCheckedTopics}
+                                                                    className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 transition"
+                                                                >
+                                                                    {batchAiLoading ? (
+                                                                        <>
+                                                                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                                            <span>Generating...</span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <Sparkles className="w-3.5 h-3.5" />
+                                                                            <span>✨ Generate Exercises for Checked ({currentSelectedTopics.length})</span>
+                                                                        </>
+                                                                    )}
+                                                                </button>
+
+                                                                {/* Button 2: Generate from RAG Ebook / Document */}
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={batchAiLoading || (!step1DocumentText.trim() && !step1FileName)}
+                                                                    onClick={handleGenerateFromRagDocument}
+                                                                    className="btn bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 shadow-md shadow-purple-600/20 disabled:opacity-50 transition"
+                                                                    title={step1DocumentText ? 'Extract practice exercises from uploaded RAG ebook/syllabus' : 'Attach a RAG document in Step 1 to enable'}
+                                                                >
+                                                                    <FileText className="w-3.5 h-3.5" />
+                                                                    <span>📄 From RAG Ebook</span>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Quick Custom Topic Synthesizer Bar */}
                                             <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 space-y-2.5">
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">
                                                         <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
-                                                        <span>AI In-Place Challenge Synthesizer</span>
+                                                        <span>Quick Custom Challenge Synthesizer</span>
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[10px] text-slate-500 font-medium">Model:</span>
@@ -2187,7 +2543,7 @@ export default function TrainingModuleWizard({
                                                         type="text"
                                                         value={wizardInlineAiPrompt}
                                                         onChange={e => setWizardInlineAiPrompt(e.target.value)}
-                                                        placeholder="Enter topic or concept (e.g. 'Dry-Run trace loop' or 'Assertion on immutability')..."
+                                                        placeholder="Or enter a specific challenge topic (e.g. 'Dry-Run trace loop' or 'Assertion on immutability')..."
                                                         className="input text-xs flex-1 py-2 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800"
                                                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineAiGenerateExerciseInWizard(); } }}
                                                     />
@@ -2205,14 +2561,11 @@ export default function TrainingModuleWizard({
                                                         ) : (
                                                             <>
                                                                 <Sparkles className="w-3.5 h-3.5" />
-                                                                <span>✨ Auto-Fill Challenge</span>
+                                                                <span>✨ Auto-Fill Single Challenge</span>
                                                             </>
                                                         )}
                                                     </button>
                                                 </div>
-                                                <p className="text-[10px] text-slate-400">
-                                                    Auto-fills Title, Problem Statement, Solution, and test data directly into this form without modal switching.
-                                                </p>
                                             </div>
 
                                     {/* Exercise Cards */}

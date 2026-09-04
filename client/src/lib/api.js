@@ -687,6 +687,7 @@ export const trainingAPI = {
     uploadRagDocument: (formData) => api.post('/training/ai/rag/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
     }),
+    aiExerciseBatch: (payload, provider = 'groq') => api.post('/training/ai/exercises/batch', { payload, provider }),
 };
 
 // AI Generator API

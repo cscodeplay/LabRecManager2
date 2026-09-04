@@ -2108,6 +2108,194 @@ Output MUST be ONLY valid JSON:
     }
 
     /**
+     * Batch Exercise Generator from checked topics, checkpoints, or RAG ebook chapter text
+     */
+    async generateTrainingExerciseBatch({
+        topics = [],
+        unitTitle = '',
+        language = 'python',
+        classLevel = 11,
+        board = 'CBSE',
+        count = 3,
+        source = 'topics',
+        documentText = '',
+        exerciseType = 'mixed',
+        provider = 'groq'
+    }) {
+        const targetCount = Math.max(1, Math.min(8, parseInt(count) || 3));
+        const topicsStr = Array.isArray(topics) && topics.length > 0 ? topics.join('; ') : unitTitle || 'Core Concepts';
+
+        let promptDirectives = '';
+        if (source === 'rag' && documentText) {
+            promptDirectives = `Extract or construct ${targetCount} practical exercises for the unit "${unitTitle}" based directly on the provided textbook / ebook chapter text below. Look for review questions, exercise problems, code snippets to debug, or theoretical MCQs:\n\n--- TEXTBOOK EXCERPT ---\n${documentText.slice(0, 7000)}\n--- END EXCERPT ---`;
+        } else {
+            promptDirectives = `Construct ${targetCount} practical exercises for the unit "${unitTitle}" specifically testing these checked topics/checkpoints: ${topicsStr}.`;
+        }
+
+        const systemPrompt = `You are a high-school and university Computer Science pedagogy expert.
+${promptDirectives}
+
+SPECIFICATIONS:
+- LANGUAGE: ${language}
+- CLASS LEVEL: Grade ${classLevel} (${board} Curriculum)
+- EXERCISE TYPE REQUIREMENT: ${exerciseType === 'mixed' ? 'Provide a varied pedagogical mix (e.g. 1 coding lab, 1 MCQ, 1 bug_fix or assertion_reason)' : `All exercises must be of type "${exerciseType}"`}
+- Total exercises to return: ${targetCount}
+
+For each exercise, provide:
+1. "title": Concise, engaging problem title.
+2. "description": Clear problem statement in Markdown with constraints and examples.
+3. "exerciseType": "coding" | "mcq" | "fill_blank" | "bug_fix" | "assertion_reason" | "code_trace"
+4. "difficulty": "beginner" | "intermediate" | "advanced"
+5. "scaffoldLevel": "guided" | "independent" | "challenge"
+6. "bloomsLevel": "remember" | "understand" | "apply" | "analyze" | "evaluate" | "create"
+7. "learningObjective": Single sentence learning outcome.
+8. "xpReward": Integer between 10 and 30.
+9. "timeLimit": Expected minutes (3 to 10).
+10. "starterCode": Code template (for coding/bug_fix/fill_blank).
+11. "solutionCode": Complete working reference solution.
+12. "testCases": Array of { input, expectedOutput, isHidden } for coding, OR object matching schema for MCQ/assertion_reason/debug/trace.
+13. "hints": Array of 2 helpful hints.
+
+Output MUST be ONLY valid JSON matching this schema:
+{
+  "exercises": [
+    {
+      "title": "...",
+      "description": "...",
+      "exerciseType": "coding",
+      "difficulty": "beginner",
+      "scaffoldLevel": "guided",
+      "bloomsLevel": "apply",
+      "learningObjective": "...",
+      "xpReward": 20,
+      "timeLimit": 5,
+      "starterCode": "...",
+      "solutionCode": "...",
+      "testCases": [...],
+      "hints": ["...", "..."]
+    }
+  ]
+}`;
+
+        // 1. Try Groq
+        if ((provider === 'groq' || provider === 'auto') && this.groq) {
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b'];
+            for (const modelName of groqModels) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [
+                            { role: 'system', content: 'Output ONLY valid JSON. No code fences.' },
+                            { role: 'user', content: systemPrompt }
+                        ],
+                        temperature: 0.2
+                    });
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                    if (parsed && Array.isArray(parsed.exercises) && parsed.exercises.length > 0) {
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn(`[AIService] Groq batch exercises (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // 2. Try Gemini
+        if (this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.5-flash'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && Array.isArray(parsed.exercises) && parsed.exercises.length > 0) {
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn(`[AIService] Gemini batch exercises (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // 3. Fallback Generation based on checked topics
+        const generatedExercises = [];
+        const topicList = Array.isArray(topics) && topics.length > 0 ? topics : [unitTitle || 'Core Syntax'];
+
+        for (let i = 0; i < Math.min(targetCount, topicList.length || 1); i++) {
+            const currentTopic = topicList[i % topicList.length];
+            const cleanSlug = currentTopic.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 20) || 'solution';
+
+            if (exerciseType === 'mcq' || (exerciseType === 'mixed' && i === 1)) {
+                generatedExercises.push({
+                    title: `${currentTopic}: Conceptual Evaluation`,
+                    description: `Evaluate the following question related to ${currentTopic}.`,
+                    exerciseType: 'mcq',
+                    difficulty: 'beginner',
+                    scaffoldLevel: 'guided',
+                    bloomsLevel: 'understand',
+                    learningObjective: `Identify key principles of ${currentTopic}.`,
+                    xpReward: 15,
+                    timeLimit: 3,
+                    testCases: {
+                        question: `Which statement accurately describes the behavior of ${currentTopic}?`,
+                        options: [
+                            `It evaluates mathematical expressions conforming to standard behavior`,
+                            `It raises a runtime exception under standard circumstances`,
+                            `It always returns None`,
+                            `It mutates global variables unexpectedly`
+                        ],
+                        correctOption: 0,
+                        explanation: `${currentTopic} operates in accordance with standard language specifications.`
+                    },
+                    hints: ['Recall the theoretical definitions covered in the Pre-Lab notes.']
+                });
+            } else if (exerciseType === 'bug_fix' || (exerciseType === 'mixed' && i === 2)) {
+                generatedExercises.push({
+                    title: `Debug: ${currentTopic} Implementation`,
+                    description: `Fix the syntax or logic bug in the code snippet demonstrating ${currentTopic}.`,
+                    exerciseType: 'code_debug',
+                    difficulty: 'beginner',
+                    scaffoldLevel: 'guided',
+                    bloomsLevel: 'apply',
+                    learningObjective: `Detect and rectify common implementation mistakes in ${currentTopic}.`,
+                    xpReward: 20,
+                    timeLimit: 5,
+                    testCases: {
+                        buggyCode: `# Buggy snippet for ${currentTopic}\ndef run_${cleanSlug}(val):\n    result = val\n    return reslt`,
+                        errors: [
+                            { line: 4, description: 'Typo in variable name (reslt instead of result)', correctedLine: '    return result' }
+                        ],
+                        solutionCode: `def run_${cleanSlug}(val):\n    result = val\n    return result`,
+                        explanation: 'Variable names must match the assigned identifier.'
+                    },
+                    hints: ['Check the spelling of variable names on line 4.']
+                });
+            } else {
+                generatedExercises.push({
+                    title: `${currentTopic} Implementation Challenge`,
+                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`solve_${cleanSlug}(x)\` that applies the concept of **${currentTopic}**.\n\n### Requirements:\n- Function name: \`solve_${cleanSlug}(x)\`\n- Return the computed result.`,
+                    exerciseType: 'coding',
+                    difficulty: 'beginner',
+                    scaffoldLevel: 'guided',
+                    bloomsLevel: 'apply',
+                    learningObjective: `Apply ${currentTopic} to solve a practical computation problem.`,
+                    xpReward: 25,
+                    timeLimit: 5,
+                    starterCode: `def solve_${cleanSlug}(x):\n    # Write your solution here for ${currentTopic}\n    pass\n`,
+                    solutionCode: `def solve_${cleanSlug}(x):\n    return x\n`,
+                    testCases: [
+                        { input: `solve_${cleanSlug}(5)`, expectedOutput: '5', isHidden: false },
+                        { input: `solve_${cleanSlug}(10)`, expectedOutput: '10', isHidden: true }
+                    ],
+                    hints: [`Think about how ${currentTopic} transforms the input argument.`]
+                });
+            }
+        }
+
+        return { exercises: generatedExercises };
+    }
+
+    /**
      * RAG-based Course & Units Generator from uploaded Ebook / PDF / Notes / Textbook Images
      */
     async generateTrainingModuleFromDocument({
