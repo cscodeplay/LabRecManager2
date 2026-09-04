@@ -541,12 +541,92 @@ export default function TrainingModuleWizard({
         }
     };
 
-    // Step 1 RAG File Upload Handler (Saves directly to Documents > RAG folder)
+    // Helper to synthesize complete course (Title, Units, Theory, Checkpoints, Exercises) from RAG document
+    const buildCompleteCourseFromDocument = async ({ docText, imgBase64, mime, suggestedTitle, promptHint }) => {
+        setStep1AiLoading(true);
+        const synthToastId = toast.loading('⚡ Synthesizing complete grounded course: Units, Pre-Lab Theory & Exercises...');
+
+        try {
+            const promptToUse = promptHint || suggestedTitle || moduleForm.title || step1AiPrompt || 'Comprehensive Technical Module';
+            const res = await trainingAPI.aiFromDocument({
+                documentText: docText || step1DocumentText,
+                imageBase64: imgBase64 || step1ImageBase64,
+                mimeType: mime || step1MimeType,
+                customPrompt: promptToUse,
+                language: moduleForm.language || 'python',
+                classLevel: moduleForm.classLevel || 11,
+                board: moduleForm.boardAligned || 'CBSE',
+                totalUnits: 3
+            }, step1AiProvider);
+
+            const data = res.data?.data?.module || res.data?.data?.outline || res.data?.data;
+            if (data) {
+                // 1. Populate Module Title & Metadata
+                setModuleForm(prev => ({
+                    ...prev,
+                    title: data.title || suggestedTitle || prev.title || promptToUse,
+                    titleHindi: data.titleHindi || prev.titleHindi,
+                    description: data.description || prev.description,
+                    language: data.language || prev.language,
+                    boardAligned: data.boardAligned || prev.boardAligned,
+                    classLevel: data.classLevel || prev.classLevel
+                }));
+
+                // 2. Populate Full-Blown Units with Pre-Lab Theory, Checkpoints, CBSE Tips & Exercises
+                if (Array.isArray(data.units) && data.units.length > 0) {
+                    setUnits(data.units.map((u, i) => ({
+                        id: `rag_unit_${i + 1}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                        unitNumber: u.unitNumber || i + 1,
+                        title: u.title || `Unit ${i + 1}`,
+                        description: u.description || '',
+                        expectedHours: u.expectedHours || 4,
+                        unlockThreshold: u.unlockThreshold || 80,
+                        theoryData: {
+                            summary: u.description || `Key concepts of ${u.title}`,
+                            content: u.theory || (Array.isArray(u.keyConcepts) ? `## Key Concepts\n\n${u.keyConcepts.map(c => `- ${c}`).join('\n')}` : ''),
+                            miniCheckpoints: Array.isArray(u.miniCheckpoints) ? u.miniCheckpoints : [],
+                            cbseTips: Array.isArray(u.cbseTips) ? u.cbseTips : []
+                        },
+                        exercises: Array.isArray(u.exercises) ? u.exercises.map((ex, eIdx) => ({
+                            id: `rag_ex_${eIdx + 1}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                            title: ex.title || `Challenge ${eIdx + 1}`,
+                            description: ex.description || '',
+                            theory: ex.theory || '',
+                            exerciseType: ex.exerciseType || 'coding',
+                            difficulty: ex.difficulty || 'beginner',
+                            scaffoldLevel: ex.scaffoldLevel || 'guided',
+                            bloomsLevel: ex.bloomsLevel || 'apply',
+                            learningObjective: ex.learningObjective || '',
+                            xpReward: ex.xpReward || 20,
+                            timeLimit: ex.timeLimit || 5,
+                            isReviewExercise: ex.isReviewExercise || false,
+                            starterCode: ex.starterCode || '',
+                            solutionCode: ex.solutionCode || '',
+                            testCases: Array.isArray(ex.testCases) ? ex.testCases : [],
+                            hints: Array.isArray(ex.hints) ? ex.hints : []
+                        })) : []
+                    })));
+                }
+
+                toast.success('🚀 Complete module successfully built from RAG document! Title, 3 Units, Theory & Exercises are ready and editable.', { id: synthToastId });
+            } else {
+                throw new Error('AI did not return valid course structure');
+            }
+        } catch (err) {
+            console.error('Course auto-build error:', err);
+            toast.error(`Auto-build failed: ${err.message || 'Please check AI settings'}`, { id: synthToastId });
+        } finally {
+            setStep1AiLoading(false);
+        }
+    };
+
+    // Step 1 RAG File Upload Handler (Saves directly to Documents > RAG folder & auto-builds module)
     const handleStep1FileUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         setStep1FileName(file.name);
+        setStep1AiMode('rag');
         const toastId = toast.loading(`Uploading "${file.name}" & saving to Documents > RAG...`);
 
         try {
@@ -555,7 +635,7 @@ export default function TrainingModuleWizard({
             const uploadRes = await trainingAPI.uploadRagDocument(formData);
 
             if (uploadRes.data?.success) {
-                const { extractedText, imageBase64, mimeType } = uploadRes.data.data;
+                const { extractedText, imageBase64, mimeType, suggestedTitle } = uploadRes.data.data;
                 if (extractedText) {
                     setStep1DocumentText(extractedText);
                 }
@@ -563,28 +643,57 @@ export default function TrainingModuleWizard({
                     setStep1ImageBase64(imageBase64);
                     setStep1MimeType(mimeType || file.type);
                 }
+                if (suggestedTitle) {
+                    setModuleForm(prev => ({ ...prev, title: suggestedTitle }));
+                    setStep1AiPrompt(suggestedTitle);
+                }
                 toast.success(`📁 "${file.name}" saved to Documents > RAG Documents & text extracted!`, { id: toastId });
+
+                // Automatically build the entire module (Units, Theory, Checkpoints, Exercises)
+                await buildCompleteCourseFromDocument({
+                    docText: extractedText,
+                    imgBase64: imageBase64,
+                    mime: mimeType || file.type,
+                    suggestedTitle: suggestedTitle || file.name.replace(/\.[^/.]+$/, ''),
+                    promptHint: suggestedTitle || file.name.replace(/\.[^/.]+$/, '')
+                });
             } else {
                 throw new Error(uploadRes.data?.message || 'Upload failed');
             }
         } catch (uploadErr) {
             console.warn('Backend RAG upload failed, falling back to client FileReader:', uploadErr);
+            const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
             if (file.type.startsWith('image/')) {
                 const reader = new FileReader();
-                reader.onload = () => {
+                reader.onload = async () => {
                     const base64 = reader.result.split(',')[1];
                     setStep1ImageBase64(base64);
                     setStep1MimeType(file.type);
+                    setModuleForm(prev => ({ ...prev, title: cleanTitle }));
+                    setStep1AiPrompt(cleanTitle);
                     toast.success(`📸 Image "${file.name}" loaded for Vision RAG Grounding`, { id: toastId });
+                    await buildCompleteCourseFromDocument({
+                        imgBase64: base64,
+                        mime: file.type,
+                        suggestedTitle: cleanTitle,
+                        promptHint: cleanTitle
+                    });
                 };
                 reader.readAsDataURL(file);
             } else {
                 const reader = new FileReader();
-                reader.onload = () => {
+                reader.onload = async () => {
                     const text = reader.result;
                     if (typeof text === 'string') {
                         setStep1DocumentText(text);
+                        setModuleForm(prev => ({ ...prev, title: cleanTitle }));
+                        setStep1AiPrompt(cleanTitle);
                         toast.success(`📄 "${file.name}" loaded (${text.length} chars) for RAG Grounding`, { id: toastId });
+                        await buildCompleteCourseFromDocument({
+                            docText: text,
+                            suggestedTitle: cleanTitle,
+                            promptHint: cleanTitle
+                        });
                     }
                 };
                 reader.readAsText(file);
@@ -595,75 +704,23 @@ export default function TrainingModuleWizard({
     // Step 1 AI & RAG Course Synthesis Handler
     const handleStep1AiGenerate = async () => {
         const promptToUse = step1AiPrompt.trim() || moduleForm.title.trim() || 'Python Programming Masterclass';
+
+        if (step1AiMode === 'rag' && (step1DocumentText.trim() || step1ImageBase64)) {
+            // Mode B: Full Course RAG Grounding with Auto-Build
+            await buildCompleteCourseFromDocument({
+                docText: step1DocumentText,
+                imgBase64: step1ImageBase64,
+                mime: step1MimeType,
+                suggestedTitle: moduleForm.title || promptToUse,
+                promptHint: promptToUse
+            });
+            return;
+        }
+
         setStep1AiLoading(true);
 
         try {
-            if (step1AiMode === 'rag' && (step1DocumentText.trim() || step1ImageBase64)) {
-                // Mode B: Full Course RAG Grounding
-                const res = await trainingAPI.aiFromDocument({
-                    documentText: step1DocumentText,
-                    imageBase64: step1ImageBase64,
-                    mimeType: step1MimeType,
-                    customPrompt: promptToUse,
-                    language: moduleForm.language || 'python',
-                    classLevel: moduleForm.classLevel || 11,
-                    board: moduleForm.boardAligned || 'CBSE',
-                    totalUnits: 3
-                }, step1AiProvider);
-
-                const data = res.data?.data?.module || res.data?.data?.outline || res.data?.data;
-                if (data) {
-                    setModuleForm(prev => ({
-                        ...prev,
-                        title: data.title || prev.title || promptToUse,
-                        titleHindi: data.titleHindi || prev.titleHindi,
-                        description: data.description || prev.description,
-                        language: data.language || prev.language,
-                        boardAligned: data.boardAligned || prev.boardAligned,
-                        classLevel: data.classLevel || prev.classLevel
-                    }));
-
-                    if (Array.isArray(data.units) && data.units.length > 0) {
-                        setUnits(data.units.map((u, i) => ({
-                            id: `ai_unit_${i + 1}_${Date.now()}_${Math.random()}`,
-                            unitNumber: u.unitNumber || i + 1,
-                            title: u.title || `Unit ${i + 1}`,
-                            description: u.description || '',
-                            expectedHours: u.expectedHours || 4,
-                            unlockThreshold: u.unlockThreshold || 80,
-                            theoryData: {
-                                summary: u.description || `Key concepts of ${u.title}`,
-                                content: u.theory || (Array.isArray(u.keyConcepts) ? `## Key Concepts\n\n${u.keyConcepts.map(c => `- ${c}`).join('\n')}` : ''),
-                                miniCheckpoints: Array.isArray(u.miniCheckpoints) ? u.miniCheckpoints : [],
-                                cbseTips: Array.isArray(u.cbseTips) ? u.cbseTips : []
-                            },
-                            exercises: Array.isArray(u.exercises) ? u.exercises.map((ex, eIdx) => ({
-                                id: `ai_ex_${eIdx + 1}_${Date.now()}_${Math.random()}`,
-                                title: ex.title,
-                                description: ex.description,
-                                theory: ex.theory || '',
-                                exerciseType: ex.exerciseType || 'coding',
-                                difficulty: ex.difficulty || 'beginner',
-                                scaffoldLevel: ex.scaffoldLevel || 'guided',
-                                bloomsLevel: ex.bloomsLevel || 'apply',
-                                learningObjective: ex.learningObjective || '',
-                                xpReward: ex.xpReward || 15,
-                                timeLimit: ex.timeLimit || 5,
-                                isReviewExercise: ex.isReviewExercise || false,
-                                starterCode: ex.starterCode || '',
-                                solutionCode: ex.solutionCode || '',
-                                testCases: Array.isArray(ex.testCases) ? ex.testCases : [],
-                                hints: ex.hints || []
-                            })) : []
-                        })));
-                    }
-
-                    toast.success('✨ Grounded course blueprint, units & exercises synthesized!');
-                } else {
-                    toast.error('AI did not return content. Please retry.');
-                }
-            } else {
-                // Mode A: Quick Topic Blueprint & Units Synthesis
+            // Mode A: Quick Topic Blueprint & Units Synthesis
                 const res = await trainingAPI.aiOutline({
                     topic: promptToUse,
                     language: moduleForm.language || 'python',
@@ -706,7 +763,6 @@ export default function TrainingModuleWizard({
                 } else {
                     toast.error('Failed to synthesize course outline');
                 }
-            }
         } catch (err) {
             console.error('Step 1 AI generation error:', err);
             toast.error(err.response?.data?.message || 'AI course generation failed');

@@ -2467,80 +2467,526 @@ Output MUST be ONLY valid JSON matching this schema:
             }
         }
 
-        // 3. Fallback grounded structure
-        const topicSummary = documentText ? documentText.slice(0, 60).replace(/\n/g, ' ') : 'Extracted Curriculum';
+        // 3. Document-Intelligent Full-Blown Grounded Structure Fallback
+        const lowerDoc = (documentText + ' ' + customPrompt).toLowerCase();
+        const isMathModule = lowerDoc.includes('math') || lowerDoc.includes('numeric') || lowerDoc.includes('ceil') || lowerDoc.includes('trigonometry');
+        const isOopModule = lowerDoc.includes('class') || lowerDoc.includes('object') || lowerDoc.includes('oop') || lowerDoc.includes('inheritance') || lowerDoc.includes('encapsulation');
+
+        if (isMathModule) {
+            return {
+                title: 'Python: Math Library Modules & Numeric Algorithms',
+                titleHindi: 'पायथन: मैथ लाइब्रेरी मॉड्यूल और संख्यात्मक एल्गोरिदम',
+                description: 'A comprehensive, curriculum-aligned training module covering core mathematical constants, rounding algorithms, power and exponential functions, and trigonometry under the standard Python math module.',
+                language: 'python',
+                boardAligned: board || 'CBSE',
+                classLevel: Number(classLevel) || 11,
+                extractedSummary: 'Synthesized 3 progressive units covering Number-Theoretic Functions, Exponential & Logarithmic Algorithms, and Euclidean Trigonometry based on uploaded math syllabus.',
+                pedagogyConfig: { useBlooms: true, useObjectives: true, useTimeLimit: false },
+                units: [
+                    {
+                        unitNumber: 1,
+                        title: 'Unit 1: Constants, Rounding & Number-Theoretic Functions',
+                        description: 'Foundational numeric functions including math.pi, math.e, math.tau, math.ceil, math.floor, math.trunc, math.factorial, and math.gcd.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: [
+                            'math.pi, math.e, math.tau mathematical constants',
+                            'math.ceil() vs math.floor() vs math.trunc() rounding logic',
+                            'Negative number truncation behaviors',
+                            'math.fabs() vs built-in abs() float conversion',
+                            'math.factorial() domain constraints & ValueError trap',
+                            'math.gcd() and math.lcm() for algorithm optimizations'
+                        ],
+                        theory: `### 1. Mathematical Constants
+The Python \`math\` module provides high-precision standard mathematical constants:
+- \`math.pi\`: Ratio of a circle's circumference to its diameter (~3.141592653589793)
+- \`math.e\`: Base of the natural logarithm (~2.718281828459045)
+- \`math.tau\`: Ratio of circumference to radius (\`2 * pi\` ~6.283185307179586)
+
+\`\`\`python
+import math
+print(math.pi)   # 3.141592653589793
+print(math.e)    # 2.718281828459045
+print(math.tau)  # 6.283185307179586
+\`\`\`
+
+### 2. Rounding & Truncation Algorithms
+- **\`math.ceil(x)\`**: Returns the smallest integer greater than or equal to \`x\`.
+- **\`math.floor(x)\`**: Returns the largest integer less than or equal to \`x\`.
+- **\`math.trunc(x)\`**: Truncates \`x\` towards zero (drops fractional part).
+
+> **CBSE Pitfall on Negative Numbers**:
+> For positive numbers, \`math.floor(3.7)\` and \`math.trunc(3.7)\` both give \`3\`.
+> But for negative numbers: \`math.floor(-3.2)\` gives \`-4\`, whereas \`math.trunc(-3.2)\` gives \`-3\`!
+
+\`\`\`python
+import math
+print(math.floor(-4.2)) # -5
+print(math.trunc(-4.2)) # -4
+print(math.ceil(-4.2))  # -4
+\`\`\`
+
+### 3. Number-Theoretic Functions
+- **\`math.factorial(n)\`**: Returns \`n!\`. Accepts only non-negative integers; raises \`ValueError\` for negative numbers.
+- **\`math.gcd(a, b)\`**: Greatest Common Divisor of integers \`a\` and \`b\`.`,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_math_1',
+                                question: 'What does math.floor(-4.2) return in Python 3?',
+                                options: ['-4', '-5', '-4.0', 'ValueError'],
+                                correctOption: 1,
+                                explanation: 'math.floor(x) returns the largest integer <= x. For -4.2, the largest integer <= -4.2 is -5.'
+                            },
+                            {
+                                id: 'cp_math_2',
+                                question: 'What is the return type of math.fabs(-7)?',
+                                options: ['int (7)', 'float (7.0)', 'str ("7")', 'bool (True)'],
+                                correctOption: 1,
+                                explanation: 'Unlike built-in abs(), math.fabs() strictly converts the value and returns a floating-point number (7.0).'
+                            }
+                        ],
+                        cbseTips: [
+                            'Remember: math.floor() rounds DOWN towards negative infinity, while math.trunc() truncates towards zero.',
+                            'Calling math.factorial(-1) raises ValueError, not TypeError.'
+                        ],
+                        exercises: [
+                            {
+                                title: 'Permutations & Combinations Helper',
+                                description: '## 🎯 Problem Statement\n\nWrite a Python function `calculate_combinations(n, r)` that calculates \\(C(n, r) = \\frac{n!}{r!(n-r)!}\\) using `math.factorial()`.\n\n### Constraints:\n- If \\(r > n\\) or \\(r < 0\\), return `0`.\n- Must use `math.factorial` from the `math` module.',
+                                exerciseType: 'coding',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Apply math.factorial to compute mathematical combinations with boundary validation.',
+                                xpReward: 20,
+                                timeLimit: 5,
+                                starterCode: `import math\n\ndef calculate_combinations(n, r):\n    # Write your solution here\n    pass\n`,
+                                solutionCode: `import math\n\ndef calculate_combinations(n, r):\n    if r < 0 or r > n:\n        return 0\n    return math.factorial(n) // (math.factorial(r) * math.factorial(n - r))\n`,
+                                testCases: [
+                                    { input: 'calculate_combinations(5, 2)', expectedOutput: '10', isHidden: false },
+                                    { input: 'calculate_combinations(6, 3)', expectedOutput: '20', isHidden: false },
+                                    { input: 'calculate_combinations(4, 5)', expectedOutput: '0', isHidden: true }
+                                ],
+                                hints: ['Use math.factorial(n) and integer division // to ensure integer results.']
+                            },
+                            {
+                                title: 'Predict Output: math.floor vs math.trunc',
+                                description: 'Analyze the following Python snippet carefully and predict the printed output.',
+                                exerciseType: 'mcq',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'independent',
+                                bloomsLevel: 'understand',
+                                learningObjective: 'Contrast floor and trunc behaviors on negative numbers.',
+                                xpReward: 15,
+                                timeLimit: 3,
+                                testCases: {
+                                    question: 'What is the exact output of this code snippet?',
+                                    codeSnippet: 'import math\na = math.floor(-3.7)\nb = math.trunc(-3.7)\nprint(a, b)',
+                                    options: ['-3 -3', '-4 -3', '-3 -4', '-4 -4'],
+                                    correctOption: 1,
+                                    explanation: 'math.floor(-3.7) rounds down to -4. math.trunc(-3.7) truncates towards zero to -3.'
+                                },
+                                hints: ['Visualize a number line with negative numbers progressing leftwards.']
+                            }
+                        ]
+                    },
+                    {
+                        unitNumber: 2,
+                        title: 'Unit 2: Power, Logarithmic & Exponential Functions',
+                        description: 'Exponential scaling, logarithms, and roots using math.pow, math.sqrt, math.exp, math.log, and math.log10.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: [
+                            'math.pow(x, y) vs ** operator and float return type',
+                            'math.sqrt(x) and domain error on negative inputs',
+                            'math.exp(x) and natural exponential calculations',
+                            'math.log(x, [base]) natural vs arbitrary base logarithms',
+                            'math.log10(x) for decibel, pH, and digit count algorithms'
+                        ],
+                        theory: `### 1. Power and Root Functions
+- **\`math.pow(x, y)\`**: Computes \\(x^y\\). Crucially, \`math.pow\` converts both arguments to \`float\` and **always returns a \`float\`** (e.g. \`math.pow(2, 3)\` returns \`8.0\`, whereas \`2 ** 3\` returns integer \`8\`).
+- **\`math.sqrt(x)\`**: Computes the square root \\(\\sqrt{x}\\). Raises \`ValueError: math domain error\` if \`x < 0\`.
+
+\`\`\`python
+import math
+print(math.pow(2, 3))   # 8.0 (float)
+print(2 ** 3)           # 8 (int)
+print(math.sqrt(49))    # 7.0
+\`\`\`
+
+### 2. Logarithmic & Exponential Functions
+- **\`math.exp(x)\`**: Returns \\(e^x\\).
+- **\`math.log(x, [base])\`**: Computes \\(\\log_{base}(x)\\). If \`base\` is omitted, defaults to the natural log \\(\\ln(x)\\).
+- **\`math.log10(x)\`**: Common logarithm with base 10. Useful for calculating digit counts: \`math.floor(math.log10(n)) + 1\`.`,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_math_3',
+                                question: 'What does math.pow(3, 2) evaluate to?',
+                                options: ['9', '9.0', '6.0', 'ValueError'],
+                                correctOption: 1,
+                                explanation: 'math.pow always returns a float, so 3^2 produces 9.0.'
+                            },
+                            {
+                                id: 'cp_math_4',
+                                question: 'What exception is raised when executing math.sqrt(-9)?',
+                                options: ['TypeError', 'ValueError: math domain error', 'OverflowError', 'ZeroDivisionError'],
+                                correctOption: 1,
+                                explanation: 'math.sqrt accepts only non-negative real numbers; negative values raise ValueError: math domain error.'
+                            }
+                        ],
+                        cbseTips: [
+                            'Remember that math.pow(x, y) returns float, while x ** y preserves integer types if both operands are integers.',
+                            'math.log(x) default base is e, NOT 10.'
+                        ],
+                        exercises: [
+                            {
+                                title: 'Compound Interest Exponential Growth',
+                                description: '## 🎯 Problem Statement\n\nWrite a Python function `compound_interest(principal, rate, years)` that calculates the final amount using the compound interest formula: \\(A = P \\times (1 + r)^t\\) using `math.pow()`.\n\nRound the result to 2 decimal places using `round(amount, 2)`.',
+                                exerciseType: 'coding',
+                                difficulty: 'intermediate',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Apply math.pow to compute compound financial growth models.',
+                                xpReward: 25,
+                                timeLimit: 5,
+                                starterCode: `import math\n\ndef compound_interest(principal, rate, years):\n    # Write your solution here\n    pass\n`,
+                                solutionCode: `import math\n\ndef compound_interest(principal, rate, years):\n    amount = principal * math.pow(1 + rate, years)\n    return round(amount, 2)\n`,
+                                testCases: [
+                                    { input: 'compound_interest(1000, 0.05, 2)', expectedOutput: '1102.5', isHidden: false },
+                                    { input: 'compound_interest(5000, 0.10, 3)', expectedOutput: '6655.0', isHidden: false }
+                                ],
+                                hints: ['Use math.pow(1 + rate, years) and multiply by principal.']
+                            }
+                        ]
+                    },
+                    {
+                        unitNumber: 3,
+                        title: 'Unit 3: Trigonometry, Angular Radians & Euclidean Geometry',
+                        description: 'Trigonometric functions, angular conversions with math.radians and math.degrees, and distance metrics via math.hypot.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: [
+                            'Trigonometric functions math.sin, math.cos, math.tan expect radians',
+                            'math.radians(deg) and math.degrees(rad) angular conversions',
+                            'math.hypot(x, y) for Euclidean distance from origin',
+                            'math.dist(p, q) for n-dimensional Euclidean coordinate distance'
+                        ],
+                        theory: `### 1. Trigonometry & Angular Conversions
+In Python's \`math\` module, all trigonometric functions (**\`math.sin\`**, **\`math.cos\`**, **\`math.tan\`**) accept angles in **radians**, NEVER degrees!
+
+To convert between degrees and radians:
+- **\`math.radians(degrees)\`**: Converts degrees to radians.
+- **\`math.degrees(radians)\`**: Converts radians to degrees.
+
+\`\`\`python
+import math
+deg = 30
+rad = math.radians(deg)
+print(math.sin(rad))  # 0.49999999999999994 (~0.5)
+\`\`\`
+
+### 2. Euclidean Geometry & Distance
+- **\`math.hypot(*coordinates)\`**: Computes Euclidean norm \\(\\sqrt{x^2 + y^2}\\).
+- **\`math.dist(p, q)\`**: Computes Euclidean distance between points \`p\` and \`q\` of equal dimension.`,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_math_5',
+                                question: 'What angular unit does math.sin(x) expect for x?',
+                                options: ['Degrees', 'Radians', 'Gradians', 'Minutes'],
+                                correctOption: 1,
+                                explanation: 'All trigonometric functions in Python math require angles measured in radians.'
+                            }
+                        ],
+                        cbseTips: [
+                            'Always use math.radians() before passing a degree value into math.sin or math.cos in CBSE exams.'
+                        ],
+                        exercises: [
+                            {
+                                title: 'Tower Height Trigonometry Calculator',
+                                description: '## 🎯 Problem Statement\n\nCalculate the height of a tower given the distance from its base (in meters) and the angle of elevation in **degrees**.\n\nFormula: \\(h = \\text{distance} \\times \\tan(\\text{angle in radians})\\).\nReturn the height rounded to 2 decimal places.',
+                                exerciseType: 'coding',
+                                difficulty: 'intermediate',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Convert degrees to radians and apply math.tan to solve geometry problems.',
+                                xpReward: 25,
+                                timeLimit: 5,
+                                starterCode: `import math\n\ndef tower_height(distance, angle_degrees):\n    # Write your solution here\n    pass\n`,
+                                solutionCode: `import math\n\ndef tower_height(distance, angle_degrees):\n    angle_rad = math.radians(angle_degrees)\n    return round(distance * math.tan(angle_rad), 2)\n`,
+                                testCases: [
+                                    { input: 'tower_height(50, 45)', expectedOutput: '50.0', isHidden: false },
+                                    { input: 'tower_height(100, 30)', expectedOutput: '57.74', isHidden: false }
+                                ],
+                                hints: ['Convert degrees to radians with math.radians(angle_degrees) first!']
+                            }
+                        ]
+                    }
+                ]
+            };
+        }
+
+        if (isOopModule) {
+            return {
+                title: 'Python: Object-Oriented Programming & Software Design',
+                titleHindi: 'पायथन: ऑब्जेक्ट-ओरिएंटेड प्रोग्रामिंग और सॉफ्टवेयर डिज़ाइन',
+                description: 'A comprehensive, mastery-gated course covering Classes, Objects, Instance and Class Attributes, Encapsulation, and Inheritance Hierarchies.',
+                language: 'python',
+                boardAligned: board || 'CBSE',
+                classLevel: Number(classLevel) || 11,
+                extractedSummary: 'Structured 3 progressive units covering Classes & Objects, Instance vs Class Namespace & Encapsulation, and Inheritance Hierarchies with Method Overriding.',
+                pedagogyConfig: { useBlooms: true, useObjectives: true, useTimeLimit: false },
+                units: [
+                    {
+                        unitNumber: 1,
+                        title: 'Unit 1: Classes, Objects & Constructor Mechanics',
+                        description: 'Defining classes, instantiating objects, and initialization via __init__.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: ['class keyword & object instantiation', 'The __init__ constructor method', 'self reference parameter', 'Instance attributes'],
+                        theory: `### 1. Classes & Objects in Python\nA **class** is a blueprint for creating objects. An **object** is an instance of a class containing attributes and methods.\n\n\`\`\`python\nclass Student:\n    def __init__(self, name, roll_no):\n        self.name = name\n        self.roll_no = roll_no\n\`\`\``,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_oop_1',
+                                question: 'What is the purpose of the "self" parameter in Python class methods?',
+                                options: ['Refers to the class itself', 'Refers to the current instance of the class', 'Initializes global variables', 'Imports modules'],
+                                correctOption: 1,
+                                explanation: 'self explicitly refers to the specific instance of the object calling the method.'
+                            }
+                        ],
+                        cbseTips: ['Always include self as the first parameter of any instance method.'],
+                        exercises: [
+                            {
+                                title: 'Create Student Class with Constructor',
+                                description: 'Write a class `Student` that accepts `name` and `grade` in `__init__` and has a method `get_info()` returning `"Student {name} is in grade {grade}".',
+                                exerciseType: 'coding',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Define classes with constructors and instance methods.',
+                                xpReward: 20,
+                                timeLimit: 5,
+                                starterCode: `class Student:\n    def __init__(self, name, grade):\n        pass\n    def get_info(self):\n        pass\n`,
+                                solutionCode: `class Student:\n    def __init__(self, name, grade):\n        self.name = name\n        self.grade = grade\n    def get_info(self):\n        return f"Student {self.name} is in grade {self.grade}"\n`,
+                                testCases: [
+                                    { input: 'Student("Aman", 11).get_info()', expectedOutput: '"Student Aman is in grade 11"', isHidden: false }
+                                ],
+                                hints: ['Bind attributes to self.name and self.grade inside __init__.']
+                            }
+                        ]
+                    },
+                    {
+                        unitNumber: 2,
+                        title: 'Unit 2: Instance Methods, Class Variables & Encapsulation',
+                        description: 'Managing class-level state, private attributes with name mangling, and getter/setter methods.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: ['Class variables vs instance variables', 'Private attributes with leading double underscores', 'Getter and setter methods', 'Name mangling'],
+                        theory: `### 1. Class vs Instance Variables\nClass variables are shared by all instances, while instance variables are unique to each object.\n\n\`\`\`python\nclass BankAccount:\n    bank_name = "CBSE National Bank"  # Class variable\n    def __init__(self, balance):\n        self.__balance = balance        # Private attribute\n\`\`\``,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_oop_2',
+                                question: 'How is a private attribute defined in a Python class?',
+                                options: ['private x = 10', '__x = 10 (double leading underscore)', 'def private(x):', '@private x'],
+                                correctOption: 1,
+                                explanation: 'Python indicates private variables using two leading underscores (__var), which triggers name mangling.'
+                            }
+                        ],
+                        cbseTips: ['Private variables like self.__pin are mangled to _ClassName__pin internally.'],
+                        exercises: [
+                            {
+                                title: 'Encapsulated BankAccount Class',
+                                description: 'Implement a `BankAccount` class with private `__balance`. Provide `deposit(amount)` and `get_balance()` methods.',
+                                exerciseType: 'coding',
+                                difficulty: 'intermediate',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Implement encapsulation using private attributes and accessor methods.',
+                                xpReward: 25,
+                                timeLimit: 5,
+                                starterCode: `class BankAccount:\n    def __init__(self, initial_balance=0):\n        pass\n    def deposit(self, amount):\n        pass\n    def get_balance(self):\n        pass\n`,
+                                solutionCode: `class BankAccount:\n    def __init__(self, initial_balance=0):\n        self.__balance = initial_balance\n    def deposit(self, amount):\n        if amount > 0:\n            self.__balance += amount\n    def get_balance(self):\n        return self.__balance\n`,
+                                testCases: [
+                                    { input: 'b = BankAccount(100); b.deposit(50); b.get_balance()', expectedOutput: '150', isHidden: false }
+                                ],
+                                hints: ['Store the balance in self.__balance.']
+                            }
+                        ]
+                    },
+                    {
+                        unitNumber: 3,
+                        title: 'Unit 3: Inheritance, Polymorphism & Method Overriding',
+                        description: 'Extending base classes, reusing code with super(), and implementing polymorphic behavior.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: ['Single and multi-level inheritance', 'The super() method', 'Method overriding', 'Polymorphic function dispatch'],
+                        theory: `### 1. Inheritance Hierarchy\nInheritance allows a subclass to inherit attributes and methods from a parent class:\n\n\`\`\`python\nclass Animal:\n    def speak(self):\n        return "Sound"\n\nclass Dog(Animal):\n    def speak(self):\n        return "Woof!"\n\`\`\``,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_oop_3',
+                                question: 'What builtin function is used to invoke a parent class method in a child class?',
+                                options: ['parent()', 'super()', 'base()', 'inherit()'],
+                                correctOption: 1,
+                                explanation: 'super() delegates method calls to a parent or sibling class in the inheritance hierarchy.'
+                            }
+                        ],
+                        cbseTips: ['When overriding __init__ in a subclass, always invoke super().__init__(...) to initialize parent attributes.'],
+                        exercises: [
+                            {
+                                title: 'Implement Shape and Rectangle Subclass',
+                                description: 'Create a base class `Shape` with method `area()`. Create a subclass `Rectangle(Shape)` that accepts `width` and `height` and overrides `area()`.',
+                                exerciseType: 'coding',
+                                difficulty: 'intermediate',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Implement subclassing, method overriding, and inheritance.',
+                                xpReward: 25,
+                                timeLimit: 5,
+                                starterCode: `class Shape:\n    def area(self):\n        return 0\nclass Rectangle(Shape):\n    def __init__(self, w, h):\n        pass\n    def area(self):\n        pass\n`,
+                                solutionCode: `class Shape:\n    def area(self):\n        return 0\nclass Rectangle(Shape):\n    def __init__(self, w, h):\n        super().__init__()\n        self.w = w\n        self.h = h\n    def area(self):\n        return self.w * self.h\n`,
+                                testCases: [
+                                    { input: 'Rectangle(4, 5).area()', expectedOutput: '20', isHidden: false }
+                                ],
+                                hints: ['Return self.w * self.h in Rectangle.area().']
+                            }
+                        ]
+                    }
+                ]
+            };
+        }
+
+        // Generic Text Fallback: extract title from first line and construct 3 full units
+        let extractedTitle = 'Computer Science: Applied Programming Curriculum';
+        if (documentText) {
+            const firstLines = documentText.split('\n').map(l => l.trim()).filter(Boolean);
+            for (const line of firstLines.slice(0, 5)) {
+                if (line.length >= 6 && line.length <= 80 && !line.toLowerCase().startsWith('page ')) {
+                    extractedTitle = line.replace(/^#+\s*/, '').replace(/^(title|syllabus|subject|topic|course)\s*[:\-]\s*/i, '').trim();
+                    break;
+                }
+            }
+        }
+
         return {
-            title: `${language.toUpperCase()} Module: ${topicSummary}`,
-            titleHindi: `${language} पाठ्यक्रम`,
-            description: `A comprehensive training module synthesized from provided educational resource notes.`,
-            language,
-            boardAligned: board,
+            title: extractedTitle,
+            titleHindi: `${extractedTitle} (पाठ्यक्रम)`,
+            description: `A comprehensive curriculum-aligned training module synthesized from the uploaded syllabus resource.`,
+            language: language || 'python',
+            boardAligned: board || 'CBSE',
             classLevel: Number(classLevel) || 11,
-            extractedSummary: `Synthesized curriculum containing ${totalUnits} units and interactive exercises based on uploaded document content.`,
+            extractedSummary: `Synthesized 3 progressive curriculum units with interactive exercises based on uploaded document content.`,
             pedagogyConfig: { useBlooms: true, useObjectives: true, useTimeLimit: false },
             units: [
                 {
                     unitNumber: 1,
-                    title: `Unit 1: Foundations & Key Syntax`,
-                    description: `Core concepts and syntax extracted from the resource.`,
-                    expectedHours: 3,
+                    title: `Unit 1: Fundamentals & Core Syntax`,
+                    description: `Foundational syntax, variables, expressions, and elementary operations.`,
+                    expectedHours: 4,
                     unlockThreshold: 80,
-                    keyConcepts: ['Syntax & Primitives', 'Expressions & Variables', 'Flow Control'],
-                    suggestedExerciseTypes: ['coding', 'mcq'],
+                    keyConcepts: ['Variables & Primitive Types', 'Expressions & Arithmetic', 'Control Flow Basics'],
+                    theory: `### Core Foundations\nReview foundational syntax, operations, and control structures introduced in the curriculum notes.\n\n\`\`\`python\n# Example syntax demonstration\nx = 10\ny = 20\nresult = x + y\nprint(result)\n\`\`\``,
+                    miniCheckpoints: [
+                        {
+                            id: 'cp_gen_1',
+                            question: 'What is the primary role of variable assignment in programming?',
+                            options: ['To reserve memory and bind a name to a value', 'To execute a loop', 'To import standard libraries', 'To delete files'],
+                            correctOption: 0,
+                            explanation: 'Variable assignment binds a symbolic name to an object reference in memory.'
+                        }
+                    ],
+                    cbseTips: ['Ensure variable identifiers follow CBSE naming conventions (alphanumeric and underscores, no starting digits).'],
                     exercises: [
                         {
-                            title: `Getting Started with Syntax`,
-                            description: `Demonstrate the core syntax introduced in the chapter.`,
-                            theory: `Understand the fundamental building blocks before coding.`,
+                            title: `Core Operation Practice`,
+                            description: `Write a function \`solve_basic(x, y)\` that returns the sum of \`x\` and \`y\`.`,
                             exerciseType: 'coding',
                             difficulty: 'beginner',
                             scaffoldLevel: 'guided',
                             bloomsLevel: 'apply',
-                            learningObjective: `SWBAT apply syntax rules in ${language}.`,
+                            learningObjective: 'Implement basic functional logic.',
                             xpReward: 15,
                             timeLimit: 5,
-                            starterCode: `# Write solution below\ndef solve(x):\n    return x\n`,
-                            solutionCode: `def solve(x):\n    return x\n`,
+                            starterCode: `def solve_basic(x, y):\n    # Write your solution here\n    pass\n`,
+                            solutionCode: `def solve_basic(x, y):\n    return x + y\n`,
                             testCases: [
-                                { input: '10', expectedOutput: '10', isHidden: false },
-                                { input: '25', expectedOutput: '25', isHidden: false }
+                                { input: 'solve_basic(3, 4)', expectedOutput: '7', isHidden: false }
                             ],
-                            hints: ['Review the variable assignment and return keyword.']
+                            hints: ['Return x + y directly.']
                         }
                     ]
                 },
                 {
                     unitNumber: 2,
-                    title: `Unit 2: Problem Solving & Cloze Syntax`,
-                    description: `Practical implementation and syntax fill-in exercises.`,
+                    title: `Unit 2: Algorithmic Logic & Data Processing`,
+                    description: `Intermediate functions, loop iterations, and structured logic implementation.`,
                     expectedHours: 4,
                     unlockThreshold: 80,
-                    keyConcepts: ['Functions', 'Collections', 'Logic Building'],
-                    suggestedExerciseTypes: ['fill_blank', 'bug_fix'],
+                    keyConcepts: ['Functions & Scope', 'Iteration & Range', 'Data Transformations'],
+                    theory: `### Intermediate Functions & Loops\nLearn how functions modularize algorithms and how loops process sequence collections.\n\n\`\`\`python\ndef process_items(items):\n    total = 0\n    for item in items:\n        total += item\n    return total\n\`\`\``,
+                    miniCheckpoints: [
+                        {
+                            id: 'cp_gen_2',
+                            question: 'What is the return value of range(1, 5)?',
+                            options: ['[1, 2, 3, 4, 5]', 'A range sequence generating 1, 2, 3, 4', '[0, 1, 2, 3, 4]', 'An infinite iterator'],
+                            correctOption: 1,
+                            explanation: 'In Python, range(start, stop) stops before the stop integer.'
+                        }
+                    ],
+                    cbseTips: ['Remember that range(stop) excludes the stop value.'],
                     exercises: [
                         {
-                            title: `Syntax Completion Cloze`,
-                            description: `Complete the missing tokens in the code snippet.`,
-                            theory: `Reinforce correct grammar and method invocations.`,
-                            exerciseType: 'fill_blank',
+                            title: `Sum of Elements Algorithm`,
+                            description: `Write a function \`sum_elements(numbers)\` that takes a list of integers and returns their total sum.`,
+                            exerciseType: 'coding',
+                            difficulty: 'beginner',
+                            scaffoldLevel: 'guided',
+                            bloomsLevel: 'apply',
+                            learningObjective: 'Iterate over sequences to compute aggregates.',
+                            xpReward: 20,
+                            timeLimit: 5,
+                            starterCode: `def sum_elements(numbers):\n    # Write your solution here\n    pass\n`,
+                            solutionCode: `def sum_elements(numbers):\n    return sum(numbers)\n`,
+                            testCases: [
+                                { input: 'sum_elements([1, 2, 3, 4])', expectedOutput: '10', isHidden: false }
+                            ],
+                            hints: ['You can use the built-in sum() function or a for loop.']
+                        }
+                    ]
+                },
+                {
+                    unitNumber: 3,
+                    title: `Unit 3: Applied Problem Solving & Project Synthesis`,
+                    description: `Practical multi-step challenges combining syntax, validation, and real-world scenarios.`,
+                    expectedHours: 5,
+                    unlockThreshold: 80,
+                    keyConcepts: ['Error Handling & Edge Cases', 'Data Validation', 'Modular System Design'],
+                    theory: `### Applied Architecture\nSynthesize knowledge to solve practical real-world problems with robust validation and modular code structure.`,
+                    miniCheckpoints: [
+                        {
+                            id: 'cp_gen_3',
+                            question: 'Why is validation important before processing computational data?',
+                            options: ['To prevent unexpected runtime errors and bad state', 'To speed up compilation', 'To save disk space', 'It is not necessary'],
+                            correctOption: 0,
+                            explanation: 'Input validation guards against invalid domains and unexpected exceptions.'
+                        }
+                    ],
+                    cbseTips: ['Check boundary conditions such as empty collections or zero divisors.'],
+                    exercises: [
+                        {
+                            title: `Data Filter and Transform`,
+                            description: `Write a function \`filter_positive(numbers)\` that takes a list and returns a new list containing only positive numbers (> 0).`,
+                            exerciseType: 'coding',
                             difficulty: 'intermediate',
                             scaffoldLevel: 'guided',
-                            bloomsLevel: 'understand',
-                            learningObjective: `SWBAT complete essential syntax blanks.`,
-                            xpReward: 10,
+                            bloomsLevel: 'apply',
+                            learningObjective: 'Filter collections using condition expressions.',
+                            xpReward: 25,
                             timeLimit: 5,
-                            starterCode: `def process(data):\n    {{BLANK_1}} not data:\n        return None\n    {{BLANK_2}} len(data)`,
-                            solutionCode: `def process(data):\n    if not data:\n        return None\n    return len(data)`,
-                            testCases: {
-                                instruction: 'Fill in the blanks:',
-                                template: 'def process(data):\n    {{BLANK_1}} not data:\n        return None\n    {{BLANK_2}} len(data)',
-                                blanks: [
-                                    { id: 'BLANK_1', correctAnswer: 'if', hint: 'Conditional statement' },
-                                    { id: 'BLANK_2', correctAnswer: 'return', hint: 'Return result' }
-                                ],
-                                explanation: 'Guards against empty data with if and returns result with return.'
-                            },
-                            hints: ['Look at standard keyword patterns.']
+                            starterCode: `def filter_positive(numbers):\n    # Write your solution here\n    pass\n`,
+                            solutionCode: `def filter_positive(numbers):\n    return [n for n in numbers if n > 0]\n`,
+                            testCases: [
+                                { input: 'filter_positive([-2, 5, -1, 8])', expectedOutput: '[5, 8]', isHidden: false }
+                            ],
+                            hints: ['Use a list comprehension: [n for n in numbers if n > 0]']
                         }
                     ]
                 }

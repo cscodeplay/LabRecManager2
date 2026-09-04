@@ -1909,6 +1909,31 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
         const docName = originalName.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
         const publicUrl = `/RAG/${safeName}`;
 
+        // Extract suggested title from document content or original file name
+        let suggestedTitle = '';
+        if (extractedText) {
+            const lines = extractedText.split('\n').map(l => l.trim()).filter(Boolean);
+            for (const l of lines.slice(0, 10)) {
+                if (l.length >= 6 && l.length <= 90 && !l.toLowerCase().startsWith('page ') && !l.startsWith('http')) {
+                    if (l.includes(':') && l.split(':')[1].trim().length >= 8) {
+                        const candidate = l.split(':')[1].trim();
+                        if (!candidate.toLowerCase().includes('http') && candidate.length <= 70) {
+                            suggestedTitle = candidate;
+                            break;
+                        }
+                    }
+                    suggestedTitle = l.replace(/^#+\s*/, '').replace(/^(title|syllabus|subject|topic|course)\s*[:\-]\s*/i, '').trim();
+                    if (suggestedTitle.length >= 6 && suggestedTitle.length <= 75) {
+                        break;
+                    }
+                }
+            }
+        }
+        if (!suggestedTitle || suggestedTitle.length < 5) {
+            suggestedTitle = originalName.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ')
+                .replace(/\b\w/g, c => c.toUpperCase());
+        }
+
         const doc = await prisma.document.create({
             data: {
                 schoolId,
@@ -1933,6 +1958,7 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
                 documentId: doc.id,
                 name: doc.name,
                 fileName: originalName,
+                suggestedTitle,
                 url: publicUrl,
                 folderName: 'RAG Documents',
                 extractedText,
