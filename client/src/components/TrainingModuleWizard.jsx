@@ -625,9 +625,25 @@ export default function TrainingModuleWizard({
         const file = e.target.files?.[0];
         if (!file) return;
 
+        // 1. Instant human-friendly title calculated from the filename
+        const cleanFileTitle = file.name
+            .replace(/\.[^/.]+$/, '')
+            .replace(/[-_]/g, ' ')
+            .replace(/\b(pdf|syllabus|notes|ebook|guide|document|resource|chapter|unit)\b/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .replace(/\b\w/g, c => c.toUpperCase()) || file.name.replace(/\.[^/.]+$/, '');
+
+        // 2. Immediately populate Course Title & Prompt so the field is never left blank
         setStep1FileName(file.name);
         setStep1AiMode('rag');
-        const toastId = toast.loading(`Uploading "${file.name}" & saving to Documents > RAG...`);
+        setModuleForm(prev => ({
+            ...prev,
+            title: prev.title?.trim() ? prev.title : cleanFileTitle
+        }));
+        setStep1AiPrompt(prev => prev?.trim() ? prev : cleanFileTitle);
+
+        const toastId = toast.loading(`Uploading "${file.name}" & extracting content...`);
 
         try {
             const formData = new FormData();
@@ -643,60 +659,78 @@ export default function TrainingModuleWizard({
                     setStep1ImageBase64(imageBase64);
                     setStep1MimeType(mimeType || file.type);
                 }
-                if (suggestedTitle) {
-                    setModuleForm(prev => ({ ...prev, title: suggestedTitle }));
-                    setStep1AiPrompt(suggestedTitle);
-                }
-                toast.success(`📁 "${file.name}" saved to Documents > RAG Documents & text extracted!`, { id: toastId });
+
+                const finalTitle = (suggestedTitle && suggestedTitle.trim().length >= 4) ? suggestedTitle.trim() : cleanFileTitle;
+                setModuleForm(prev => ({ ...prev, title: finalTitle }));
+                setStep1AiPrompt(finalTitle);
+
+                toast.success(`📁 "${file.name}" saved to Documents > RAG & title extracted!`, { id: toastId });
 
                 // Automatically build the entire module (Units, Theory, Checkpoints, Exercises)
                 await buildCompleteCourseFromDocument({
                     docText: extractedText,
                     imgBase64: imageBase64,
                     mime: mimeType || file.type,
-                    suggestedTitle: suggestedTitle || file.name.replace(/\.[^/.]+$/, ''),
-                    promptHint: suggestedTitle || file.name.replace(/\.[^/.]+$/, '')
+                    suggestedTitle: finalTitle,
+                    promptHint: finalTitle
                 });
             } else {
                 throw new Error(uploadRes.data?.message || 'Upload failed');
             }
         } catch (uploadErr) {
             console.warn('Backend RAG upload failed, falling back to client FileReader:', uploadErr);
-            const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+            // Ensure title is present
+            setModuleForm(prev => ({ ...prev, title: prev.title?.trim() ? prev.title : cleanFileTitle }));
+            setStep1AiPrompt(cleanFileTitle);
+
             if (file.type.startsWith('image/')) {
                 const reader = new FileReader();
                 reader.onload = async () => {
                     const base64 = reader.result.split(',')[1];
                     setStep1ImageBase64(base64);
                     setStep1MimeType(file.type);
-                    setModuleForm(prev => ({ ...prev, title: cleanTitle }));
-                    setStep1AiPrompt(cleanTitle);
                     toast.success(`📸 Image "${file.name}" loaded for Vision RAG Grounding`, { id: toastId });
                     await buildCompleteCourseFromDocument({
                         imgBase64: base64,
                         mime: file.type,
-                        suggestedTitle: cleanTitle,
-                        promptHint: cleanTitle
+                        suggestedTitle: cleanFileTitle,
+                        promptHint: cleanFileTitle
                     });
                 };
                 reader.readAsDataURL(file);
             } else {
                 const reader = new FileReader();
                 reader.onload = async () => {
-                    const text = reader.result;
-                    if (typeof text === 'string') {
+                    if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+                        const text = reader.result;
                         setStep1DocumentText(text);
-                        setModuleForm(prev => ({ ...prev, title: cleanTitle }));
-                        setStep1AiPrompt(cleanTitle);
                         toast.success(`📄 "${file.name}" loaded (${text.length} chars) for RAG Grounding`, { id: toastId });
                         await buildCompleteCourseFromDocument({
                             docText: text,
-                            suggestedTitle: cleanTitle,
-                            promptHint: cleanTitle
+                            suggestedTitle: cleanFileTitle,
+                            promptHint: cleanFileTitle
+                        });
+                    } else {
+                        // PDF binary fallback
+                        const base64 = typeof reader.result === 'string' ? reader.result.split(',')[1] : null;
+                        if (base64) {
+                            setStep1ImageBase64(base64);
+                            setStep1MimeType(file.type || 'application/pdf');
+                        }
+                        toast.success(`📄 "${file.name}" loaded for RAG Grounding`, { id: toastId });
+                        await buildCompleteCourseFromDocument({
+                            imgBase64: base64,
+                            mime: file.type || 'application/pdf',
+                            suggestedTitle: cleanFileTitle,
+                            promptHint: cleanFileTitle
                         });
                     }
                 };
-                reader.readAsText(file);
+                if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+                    reader.readAsText(file);
+                } else {
+                    reader.readAsDataURL(file);
+                }
             }
         }
     };

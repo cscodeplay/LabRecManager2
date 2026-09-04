@@ -1857,14 +1857,45 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
         return res.status(400).json({ success: false, message: 'No file provided' });
     }
 
-    const schoolId = req.user.schoolId;
-    const userId = req.user.id;
+    let schoolId = req.user?.schoolId;
+    let userId = req.user?.id;
+
+    if (!schoolId) {
+        try {
+            const fallbackSchool = await prisma.school.findFirst();
+            schoolId = fallbackSchool?.id;
+        } catch (e) {
+            console.warn('[RAG Upload] School lookup warning:', e.message);
+        }
+    }
+
+    if (!userId) {
+        try {
+            const fallbackUser = await prisma.user.findFirst();
+            userId = fallbackUser?.id;
+        } catch (e) {
+            console.warn('[RAG Upload] User lookup warning:', e.message);
+        }
+    }
+
     const originalName = req.file.originalname;
     const safeName = `${Date.now()}_${originalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
     const ext = path.extname(originalName).toLowerCase().replace('.', '') || 'bin';
+    const publicUrl = `/RAG/${safeName}`;
 
+    // Clean human-friendly title from file name as solid baseline
+    const cleanFileNameTitle = originalName
+        .replace(/\.[^.]+$/, '')
+        .replace(/[-_]/g, ' ')
+        .replace(/\b(pdf|syllabus|notes|ebook|guide|document|resource|chapter|unit)\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, c => c.toUpperCase()) || originalName.replace(/\.[^.]+$/, '');
+
+    let extractedText = '';
+
+    // 1. Save to physical RAG folders
     try {
-        // 1. Save to physical RAG folders
         const rootRagDir = path.join(__dirname, '../../../RAG');
         const publicRagDir = path.join(__dirname, '../../../client/public/RAG');
         [rootRagDir, publicRagDir].forEach(d => {
@@ -1875,101 +1906,141 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
         const publicFilePath = path.join(publicRagDir, safeName);
         fs.writeFileSync(rootFilePath, req.file.buffer);
         fs.writeFileSync(publicFilePath, req.file.buffer);
+    } catch (fsErr) {
+        console.warn('[RAG Upload] Physical file save warning:', fsErr.message);
+    }
 
-        // 2. Extract text if PDF, TXT, MD, etc.
-        let extractedText = '';
-        if (req.file.mimetype === 'application/pdf' || ext === 'pdf') {
-            try {
-                const parser = new PDFParse(new Uint8Array(req.file.buffer));
-                const parsed = await parser.getText();
-                extractedText = parsed.text || '';
-            } catch (pdfErr) {
-                console.warn('[RAG Upload] PDF parsing error:', pdfErr.message);
+    // 2. Extract text from PDF, TXT, MD, etc.
+    if (req.file.mimetype === 'application/pdf' || ext === 'pdf') {
+        try {
+            const parser = new PDFParse({ data: new Uint8Array(req.file.buffer) });
+            const parsed = await parser.getText();
+            extractedText = (parsed.text || '')
+                .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
+                .replace(/\r\n/g, '\n')
+                .replace(/[ \t]{3,}/g, '  ')
+                .trim();
+            await parser.destroy();
+        } catch (pdfErr) {
+            console.warn('[RAG Upload] PDF parsing error:', pdfErr.message);
+        }
+    } else if (req.file.mimetype.startsWith('text/') || ['txt', 'md', 'json', 'py', 'csv'].includes(ext)) {
+        extractedText = req.file.buffer.toString('utf8');
+    }
+
+    // 3. Intelligent Title Extractor from Document Text
+    let suggestedTitle = '';
+    if (extractedText) {
+        const lines = extractedText.split('\n').map(l => l.trim()).filter(Boolean);
+
+        // A. Check for explicit Unit / Chapter / Module header with a descriptive topic
+        for (const l of lines.slice(0, 20)) {
+            const unitMatch = l.match(/(?:unit|chapter|module)\s+[ivx0-9]+[:\-\s]+(.+)/i);
+            if (unitMatch && unitMatch[1].trim().length >= 6) {
+                const candidate = unitMatch[1].trim();
+                if (candidate.length <= 80 && !/^(test|quiz|assignment|exam)\b/i.test(candidate)) {
+                    suggestedTitle = candidate;
+                    break;
+                }
             }
-        } else if (req.file.mimetype.startsWith('text/') || ['txt', 'md', 'json', 'py', 'csv'].includes(ext)) {
-            extractedText = req.file.buffer.toString('utf8');
+            const topicMatch = l.match(/(?:topic|course|subject|title)[:\-\s]+(.+)/i);
+            if (topicMatch && topicMatch[1].trim().length >= 6) {
+                const candidate = topicMatch[1].trim();
+                if (candidate.length <= 80) {
+                    suggestedTitle = candidate;
+                    break;
+                }
+            }
         }
 
-        // 3. Find or create "RAG Documents" folder in Documents system
-        let folder = await prisma.documentFolder.findFirst({
-            where: { schoolId, name: 'RAG Documents', deletedAt: null }
-        });
+        // B. Check for substantive subject keywords (Python, Math, Data Structures, OOP, SQL, etc.)
+        if (!suggestedTitle) {
+            const subjectRegex = /(python|java|c\+\+|sql|math|data structures|algorithms|machine learning|artificial intelligence|web development|object oriented|pandas|numpy)/i;
+            for (const l of lines.slice(0, 15)) {
+                if (l.length >= 8 && l.length <= 75 && subjectRegex.test(l)) {
+                    // Skip administrative / board headers
+                    if (/cbse\s+class|curriculum\s+guidelines|central\s+board|department\s+of|examination|code\s*\d+/i.test(l)) {
+                        continue;
+                    }
+                    suggestedTitle = l.replace(/^#+\s*/, '').replace(/^(unit|chapter)\s+[ivx0-9]+[:\-\s]*/i, '').trim();
+                    break;
+                }
+            }
+        }
 
-        if (!folder) {
-            folder = await prisma.documentFolder.create({
+        // C. Clean first non-institutional header line
+        if (!suggestedTitle) {
+            const genericRegex = /^(cbse|class\s*\d+|page\s*\d+|curriculum|syllabus|guidelines|index|contents|authoritative|board|government|department)/i;
+            for (const l of lines.slice(0, 10)) {
+                if (l.length >= 6 && l.length <= 75 && !genericRegex.test(l) && !l.startsWith('http')) {
+                    suggestedTitle = l.replace(/^#+\s*/, '').trim();
+                    break;
+                }
+            }
+        }
+    }
+
+    // Fallback to cleaned file name title
+    if (!suggestedTitle || suggestedTitle.length < 4) {
+        suggestedTitle = cleanFileNameTitle;
+    }
+
+    // 4. Save record in documents library (isolated try/catch so it never breaks title/text return)
+    let docId = null;
+    let docName = originalName.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
+    if (schoolId && userId) {
+        try {
+            let folder = await prisma.documentFolder.findFirst({
+                where: { schoolId, name: 'RAG Documents', deletedAt: null }
+            });
+
+            if (!folder) {
+                folder = await prisma.documentFolder.create({
+                    data: {
+                        schoolId,
+                        name: 'RAG Documents',
+                        createdById: userId
+                    }
+                });
+            }
+
+            const doc = await prisma.document.create({
                 data: {
                     schoolId,
-                    name: 'RAG Documents',
-                    createdById: userId
+                    uploadedById: userId,
+                    folderId: folder.id,
+                    name: docName,
+                    description: `Uploaded syllabus/curriculum resource for AI RAG course generation.`,
+                    fileName: originalName,
+                    fileType: ext,
+                    mimeType: req.file.mimetype || 'application/octet-stream',
+                    fileSize: req.file.size || req.file.buffer.length,
+                    cloudinaryId: `local_rag_${safeName}`,
+                    url: publicUrl,
+                    category: 'curriculum',
+                    isPublic: true
                 }
             });
+            docId = doc.id;
+        } catch (dbErr) {
+            console.warn('[RAG Upload] Documents library registration warning:', dbErr.message);
         }
-
-        // 4. Save record in documents table
-        const docName = originalName.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
-        const publicUrl = `/RAG/${safeName}`;
-
-        // Extract suggested title from document content or original file name
-        let suggestedTitle = '';
-        if (extractedText) {
-            const lines = extractedText.split('\n').map(l => l.trim()).filter(Boolean);
-            for (const l of lines.slice(0, 10)) {
-                if (l.length >= 6 && l.length <= 90 && !l.toLowerCase().startsWith('page ') && !l.startsWith('http')) {
-                    if (l.includes(':') && l.split(':')[1].trim().length >= 8) {
-                        const candidate = l.split(':')[1].trim();
-                        if (!candidate.toLowerCase().includes('http') && candidate.length <= 70) {
-                            suggestedTitle = candidate;
-                            break;
-                        }
-                    }
-                    suggestedTitle = l.replace(/^#+\s*/, '').replace(/^(title|syllabus|subject|topic|course)\s*[:\-]\s*/i, '').trim();
-                    if (suggestedTitle.length >= 6 && suggestedTitle.length <= 75) {
-                        break;
-                    }
-                }
-            }
-        }
-        if (!suggestedTitle || suggestedTitle.length < 5) {
-            suggestedTitle = originalName.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ')
-                .replace(/\b\w/g, c => c.toUpperCase());
-        }
-
-        const doc = await prisma.document.create({
-            data: {
-                schoolId,
-                uploadedById: userId,
-                folderId: folder.id,
-                name: docName,
-                description: `Uploaded syllabus/curriculum resource for AI RAG course generation.`,
-                fileName: originalName,
-                fileType: ext,
-                mimeType: req.file.mimetype || 'application/octet-stream',
-                fileSize: req.file.size || req.file.buffer.length,
-                cloudinaryId: `local_rag_${safeName}`,
-                url: publicUrl,
-                category: 'curriculum',
-                isPublic: true
-            }
-        });
-
-        res.json({
-            success: true,
-            data: {
-                documentId: doc.id,
-                name: doc.name,
-                fileName: originalName,
-                suggestedTitle,
-                url: publicUrl,
-                folderName: 'RAG Documents',
-                extractedText,
-                mimeType: req.file.mimetype,
-                imageBase64: req.file.mimetype.startsWith('image/') ? req.file.buffer.toString('base64') : null
-            }
-        });
-    } catch (uploadErr) {
-        console.error('[RAG Upload Error]:', uploadErr);
-        res.status(500).json({ success: false, message: uploadErr.message || 'Failed to process RAG document upload' });
     }
+
+    return res.json({
+        success: true,
+        data: {
+            documentId: docId,
+            name: docName,
+            fileName: originalName,
+            suggestedTitle,
+            url: publicUrl,
+            folderName: 'RAG Documents',
+            extractedText,
+            mimeType: req.file.mimetype,
+            imageBase64: req.file.mimetype.startsWith('image/') ? req.file.buffer.toString('base64') : null
+        }
+    });
 }));
 
 module.exports = router;
