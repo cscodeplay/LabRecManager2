@@ -680,14 +680,14 @@ export const trainingAPI = {
 
     // AI LMS Assistant & Direct Endpoints
     aiAssist: (data) => api.post('/training/ai-assist', data),
-    aiOutline: (payload, provider = 'groq') => api.post('/training/ai/outline', { payload, provider }),
-    aiTheory: (payload, provider = 'groq') => api.post('/training/ai/theory', { payload, provider }),
-    aiExercise: (payload, provider = 'groq') => api.post('/training/ai/exercise', { payload, provider }),
-    aiFromDocument: (payload, provider = 'groq') => api.post('/training/ai/from-document', { payload, provider }),
+    aiOutline: (payload, provider = 'gemini') => api.post('/training/ai/outline', { payload, provider }),
+    aiTheory: (payload, provider = 'gemini') => api.post('/training/ai/theory', { payload, provider }),
+    aiExercise: (payload, provider = 'gemini') => api.post('/training/ai/exercise', { payload, provider }),
+    aiFromDocument: (payload, provider = 'gemini') => api.post('/training/ai/from-document', { payload, provider }),
     uploadRagDocument: (formData) => api.post('/training/ai/rag/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
     }),
-    aiExerciseBatch: (payload, provider = 'groq') => api.post('/training/ai/exercises/batch', { payload, provider }),
+    aiExerciseBatch: (payload, provider = 'gemini') => api.post('/training/ai/exercises/batch', { payload, provider }),
 };
 
 // AI Generator API

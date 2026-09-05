@@ -1575,7 +1575,7 @@ router.get('/modules/:id/progress', authenticate, authorize('admin', 'principal'
  * @access  Private (Admin/Instructor/Principal)
  */
 router.post('/ai-assist', authenticate, asyncHandler(async (req, res) => {
-    const { action, payload = {}, provider = 'groq' } = req.body;
+    const { action, payload = {}, provider = 'gemini' } = req.body;
 
     if (!action) {
         return res.status(400).json({ success: false, message: 'AI action is required' });
@@ -1680,7 +1680,7 @@ router.post('/ai-assist', authenticate, asyncHandler(async (req, res) => {
  */
 router.post('/ai/outline', authenticate, asyncHandler(async (req, res) => {
     const payload = req.body.payload || req.body;
-    const provider = req.body.provider || payload.provider || 'groq';
+    const provider = req.body.provider || payload.provider || 'gemini';
 
     try {
         const result = await aiService.generateTrainingModuleOutline({
@@ -1713,7 +1713,7 @@ router.post('/ai/outline', authenticate, asyncHandler(async (req, res) => {
  */
 router.post('/ai/theory', authenticate, asyncHandler(async (req, res) => {
     const payload = req.body.payload || req.body;
-    const provider = req.body.provider || payload.provider || 'groq';
+    const provider = req.body.provider || payload.provider || 'gemini';
 
     try {
         const result = await aiService.generateTrainingTheoryAndGraphics({
@@ -1746,7 +1746,7 @@ router.post('/ai/theory', authenticate, asyncHandler(async (req, res) => {
  */
 router.post('/ai/exercise', authenticate, asyncHandler(async (req, res) => {
     const payload = req.body.payload || req.body;
-    const provider = req.body.provider || payload.provider || 'groq';
+    const provider = req.body.provider || payload.provider || 'gemini';
 
     try {
         const result = await aiService.generateTrainingExercise({
@@ -1783,7 +1783,7 @@ router.post('/ai/exercise', authenticate, asyncHandler(async (req, res) => {
  */
 router.post('/ai/exercises/batch', authenticate, asyncHandler(async (req, res) => {
     const payload = req.body.payload || req.body;
-    const provider = req.body.provider || payload.provider || 'groq';
+    const provider = req.body.provider || payload.provider || 'gemini';
 
     try {
         const result = await aiService.generateTrainingExerciseBatch({
@@ -1818,7 +1818,7 @@ router.post('/ai/exercises/batch', authenticate, asyncHandler(async (req, res) =
  */
 router.post('/ai/from-document', authenticate, asyncHandler(async (req, res) => {
     const payload = req.body.payload || req.body;
-    const provider = req.body.provider || payload.provider || 'groq';
+    const provider = req.body.provider || payload.provider || 'gemini';
 
     try {
         const result = await aiService.generateTrainingModuleFromDocument({
@@ -1843,7 +1843,29 @@ router.post('/ai/from-document', authenticate, asyncHandler(async (req, res) => 
         });
     } catch (err) {
         console.error('[AI RAG Document Error]:', err.message);
-        res.status(500).json({ success: false, message: err.message || 'Failed to synthesize module from document' });
+        // Foolproof recovery: generate deterministic fallback module so auto-build NEVER fails with 500
+        try {
+            const fallbackResult = aiService.generateDeterministicFallbackModule({
+                documentText: payload.documentText || '',
+                customPrompt: payload.customPrompt || '',
+                language: payload.language || 'python',
+                classLevel: payload.classLevel || 11,
+                board: payload.board || 'CBSE',
+                totalUnits: payload.totalUnits || 3
+            });
+            return res.json({
+                success: true,
+                data: {
+                    module: fallbackResult,
+                    outline: fallbackResult,
+                    ...fallbackResult
+                },
+                warning: `AI generation experienced an issue (${err.message}). Grounded curriculum fallback was safely generated.`
+            });
+        } catch (fallbackErr) {
+            console.error('[AI RAG Fallback Fatal Error]:', fallbackErr.message);
+            res.status(500).json({ success: false, message: err.message || 'Failed to synthesize module from document' });
+        }
     }
 }));
 
@@ -1928,62 +1950,63 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
         extractedText = req.file.buffer.toString('utf8');
     }
 
-    // 3. Intelligent Title Extractor from Document Text
-    let suggestedTitle = '';
-    if (extractedText) {
-        const lines = extractedText.split('\n').map(l => l.trim()).filter(Boolean);
+    // 3. Deep Analysis of Sufficient PDF content to extract Course Title and Metadata
+    let analyzedMeta = {
+        title: cleanFileNameTitle,
+        titleHindi: `${cleanFileNameTitle} (पाठ्यक्रम)`,
+        description: 'Comprehensive curriculum module synthesized from syllabus material.',
+        keyTopics: [],
+        suggestedLanguage: 'python'
+    };
 
-        // A. Check for explicit Unit / Chapter / Module header with a descriptive topic
-        for (const l of lines.slice(0, 20)) {
-            const unitMatch = l.match(/(?:unit|chapter|module)\s+[ivx0-9]+[:\-\s]+(.+)/i);
-            if (unitMatch && unitMatch[1].trim().length >= 6) {
-                const candidate = unitMatch[1].trim();
-                if (candidate.length <= 80 && !/^(test|quiz|assignment|exam)\b/i.test(candidate)) {
-                    suggestedTitle = candidate;
-                    break;
-                }
+    if (extractedText && extractedText.trim().length >= 20) {
+        try {
+            // Read sufficient PDF content (up to 18,000 characters)
+            const aiMeta = await aiService.extractTitleAndMetadataFromDocument({
+                documentText: extractedText,
+                provider: 'gemini',
+                originalFileName: originalName
+            });
+            if (aiMeta && aiMeta.title && aiMeta.title.length >= 4) {
+                analyzedMeta = {
+                    title: aiMeta.title,
+                    titleHindi: aiMeta.titleHindi || `${aiMeta.title} (पाठ्यक्रम)`,
+                    description: aiMeta.description || analyzedMeta.description,
+                    keyTopics: Array.isArray(aiMeta.keyTopics) ? aiMeta.keyTopics : [],
+                    suggestedLanguage: aiMeta.suggestedLanguage || 'python'
+                };
             }
-            const topicMatch = l.match(/(?:topic|course|subject|title)[:\-\s]+(.+)/i);
-            if (topicMatch && topicMatch[1].trim().length >= 6) {
-                const candidate = topicMatch[1].trim();
-                if (candidate.length <= 80) {
-                    suggestedTitle = candidate;
-                    break;
-                }
-            }
+        } catch (metaErr) {
+            console.warn('[RAG Upload] Title extraction warning:', metaErr.message);
+            const algoTitle = aiService.deepAlgorithmicTitleExtract(extractedText, originalName);
+            analyzedMeta.title = algoTitle || cleanFileNameTitle;
         }
-
-        // B. Check for substantive subject keywords (Python, Math, Data Structures, OOP, SQL, etc.)
-        if (!suggestedTitle) {
-            const subjectRegex = /(python|java|c\+\+|sql|math|data structures|algorithms|machine learning|artificial intelligence|web development|object oriented|pandas|numpy)/i;
-            for (const l of lines.slice(0, 15)) {
-                if (l.length >= 8 && l.length <= 75 && subjectRegex.test(l)) {
-                    // Skip administrative / board headers
-                    if (/cbse\s+class|curriculum\s+guidelines|central\s+board|department\s+of|examination|code\s*\d+/i.test(l)) {
-                        continue;
-                    }
-                    suggestedTitle = l.replace(/^#+\s*/, '').replace(/^(unit|chapter)\s+[ivx0-9]+[:\-\s]*/i, '').trim();
-                    break;
-                }
+    } else if (req.file.mimetype.startsWith('image/')) {
+        try {
+            const aiMeta = await aiService.extractTitleAndMetadataFromDocument({
+                imageBase64: req.file.buffer.toString('base64'),
+                mimeType: req.file.mimetype,
+                provider: 'gemini',
+                originalFileName: originalName
+            });
+            if (aiMeta && aiMeta.title && aiMeta.title.length >= 4) {
+                analyzedMeta = {
+                    title: aiMeta.title,
+                    titleHindi: aiMeta.titleHindi || `${aiMeta.title} (पाठ्यक्रम)`,
+                    description: aiMeta.description || analyzedMeta.description,
+                    keyTopics: Array.isArray(aiMeta.keyTopics) ? aiMeta.keyTopics : [],
+                    suggestedLanguage: aiMeta.suggestedLanguage || 'python'
+                };
             }
+        } catch (imgErr) {
+            console.warn('[RAG Upload] Vision title extraction warning:', imgErr.message);
         }
-
-        // C. Clean first non-institutional header line
-        if (!suggestedTitle) {
-            const genericRegex = /^(cbse|class\s*\d+|page\s*\d+|curriculum|syllabus|guidelines|index|contents|authoritative|board|government|department)/i;
-            for (const l of lines.slice(0, 10)) {
-                if (l.length >= 6 && l.length <= 75 && !genericRegex.test(l) && !l.startsWith('http')) {
-                    suggestedTitle = l.replace(/^#+\s*/, '').trim();
-                    break;
-                }
-            }
-        }
+    } else {
+        const algoTitle = aiService.deepAlgorithmicTitleExtract(extractedText, originalName);
+        analyzedMeta.title = algoTitle || cleanFileNameTitle;
     }
 
-    // Fallback to cleaned file name title
-    if (!suggestedTitle || suggestedTitle.length < 4) {
-        suggestedTitle = cleanFileNameTitle;
-    }
+    const suggestedTitle = analyzedMeta.title || cleanFileNameTitle;
 
     // 4. Save record in documents library (isolated try/catch so it never breaks title/text return)
     let docId = null;
@@ -2034,6 +2057,10 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
             name: docName,
             fileName: originalName,
             suggestedTitle,
+            titleHindi: analyzedMeta.titleHindi,
+            description: analyzedMeta.description,
+            keyTopics: analyzedMeta.keyTopics,
+            suggestedLanguage: analyzedMeta.suggestedLanguage,
             url: publicUrl,
             folderName: 'RAG Documents',
             extractedText,

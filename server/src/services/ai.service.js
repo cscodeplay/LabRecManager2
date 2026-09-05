@@ -29,7 +29,7 @@ class AIService {
     /**
      * Extract structured assignment list from syllabus / program list image
      */
-    async extractAssignmentsFromImage(buffer, mimeType, customPrompt = '', preferredProvider = 'groq') {
+    async extractAssignmentsFromImage(buffer, mimeType, customPrompt = '', preferredProvider = 'gemini') {
         const base64Data = buffer.toString('base64');
         const dataUrl = `data:${mimeType};base64,${base64Data}`;
 
@@ -58,8 +58,32 @@ RULES:
 3. Set experimentNumber sequentially ("1", "2", "3"...) if not explicitly numbered in the image.
 4. Output MUST be ONLY valid JSON array starting with '[' and ending with ']'. No markdown formatting or extra text.`;
 
-        // 1. Try Groq (Primary)
-        if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
+        // 1. Try Gemini (Primary Default)
+        if ((preferredProvider === 'gemini' || preferredProvider === 'auto') && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    console.log(`[AIService] Extracting assignments via Gemini (${modelName})...`);
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent([
+                        {
+                            inlineData: {
+                                data: base64Data,
+                                mimeType: mimeType
+                            }
+                        },
+                        systemPrompt
+                    ]);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Gemini ${modelName} extraction failed:`, err.message);
+                }
+            }
+        }
+
+        // 2. Try Groq (Fallback)
+        if (this.groq) {
             try {
                 console.log('[AIService] Extracting assignments via Groq (llama-3.2-11b-vision-preview)...');
                 const completion = await this.groq.chat.completions.create({
@@ -77,19 +101,18 @@ RULES:
                 });
 
                 let responseText = completion.choices[0]?.message?.content || '';
-                return this.parseJSONResponse(responseText);
+                const parsed = this.parseJSONResponse(responseText);
+                if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
             } catch (err) {
-                console.warn(`[AIService] Groq extraction failed (${err.message}). Falling back to Gemini...`);
+                console.warn(`[AIService] Groq extraction failed (${err.message}).`);
             }
         }
 
-        // 2. Try Gemini (Fallback)
-        if (this.genAI) {
+        // Secondary Gemini retry if preferredProvider was groq
+        if (preferredProvider === 'groq' && this.genAI) {
             const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
-            let lastGeminiError = null;
             for (const modelName of geminiModels) {
                 try {
-                    console.log(`[AIService] Extracting assignments via Gemini (${modelName})...`);
                     const model = this.genAI.getGenerativeModel({ model: modelName });
                     const result = await model.generateContent([
                         {
@@ -100,26 +123,21 @@ RULES:
                         },
                         systemPrompt
                     ]);
-                    return this.parseJSONResponse(result.response.text());
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
                 } catch (err) {
-                    lastGeminiError = err;
-                    console.error(`[AIService] Gemini ${modelName} extraction failed:`, err.message);
-                    if (err.status === 503 || err.message?.includes('503') || err.message?.includes('429')) {
-                        await new Promise(r => setTimeout(r, 1000));
-                        continue;
-                    }
+                    console.warn(`[AIService] Secondary Gemini extraction (${modelName}) failed:`, err.message);
                 }
             }
-            throw new Error(`AI Assignment extraction failed: ${lastGeminiError?.message}`);
         }
 
-        throw new Error('No AI provider configured. Please set GROQ_API_KEY or GEMINI_API_KEY.');
+        throw new Error('No AI provider configured or all providers failed. Please set GROQ_API_KEY or GEMINI_API_KEY.');
     }
 
     /**
      * Generate structured assignment list from natural language text prompt (non-image case)
      */
-    async extractAssignmentsFromText(customPrompt = '', preferredProvider = 'groq') {
+    async extractAssignmentsFromText(customPrompt = '', preferredProvider = 'gemini') {
         const systemPrompt = `You are an expert computer science educational AI assistant.
 Your task is to generate one or more programming assignment(s) based on the user's natural language request (e.g. "python program assignment on fibonacci series").
 
@@ -145,9 +163,25 @@ RULES:
 3. Set experimentNumber sequentially ("1", "2"...) for generated tasks.
 4. Output MUST be ONLY valid JSON array starting with '[' and ending with ']'. No markdown formatting or extra text.`;
 
-        // 1. Try Groq (Primary)
-        if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
+        // 1. Try Gemini (Primary Default)
+        if ((preferredProvider === 'gemini' || preferredProvider === 'auto') && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    console.log(`[AIService] Generating assignments from text via Gemini (${modelName})...`);
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Gemini ${modelName} failed: ${err.message}`);
+                }
+            }
+        }
+
+        // 2. Try Groq (Fallback)
+        if (this.groq) {
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
             for (const modelName of groqModels) {
                 try {
                     console.log(`[AIService] Generating assignments from text via Groq (${modelName})...`);
@@ -156,38 +190,30 @@ RULES:
                         messages: [{ role: 'user', content: systemPrompt }],
                         temperature: 0.3
                     });
-                    return this.parseJSONResponse(completion.choices[0]?.message?.content || '');
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '');
+                    if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
                 } catch (err) {
                     console.warn(`[AIService] Groq ${modelName} failed (${err.message}). Trying next...`);
-                    // If it's a 429, wait briefly
-                    if (err.status === 429) await new Promise(r => setTimeout(r, 1000));
                 }
             }
         }
 
-        // 2. Try Gemini (Fallback)
-        if (this.genAI) {
+        // Secondary Gemini retry if preferredProvider was groq
+        if (preferredProvider === 'groq' && this.genAI) {
             const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
-            let lastGeminiError = null;
             for (const modelName of geminiModels) {
                 try {
-                    console.log(`[AIService] Generating assignments from text via Gemini (${modelName})...`);
                     const model = this.genAI.getGenerativeModel({ model: modelName });
                     const result = await model.generateContent(systemPrompt);
-                    return this.parseJSONResponse(result.response.text());
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
                 } catch (err) {
-                    lastGeminiError = err;
-                    console.warn(`[AIService] Gemini ${modelName} failed: ${err.message}`);
-                    if (err.status === 503 || err.message?.includes('503') || err.message?.includes('429')) {
-                        await new Promise(r => setTimeout(r, 1000));
-                        continue;
-                    }
+                    console.warn(`[AIService] Secondary Gemini text extraction (${modelName}) failed:`, err.message);
                 }
             }
-            throw new Error(`AI Assignment text generation failed: ${lastGeminiError?.message}`);
         }
 
-        throw new Error('No AI provider configured. Please set GROQ_API_KEY or GEMINI_API_KEY.');
+        throw new Error('No AI provider configured or all providers failed. Please set GROQ_API_KEY or GEMINI_API_KEY.');
     }
 
     /**
@@ -231,7 +257,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -307,7 +333,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -377,7 +403,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -462,7 +488,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -689,7 +715,7 @@ FORMATTING RULES:
         // 1. Try Gemini first
         if (this.genAI) {
             try {
-                const modelNames = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
+                const modelNames = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
                 for (const modelName of modelNames) {
                     try {
                         const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -816,7 +842,7 @@ Return ONLY a valid JSON array of slot objects with the following schema:
         if (this.genAI) {
             try {
                 console.log('[AIService] Generating timetable slots via Gemini...');
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
                 const result = await model.generateContent(systemPrompt);
                 const responseText = result.response.text();
                 const parsed = this.parseJSONResponse(responseText);
@@ -1289,7 +1315,7 @@ Output MUST be ONLY valid JSON matching this schema:
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
             try {
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+                const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
                 const result = await model.generateContent(systemPrompt);
                 const responseText = result.response.text();
                 return this.parseJSONResponse(responseText);
@@ -1399,7 +1425,7 @@ Output ONLY a valid JSON object matching this schema:
     /**
      * Generate structured Training Module Outline (Curriculum & Units)
      */
-    async generateTrainingModuleOutline({ topic, targetAudience = '', language = 'python', classLevel = 11, board = 'PSEB', totalUnits = 3, documentText = '', provider = 'groq' }) {
+    async generateTrainingModuleOutline({ topic, targetAudience = '', language = 'python', classLevel = 11, board = 'PSEB', totalUnits = 3, documentText = '', provider = 'gemini' }) {
         const targetUnitsCount = Math.max(1, Math.min(10, parseInt(totalUnits) || 3));
         const systemPrompt = `You are a distinguished Computer Science educator and curriculum designer.
 Create a high-impact, pedagogy-aligned training course outline for the given topic.
@@ -1445,9 +1471,24 @@ Output MUST be ONLY valid JSON matching this exact schema:
   ]
 }`;
 
-        // 1. Try Groq
-        if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b'];
+        // 1. Try Gemini first (Default provider)
+        if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && (parsed.title || parsed.units)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Gemini training outline (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // 2. Try Groq (Ultra-fast fallback or primary if explicitly requested)
+        if (this.groq) {
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1466,9 +1507,9 @@ Output MUST be ONLY valid JSON matching this exact schema:
             }
         }
 
-        // 2. Try Gemini
-        if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-3.6-flash'];
+        // Secondary Gemini retry if provider was groq but groq failed
+        if (provider === 'groq' && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1476,7 +1517,7 @@ Output MUST be ONLY valid JSON matching this exact schema:
                     const parsed = this.parseJSONResponse(result.response.text());
                     if (parsed && (parsed.title || parsed.units)) return parsed;
                 } catch (err) {
-                    console.warn(`[AIService] Gemini training outline (${modelName}) failed:`, err.message);
+                    console.warn(`[AIService] Gemini fallback training outline (${modelName}) failed:`, err.message);
                 }
             }
         }
@@ -1541,7 +1582,7 @@ Output MUST be ONLY valid JSON matching this exact schema:
     /**
      * Generate rich Lesson Theory, Markdown Notes, and Educational SVG Graphics / Mermaid Diagrams
      */
-    async generateTrainingTheoryAndGraphics({ topic, unitTitle = '', unitDescription = '', moduleTitle = '', documentText = '', language = 'python', classLevel = 11, provider = 'groq' }) {
+    async generateTrainingTheoryAndGraphics({ topic, unitTitle = '', unitDescription = '', moduleTitle = '', documentText = '', language = 'python', classLevel = 11, provider = 'gemini' }) {
         const systemPrompt = `You are an elite Computer Science instructional designer and technical illustrator.
 Generate comprehensive, student-friendly learning material for the following concept:
 TOPIC: ${topic}
@@ -1600,9 +1641,24 @@ Output MUST be ONLY valid JSON matching this schema:
   }
 }`;
 
-        // 1. Try Groq
-        if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
+        // 1. Try Gemini first (Default provider)
+        if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && (parsed.theoryMarkdown || parsed.svgGraphic)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Gemini theory/graphics (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // 2. Try Groq (Fallback)
+        if (this.groq) {
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1621,9 +1677,9 @@ Output MUST be ONLY valid JSON matching this schema:
             }
         }
 
-        // 2. Try Gemini
-        if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-3.6-flash'];
+        // Secondary Gemini retry if provider was groq but groq failed
+        if (provider === 'groq' && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1631,7 +1687,7 @@ Output MUST be ONLY valid JSON matching this schema:
                     const parsed = this.parseJSONResponse(result.response.text());
                     if (parsed && (parsed.theoryMarkdown || parsed.svgGraphic)) return parsed;
                 } catch (err) {
-                    console.warn(`[AIService] Gemini theory/graphics (${modelName}) failed:`, err.message);
+                    console.warn(`[AIService] Gemini fallback theory/graphics (${modelName}) failed:`, err.message);
                 }
             }
         }
@@ -1689,7 +1745,7 @@ Output MUST be ONLY valid JSON matching this schema:
     /**
      * Generate complete Training Exercises covering all 5 question types
      */
-    async generateTrainingExercise({ topic, unitTitle = '', unitDescription = '', moduleTitle = '', documentText = '', language = 'python', exerciseType = 'coding', difficulty = 'beginner', scaffoldLevel = 'guided', bloomsLevel = 'apply', customPrompt = '', provider = 'groq' }) {
+    async generateTrainingExercise({ topic, unitTitle = '', unitDescription = '', moduleTitle = '', documentText = '', language = 'python', exerciseType = 'coding', difficulty = 'beginner', scaffoldLevel = 'guided', bloomsLevel = 'apply', customPrompt = '', provider = 'gemini' }) {
         let typeInstruction = '';
         if (exerciseType === 'coding') {
             typeInstruction = `Generate a standard CODING LAB exercise:
@@ -1823,9 +1879,24 @@ Output MUST be ONLY valid JSON matching this schema:
   "hints": ["Hint 1", "Hint 2"]
 }`;
 
-        // 1. Try Groq
-        if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
+        // 1. Try Gemini first (Default provider)
+        if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && (parsed.title || parsed.description)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Gemini exercise generation (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // 2. Try Groq (Fallback)
+        if (this.groq) {
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1844,9 +1915,9 @@ Output MUST be ONLY valid JSON matching this schema:
             }
         }
 
-        // 2. Try Gemini
-        if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-3.6-flash'];
+        // Secondary Gemini retry if provider was groq but groq failed
+        if (provider === 'groq' && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1854,7 +1925,7 @@ Output MUST be ONLY valid JSON matching this schema:
                     const parsed = this.parseJSONResponse(result.response.text());
                     if (parsed && (parsed.title || parsed.description)) return parsed;
                 } catch (err) {
-                    console.warn(`[AIService] Gemini exercise generation (${modelName}) failed:`, err.message);
+                    console.warn(`[AIService] Gemini fallback exercise generation (${modelName}) failed:`, err.message);
                 }
             }
         }
@@ -2040,7 +2111,7 @@ Output MUST be ONLY valid JSON matching this schema:
     /**
      * Generate interactive Socratic Hint for a student stuck on an exercise
      */
-    async generateSocraticHint({ problemTitle, problemDescription, studentCode, currentOutput, failedTests = [], provider = 'groq' }) {
+    async generateSocraticHint({ problemTitle, problemDescription, studentCode, currentOutput, failedTests = [], provider = 'gemini' }) {
         const systemPrompt = `You are a warm, encouraging Socratic Computer Science tutor.
 A student is working on the following problem and needs a hint:
 PROBLEM: ${problemTitle}
@@ -2066,8 +2137,24 @@ Output MUST be ONLY valid JSON:
   "edgeCaseToConsider": "Consider testing with..."
 }`;
 
-        if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
+        // 1. Try Gemini first (Default provider)
+        if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && (parsed.socraticHint || parsed.guidingQuestion)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Gemini socratic hint (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // 2. Try Groq (Fallback)
+        if (this.groq) {
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -2086,8 +2173,9 @@ Output MUST be ONLY valid JSON:
             }
         }
 
-        if (this.genAI) {
-            const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash'];
+        // Secondary Gemini retry if provider was groq but groq failed
+        if (provider === 'groq' && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2095,7 +2183,7 @@ Output MUST be ONLY valid JSON:
                     const parsed = this.parseJSONResponse(result.response.text());
                     if (parsed && (parsed.socraticHint || parsed.guidingQuestion)) return parsed;
                 } catch (err) {
-                    console.warn(`[AIService] Gemini socratic hint (${modelName}) failed:`, err.message);
+                    console.warn(`[AIService] Gemini fallback socratic hint (${modelName}) failed:`, err.message);
                 }
             }
         }
@@ -2120,7 +2208,7 @@ Output MUST be ONLY valid JSON:
         source = 'topics',
         documentText = '',
         exerciseType = 'mixed',
-        provider = 'groq'
+        provider = 'gemini'
     }) {
         const targetCount = Math.max(1, Math.min(8, parseInt(count) || 3));
         const topicsStr = Array.isArray(topics) && topics.length > 0 ? topics.join('; ') : unitTitle || 'Core Concepts';
@@ -2177,9 +2265,26 @@ Output MUST be ONLY valid JSON matching this schema:
   ]
 }`;
 
-        // 1. Try Groq
-        if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b'];
+        // 1. Try Gemini first (Default provider)
+        if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && Array.isArray(parsed.exercises) && parsed.exercises.length > 0) {
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn(`[AIService] Gemini batch exercises (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // 2. Try Groq (Fallback)
+        if (this.groq) {
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -2200,9 +2305,9 @@ Output MUST be ONLY valid JSON matching this schema:
             }
         }
 
-        // 2. Try Gemini
-        if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.5-flash'];
+        // Secondary Gemini retry if provider was groq but groq failed
+        if (provider === 'groq' && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2212,7 +2317,7 @@ Output MUST be ONLY valid JSON matching this schema:
                         return parsed;
                     }
                 } catch (err) {
-                    console.warn(`[AIService] Gemini batch exercises (${modelName}) failed:`, err.message);
+                    console.warn(`[AIService] Gemini fallback batch exercises (${modelName}) failed:`, err.message);
                 }
             }
         }
@@ -2296,6 +2401,254 @@ Output MUST be ONLY valid JSON matching this schema:
     }
 
     /**
+     * Deep algorithmic extractor that scans multi-page document content for curriculum titles,
+     * chapter headings, subject keywords, and domain term density.
+     */
+    deepAlgorithmicTitleExtract(documentText = '', originalFileName = '') {
+        const cleanFileTitle = originalFileName
+            ? originalFileName
+                .replace(/\.[^/.]+$/, '')
+                .replace(/[-_]/g, ' ')
+                .replace(/\b(pdf|syllabus|notes|ebook|guide|document|resource|chapter|unit)\b/gi, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .replace(/\b\w/g, c => c.toUpperCase())
+            : '';
+
+        if (!documentText || typeof documentText !== 'string' || documentText.trim().length < 20) {
+            return cleanFileTitle || 'Computer Science Applied Curriculum';
+        }
+
+        const text = documentText;
+        const lowerText = text.toLowerCase();
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+        // Domain-specific density across the full multi-page document text
+        const mathScore = (lowerText.match(/\b(math\.|ceil|floor|trunc|factorial|trigonometry|hypot|radians|degrees|logarithm|exponent|sqrt|gcd|pi|tau)\b/g) || []).length;
+        const oopScore = (lowerText.match(/\b(class|object|inheritance|polymorphism|encapsulation|__init__|subclass|method overriding|self\.)\b/g) || []).length;
+        const pandasScore = (lowerText.match(/\b(pandas|dataframe|series|numpy|read_csv|matplotlib|data analysis|data frame)\b/g) || []).length;
+        const sqlScore = (lowerText.match(/\b(select|from|where|create table|foreign key|primary key|relational|database|rdbms|sql)\b/g) || []).length;
+        const dataStructScore = (lowerText.match(/\b(stack|queue|linked list|binary tree|recursion|sorting|bubble sort|insertion sort|searching)\b/g) || []).length;
+        const networkScore = (lowerText.match(/\b(networking|ip address|tcp|udp|osi layer|packet|router|topology|cyber|security)\b/g) || []).length;
+
+        // Look for explicit Unit/Chapter/Course/Topic lines in the text (checking first 80 lines)
+        const candidateHeaders = [];
+        const genericExcludes = /^(central board|cbse|senior school|curriculum guidelines|session \d+|code\s*no|code\s*\d+|subject\s*code|class\s*[0-9ivx]+|examination|all rights reserved|page\s*\d+|contents|index|table of contents|department of|ministry of|government of|syllabus|overview|guidelines)/i;
+        const isSuperficial = (str) => {
+            if (!str || str.length < 5) return true;
+            if (genericExcludes.test(str)) return true;
+            if (/^(code|unit|chapter|module|section|part)\s*[0-9ivx.-]*$/i.test(str.trim())) return true;
+            if (/^[0-9\s._\-:()]+$/.test(str.trim())) return true;
+            return false;
+        };
+
+        for (const line of lines.slice(0, 80)) {
+            const match = line.match(/^(?:unit\s+[ivx0-9]+|chapter\s+[ivx0-9]+|module\s+[ivx0-9]+|topic|course|subject)[:\-\s]+(.+)/i);
+            if (match && match[1]) {
+                let cand = match[1].replace(/^[#*_\s]+|[#*_\s]+$/g, '').trim();
+                cand = cand.replace(/^(code|no\.?|subject code)\s*[:\-]?\s*[0-9]+/i, '').trim();
+                if (cand.length >= 6 && cand.length <= 80 && !isSuperficial(cand)) {
+                    candidateHeaders.push(cand);
+                }
+            } else if (line.length >= 8 && line.length <= 75 && !isSuperficial(line) && !line.startsWith('http')) {
+                if (/(computer science|programming|data structures|algorithms|database|sql|computer systems|networks|math library|cyber|computational thinking|artificial intelligence|machine learning|web development)/i.test(line)) {
+                    const cleaned = line.replace(/^(class\s*[ivx0-9]+\s*[:\-]?\s*)/i, '').replace(/^[#*_\s]+|[#*_\s]+$/g, '').trim();
+                    if (!isSuperficial(cleaned)) {
+                        candidateHeaders.push(cleaned);
+                    }
+                }
+            }
+        }
+
+        if (candidateHeaders.length > 0) {
+            // Prioritize headers with rich curriculum concepts over generic lines
+            const topSubject = candidateHeaders.find(h => /(computer science|computational thinking|programming|computer systems)/i.test(h));
+            const bestHeader = topSubject || candidateHeaders.find(h => /(python|math|class|object|data|structure|sql|network)/i.test(h)) || candidateHeaders[0];
+            if (bestHeader) return bestHeader.replace(/^(unit|chapter|module|topic|course|subject)\s*[:\-]\s*/i, '').trim();
+        }
+
+        // Domain density clear winners
+        if (mathScore >= 6 && mathScore > oopScore && mathScore > pandasScore) {
+            return 'Python: Math Library Modules & Numeric Algorithms';
+        }
+        if (oopScore >= 6 && oopScore > mathScore) {
+            return 'Python: Object-Oriented Programming & Software Design';
+        }
+        if (pandasScore >= 6) {
+            return 'Python: Data Handling with Pandas & NumPy';
+        }
+        if (sqlScore >= 6) {
+            return 'Relational Databases & SQL Query Systems';
+        }
+        if (dataStructScore >= 6) {
+            return 'Data Structures & Algorithmic Problem Solving';
+        }
+        if (networkScore >= 6) {
+            return 'Computer Networks & Cyber Security Foundations';
+        }
+
+        return cleanFileTitle || 'Computer Science Applied Curriculum';
+    }
+
+    /**
+     * Reads sufficient PDF content (up to 18,000-20,000 characters) and extracts
+     * grounded Course Title, Hindi Title, Description, and Key Topics using Gemini AI
+     * with Groq fallback and deep algorithmic fallback.
+     */
+    async extractTitleAndMetadataFromDocument({
+        documentText = '',
+        imageBase64 = null,
+        mimeType = 'image/jpeg',
+        provider = 'gemini',
+        originalFileName = ''
+    }) {
+        const promptText = `You are an elite Computer Science Curriculum Architect and Textbook Synthesizer.
+Analyze the following educational curriculum / textbook / syllabus material (extracted from a multi-page document).
+Read through the sufficient content provided below and determine the exact, grounded Course Title and metadata based on the actual educational material taught.
+
+DOCUMENT EXCERPT (Read Sufficient Content):
+---
+${documentText ? documentText.slice(0, 18000) : 'Extracted from uploaded textbook image.'}
+---
+
+CRITICAL INSTRUCTIONS:
+1. Do NOT use generic administrative or institutional headers (e.g. NEVER output "Central Board of Secondary Education", "CBSE Curriculum", "Senior School Curriculum", "Code 083", "Subject Code", "Session 2024-25").
+2. Read the actual topics, concepts, modules, or chapter headings in the content to identify the true subject (e.g. "Python: Math Library Modules & Numeric Algorithms", "Python: Object-Oriented Programming & Software Design", "Data Handling with Pandas & NumPy", "Relational Databases & SQL").
+3. Generate an authentic Hindi title in "titleHindi" (e.g. "पायथन: मैथ लाइब्रेरी मॉड्यूल और संख्यात्मक एल्गोरिदम").
+4. Write a 2-3 sentence overview in "description" summarizing what learners will master.
+5. Provide 3-6 core topics in "keyTopics".
+6. Suggest programming language in "suggestedLanguage" ("python", "sql", "java", "cpp", "javascript", or "general").
+
+Output MUST be ONLY valid JSON matching this schema:
+{
+  "title": "Exact Grounded Course Title in English",
+  "titleHindi": "कोर्स का शीर्षक (हिंदी में)",
+  "description": "Comprehensive course description...",
+  "keyTopics": ["Topic 1", "Topic 2", "Topic 3"],
+  "suggestedLanguage": "python"
+}`;
+
+        // 1. Vision Mode if imageBase64 is provided
+        if (imageBase64) {
+            if (this.genAI) {
+                const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+                for (const modelName of geminiModels) {
+                    try {
+                        const model = this.genAI.getGenerativeModel({ model: modelName });
+                        const result = await model.generateContent([
+                            {
+                                inlineData: {
+                                    data: imageBase64,
+                                    mimeType: mimeType
+                                }
+                            },
+                            promptText
+                        ]);
+                        const parsed = this.parseJSONResponse(result.response.text());
+                        if (parsed && parsed.title && parsed.title.length >= 4) {
+                            return parsed;
+                        }
+                    } catch (err) {
+                        console.warn(`[AIService] Gemini Vision title extraction (${modelName}) failed:`, err.message);
+                    }
+                }
+            }
+
+            if (this.groq) {
+                try {
+                    const dataUrl = `data:${mimeType};base64,${imageBase64}`;
+                    const completion = await this.groq.chat.completions.create({
+                        model: 'llama-3.2-11b-vision-preview',
+                        messages: [
+                            {
+                                role: 'user',
+                                content: [
+                                    { type: 'text', text: promptText },
+                                    { type: 'image_url', image_url: { url: dataUrl } }
+                                ]
+                            }
+                        ],
+                        temperature: 0.2
+                    });
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                    if (parsed && parsed.title && parsed.title.length >= 4) {
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn('[AIService] Groq Vision title extraction failed:', err.message);
+                }
+            }
+        }
+
+        // 2. Text Mode: Try Gemini first (Default provider)
+        if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(promptText);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && parsed.title && parsed.title.length >= 4) {
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn(`[AIService] Gemini title extraction (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // 3. Text Mode: Try Groq fallback
+        if (this.groq) {
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            for (const modelName of groqModels) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [
+                            { role: 'system', content: 'You are a curriculum title extraction AI. Output ONLY valid JSON.' },
+                            { role: 'user', content: promptText }
+                        ],
+                        temperature: 0.2
+                    });
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                    if (parsed && parsed.title && parsed.title.length >= 4) {
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn(`[AIService] Groq title extraction (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // 4. Secondary Gemini retry if provider was groq but groq failed
+        if (provider === 'groq' && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(promptText);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && parsed.title && parsed.title.length >= 4) {
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn(`[AIService] Secondary Gemini title extraction (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // 5. Deep algorithmic extraction fallback
+        const algoTitle = this.deepAlgorithmicTitleExtract(documentText, originalFileName);
+        return {
+            title: algoTitle,
+            titleHindi: `${algoTitle} (पाठ्यक्रम)`,
+            description: `A comprehensive curriculum module on ${algoTitle} synthesized from the uploaded syllabus resource.`,
+            keyTopics: [algoTitle, 'Core Foundations', 'Practical Implementation'],
+            suggestedLanguage: 'python'
+        };
+    }
+
+    /**
      * RAG-based Course & Units Generator from uploaded Ebook / PDF / Notes / Textbook Images
      */
     async generateTrainingModuleFromDocument({
@@ -2307,7 +2660,7 @@ Output MUST be ONLY valid JSON matching this schema:
         classLevel = 11,
         board = 'CBSE',
         totalUnits = 3,
-        provider = 'groq'
+        provider = 'gemini'
     }) {
         const targetUnitsCount = Math.max(1, Math.min(10, parseInt(totalUnits) || 3));
         const systemPrompt = `You are an elite AI Computer Science Curriculum Architect and Textbook Synthesizer.
@@ -2384,8 +2737,31 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 1. Vision Mode if imageBase64 is provided
         if (imageBase64) {
-            // Try Groq Vision first
-            if ((provider === 'groq' || provider === 'auto') && this.groq) {
+            // Try Gemini Vision first (Default)
+            if (this.genAI) {
+                const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+                for (const modelName of geminiModels) {
+                    try {
+                        const model = this.genAI.getGenerativeModel({ model: modelName });
+                        const result = await model.generateContent([
+                            {
+                                inlineData: {
+                                    data: imageBase64,
+                                    mimeType: mimeType
+                                }
+                            },
+                            systemPrompt
+                        ]);
+                        const parsed = this.parseJSONResponse(result.response.text());
+                        if (parsed && (parsed.title || parsed.units)) return parsed;
+                    } catch (err) {
+                        console.warn(`[AIService] Gemini Vision extraction (${modelName}) failed:`, err.message);
+                    }
+                }
+            }
+
+            // Fallback to Groq Vision
+            if (this.groq) {
                 try {
                     const dataUrl = `data:${mimeType};base64,${imageBase64}`;
                     const completion = await this.groq.chat.completions.create({
@@ -2407,34 +2783,26 @@ Output MUST be ONLY valid JSON matching this schema:
                     console.warn('[AIService] Groq Vision document extraction failed:', err.message);
                 }
             }
+        }
 
-            // Fallback to Gemini Vision
-            if (this.genAI) {
-                const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash'];
-                for (const modelName of geminiModels) {
-                    try {
-                        const model = this.genAI.getGenerativeModel({ model: modelName });
-                        const result = await model.generateContent([
-                            {
-                                inlineData: {
-                                    data: imageBase64,
-                                    mimeType: mimeType
-                                }
-                            },
-                            systemPrompt
-                        ]);
-                        const parsed = this.parseJSONResponse(result.response.text());
-                        if (parsed && (parsed.title || parsed.units)) return parsed;
-                    } catch (err) {
-                        console.warn(`[AIService] Gemini Vision extraction (${modelName}) failed:`, err.message);
-                    }
+        // 2. Text Grounding Mode: Try Gemini first (Default provider)
+        if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            for (const modelName of geminiModels) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && (parsed.title || parsed.units)) return parsed;
+                } catch (err) {
+                    console.warn(`[AIService] Gemini RAG outline (${modelName}) failed:`, err.message);
                 }
             }
         }
 
-        // 2. Text Grounding Mode (Textbook Notes / Syllabus / PDF text)
-        if ((provider === 'groq' || provider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'groq/compound-mini', 'qwen/qwen3.6-27b'];
+        // 3. Try Groq (Fallback or if requested)
+        if (this.groq) {
+            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -2453,8 +2821,9 @@ Output MUST be ONLY valid JSON matching this schema:
             }
         }
 
-        if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-3.6-flash'];
+        // 4. Secondary Gemini retry if provider was groq but groq failed
+        if (provider === 'groq' && this.genAI) {
+            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2462,12 +2831,36 @@ Output MUST be ONLY valid JSON matching this schema:
                     const parsed = this.parseJSONResponse(result.response.text());
                     if (parsed && (parsed.title || parsed.units)) return parsed;
                 } catch (err) {
-                    console.warn(`[AIService] Gemini RAG outline (${modelName}) failed:`, err.message);
+                    console.warn(`[AIService] Secondary Gemini RAG outline (${modelName}) failed:`, err.message);
                 }
             }
         }
 
-        // 3. Document-Intelligent Full-Blown Grounded Structure Fallback
+        // 5. Document-Intelligent Deterministic Fallback
+        return this.generateDeterministicFallbackModule({
+            documentText,
+            customPrompt,
+            language,
+            classLevel,
+            board,
+            totalUnits
+        });
+    }
+
+    /**
+     * Deterministic fallback module builder that guarantees a rich, complete 3-unit course
+     * with Theory, Mini-Checkpoints, CBSE Tips, and interactive Exercises (Coding, MCQ, Fill Blank).
+     * NEVER throws an error, ensuring auto-build never returns HTTP 500.
+     */
+    generateDeterministicFallbackModule({
+        documentText = '',
+        customPrompt = '',
+        language = 'python',
+        classLevel = 11,
+        board = 'CBSE',
+        totalUnits = 3,
+        originalFileName = ''
+    }) {
         const lowerDoc = (documentText + ' ' + customPrompt).toLowerCase();
         const isMathModule = lowerDoc.includes('math') || lowerDoc.includes('numeric') || lowerDoc.includes('ceil') || lowerDoc.includes('trigonometry');
         const isOopModule = lowerDoc.includes('class') || lowerDoc.includes('object') || lowerDoc.includes('oop') || lowerDoc.includes('inheritance') || lowerDoc.includes('encapsulation');
@@ -2854,17 +3247,8 @@ print(math.sin(rad))  # 0.49999999999999994 (~0.5)
             };
         }
 
-        // Generic Text Fallback: extract title from first line and construct 3 full units
-        let extractedTitle = 'Computer Science: Applied Programming Curriculum';
-        if (documentText) {
-            const firstLines = documentText.split('\n').map(l => l.trim()).filter(Boolean);
-            for (const line of firstLines.slice(0, 5)) {
-                if (line.length >= 6 && line.length <= 80 && !line.toLowerCase().startsWith('page ')) {
-                    extractedTitle = line.replace(/^#+\s*/, '').replace(/^(title|syllabus|subject|topic|course)\s*[:\-]\s*/i, '').trim();
-                    break;
-                }
-            }
-        }
+        // Generic Text Fallback: extract grounded title using deep content scanning across full text
+        const extractedTitle = this.deepAlgorithmicTitleExtract(documentText, originalFileName);
 
         return {
             title: extractedTitle,

@@ -32,14 +32,15 @@ export default function TrainingModuleWizard({
     const [isSubmitting, setIsSubmitting] = useState(false);
     // Inline AI Outliner State for Step 2
     const [wizardInlineAiOutlinePrompt, setWizardInlineAiOutlinePrompt] = useState('');
-    const [wizardInlineAiOutlineProvider, setWizardInlineAiOutlineProvider] = useState('groq');
+    const [wizardInlineAiOutlineProvider, setWizardInlineAiOutlineProvider] = useState('gemini');
     const [wizardInlineAiOutlineLoading, setWizardInlineAiOutlineLoading] = useState(false);
 
     // Step 1 AI & RAG Grounding Studio State
     const [step1AiMode, setStep1AiMode] = useState('topic'); // 'topic' | 'rag'
     const [step1AiPrompt, setStep1AiPrompt] = useState('');
-    const [step1AiProvider, setStep1AiProvider] = useState('groq');
+    const [step1AiProvider, setStep1AiProvider] = useState('gemini');
     const [step1AiLoading, setStep1AiLoading] = useState(false);
+    const [isAnalyzingTitle, setIsAnalyzingTitle] = useState(false);
     const [step1FileName, setStep1FileName] = useState('');
     const [step1DocumentText, setStep1DocumentText] = useState('');
     const [step1ImageBase64, setStep1ImageBase64] = useState(null);
@@ -164,7 +165,7 @@ export default function TrainingModuleWizard({
 
     // Inline AI Generation State for Wizard Exercise Modal
     const [wizardInlineAiPrompt, setWizardInlineAiPrompt] = useState('');
-    const [wizardInlineAiProvider, setWizardInlineAiProvider] = useState('groq');
+    const [wizardInlineAiProvider, setWizardInlineAiProvider] = useState('gemini');
     const [wizardInlineAiLoading, setWizardInlineAiLoading] = useState(false);
 
     // Inline AI Generation State for Wizard Theory Modal
@@ -625,7 +626,7 @@ export default function TrainingModuleWizard({
         const file = e.target.files?.[0];
         if (!file) return;
 
-        // 1. Instant human-friendly title calculated from the filename
+        // Baseline fallback title from filename
         const cleanFileTitle = file.name
             .replace(/\.[^/.]+$/, '')
             .replace(/[-_]/g, ' ')
@@ -634,16 +635,11 @@ export default function TrainingModuleWizard({
             .trim()
             .replace(/\b\w/g, c => c.toUpperCase()) || file.name.replace(/\.[^/.]+$/, '');
 
-        // 2. Immediately populate Course Title & Prompt so the field is never left blank
         setStep1FileName(file.name);
         setStep1AiMode('rag');
-        setModuleForm(prev => ({
-            ...prev,
-            title: prev.title?.trim() ? prev.title : cleanFileTitle
-        }));
-        setStep1AiPrompt(prev => prev?.trim() ? prev : cleanFileTitle);
+        setIsAnalyzingTitle(true);
 
-        const toastId = toast.loading(`Uploading "${file.name}" & extracting content...`);
+        const toastId = toast.loading(`📖 Reading sufficient PDF content from "${file.name}" with Gemini AI...`);
 
         try {
             const formData = new FormData();
@@ -651,7 +647,16 @@ export default function TrainingModuleWizard({
             const uploadRes = await trainingAPI.uploadRagDocument(formData);
 
             if (uploadRes.data?.success) {
-                const { extractedText, imageBase64, mimeType, suggestedTitle } = uploadRes.data.data;
+                const {
+                    extractedText,
+                    imageBase64,
+                    mimeType,
+                    suggestedTitle,
+                    titleHindi,
+                    description,
+                    suggestedLanguage
+                } = uploadRes.data.data;
+
                 if (extractedText) {
                     setStep1DocumentText(extractedText);
                 }
@@ -661,10 +666,17 @@ export default function TrainingModuleWizard({
                 }
 
                 const finalTitle = (suggestedTitle && suggestedTitle.trim().length >= 4) ? suggestedTitle.trim() : cleanFileTitle;
-                setModuleForm(prev => ({ ...prev, title: finalTitle }));
+                setModuleForm(prev => ({
+                    ...prev,
+                    title: finalTitle,
+                    titleHindi: titleHindi || prev.titleHindi || '',
+                    description: description || prev.description || '',
+                    language: suggestedLanguage || prev.language || 'python'
+                }));
                 setStep1AiPrompt(finalTitle);
+                setIsAnalyzingTitle(false);
 
-                toast.success(`📁 "${file.name}" saved to Documents > RAG & title extracted!`, { id: toastId });
+                toast.success(`📖 Analyzed "${file.name}" & synthesized title: "${finalTitle}"!`, { id: toastId });
 
                 // Automatically build the entire module (Units, Theory, Checkpoints, Exercises)
                 await buildCompleteCourseFromDocument({
@@ -679,7 +691,7 @@ export default function TrainingModuleWizard({
             }
         } catch (uploadErr) {
             console.warn('Backend RAG upload failed, falling back to client FileReader:', uploadErr);
-            // Ensure title is present
+            setIsAnalyzingTitle(false);
             setModuleForm(prev => ({ ...prev, title: prev.title?.trim() ? prev.title : cleanFileTitle }));
             setStep1AiPrompt(cleanFileTitle);
 
@@ -910,7 +922,7 @@ export default function TrainingModuleWizard({
                 language: moduleForm.language || 'python',
                 classLevel: moduleForm.classLevel || 11,
                 board: moduleForm.boardAligned || 'CBSE'
-            }, 'groq');
+            }, 'gemini');
 
             const data = res.data?.data?.theory || res.data?.data;
             if (data) {
@@ -1515,8 +1527,8 @@ export default function TrainingModuleWizard({
                                             onChange={e => setStep1AiProvider(e.target.value)}
                                             className="text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1 text-slate-700 dark:text-slate-300"
                                         >
+                                            <option value="gemini">✨ Gemini (Default)</option>
                                             <option value="groq">⚡ Groq (Fast)</option>
-                                            <option value="gemini">✨ Gemini</option>
                                         </select>
                                     </div>
                                 </div>
@@ -1639,11 +1651,19 @@ export default function TrainingModuleWizard({
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="label">Course Title (English) *</label>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="label mb-0">Course Title (English) *</label>
+                                        {isAnalyzingTitle && (
+                                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800 animate-pulse">
+                                                <Sparkles className="w-3 h-3 animate-spin text-indigo-500" />
+                                                Reading PDF content with Gemini...
+                                            </span>
+                                        )}
+                                    </div>
                                     <input
                                         type="text"
-                                        className="input"
-                                        placeholder="e.g. Python Object-Oriented Architecture"
+                                        className={`input ${isAnalyzingTitle ? 'border-indigo-400 ring-2 ring-indigo-200/50 dark:ring-indigo-800/50' : ''}`}
+                                        placeholder={isAnalyzingTitle ? "📖 Reading sufficient PDF content to extract course title..." : "e.g. Python Object-Oriented Architecture"}
                                         value={moduleForm.title}
                                         onChange={e => setModuleForm(f => ({ ...f, title: e.target.value }))}
                                     />
@@ -1929,8 +1949,8 @@ export default function TrainingModuleWizard({
                                                     onChange={e => setWizardInlineAiOutlineProvider(e.target.value)}
                                                     className="text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-0.5"
                                                 >
+                                                    <option value="gemini">✨ Gemini (Default)</option>
                                                     <option value="groq">⚡ Groq (Fast)</option>
-                                                    <option value="gemini">✨ Gemini</option>
                                                 </select>
                                             </div>
                                         </div>
@@ -2106,8 +2126,8 @@ export default function TrainingModuleWizard({
                                             onChange={e => setWizardInlineAiProvider(e.target.value)}
                                             className="text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-0.5"
                                         >
+                                            <option value="gemini">✨ Gemini (Default)</option>
                                             <option value="groq">⚡ Groq (Fast)</option>
-                                            <option value="gemini">✨ Gemini</option>
                                         </select>
                                     </div>
                                 </div>
@@ -2623,8 +2643,8 @@ export default function TrainingModuleWizard({
                                                             onChange={e => setWizardInlineAiProvider(e.target.value)}
                                                             className="text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-0.5"
                                                         >
+                                                            <option value="gemini">✨ Gemini (Default)</option>
                                                             <option value="groq">⚡ Groq (Fast)</option>
-                                                            <option value="gemini">✨ Gemini</option>
                                                         </select>
                                                     </div>
                                                 </div>
