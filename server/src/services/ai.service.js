@@ -3968,6 +3968,7 @@ def factorial(n):
     parseJSONResponse(text) {
         if (!text || typeof text !== 'string') return null;
         let cleanText = text.trim();
+        cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
         cleanText = cleanText.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
 
         // Find JSON bounds
