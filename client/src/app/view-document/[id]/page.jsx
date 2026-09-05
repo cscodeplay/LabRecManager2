@@ -68,7 +68,13 @@ export default function ViewDocumentPage() {
                         <button onClick={() => setIsFullscreen(!isFullscreen)} className="btn btn-secondary text-sm">
                             {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />} {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
                         </button>
-                        <a href={doc.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary text-sm flex items-center gap-2">
+                        <a
+                            href={doc.url}
+                            download={doc.fileName || doc.name}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-primary text-sm flex items-center gap-2"
+                        >
                             <Download className="w-4 h-4" /> Download
                         </a>
                     </div>
@@ -82,18 +88,28 @@ export default function ViewDocumentPage() {
                         const ext = doc.url.split('.').pop().toLowerCase();
                         const type = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odp', 'mp4', 'mpeg', 'ogg', 'webm', 'avi', 'mov', 'mp3', 'wav', 'm4a', 'aac', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'html', 'csv'].includes(ext) ? ext : doc.fileType;
                         
-                        if (['ppt', 'pptx'].includes(type)) {
+                        if (type === 'pdf') {
                             return (
                                 <iframe
-                                    src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(doc.url)}`}
+                                    src={doc.url}
+                                    className={`w-full border-0 ${isFullscreen ? 'h-full min-h-[calc(100vh-89px)]' : 'h-[80vh]'}`}
+                                    title="PDF Preview"
+                                />
+                            );
+                        } else if (['ppt', 'pptx'].includes(type)) {
+                            const fullUrl = doc.url.startsWith('http') ? doc.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${doc.url}`;
+                            return (
+                                <iframe
+                                    src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fullUrl)}`}
                                     className={`w-full border-0 ${isFullscreen ? 'h-full min-h-[calc(100vh-89px)]' : 'h-[80vh]'}`}
                                     title="Document Preview"
                                 />
                             );
-                        } else if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'odp'].includes(type)) {
+                        } else if (['doc', 'docx', 'xls', 'xlsx', 'odp'].includes(type)) {
+                            const fullUrl = doc.url.startsWith('http') ? doc.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${doc.url}`;
                             return (
                                 <iframe
-                                    src={`https://docs.google.com/viewer?url=${encodeURIComponent(doc.url)}&embedded=true`}
+                                    src={`https://docs.google.com/viewer?url=${encodeURIComponent(fullUrl)}&embedded=true`}
                                     className={`w-full border-0 ${isFullscreen ? 'h-full min-h-[calc(100vh-89px)]' : 'h-[80vh]'}`}
                                     title="Document Preview"
                                 />

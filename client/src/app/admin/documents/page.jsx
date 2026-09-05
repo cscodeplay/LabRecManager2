@@ -1726,7 +1726,7 @@ export default function DocumentsPage() {
                                                         </>
                                                     )}
                                                     {activeTab === 'shared' && shareInfo?.permission !== 'view' && (
-                                                        <a href={doc.url} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded" title="Download">
+                                                        <a href={doc.url} download={doc.fileName || doc.name} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded" title="Download">
                                                             <Download className="w-4 h-4" />
                                                         </a>
                                                     )}
@@ -1911,7 +1911,7 @@ export default function DocumentsPage() {
                                     <button onClick={() => setIsPreviewFullscreen(!isPreviewFullscreen)} title="Toggle Fullscreen" className="btn btn-secondary text-sm p-2">
                                         {isPreviewFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
                                     </button>
-                                    <a title="Download" href={viewingDoc.url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary text-sm p-2">
+                                    <a title="Download" href={viewingDoc.url} download={viewingDoc.fileName || viewingDoc.name} target="_blank" rel="noopener noreferrer" className="btn btn-secondary text-sm p-2">
                                         <Download className="w-5 h-5" />
                                     </a>
                                     <button onClick={() => { setViewingDoc(null); setIsPreviewFullscreen(false); }} className="text-slate-400 hover:text-slate-600 p-2"><X className="w-5 h-5" /></button>
@@ -1924,18 +1924,28 @@ export default function DocumentsPage() {
                                     
                                     if (['docx', 'xlsx', 'xls', 'csv'].includes(type)) {
                                         return <FileViewer url={viewingDoc.url} fileType={type} name={viewingDoc.name} />;
-                                    } else if (['ppt', 'pptx'].includes(type)) {
+                                    } else if (type === 'pdf') {
                                         return (
                                             <iframe
-                                                src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(viewingDoc.url)}`}
+                                                src={viewingDoc.url}
+                                                className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
+                                                title="PDF Preview"
+                                            />
+                                        );
+                                    } else if (['ppt', 'pptx'].includes(type)) {
+                                        const fullUrl = viewingDoc.url.startsWith('http') ? viewingDoc.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${viewingDoc.url}`;
+                                        return (
+                                            <iframe
+                                                src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fullUrl)}`}
                                                 className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
                                                 title="Document Preview"
                                             />
                                         );
-                                    } else if (['pdf', 'doc', 'odp'].includes(type)) {
+                                    } else if (['doc', 'odp'].includes(type)) {
+                                        const fullUrl = viewingDoc.url.startsWith('http') ? viewingDoc.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${viewingDoc.url}`;
                                         return (
                                             <iframe
-                                                src={`https://docs.google.com/viewer?url=${encodeURIComponent(viewingDoc.url)}&embedded=true`}
+                                                src={`https://docs.google.com/viewer?url=${encodeURIComponent(fullUrl)}&embedded=true`}
                                                 className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
                                                 title="Document Preview"
                                             />

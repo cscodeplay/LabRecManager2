@@ -65,9 +65,67 @@ async function evaluateStudentCodeWithAI(code, problemStatement, failedCases) {
 }
 
 /**
- * Helper to run Python code with local python3 sandbox and Wandbox fallback
+ * Helper to run Python/SQL code with local sandbox and Wandbox fallback
  */
-async function executePythonCode(code, input = '') {
+async function executePythonCode(code, input = '', language = 'python') {
+    const isSql = language === 'sql' || (
+        !code.includes('def ') && !code.includes('import ') && !code.includes('print(') &&
+        /\b(SELECT|CREATE\s+TABLE|INSERT\s+INTO|UPDATE|DELETE|ALTER\s+TABLE|pragma_table_info)\b/i.test(code)
+    );
+
+    if (isSql) {
+        const fullSql = code + (input ? `\n${input}` : '');
+        const pySqlRunner = `
+import sqlite3, sys
+con = sqlite3.connect(':memory:')
+cur = con.cursor()
+sql_script = sys.stdin.read()
+for raw_stmt in sql_script.strip().split(';'):
+    stmt = raw_stmt.strip()
+    if not stmt: continue
+    try:
+        cur.execute(stmt)
+        if cur.description:
+            for row in cur.fetchall():
+                print('\\n'.join(str(x) for x in row) if len(row) > 1 else str(row[0]))
+    except Exception as e:
+        sys.stderr.write(f"SQL Error: {e}\\n")
+con.commit()
+con.close()
+`;
+        try {
+            const proc = spawnSync('python3', ['-c', pySqlRunner], {
+                input: fullSql,
+                encoding: 'utf8',
+                timeout: 6000
+            });
+            if (proc.stdout !== null || proc.stderr !== null) {
+                return {
+                    stdout: proc.stdout || '',
+                    stderr: proc.stderr || (proc.error ? proc.error.message : ''),
+                    code: proc.status !== null ? proc.status : (proc.error ? 1 : 0)
+                };
+            }
+        } catch (localSqlErr) {
+            console.warn('[SQL Execution] Local SQLite runner error:', localSqlErr.message);
+        }
+
+        try {
+            const response = await axios.post('https://wandbox.org/api/compile.json', {
+                compiler: 'sqlite-3.46.1',
+                code: fullSql,
+                stdin: ''
+            }, { timeout: 8000 });
+            return {
+                stdout: response.data.program_message || response.data.program_output || '',
+                stderr: response.data.program_error || response.data.compiler_error || '',
+                code: parseInt(response.data.status || 0, 10)
+            };
+        } catch (wbErr) {
+            console.error('[SQL Execution] Wandbox error:', wbErr.message);
+        }
+    }
+
     let inputStr = '';
     if (Array.isArray(input)) {
         inputStr = input.map(x => (x !== null && x !== undefined) ? String(x) : '').join('\n') + '\n';
@@ -1986,13 +2044,20 @@ router.post('/ai/from-document', authenticate, asyncHandler(async (req, res) => 
     const payload = req.body.payload || req.body;
     const provider = req.body.provider || payload.provider || 'gemini';
 
+    const textToCheck = ((payload.documentText || '') + ' ' + (payload.customPrompt || '')).toLowerCase();
+    const isDbRelated = /\b(database|sql|dbms|rdbms|relational|create\s+table|primary\s+key|foreign\s+key)\b/i.test(textToCheck);
+    let resolvedLanguage = payload.language || (isDbRelated ? 'sql' : 'python');
+    if (isDbRelated && resolvedLanguage === 'python') {
+        resolvedLanguage = 'sql';
+    }
+
     try {
         const result = await aiService.generateTrainingModuleFromDocument({
             documentText: payload.documentText || '',
             imageBase64: payload.imageBase64 || null,
             mimeType: payload.mimeType || 'image/jpeg',
             customPrompt: payload.customPrompt || '',
-            language: payload.language || 'python',
+            language: resolvedLanguage,
             classLevel: payload.classLevel || 11,
             board: payload.board || 'CBSE',
             totalUnits: payload.totalUnits || 3,
@@ -2014,7 +2079,7 @@ router.post('/ai/from-document', authenticate, asyncHandler(async (req, res) => 
             const fallbackResult = aiService.generateDeterministicFallbackModule({
                 documentText: payload.documentText || '',
                 customPrompt: payload.customPrompt || '',
-                language: payload.language || 'python',
+                language: resolvedLanguage,
                 classLevel: payload.classLevel || 11,
                 board: payload.board || 'CBSE',
                 totalUnits: payload.totalUnits || 3
@@ -2117,12 +2182,13 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
     }
 
     // 3. Deep Analysis of Sufficient PDF content to extract Course Title and Metadata
+    const isDbInitially = /\b(database|sql|dbms|rdbms|relational|create\s+table|primary\s+key|foreign\s+key)\b/i.test((extractedText || '').toLowerCase());
     let analyzedMeta = {
         title: cleanFileNameTitle,
-        titleHindi: `${cleanFileNameTitle} (पाठ्यक्रम)`,
-        description: 'Comprehensive curriculum module synthesized from syllabus material.',
-        keyTopics: [],
-        suggestedLanguage: 'python'
+        titleHindi: isDbInitially ? 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम' : `${cleanFileNameTitle} (पाठ्यक्रम)`,
+        description: isDbInitially ? 'Comprehensive curriculum module covering Relational Databases & SQL.' : 'Comprehensive curriculum module synthesized from syllabus material.',
+        keyTopics: isDbInitially ? ['Relational Data Model & Keys', 'SQL Data Definition (DDL)', 'SQL Data Manipulation (DML)'] : [],
+        suggestedLanguage: isDbInitially ? 'sql' : 'python'
     };
 
     if (extractedText && extractedText.trim().length >= 20) {
@@ -2134,18 +2200,26 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
                 originalFileName: originalName
             });
             if (aiMeta && aiMeta.title && aiMeta.title.length >= 4) {
+                const combinedCheck = (aiMeta.title + ' ' + (extractedText || '')).toLowerCase();
+                const isSqlTopic = /\b(database|sql|dbms|rdbms|relational)\b/i.test(combinedCheck);
                 analyzedMeta = {
                     title: aiMeta.title,
-                    titleHindi: aiMeta.titleHindi || `${aiMeta.title} (पाठ्यक्रम)`,
+                    titleHindi: aiMeta.titleHindi || (isSqlTopic ? 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम' : `${aiMeta.title} (पाठ्यक्रम)`),
                     description: aiMeta.description || analyzedMeta.description,
-                    keyTopics: Array.isArray(aiMeta.keyTopics) ? aiMeta.keyTopics : [],
-                    suggestedLanguage: aiMeta.suggestedLanguage || 'python'
+                    keyTopics: Array.isArray(aiMeta.keyTopics) && aiMeta.keyTopics.length > 0 ? aiMeta.keyTopics : (isSqlTopic ? ['Relational Data Model & Keys', 'SQL Data Definition (DDL)', 'SQL Data Manipulation (DML)'] : []),
+                    suggestedLanguage: isSqlTopic ? 'sql' : (aiMeta.suggestedLanguage || 'python')
                 };
             }
         } catch (metaErr) {
             console.warn('[RAG Upload] Title extraction warning:', metaErr.message);
             const algoTitle = aiService.deepAlgorithmicTitleExtract(extractedText, originalName);
+            const isSqlTopic = /\b(database|sql|dbms|rdbms|relational)\b/i.test((algoTitle + ' ' + extractedText).toLowerCase());
             analyzedMeta.title = algoTitle || cleanFileNameTitle;
+            if (isSqlTopic) {
+                analyzedMeta.suggestedLanguage = 'sql';
+                analyzedMeta.titleHindi = 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम';
+                analyzedMeta.keyTopics = ['Relational Data Model & Keys', 'SQL Data Definition (DDL)', 'SQL Data Manipulation (DML)'];
+            }
         }
     } else if (req.file.mimetype.startsWith('image/')) {
         try {
@@ -2156,12 +2230,14 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
                 originalFileName: originalName
             });
             if (aiMeta && aiMeta.title && aiMeta.title.length >= 4) {
+                const combinedCheck = (aiMeta.title + ' ' + (extractedText || '')).toLowerCase();
+                const isSqlTopic = /\b(database|sql|dbms|rdbms|relational)\b/i.test(combinedCheck);
                 analyzedMeta = {
                     title: aiMeta.title,
-                    titleHindi: aiMeta.titleHindi || `${aiMeta.title} (पाठ्यक्रम)`,
+                    titleHindi: aiMeta.titleHindi || (isSqlTopic ? 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम' : `${aiMeta.title} (पाठ्यक्रम)`),
                     description: aiMeta.description || analyzedMeta.description,
                     keyTopics: Array.isArray(aiMeta.keyTopics) ? aiMeta.keyTopics : [],
-                    suggestedLanguage: aiMeta.suggestedLanguage || 'python'
+                    suggestedLanguage: isSqlTopic ? 'sql' : (aiMeta.suggestedLanguage || 'python')
                 };
             }
         } catch (imgErr) {
@@ -2169,7 +2245,13 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
         }
     } else {
         const algoTitle = aiService.deepAlgorithmicTitleExtract(extractedText, originalName);
+        const isSqlTopic = /\b(database|sql|dbms|rdbms|relational)\b/i.test((algoTitle + ' ' + extractedText).toLowerCase());
         analyzedMeta.title = algoTitle || cleanFileNameTitle;
+        if (isSqlTopic) {
+            analyzedMeta.suggestedLanguage = 'sql';
+            analyzedMeta.titleHindi = 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम';
+            analyzedMeta.keyTopics = ['Relational Data Model & Keys', 'SQL Data Definition (DDL)', 'SQL Data Manipulation (DML)'];
+        }
     }
 
     const suggestedTitle = analyzedMeta.title || cleanFileNameTitle;

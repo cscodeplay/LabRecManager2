@@ -2425,9 +2425,11 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // Domain-specific density across the full multi-page document text
         const mathScore = (lowerText.match(/\b(math\.|ceil|floor|trunc|factorial|trigonometry|hypot|radians|degrees|logarithm|exponent|sqrt|gcd|pi|tau)\b/g) || []).length;
-        const oopScore = (lowerText.match(/\b(class|object|inheritance|polymorphism|encapsulation|__init__|subclass|method overriding|self\.)\b/g) || []).length;
+        // Require explicit class declaration or OOP keywords to avoid matching grade levels like 'Class 11' or 'Class XII'
+        const oopScore = (lowerText.match(/\b(class\s+[a-zA-Z_]|inheritance|polymorphism|encapsulation|__init__|subclass|superclass|method\s+overriding|self\.|instance\s+methods?|class\s+variables?|abstract\s+class|dunder)\b/gi) || []).length
+            + (lowerText.includes('object-oriented') || lowerText.includes('object oriented') ? 6 : 0);
         const pandasScore = (lowerText.match(/\b(pandas|dataframe|series|numpy|read_csv|matplotlib|data analysis|data frame)\b/g) || []).length;
-        const sqlScore = (lowerText.match(/\b(select|from|where|create table|foreign key|primary key|relational|database|rdbms|sql)\b/g) || []).length;
+        const sqlScore = (lowerText.match(/\b(select|from|where|create\s+table|alter\s+table|drop\s+table|insert\s+into|update|delete\s+from|foreign\s+key|primary\s+key|candidate\s+key|alternate\s+key|relational\s+database|relational\s+data|relational\s+model|database\s+management|database\s+concepts?|databases?|rdbms|dbms|sql|mysql|sqlite|ddl|dml|degree|cardinality|tuple|attribute|normalization|referential\s+integrity|group\s+by|order\s+by|having)\b/gi) || []).length;
         const dataStructScore = (lowerText.match(/\b(stack|queue|linked list|binary tree|recursion|sorting|bubble sort|insertion sort|searching)\b/g) || []).length;
         const networkScore = (lowerText.match(/\b(networking|ip address|tcp|udp|osi layer|packet|router|topology|cyber|security)\b/g) || []).length;
 
@@ -2451,7 +2453,7 @@ Output MUST be ONLY valid JSON matching this schema:
                     candidateHeaders.push(cand);
                 }
             } else if (line.length >= 8 && line.length <= 75 && !isSuperficial(line) && !line.startsWith('http')) {
-                if (/(computer science|programming|data structures|algorithms|database|sql|computer systems|networks|math library|cyber|computational thinking|artificial intelligence|machine learning|web development)/i.test(line)) {
+                if (/(database|sql|rdbms|dbms|relational|computer science|programming|data structures|algorithms|computer systems|networks|math library|cyber|computational thinking|artificial intelligence|machine learning|web development)/i.test(line)) {
                     const cleaned = line.replace(/^(class\s*[ivx0-9]+\s*[:\-]?\s*)/i, '').replace(/^[#*_\s]+|[#*_\s]+$/g, '').trim();
                     if (!isSuperficial(cleaned)) {
                         candidateHeaders.push(cleaned);
@@ -2462,12 +2464,15 @@ Output MUST be ONLY valid JSON matching this schema:
 
         if (candidateHeaders.length > 0) {
             // Prioritize headers with rich curriculum concepts over generic lines
-            const topSubject = candidateHeaders.find(h => /(computer science|computational thinking|programming|computer systems)/i.test(h));
-            const bestHeader = topSubject || candidateHeaders.find(h => /(python|math|class|object|data|structure|sql|network)/i.test(h)) || candidateHeaders[0];
+            const topSubject = candidateHeaders.find(h => /(database|sql|rdbms|relational|computer science|computational thinking|programming|computer systems)/i.test(h));
+            const bestHeader = topSubject || candidateHeaders.find(h => /(database|sql|rdbms|relational|python|math|class\s+[A-Za-z]|data\s+structure|network)/i.test(h)) || candidateHeaders[0];
             if (bestHeader) return bestHeader.replace(/^(unit|chapter|module|topic|course|subject)\s*[:\-]\s*/i, '').trim();
         }
 
         // Domain density clear winners
+        if (sqlScore >= 4 && sqlScore >= oopScore && sqlScore >= mathScore) {
+            return 'Relational Databases & SQL Query Systems';
+        }
         if (mathScore >= 6 && mathScore > oopScore && mathScore > pandasScore) {
             return 'Python: Math Library Modules & Numeric Algorithms';
         }
@@ -2477,7 +2482,7 @@ Output MUST be ONLY valid JSON matching this schema:
         if (pandasScore >= 6) {
             return 'Python: Data Handling with Pandas & NumPy';
         }
-        if (sqlScore >= 6) {
+        if (sqlScore >= 4) {
             return 'Relational Databases & SQL Query Systems';
         }
         if (dataStructScore >= 6) {
@@ -2513,11 +2518,12 @@ ${documentText ? documentText.slice(0, 18000) : 'Extracted from uploaded textboo
 
 CRITICAL INSTRUCTIONS:
 1. Do NOT use generic administrative or institutional headers (e.g. NEVER output "Central Board of Secondary Education", "CBSE Curriculum", "Senior School Curriculum", "Code 083", "Subject Code", "Session 2024-25").
-2. Read the actual topics, concepts, modules, or chapter headings in the content to identify the true subject (e.g. "Python: Math Library Modules & Numeric Algorithms", "Python: Object-Oriented Programming & Software Design", "Data Handling with Pandas & NumPy", "Relational Databases & SQL").
-3. Generate an authentic Hindi title in "titleHindi" (e.g. "पायथन: मैथ लाइब्रेरी मॉड्यूल और संख्यात्मक एल्गोरिदम").
-4. Write a 2-3 sentence overview in "description" summarizing what learners will master.
-5. Provide 3-6 core topics in "keyTopics".
-6. Suggest programming language in "suggestedLanguage" ("python", "sql", "java", "cpp", "javascript", or "general").
+2. Read the actual topics, concepts, modules, or chapter headings in the content to identify the true subject (e.g. "Relational Databases & SQL Query Systems", "Database Concepts & Management", "Python: Math Library Modules & Numeric Algorithms", "Python: Object-Oriented Programming & Software Design", "Data Handling with Pandas & NumPy").
+3. If the material teaches database concepts, relational models, keys, SQL queries (SELECT, CREATE TABLE, WHERE, INSERT, etc.), the course title MUST reflect Databases / SQL, and "suggestedLanguage" MUST be "sql"!
+4. Generate an authentic Hindi title in "titleHindi" (e.g. "रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम").
+5. Write a 2-3 sentence overview in "description" summarizing what learners will master.
+6. Provide 3-6 core topics in "keyTopics".
+7. Suggest programming language in "suggestedLanguage" ("sql" for database/queries, "python" for general Python/algorithms, "java", "cpp", "javascript", or "general").
 
 Output MUST be ONLY valid JSON matching this schema:
 {
@@ -2527,6 +2533,16 @@ Output MUST be ONLY valid JSON matching this schema:
   "keyTopics": ["Topic 1", "Topic 2", "Topic 3"],
   "suggestedLanguage": "python"
 }`;
+
+        const postProcessMeta = (parsed) => {
+            if (!parsed || !parsed.title || parsed.title.length < 4) return null;
+            const lowerCheck = (parsed.title + ' ' + (parsed.description || '') + ' ' + (documentText || '')).toLowerCase();
+            const isDb = /\b(database|sql|dbms|rdbms|relational|create\s+table|primary\s+key|foreign\s+key)\b/i.test(lowerCheck);
+            if (isDb && (!parsed.suggestedLanguage || parsed.suggestedLanguage === 'python')) {
+                parsed.suggestedLanguage = 'sql';
+            }
+            return parsed;
+        };
 
         // 1. Vision Mode if imageBase64 is provided
         if (imageBase64) {
@@ -2544,10 +2560,8 @@ Output MUST be ONLY valid JSON matching this schema:
                             },
                             promptText
                         ]);
-                        const parsed = this.parseJSONResponse(result.response.text());
-                        if (parsed && parsed.title && parsed.title.length >= 4) {
-                            return parsed;
-                        }
+                        const parsed = postProcessMeta(this.parseJSONResponse(result.response.text()));
+                        if (parsed) return parsed;
                     } catch (err) {
                         console.warn(`[AIService] Gemini Vision title extraction (${modelName}) failed:`, err.message);
                     }
@@ -2570,10 +2584,8 @@ Output MUST be ONLY valid JSON matching this schema:
                         ],
                         temperature: 0.2
                     });
-                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
-                    if (parsed && parsed.title && parsed.title.length >= 4) {
-                        return parsed;
-                    }
+                    const parsed = postProcessMeta(this.parseJSONResponse(completion.choices[0]?.message?.content || '{}'));
+                    if (parsed) return parsed;
                 } catch (err) {
                     console.warn('[AIService] Groq Vision title extraction failed:', err.message);
                 }
@@ -2587,10 +2599,8 @@ Output MUST be ONLY valid JSON matching this schema:
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
                     const result = await model.generateContent(promptText);
-                    const parsed = this.parseJSONResponse(result.response.text());
-                    if (parsed && parsed.title && parsed.title.length >= 4) {
-                        return parsed;
-                    }
+                    const parsed = postProcessMeta(this.parseJSONResponse(result.response.text()));
+                    if (parsed) return parsed;
                 } catch (err) {
                     console.warn(`[AIService] Gemini title extraction (${modelName}) failed:`, err.message);
                 }
@@ -2610,10 +2620,8 @@ Output MUST be ONLY valid JSON matching this schema:
                         ],
                         temperature: 0.2
                     });
-                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
-                    if (parsed && parsed.title && parsed.title.length >= 4) {
-                        return parsed;
-                    }
+                    const parsed = postProcessMeta(this.parseJSONResponse(completion.choices[0]?.message?.content || '{}'));
+                    if (parsed) return parsed;
                 } catch (err) {
                     console.warn(`[AIService] Groq title extraction (${modelName}) failed:`, err.message);
                 }
@@ -2627,10 +2635,8 @@ Output MUST be ONLY valid JSON matching this schema:
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
                     const result = await model.generateContent(promptText);
-                    const parsed = this.parseJSONResponse(result.response.text());
-                    if (parsed && parsed.title && parsed.title.length >= 4) {
-                        return parsed;
-                    }
+                    const parsed = postProcessMeta(this.parseJSONResponse(result.response.text()));
+                    if (parsed) return parsed;
                 } catch (err) {
                     console.warn(`[AIService] Secondary Gemini title extraction (${modelName}) failed:`, err.message);
                 }
@@ -2639,12 +2645,18 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 5. Deep algorithmic extraction fallback
         const algoTitle = this.deepAlgorithmicTitleExtract(documentText, originalFileName);
+        const lowerAlgo = (algoTitle + ' ' + (documentText || '')).toLowerCase();
+        const isDbTopic = /\b(database|sql|dbms|rdbms|relational|create\s+table|primary\s+key)\b/i.test(lowerAlgo);
         return {
             title: algoTitle,
-            titleHindi: `${algoTitle} (पाठ्यक्रम)`,
-            description: `A comprehensive curriculum module on ${algoTitle} synthesized from the uploaded syllabus resource.`,
-            keyTopics: [algoTitle, 'Core Foundations', 'Practical Implementation'],
-            suggestedLanguage: 'python'
+            titleHindi: isDbTopic ? 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम' : `${algoTitle} (पाठ्यक्रम)`,
+            description: isDbTopic
+                ? 'A comprehensive curriculum module covering Database Concepts, Relational Data Models, Keys, and Structured Query Language (SQL) DDL & DML operations.'
+                : `A comprehensive curriculum module on ${algoTitle} synthesized from the uploaded syllabus resource.`,
+            keyTopics: isDbTopic
+                ? ['Relational Data Model & Keys', 'SQL Data Definition (DDL)', 'SQL Data Manipulation (DML) & Queries', 'Aggregate Functions & Grouping']
+                : [algoTitle, 'Core Foundations', 'Practical Implementation'],
+            suggestedLanguage: isDbTopic ? 'sql' : 'python'
         };
     }
 
@@ -2663,11 +2675,19 @@ Output MUST be ONLY valid JSON matching this schema:
         provider = 'gemini'
     }) {
         const targetUnitsCount = Math.max(1, Math.min(10, parseInt(totalUnits) || 3));
+        const lowerDoc = ((documentText || '') + ' ' + (customPrompt || '')).toLowerCase();
+        const isDatabaseDoc = /\b(database|sql|dbms|rdbms|relational|create\s+table|primary\s+key|foreign\s+key|select\s+.*from)\b/i.test(lowerDoc);
+        let targetLanguage = language;
+        if (isDatabaseDoc && (!language || language === 'python' || language === 'sql')) {
+            targetLanguage = 'sql';
+        }
+
         const systemPrompt = `You are an elite AI Computer Science Curriculum Architect and Textbook Synthesizer.
 Analyze the provided textbook / syllabus / PDF material and construct a fully-structured, grounded interactive training module with progressive units and multi-modal exercises.
 
 TARGET PARAMETERS:
-- LANGUAGE: ${language}
+- LANGUAGE: ${targetLanguage}
+- DOMAIN CONTEXT: ${isDatabaseDoc ? 'DATABASE MANAGEMENT SYSTEMS & SQL. Ground all units, theory notes, and coding/debug exercises in Relational Databases, Keys, DDL (CREATE/ALTER TABLE), DML (INSERT/SELECT/UPDATE/DELETE), and SQL query logic.' : 'Extract grounded curriculum directly from the document.'}
 - CLASS LEVEL: Grade ${classLevel}
 - BOARD: ${board}
 - TARGET UNITS: ${targetUnitsCount}
@@ -2699,7 +2719,7 @@ Output MUST be ONLY valid JSON matching this schema:
   "title": "Course Title derived directly from document",
   "titleHindi": "कोर्स का शीर्षक (हिंदी में)",
   "description": "Comprehensive course description based on document...",
-  "language": "${language}",
+  "language": "${targetLanguage}",
   "boardAligned": "${board}",
   "classLevel": ${Number(classLevel) || 11},
   "extractedSummary": "Detailed summary of chapters, sections, and topics extracted from source document",
@@ -2860,7 +2880,7 @@ Output MUST be ONLY valid JSON matching this schema:
         return this.generateDeterministicFallbackModule({
             documentText,
             customPrompt,
-            language,
+            language: targetLanguage,
             classLevel,
             board,
             totalUnits
@@ -2882,8 +2902,346 @@ Output MUST be ONLY valid JSON matching this schema:
         originalFileName = ''
     }) {
         const lowerDoc = (documentText + ' ' + customPrompt).toLowerCase();
-        const isMathModule = lowerDoc.includes('math') || lowerDoc.includes('numeric') || lowerDoc.includes('ceil') || lowerDoc.includes('trigonometry');
-        const isOopModule = lowerDoc.includes('class') || lowerDoc.includes('object') || lowerDoc.includes('oop') || lowerDoc.includes('inheritance') || lowerDoc.includes('encapsulation');
+        const isDatabaseModule = /\b(database|sql|dbms|rdbms|relational|create\s+table|primary\s+key|foreign\s+key|select\s+.*from|ddl|dml|mysql|sqlite|table|query|schema)\b/i.test(lowerDoc);
+        const isMathModule = !isDatabaseModule && (lowerDoc.includes('math') || lowerDoc.includes('numeric') || lowerDoc.includes('ceil') || lowerDoc.includes('trigonometry'));
+        const isOopModule = !isDatabaseModule && !isMathModule && (
+            /\b(class\s+[A-Za-z0-9_]+|inheritance|polymorphism|encapsulation|__init__|subclass|superclass|method\s+overriding)\b/i.test(lowerDoc) ||
+            lowerDoc.includes('object-oriented') || lowerDoc.includes('object oriented')
+        );
+
+        if (isDatabaseModule) {
+            return {
+                title: 'Relational Databases & SQL Query Systems',
+                titleHindi: 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम',
+                description: 'A comprehensive curriculum module covering Database Concepts, Relational Data Models, Keys, and Structured Query Language (SQL) DDL & DML operations.',
+                language: 'sql',
+                boardAligned: board || 'CBSE',
+                classLevel: Number(classLevel) || 11,
+                extractedSummary: 'Synthesized 3 progressive units covering Relational Data Model & Keys, SQL Data Definition Language (DDL) with Table Constraints, and SQL Data Manipulation Language (DML) with Advanced Filtering and Aggregate Functions.',
+                pedagogyConfig: { useBlooms: true, useObjectives: true, useTimeLimit: false },
+                units: [
+                    {
+                        unitNumber: 1,
+                        title: 'Unit 1: Database Concepts, Relational Data Model & Keys',
+                        description: 'Foundational concepts of database systems, relations, attributes, tuples, degree, cardinality, and candidate/primary/foreign keys.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: [
+                            'Limitations of File System vs Database Management System (DBMS)',
+                            'Relational Data Model: Relation (Table), Attribute (Column), Tuple (Row), Domain',
+                            'Degree (number of attributes) vs Cardinality (number of tuples)',
+                            'Candidate Key, Primary Key, Alternate Key',
+                            'Foreign Key and Referential Integrity constraints'
+                        ],
+                        theory: `### 1. Database Concepts & DBMS Overview
+A **Database** is an organized collection of structured data. A **Database Management System (DBMS)** is system software for creating and managing databases, eliminating file system limitations like data redundancy, inconsistency, and lack of concurrent access.
+
+### 2. The Relational Data Model
+In a **Relational Database**, data is organized into two-dimensional tables called **Relations**:
+- **Relation (Table)**: A grid of columns and rows containing data.
+- **Attribute (Field/Column)**: A named column representing a specific property (e.g., \`RollNo\`, \`StudentName\`, \`Marks\`).
+- **Tuple (Record/Row)**: A single row of related data values.
+- **Domain**: The pool of permissible values from which an attribute draws its values.
+
+> **CBSE Formula / Golden Rule**:
+> - **Degree**: The total number of attributes (columns) in a relation.
+> - **Cardinality**: The total number of tuples (rows) in a relation.
+
+| RollNo | Name | Stream | Marks |
+| :--- | :--- | :--- | :--- |
+| 101 | Aarav | Science | 92 |
+| 102 | Priya | Commerce | 88 |
+| 103 | Rohan | Humanities | 85 |
+
+*In the table above: Degree = 4 (columns), Cardinality = 3 (rows).*
+
+### 3. Relational Keys
+- **Candidate Key**: Any attribute or set of attributes capable of uniquely identifying each tuple in a relation.
+- **Primary Key**: The candidate key chosen by the database designer to uniquely identify tuples. A primary key CANNOT contain duplicate or \`NULL\` values.
+- **Alternate Key**: A candidate key that was NOT chosen as the primary key.
+- **Foreign Key**: A non-key attribute in a relation whose values are derived from the Primary Key of another relation, enforcing **Referential Integrity**.`,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_db_1',
+                                question: 'If a relation contains 5 attributes (columns) and 40 records (rows), what are its degree and cardinality?',
+                                options: [
+                                    'Degree = 5, Cardinality = 40',
+                                    'Degree = 40, Cardinality = 5',
+                                    'Degree = 45, Cardinality = 200',
+                                    'Degree = 5, Cardinality = 5'
+                                ],
+                                correctOption: 0,
+                                explanation: 'Degree is the number of attributes/columns (5), while Cardinality is the number of tuples/rows (40).'
+                            },
+                            {
+                                id: 'cp_db_2',
+                                question: 'Which of the following statements about a Primary Key is correct?',
+                                options: [
+                                    'It can store NULL values',
+                                    'It must be unique and cannot contain NULL values',
+                                    'A table can possess multiple primary keys',
+                                    'It must always have a floating-point data type'
+                                ],
+                                correctOption: 1,
+                                explanation: 'Entity integrity requires a Primary Key to have unique and non-null values for each record.'
+                            }
+                        ],
+                        cbseTips: [
+                            'Degree = Columns, Cardinality = Rows. Memory trick: Degree starts with D (like Direction/Down columns), Cardinality is count of records.',
+                            'A relation can have multiple candidate keys, but exactly ONE primary key.'
+                        ],
+                        suggestedExerciseTypes: ['coding', 'mcq'],
+                        exercises: [
+                            {
+                                title: 'Define Student Table with Primary Key & NOT NULL',
+                                description: 'Write a SQL DDL statement to create a table `Student` with columns `RollNo INT PRIMARY KEY`, `Name VARCHAR(50) NOT NULL`, and `Marks FLOAT`.',
+                                exerciseType: 'coding',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Declare table schemas with primary key and nullability constraints.',
+                                xpReward: 20,
+                                timeLimit: 5,
+                                starterCode: `-- Write your SQL statement below to create table Student\nCREATE TABLE Student (\n    \n);\n`,
+                                solutionCode: `CREATE TABLE Student (\n    RollNo INT PRIMARY KEY,\n    Name VARCHAR(50) NOT NULL,\n    Marks FLOAT\n);\n`,
+                                testCases: [
+                                    { input: "SELECT name FROM pragma_table_info('Student') WHERE name='RollNo' OR name='Name';", expectedOutput: 'RollNo\nName', isHidden: false }
+                                ],
+                                hints: ['Declare RollNo INT PRIMARY KEY, Name VARCHAR(50) NOT NULL, and Marks FLOAT.']
+                            }
+                        ]
+                    },
+                    {
+                        unitNumber: 2,
+                        title: 'Unit 2: SQL Data Definition (DDL) & Table Constraints',
+                        description: 'Creating tables, managing schemas with ALTER TABLE, and enforcing data integrity via table constraints.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: [
+                            'SQL Data Types: CHAR(n) vs VARCHAR(n), INT, DECIMAL, DATE',
+                            'DDL Commands: CREATE TABLE, ALTER TABLE, DROP TABLE',
+                            'Table Constraints: PRIMARY KEY, UNIQUE, NOT NULL, DEFAULT, CHECK',
+                            'Foreign Key REFERENCES and Referential Integrity',
+                            'ALTER TABLE ADD, MODIFY, and DROP COLUMN operations'
+                        ],
+                        theory: `### 1. SQL Data Types
+- **\`CHAR(n)\`**: Fixed-length character string. Padded with spaces if the stored string is shorter than \`n\`.
+- **\`VARCHAR(n)\`**: Variable-length character string. Stores only the characters entered, saving storage space.
+- **\`INT\` / \`INTEGER\`**: Standard integer values.
+- **\`FLOAT\` / \`DECIMAL(p, s)\`**: Exact and floating-point numeric values.
+- **\`DATE\`**: Calendar dates formatted as \`'YYYY-MM-DD'\`.
+
+### 2. Data Definition Language (DDL)
+DDL commands modify the database catalog / schema directly:
+
+\`\`\`sql
+-- Creating a table with column constraints
+CREATE TABLE Employee (
+    EmpId INT PRIMARY KEY,
+    EmpName VARCHAR(50) NOT NULL,
+    Dept VARCHAR(30) DEFAULT 'General',
+    Salary DECIMAL(10, 2) CHECK (Salary > 0)
+);
+
+-- Modifying table schema
+ALTER TABLE Employee ADD Email VARCHAR(100);
+ALTER TABLE Employee DROP COLUMN Dept;
+
+-- Removing a table permanently
+DROP TABLE Employee;
+\`\`\`
+
+> **CBSE Examination Pitfall: DROP vs DELETE**:
+> - **\`DROP TABLE\` (DDL)**: Destroys the table definition, schema metadata, and all records from the database permanently.
+> - **\`DELETE FROM\` (DML)**: Deletes records/tuples from the table, but leaves the table structure intact for future inserts.`,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_db_3',
+                                question: "What is the storage difference between CHAR(10) and VARCHAR(10) when storing the string 'CBSE'?",
+                                options: [
+                                    "CHAR(10) uses 4 bytes, VARCHAR(10) uses 10 bytes",
+                                    "CHAR(10) pads with 6 spaces to occupy 10 bytes, while VARCHAR(10) stores only 4 characters",
+                                    "VARCHAR cannot store alphanumeric characters",
+                                    "Both occupy 10 bytes unconditionally"
+                                ],
+                                correctOption: 1,
+                                explanation: "CHAR is fixed-length and pads unused space with blank characters, whereas VARCHAR only allocates storage for the actual string."
+                            },
+                            {
+                                id: 'cp_db_4',
+                                question: 'Which SQL command deletes all tuples from a table while preserving the table structure?',
+                                options: ['DROP TABLE', 'DELETE FROM', 'ALTER TABLE', 'REMOVE TABLE'],
+                                correctOption: 1,
+                                explanation: 'DELETE is a DML command that empties rows without dropping the schema. DROP TABLE removes the structure entirely.'
+                            }
+                        ],
+                        cbseTips: [
+                            'In CBSE board exams: DDL statements (CREATE, ALTER, DROP) affect schema structure; DML statements (SELECT, INSERT, UPDATE, DELETE) affect data rows.',
+                            'Remember: DROP TABLE drops both data AND table definition from data dictionary.'
+                        ],
+                        suggestedExerciseTypes: ['coding', 'code_debug'],
+                        exercises: [
+                            {
+                                title: 'Create Course Table with Unique and Check Constraints',
+                                description: 'Create a table named `Course` with columns `CourseId INT PRIMARY KEY`, `CourseName VARCHAR(40) UNIQUE NOT NULL`, and `Credits INT CHECK (Credits > 0)`.',
+                                exerciseType: 'coding',
+                                difficulty: 'intermediate',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Implement table creation with primary key, unique, and check constraints in SQL.',
+                                xpReward: 25,
+                                timeLimit: 5,
+                                starterCode: `-- Write your CREATE TABLE query for Course\nCREATE TABLE Course (\n\n);\n`,
+                                solutionCode: `CREATE TABLE Course (\n    CourseId INT PRIMARY KEY,\n    CourseName VARCHAR(40) UNIQUE NOT NULL,\n    Credits INT CHECK (Credits > 0)\n);\n`,
+                                testCases: [
+                                    { input: "SELECT name FROM pragma_table_info('Course') WHERE name='CourseName';", expectedOutput: 'CourseName', isHidden: false }
+                                ],
+                                hints: ['Define CourseId INT PRIMARY KEY, CourseName VARCHAR(40) UNIQUE NOT NULL, Credits INT CHECK (Credits > 0).']
+                            },
+                            {
+                                title: 'CBSE Error Spotting: Fix DDL Table Definition Syntax',
+                                description: 'Identify and fix the syntax errors in the following SQL table creation script where data types and constraints are misused.',
+                                exerciseType: 'code_debug',
+                                difficulty: 'intermediate',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'analyze',
+                                learningObjective: 'Identify and rectify SQL DDL column specification and primary key errors.',
+                                xpReward: 25,
+                                timeLimit: 5,
+                                starterCode: `CREATE TABLE Teacher (\n    TId INT PRIMARY,\n    TName VARCHAR,\n    Salary DECIMAL(10, 2)\n)`,
+                                solutionCode: `CREATE TABLE Teacher (\n    TId INT PRIMARY KEY,\n    TName VARCHAR(50),\n    Salary DECIMAL(10, 2)\n);`,
+                                testCases: {
+                                    buggyCode: `CREATE TABLE Teacher (\n    TId INT PRIMARY,\n    TName VARCHAR,\n    Salary DECIMAL(10, 2)\n)`,
+                                    errors: [
+                                        { line: 2, description: "'PRIMARY' must be 'PRIMARY KEY'.", correctedLine: '    TId INT PRIMARY KEY,' },
+                                        { line: 3, description: "'VARCHAR' requires length specification e.g. VARCHAR(50).", correctedLine: '    TName VARCHAR(50),' },
+                                        { line: 5, description: 'Missing closing semicolon at the end of statement.', correctedLine: ');' }
+                                    ],
+                                    solutionCode: `CREATE TABLE Teacher (\n    TId INT PRIMARY KEY,\n    TName VARCHAR(50),\n    Salary DECIMAL(10, 2)\n);`,
+                                    explanation: 'In SQL, the constraint keyword is PRIMARY KEY (not just PRIMARY), VARCHAR requires a length parameter like VARCHAR(50), and SQL statements terminate with a semicolon.'
+                                },
+                                hints: ["Change 'PRIMARY' to 'PRIMARY KEY', specify a length for VARCHAR like VARCHAR(50), and end with a semicolon."]
+                            }
+                        ]
+                    },
+                    {
+                        unitNumber: 3,
+                        title: 'Unit 3: SQL Data Manipulation (DML) & Relational Queries',
+                        description: 'Filtering data with WHERE clauses, pattern matching with LIKE, sorting with ORDER BY, and aggregating data with GROUP BY and HAVING.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: [
+                            'DML Statements: INSERT INTO, SELECT, UPDATE, DELETE',
+                            'Filtering Predicates: WHERE, BETWEEN ... AND, IN, IS NULL, AND, OR, NOT',
+                            'Pattern Matching with LIKE: % (wildcard sequence) and _ (single character)',
+                            'Sorting records: ORDER BY attribute [ASC | DESC]',
+                            'Aggregate Functions: COUNT(*), COUNT(col), SUM(), AVG(), MIN(), MAX()',
+                            'Grouping and Group Filtering: GROUP BY and HAVING clause'
+                        ],
+                        theory: `### 1. Data Manipulation Language (DML)
+DML commands manage data within existing tables:
+
+\`\`\`sql
+-- Inserting records
+INSERT INTO Student (RollNo, Name, Marks) VALUES (101, 'Aman Sharma', 94.5);
+
+-- Modifying existing records
+UPDATE Student SET Marks = 96.0 WHERE RollNo = 101;
+
+-- Querying data with filters
+SELECT Name, Marks FROM Student 
+WHERE Marks BETWEEN 80 AND 100 
+ORDER BY Marks DESC;
+\`\`\`
+
+### 2. Pattern Matching with LIKE
+- **\`%\` (Percent)**: Matches zero, one, or multiple characters. E.g., \`Name LIKE 'A%'\` matches any name starting with 'A'.
+- **\`_\` (Underscore)**: Matches exactly one character. E.g., \`Name LIKE '_a%'\` matches any name with 'a' as the second character.
+
+### 3. Aggregate Functions & GROUP BY
+Aggregate functions compute a single summary value over a set of rows:
+- \`COUNT(*)\`: Counts all rows, including rows containing \`NULL\`.
+- \`COUNT(attribute)\`: Counts only non-NULL values in the specified column.
+- \`SUM(col)\`, \`AVG(col)\`, \`MIN(col)\`, \`MAX(col)\`.
+
+\`\`\`sql
+-- Department-wise average salary with group condition
+SELECT Dept, AVG(Salary), COUNT(*) 
+FROM Employee 
+GROUP BY Dept 
+HAVING AVG(Salary) > 50000;
+\`\`\`
+
+> **CBSE Critical Rule: WHERE vs HAVING**:
+> - **\`WHERE\` clause**: Filters individual tuples *before* grouping occurs. You **CANNOT** use aggregate functions in a \`WHERE\` clause (e.g. \`WHERE AVG(marks) > 80\` is a syntax error!).
+> - **\`HAVING\` clause**: Filters aggregated groups *after* the \`GROUP BY\` operation. Aggregate functions are placed in \`HAVING\`.`,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_db_5',
+                                question: 'Which SQL clause is legitimately used to filter groups using aggregate functions like AVG(Salary) or COUNT(*)?',
+                                options: ['WHERE clause', 'HAVING clause', 'FROM clause', 'ORDER BY clause'],
+                                correctOption: 1,
+                                explanation: 'HAVING is evaluated after grouping and is specifically designed to filter groups based on aggregate conditions.'
+                            },
+                            {
+                                id: 'cp_db_6',
+                                question: "What LIKE pattern matches any string having 'k' as its third character?",
+                                options: ["'%k%'", "'__k%'", "'_k%'", "'k__%'"],
+                                correctOption: 1,
+                                explanation: "Two underscores ('__') match exactly two leading characters, followed by 'k' as the third character, and '%' matches remaining characters."
+                            }
+                        ],
+                        cbseTips: [
+                            'Never write WHERE COUNT(*) > 5 in CBSE board exams. Always use GROUP BY ... HAVING COUNT(*) > 5.',
+                            'COUNT(*) counts NULL values, but COUNT(column_name) ignores NULLs.'
+                        ],
+                        suggestedExerciseTypes: ['coding', 'fill_blank'],
+                        exercises: [
+                            {
+                                title: 'Query High Scoring Students Sorted by Marks',
+                                description: 'Write a SQL query to select `Name` and `Marks` from `Student` where `Marks >= 85`, sorted in descending order of `Marks`.',
+                                exerciseType: 'coding',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Filter records using WHERE and sort output using ORDER BY DESC.',
+                                xpReward: 20,
+                                timeLimit: 5,
+                                starterCode: `-- Write your SELECT query below\nSELECT \nFROM Student\nWHERE \nORDER BY ;\n`,
+                                solutionCode: `SELECT Name, Marks FROM Student WHERE Marks >= 85 ORDER BY Marks DESC;\n`,
+                                testCases: [
+                                    { input: 'SELECT Name, Marks FROM Student WHERE Marks >= 85 ORDER BY Marks DESC;', expectedOutput: 'Aman', isHidden: false }
+                                ],
+                                hints: ['Use SELECT Name, Marks FROM Student WHERE Marks >= 85 ORDER BY Marks DESC;']
+                            },
+                            {
+                                title: 'SQL Clause Syntax Completion',
+                                description: 'Fill in the blanks to complete the SQL query retrieving names ending with `Sharma`.',
+                                exerciseType: 'fill_blank',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'remember',
+                                learningObjective: 'Utilize WHERE and LIKE operators for pattern matching.',
+                                xpReward: 15,
+                                timeLimit: 3,
+                                starterCode: "SELECT * FROM Student {{BLANK_1}} Name {{BLANK_2}} '%Sharma';",
+                                solutionCode: "SELECT * FROM Student WHERE Name LIKE '%Sharma';",
+                                testCases: {
+                                    instruction: 'Fill in the SQL filtering keyword and pattern matching operator.',
+                                    template: "SELECT * FROM Student {{BLANK_1}} Name {{BLANK_2}} '%Sharma';",
+                                    blanks: [
+                                        { id: 'BLANK_1', correctAnswer: 'WHERE', hint: 'Clause used to filter rows' },
+                                        { id: 'BLANK_2', correctAnswer: 'LIKE', hint: 'Pattern matching operator' }
+                                    ],
+                                    explanation: 'WHERE filters rows before selection; LIKE performs wildcard pattern matching using %.'
+                                },
+                                hints: ['BLANK_1 is the filtering clause (WHERE), BLANK_2 is the wildcard matching keyword (LIKE).']
+                            }
+                        ]
+                    }
+                ]
+            };
+        }
 
         if (isMathModule) {
             return {

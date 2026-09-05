@@ -543,18 +543,19 @@ export default function TrainingModuleWizard({
     };
 
     // Helper to synthesize complete course (Title, Units, Theory, Checkpoints, Exercises) from RAG document
-    const buildCompleteCourseFromDocument = async ({ docText, imgBase64, mime, suggestedTitle, promptHint }) => {
+    const buildCompleteCourseFromDocument = async ({ docText, imgBase64, mime, suggestedTitle, promptHint, language }) => {
         setStep1AiLoading(true);
         const synthToastId = toast.loading('⚡ Synthesizing complete grounded course: Units, Pre-Lab Theory & Exercises...');
 
         try {
             const promptToUse = promptHint || suggestedTitle || moduleForm.title || step1AiPrompt || 'Comprehensive Technical Module';
+            const langToUse = language || moduleForm.language || (/(database|sql|dbms|rdbms|relational)/i.test(promptToUse + ' ' + (docText || '')) ? 'sql' : 'python');
             const res = await trainingAPI.aiFromDocument({
                 documentText: docText || step1DocumentText,
                 imageBase64: imgBase64 || step1ImageBase64,
                 mimeType: mime || step1MimeType,
                 customPrompt: promptToUse,
-                language: moduleForm.language || 'python',
+                language: langToUse,
                 classLevel: moduleForm.classLevel || 11,
                 board: moduleForm.boardAligned || 'CBSE',
                 totalUnits: 3
@@ -671,12 +672,15 @@ export default function TrainingModuleWizard({
                 }
 
                 const finalTitle = (suggestedTitle && suggestedTitle.trim().length >= 4) ? suggestedTitle.trim() : cleanFileTitle;
+                const isSqlDomain = /(database|sql|dbms|rdbms|relational)/i.test(finalTitle + ' ' + (extractedText || ''));
+                const finalLang = suggestedLanguage || (isSqlDomain ? 'sql' : 'python');
+
                 setModuleForm(prev => ({
                     ...prev,
                     title: finalTitle,
                     titleHindi: titleHindi || prev.titleHindi || '',
                     description: description || prev.description || '',
-                    language: suggestedLanguage || prev.language || 'python'
+                    language: finalLang
                 }));
                 setStep1AiPrompt(finalTitle);
                 setIsAnalyzingTitle(false);
@@ -689,7 +693,8 @@ export default function TrainingModuleWizard({
                     imgBase64: imageBase64,
                     mime: mimeType || file.type,
                     suggestedTitle: finalTitle,
-                    promptHint: finalTitle
+                    promptHint: finalTitle,
+                    language: finalLang
                 });
             } else {
                 throw new Error(uploadRes.data?.message || 'Upload failed');

@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
 const multer = require('multer');
 const prisma = require('../config/database');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, optionalAuth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const cloudinary = require('../services/cloudinary');
 const axios = require('axios');
@@ -567,12 +569,119 @@ router.get('/:id/public', asyncHandler(async (req, res) => {
             document: {
                 id: doc.id,
                 name: doc.name,
+                fileName: doc.fileName || doc.name,
                 fileType: doc.fileType,
                 url: doc.url,
                 fileSizeFormatted: formatSize(doc.fileSize)
             }
         }
     });
+}));
+
+/**
+ * @route   GET /api/documents/:id/download
+ * @desc    Direct download endpoint for documents (handles local RAG/uploads and remote Cloudinary files)
+ * @access  Public (if isPublic or shared) / Authenticated
+ */
+router.get('/:id/download', optionalAuth, asyncHandler(async (req, res) => {
+    const doc = await prisma.document.findUnique({
+        where: { id: req.params.id }
+    });
+
+    if (!doc) {
+        return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    // Check permission if not public
+    if (!doc.isPublic && (!req.user || req.user.schoolId !== doc.schoolId)) {
+        return res.status(403).json({ success: false, message: 'Not authorized to download this document' });
+    }
+
+    const downloadFileName = doc.fileName || `${doc.name}.${doc.fileType || 'pdf'}`;
+
+    // If local RAG document
+    if (doc.url && (doc.url.startsWith('/RAG/') || doc.cloudinaryId?.startsWith('local_rag_'))) {
+        const fileBasename = path.basename(doc.url);
+        const searchPaths = [
+            path.join(__dirname, '../../../RAG', fileBasename),
+            path.join(__dirname, '../../../client/public/RAG', fileBasename),
+            path.join(__dirname, '../../RAG', fileBasename),
+            path.join(__dirname, '../../client/public/RAG', fileBasename)
+        ];
+
+        for (const sp of searchPaths) {
+            if (fs.existsSync(sp)) {
+                return res.download(sp, downloadFileName);
+            }
+        }
+    }
+
+    // If local uploads document
+    if (doc.url && doc.url.startsWith('/uploads/')) {
+        const fileBasename = path.basename(doc.url);
+        const filePath = path.join(__dirname, '../../uploads', fileBasename);
+        if (fs.existsSync(filePath)) {
+            return res.download(filePath, downloadFileName);
+        }
+    }
+
+    // If remote URL (Cloudinary or other HTTP storage)
+    if (doc.url && doc.url.startsWith('http')) {
+        return res.redirect(doc.url);
+    }
+
+    return res.status(404).json({ success: false, message: 'Physical file not found on server' });
+}));
+
+/**
+ * @route   GET /api/documents/:id/file
+ * @desc    Stream document file for inline viewing (iframe/embed)
+ * @access  Public (if isPublic) / Authenticated
+ */
+router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
+    const doc = await prisma.document.findUnique({
+        where: { id: req.params.id }
+    });
+
+    if (!doc) {
+        return res.status(404).send('Document not found');
+    }
+
+    if (!doc.isPublic && (!req.user || req.user.schoolId !== doc.schoolId)) {
+        return res.status(403).send('Not authorized');
+    }
+
+    if (doc.url && (doc.url.startsWith('/RAG/') || doc.cloudinaryId?.startsWith('local_rag_'))) {
+        const fileBasename = path.basename(doc.url);
+        const searchPaths = [
+            path.join(__dirname, '../../../RAG', fileBasename),
+            path.join(__dirname, '../../../client/public/RAG', fileBasename),
+            path.join(__dirname, '../../RAG', fileBasename),
+            path.join(__dirname, '../../client/public/RAG', fileBasename)
+        ];
+
+        for (const sp of searchPaths) {
+            if (fs.existsSync(sp)) {
+                if (doc.mimeType) res.setHeader('Content-Type', doc.mimeType);
+                return res.sendFile(sp);
+            }
+        }
+    }
+
+    if (doc.url && doc.url.startsWith('/uploads/')) {
+        const fileBasename = path.basename(doc.url);
+        const filePath = path.join(__dirname, '../../uploads', fileBasename);
+        if (fs.existsSync(filePath)) {
+            if (doc.mimeType) res.setHeader('Content-Type', doc.mimeType);
+            return res.sendFile(filePath);
+        }
+    }
+
+    if (doc.url && doc.url.startsWith('http')) {
+        return res.redirect(doc.url);
+    }
+
+    return res.status(404).send('File not found');
 }));
 
 /**

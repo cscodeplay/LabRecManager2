@@ -118,8 +118,10 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(requestLogger);
 
-// Static files for uploads
+// Static files for uploads & RAG documents
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/RAG', express.static(path.join(__dirname, '../../RAG')));
+app.use('/RAG', express.static(path.join(__dirname, '../../client/public/RAG')));
 
 // API Routes
 app.use('/api/auth', authRoutes);
