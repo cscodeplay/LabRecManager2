@@ -588,24 +588,29 @@ export default function TrainingModuleWizard({
                             miniCheckpoints: Array.isArray(u.miniCheckpoints) ? u.miniCheckpoints : [],
                             cbseTips: Array.isArray(u.cbseTips) ? u.cbseTips : []
                         },
-                        exercises: Array.isArray(u.exercises) ? u.exercises.map((ex, eIdx) => ({
-                            id: `rag_ex_${eIdx + 1}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-                            title: ex.title || `Challenge ${eIdx + 1}`,
-                            description: ex.description || '',
-                            theory: ex.theory || '',
-                            exerciseType: ex.exerciseType || 'coding',
-                            difficulty: ex.difficulty || 'beginner',
-                            scaffoldLevel: ex.scaffoldLevel || 'guided',
-                            bloomsLevel: ex.bloomsLevel || 'apply',
-                            learningObjective: ex.learningObjective || '',
-                            xpReward: ex.xpReward || 20,
-                            timeLimit: ex.timeLimit || 5,
-                            isReviewExercise: ex.isReviewExercise || false,
-                            starterCode: ex.starterCode || '',
-                            solutionCode: ex.solutionCode || '',
-                            testCases: Array.isArray(ex.testCases) ? ex.testCases : [],
-                            hints: Array.isArray(ex.hints) ? ex.hints : []
-                        })) : []
+                        exercises: Array.isArray(u.exercises) ? u.exercises.map((ex, eIdx) => {
+                            const parsedTestCases = Array.isArray(ex.testCases) ? ex.testCases : (ex.testCases && typeof ex.testCases === 'object' ? ex.testCases : []);
+                            const effectiveStarterCode = ex.starterCode || (ex.exerciseType === 'code_debug' ? parsedTestCases?.buggyCode : '') || '';
+                            return {
+                                id: `rag_ex_${eIdx + 1}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                                title: ex.title || `Challenge ${eIdx + 1}`,
+                                description: ex.description || '',
+                                theory: ex.theory || '',
+                                exerciseType: ex.exerciseType || 'coding',
+                                difficulty: ex.difficulty || 'beginner',
+                                scaffoldLevel: ex.scaffoldLevel || 'guided',
+                                bloomsLevel: ex.bloomsLevel || 'apply',
+                                learningObjective: ex.learningObjective || '',
+                                xpReward: ex.xpReward || 20,
+                                timeLimit: ex.timeLimit || 5,
+                                isReviewExercise: ex.isReviewExercise || false,
+                                starterCode: effectiveStarterCode,
+                                solutionCode: ex.solutionCode || '',
+                                testCases: parsedTestCases,
+                                debugData: ex.exerciseType === 'code_debug' ? (parsedTestCases && typeof parsedTestCases === 'object' ? parsedTestCases : { buggyCode: effectiveStarterCode, errors: [], explanation: '' }) : null,
+                                hints: Array.isArray(ex.hints) ? ex.hints : []
+                            };
+                        }) : []
                     })));
                 }
 
@@ -769,6 +774,7 @@ export default function TrainingModuleWizard({
             // Mode A: Quick Topic Blueprint & Units Synthesis
                 const res = await trainingAPI.aiOutline({
                     topic: promptToUse,
+                    documentText: step1DocumentText || '',
                     language: moduleForm.language || 'python',
                     classLevel: moduleForm.classLevel || 11,
                     board: moduleForm.boardAligned || 'CBSE',
@@ -919,6 +925,7 @@ export default function TrainingModuleWizard({
             const res = await trainingAPI.aiTheory({
                 topic: topicToUse,
                 unitTitle: wizardTheoryForm.title,
+                documentText: step1DocumentText || '',
                 language: moduleForm.language || 'python',
                 classLevel: moduleForm.classLevel || 11,
                 board: moduleForm.boardAligned || 'CBSE'
@@ -953,6 +960,7 @@ export default function TrainingModuleWizard({
             const res = await trainingAPI.aiExercise({
                 topic: wizardInlineAiPrompt,
                 customPrompt: wizardInlineAiPrompt,
+                documentText: step1DocumentText || '',
                 exerciseType: exerciseForm.exerciseType,
                 difficulty: exerciseForm.difficulty || 'beginner',
                 scaffoldLevel: exerciseForm.scaffoldLevel || 'guided',
@@ -1343,6 +1351,10 @@ export default function TrainingModuleWizard({
                             ? `## 📖 Learning Content\n\n${ex.theory}\n\n---\n\n## 🎯 Problem Statement\n\n${ex.description}`
                             : ex.description;
 
+                        const starterCodeToSave = ex.starterCode || (ex.exerciseType === 'code_debug' ? ex.testCases?.buggyCode : null) || null;
+                        const safeTestCases = typeof ex.testCases === 'string' ? ex.testCases : JSON.stringify(ex.testCases || []);
+                        const safeHints = typeof ex.hints === 'string' ? ex.hints : JSON.stringify(ex.hints || []);
+
                         await trainingAPI.createExercise(createdUnitId, {
                             title: ex.title,
                             description: fullDescription,
@@ -1355,16 +1367,25 @@ export default function TrainingModuleWizard({
                             xpReward: Number(ex.xpReward) || 15,
                             timeLimit: Number(ex.timeLimit) || 5,
                             sequenceOrder: eIdx,
-                            starterCode: ex.starterCode || null,
+                            starterCode: starterCodeToSave,
                             solutionCode: ex.solutionCode || null,
-                            testCases: JSON.stringify(ex.testCases || []),
-                            hints: JSON.stringify(ex.hints || [])
+                            testCases: safeTestCases,
+                            hints: safeHints
                         });
                     }
                 }
             }
 
-            // 3. Assign to Classes if selected
+            // 3. Ensure module is published if requested
+            if (shouldPublishNow) {
+                try {
+                    await trainingAPI.updateModule(moduleId, { isPublished: true });
+                } catch (pErr) {
+                    console.warn('Publish flag update notice:', pErr.message);
+                }
+            }
+
+            // 4. Assign to Classes if selected
             if (targetClasses.length > 0) {
                 try {
                     await trainingAPI.assignModule(moduleId, {
@@ -1377,9 +1398,9 @@ export default function TrainingModuleWizard({
                 }
             }
 
-            toast.success('🎉 Training Module Created Successfully!');
+            toast.success(shouldPublishNow ? '🎉 Training Module Created & Published!' : '🎉 Training Module Saved as Draft!');
             localStorage.removeItem('ulrms_training_wizard_draft');
-            if (onSuccess) onSuccess(createdModule);
+            if (onSuccess) onSuccess({ id: moduleId, ...createPayload, isPublished: shouldPublishNow || createPayload.isPublished });
             onClose();
             router.push(`/admin/training/${moduleId}/builder`);
         } catch (err) {

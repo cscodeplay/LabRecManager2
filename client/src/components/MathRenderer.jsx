@@ -257,7 +257,7 @@ function renderInlineFormattedText(rawText) {
     if (!rawText) return null;
 
     // Tokenize inline code (`...`) and inline math ($...$ or \(...\))
-    const tokenRegex = /(?:`([^`\n]+)`) |(?:\$([^\$\n]+?)\$) |(?:\\\(([\s\S]*?)\\\))/g;
+    const tokenRegex = /(?:`([^`\n]+)`)|(?:\$([^\$\n]+?)\$)|(?:\\\(([\s\S]*?)\\\))/g;
     const tokens = [];
     let lastIdx = 0;
     let match;

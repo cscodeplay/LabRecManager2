@@ -694,7 +694,7 @@ export default function PedagogyBuilderPage() {
                 isReviewExercise: exerciseForm.isReviewExercise,
                 timeLimit: exerciseForm.timeLimit,
                 xpReward: exerciseForm.xpReward,
-                starterCode: exerciseForm.starterCode,
+                starterCode: exerciseForm.exerciseType === 'code_debug' ? (exerciseForm.debugData?.buggyCode || exerciseForm.starterCode || '') : (exerciseForm.starterCode || ''),
                 solutionCode: exerciseForm.solutionCode,
                 testCases: JSON.stringify(processedTestCases),
                 hints: JSON.stringify(exerciseForm.hints),

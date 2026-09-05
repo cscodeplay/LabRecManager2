@@ -2679,24 +2679,30 @@ ${documentText ? documentText.slice(0, 18000) : 'Extracted from attached documen
 ---
 
 RULES:
-1. Synthesize a complete training module outline strictly grounded in the document.
-2. Form EXACTLY ${targetUnitsCount} logical units in the "units" array.
-3. In each unit, generate 2-3 interactive exercises matching the 5 pedagogy types:
-   - "coding": Coding lab with starterCode, solutionCode, testCases array (with at least 2 test cases: input, expectedOutput, isHidden), hints array.
-   - "mcq": Output prediction MCQ with testCases: { question, codeSnippet, options, correctOption (0-indexed integer), explanation }.
-   - "fill_blank": Syntax cloze with starterCode (with {{BLANK_1}}, {{BLANK_2}}), solutionCode (fully filled working code), and testCases: { instruction, template, blanks: [{ id: "BLANK_1", correctAnswer: "...", hint: "..." }], explanation }.
-   - "bug_fix": Bug hunt with starterCode (buggy), solutionCode (fixed), testCases array.
-   - "case_study": Real-world case study with scenarioCode, incident, questions array.
+1. STRICT RAG GROUNDING: Synthesize the training module, units, and learning content strictly from the RESOURCE CONTENT above.
+   - Module title and description MUST reflect the actual chapters/topics in the document.
+   - Each unit MUST represent a logical chapter, section, or topic directly found in the document.
+   - Each unit MUST include comprehensive "theory" Markdown notes explaining the exact definitions, formulas, syntax, and examples from the document.
+   - Each unit MUST include 2-3 "miniCheckpoints" testing comprehension of the document material.
+   - Each unit MUST include 1-2 "cbseTips" with board exam traps, tips, or key formulas from the chapter.
+2. Form EXACTLY ${targetUnitsCount} progressive units in the "units" array.
+3. In each unit, generate 2-3 interactive exercises matching various pedagogy types:
+   - "coding": Coding lab with starterCode, solutionCode, testCases array (at least 2 test cases: input, expectedOutput, isHidden), hints array.
+   - "code_debug": CBSE Error Spotting with starterCode containing buggy code, and testCases: { buggyCode: "...", errors: [{ line: 3, description: "...", correctedLine: "..." }], solutionCode: "...", explanation: "..." }.
+   - "code_trace": Variable trace table with testCases: { codeSnippet: "...", tableHeaders: ["Step", "Var1", "Var2"], expectedRows: [["1", "a", "b"]], explanation: "..." }.
+   - "assertion_reason": CBSE Assertion-Reason with testCases: { assertion: "...", reason: "...", correctOption: 0, explanation: "..." }.
+   - "mcq": Output prediction with testCases: { question, codeSnippet, options: ["A", "B", "C", "D"], correctOption: 0, explanation }.
+   - "fill_blank": Syntax cloze with starterCode (containing {{BLANK_1}}), solutionCode, and testCases: { instruction, template, blanks: [{ id: "BLANK_1", correctAnswer: "...", hint: "..." }], explanation }.
 
 Output MUST be ONLY valid JSON matching this schema:
 {
-  "title": "Course Title in English",
+  "title": "Course Title derived directly from document",
   "titleHindi": "कोर्स का शीर्षक (हिंदी में)",
-  "description": "Comprehensive course description...",
+  "description": "Comprehensive course description based on document...",
   "language": "${language}",
   "boardAligned": "${board}",
   "classLevel": ${Number(classLevel) || 11},
-  "extractedSummary": "Brief 2-line summary of chapters and topics detected from source",
+  "extractedSummary": "Detailed summary of chapters, sections, and topics extracted from source document",
   "pedagogyConfig": {
     "useBlooms": true,
     "useObjectives": true,
@@ -2705,17 +2711,31 @@ Output MUST be ONLY valid JSON matching this schema:
   "units": [
     {
       "unitNumber": 1,
-      "title": "Unit 1: Title...",
+      "title": "Unit 1: [Topic from Document]",
       "description": "Concepts covered in this unit...",
       "expectedHours": 4,
       "unlockThreshold": 80,
-      "keyConcepts": ["Concept 1", "Concept 2"],
-      "suggestedExerciseTypes": ["coding", "mcq", "fill_blank"],
+      "keyConcepts": ["Concept 1 from doc", "Concept 2 from doc"],
+      "theory": "### 1. Topic Overview\\nDetailed Pre-Lab Markdown theory explaining the concepts, rules, algorithms, mathematical formulas (e.g. $nCr = \\\\frac{n!}{r!(n-r)!}$ or $\\\\text{height} = \\\\text{distance} \\\\times \\\\tan(\\\\theta)$), and code snippets directly from the document...",
+      "miniCheckpoints": [
+        {
+          "id": "cp1",
+          "question": "Concept check question testing understanding of the theory?",
+          "codeSnippet": "optional python snippet",
+          "options": ["Option A", "Option B", "Option C", "Option D"],
+          "correctOption": 0,
+          "explanation": "Why Option A is correct according to the theory"
+        }
+      ],
+      "cbseTips": [
+        "Common CBSE board exam trap or key definition/formula for this topic"
+      ],
+      "suggestedExerciseTypes": ["coding", "code_debug", "mcq"],
       "exercises": [
         {
           "title": "Exercise Title",
-          "description": "Problem statement",
-          "theory": "Learning theory",
+          "description": "Problem statement grounded in unit concepts",
+          "theory": "Short concept refresher for this exercise",
           "exerciseType": "coding",
           "difficulty": "beginner",
           "scaffoldLevel": "guided",
@@ -2723,10 +2743,10 @@ Output MUST be ONLY valid JSON matching this schema:
           "learningObjective": "SWBAT...",
           "xpReward": 15,
           "timeLimit": 5,
-          "starterCode": "...",
-          "solutionCode": "...",
+          "starterCode": "def solve():\\n    pass",
+          "solutionCode": "def solve():\\n    return 42",
           "testCases": [
-            { "input": "...", "expectedOutput": "...", "isHidden": false }
+            { "input": "solve()", "expectedOutput": "42", "isHidden": false }
           ],
           "hints": ["Hint 1"]
         }

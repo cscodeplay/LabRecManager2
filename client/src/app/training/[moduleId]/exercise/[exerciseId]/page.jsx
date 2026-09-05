@@ -202,7 +202,8 @@ export default function ExerciseEditorPage() {
 
     const handleResetCode = () => {
         if (!exercise) return;
-        const initialCode = exercise.starterCode || '# Write your code here\n';
+        const debugCode = exercise.exerciseType === 'code_debug' ? (exercise.testCases?.buggyCode || exercise.starterCode) : null;
+        const initialCode = debugCode || exercise.starterCode || '# Write your code here\n';
         setCode(initialCode);
         try {
             localStorage.removeItem(`training_draft_${exerciseId}`);
@@ -227,7 +228,12 @@ export default function ExerciseEditorPage() {
 
                 // Restore draft if present
                 const savedDraft = localStorage.getItem(`training_draft_${exerciseId}`);
-                const initialCode = savedDraft || (latestSub?.code && (ex.exerciseType === 'coding' || ex.exerciseType === 'bug_fix') ? latestSub.code : null) || ex.starterCode || '# Write your code here\n';
+                const debugCode = ex.exerciseType === 'code_debug' ? (ex.testCases?.buggyCode || ex.starterCode) : null;
+                const initialCode = savedDraft || 
+                    (latestSub?.code && (ex.exerciseType === 'coding' || ex.exerciseType === 'bug_fix' || ex.exerciseType === 'code_debug') ? latestSub.code : null) || 
+                    debugCode || 
+                    ex.starterCode || 
+                    '# Write your code here\n';
                 setCode(initialCode);
 
                 if (modRes?.data?.data?.module) {

@@ -286,20 +286,35 @@ router.post('/modules', authenticate, authorize('admin', 'principal', 'instructo
         return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    const { title, titleHindi, description, language, boardAligned, classLevel } = req.body;
+    const { title, titleHindi, description, language, boardAligned, classLevel, isPublished, totalUnits, totalExercises, pedagogyConfig } = req.body;
     const sessionId = req.headers['x-academic-session'];
+
+    let validAcademicYearId = null;
+    if (sessionId && sessionId !== 'null' && sessionId !== 'undefined' && typeof sessionId === 'string' && sessionId.trim()) {
+        try {
+            const yr = await prisma.academicYear.findFirst({
+                where: { id: sessionId.trim(), schoolId: req.user.schoolId }
+            });
+            if (yr) validAcademicYearId = yr.id;
+        } catch (e) {
+            validAcademicYearId = null;
+        }
+    }
 
     const newModule = await prisma.trainingModule.create({
         data: {
             schoolId: req.user.schoolId,
-            academicYearId: sessionId || null,
+            academicYearId: validAcademicYearId,
             title,
             titleHindi,
             description,
             language,
             boardAligned,
             classLevel: classLevel ? parseInt(classLevel) : null,
-            isPublished: false // By default unpublished
+            totalUnits: totalUnits ? parseInt(totalUnits) : 0,
+            totalExercises: totalExercises ? parseInt(totalExercises) : 0,
+            pedagogyConfig: pedagogyConfig || {},
+            isPublished: Boolean(isPublished)
         }
     });
 
@@ -427,21 +442,56 @@ router.post('/units/:id/exercises', authenticate, authorize('admin', 'principal'
     });
     if (!unit) return res.status(404).json({ success: false, message: 'Unit not found' });
 
+    let parsedTestCases = [];
+    if (req.body.testCases) {
+        if (typeof req.body.testCases === 'string') {
+            try {
+                parsedTestCases = JSON.parse(req.body.testCases);
+            } catch (e) {
+                parsedTestCases = [];
+            }
+        } else {
+            parsedTestCases = req.body.testCases;
+        }
+    }
+
+    let parsedHints = [];
+    if (req.body.hints) {
+        if (typeof req.body.hints === 'string') {
+            try {
+                parsedHints = JSON.parse(req.body.hints);
+            } catch (e) {
+                parsedHints = [];
+            }
+        } else {
+            parsedHints = req.body.hints;
+        }
+    }
+
+    const validReviewsTopicId = (req.body.reviewsTopicId && typeof req.body.reviewsTopicId === 'string' && req.body.reviewsTopicId.trim()) ? req.body.reviewsTopicId.trim() : null;
+
+    // For code_debug, ensure starterCode contains the buggyCode if starterCode was omitted
+    let effectiveStarterCode = req.body.starterCode || '';
+    if (!effectiveStarterCode && req.body.exerciseType === 'code_debug' && parsedTestCases && typeof parsedTestCases === 'object') {
+        effectiveStarterCode = parsedTestCases.buggyCode || '';
+    }
+
     const exercise = await prisma.trainingExercise.create({
         data: {
             unitId: id,
             title: req.body.title,
             description: req.body.description || '',
             difficulty: req.body.difficulty || 'beginner',
-            scaffoldLevel: req.body.scaffoldLevel,
+            scaffoldLevel: req.body.scaffoldLevel || 'guided',
+            exerciseType: req.body.exerciseType || 'coding',
             bloomsLevel: req.body.bloomsLevel || null,
             learningObjective: req.body.learningObjective || null,
             isReviewExercise: req.body.isReviewExercise || false,
-            reviewsTopicId: req.body.reviewsTopicId || null,
-            starterCode: req.body.starterCode || '',
+            reviewsTopicId: validReviewsTopicId,
+            starterCode: effectiveStarterCode,
             solutionCode: req.body.solutionCode || '',
-            testCases: req.body.testCases ? (typeof req.body.testCases === 'string' ? JSON.parse(req.body.testCases) : req.body.testCases) : [],
-            hints: req.body.hints ? (typeof req.body.hints === 'string' ? JSON.parse(req.body.hints) : req.body.hints) : [],
+            testCases: parsedTestCases,
+            hints: parsedHints,
             timeLimit: parseInt(req.body.timeLimit) || 5,
             sequenceOrder: parseInt(req.body.sequenceOrder) || 1,
             xpReward: parseInt(req.body.xpReward) || 10
@@ -665,6 +715,37 @@ router.put('/exercises/:id', authenticate, authorize('admin', 'principal', 'inst
     const existing = await prisma.trainingExercise.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ success: false, message: 'Exercise not found' });
 
+    let parsedTestCases = existing.testCases;
+    if (req.body.testCases !== undefined) {
+        if (typeof req.body.testCases === 'string') {
+            try {
+                parsedTestCases = JSON.parse(req.body.testCases);
+            } catch (e) {
+                parsedTestCases = existing.testCases;
+            }
+        } else {
+            parsedTestCases = req.body.testCases;
+        }
+    }
+
+    let parsedHints = existing.hints;
+    if (req.body.hints !== undefined) {
+        if (typeof req.body.hints === 'string') {
+            try {
+                parsedHints = JSON.parse(req.body.hints);
+            } catch (e) {
+                parsedHints = existing.hints;
+            }
+        } else {
+            parsedHints = req.body.hints;
+        }
+    }
+
+    let validReviewsTopicId = existing.reviewsTopicId;
+    if (req.body.reviewsTopicId !== undefined) {
+        validReviewsTopicId = (req.body.reviewsTopicId && typeof req.body.reviewsTopicId === 'string' && req.body.reviewsTopicId.trim()) ? req.body.reviewsTopicId.trim() : null;
+    }
+
     const updatedExercise = await prisma.trainingExercise.update({
         where: { id },
         data: {
@@ -676,11 +757,11 @@ router.put('/exercises/:id', authenticate, authorize('admin', 'principal', 'inst
             bloomsLevel: req.body.bloomsLevel !== undefined ? req.body.bloomsLevel : existing.bloomsLevel,
             learningObjective: req.body.learningObjective !== undefined ? req.body.learningObjective : existing.learningObjective,
             isReviewExercise: req.body.isReviewExercise !== undefined ? req.body.isReviewExercise : existing.isReviewExercise,
-            reviewsTopicId: req.body.reviewsTopicId !== undefined ? req.body.reviewsTopicId : existing.reviewsTopicId,
+            reviewsTopicId: validReviewsTopicId,
             starterCode: req.body.starterCode !== undefined ? req.body.starterCode : existing.starterCode,
             solutionCode: req.body.solutionCode !== undefined ? req.body.solutionCode : existing.solutionCode,
-            testCases: req.body.testCases !== undefined ? (typeof req.body.testCases === 'string' ? JSON.parse(req.body.testCases) : req.body.testCases) : existing.testCases,
-            hints: req.body.hints !== undefined ? (typeof req.body.hints === 'string' ? JSON.parse(req.body.hints) : req.body.hints) : existing.hints,
+            testCases: parsedTestCases,
+            hints: parsedHints,
             timeLimit: req.body.timeLimit !== undefined ? (parseInt(req.body.timeLimit) || 5) : existing.timeLimit,
             sequenceOrder: req.body.sequenceOrder !== undefined ? (parseInt(req.body.sequenceOrder) || 1) : existing.sequenceOrder,
             xpReward: req.body.xpReward !== undefined ? (parseInt(req.body.xpReward) || 10) : existing.xpReward
@@ -1537,7 +1618,7 @@ router.post('/modules/:id/assign', authenticate, authorize('admin', 'principal',
             subjectId: resolvedSubjectId,
             maxMarks: 100,
             passingMarks: 60,
-            status: 'active',
+            status: 'published',
             due_date: dueDate,
         }
     });
