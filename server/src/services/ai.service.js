@@ -2425,13 +2425,13 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // Domain-specific density across the full multi-page document text
         const mathScore = (lowerText.match(/\b(math\.|ceil|floor|trunc|factorial|trigonometry|hypot|radians|degrees|logarithm|exponent|sqrt|gcd|pi|tau)\b/g) || []).length;
-        // Require explicit class declaration or OOP keywords to avoid matching grade levels like 'Class 11' or 'Class XII'
-        const oopScore = (lowerText.match(/\b(class\s+[a-zA-Z_]|inheritance|polymorphism|encapsulation|__init__|subclass|superclass|method\s+overriding|self\.|instance\s+methods?|class\s+variables?|abstract\s+class|dunder)\b/gi) || []).length
-            + (lowerText.includes('object-oriented') || lowerText.includes('object oriented') ? 6 : 0);
+        // Require explicit Python class declaration syntax (class Name:) or OOP keywords to avoid matching grade levels like 'Class 11', 'Class 12', 'Class XI'
+        const oopScore = (lowerText.match(/(?:\bclass\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:\([a-zA-Z0-9_,\s]*\))?\s*:|\b(?:object-oriented|object\s+oriented|inheritance|polymorphism|encapsulation|__init__|subclass|superclass|method\s+overriding|self\.|instance\s+methods?|class\s+variables?|abstract\s+class|dunder)\b)/gi) || []).length;
         const pandasScore = (lowerText.match(/\b(pandas|dataframe|series|numpy|read_csv|matplotlib|data analysis|data frame)\b/g) || []).length;
         const sqlScore = (lowerText.match(/\b(select|from|where|create\s+table|alter\s+table|drop\s+table|insert\s+into|update|delete\s+from|foreign\s+key|primary\s+key|candidate\s+key|alternate\s+key|relational\s+database|relational\s+data|relational\s+model|database\s+management|database\s+concepts?|databases?|rdbms|dbms|sql|mysql|sqlite|ddl|dml|degree|cardinality|tuple|attribute|normalization|referential\s+integrity|group\s+by|order\s+by|having)\b/gi) || []).length;
-        const dataStructScore = (lowerText.match(/\b(stack|queue|linked list|binary tree|recursion|sorting|bubble sort|insertion sort|searching)\b/g) || []).length;
+        const dataStructScore = (lowerText.match(/\b(stack|queue|push|pop|dequeue|enqueue|linked\s+list|binary\s+tree|recursion|traversal|sorting|bubble sort|insertion sort|searching)\b/gi) || []).length;
         const networkScore = (lowerText.match(/\b(networking|ip address|tcp|udp|osi layer|packet|router|topology|cyber|security)\b/g) || []).length;
+        const progBasicsScore = (lowerText.match(/\b(tokens?|identifiers?|keywords?|variables?|data\s+types?|if\s*-\s*else|elif|while\s+loop|for\s+loop|range\(|operators?|expressions?|computational\s+thinking)\b/gi) || []).length;
 
         // Look for explicit Unit/Chapter/Course/Topic lines in the text (checking first 80 lines)
         const candidateHeaders = [];
@@ -2452,7 +2452,7 @@ Output MUST be ONLY valid JSON matching this schema:
                 if (cand.length >= 6 && cand.length <= 80 && !isSuperficial(cand)) {
                     candidateHeaders.push(cand);
                 }
-            } else if (line.length >= 8 && line.length <= 75 && !isSuperficial(line) && !line.startsWith('http')) {
+            } else if (line.length >= 8 && line.length <= 85 && !isSuperficial(line) && !line.startsWith('http')) {
                 if (/(database|sql|rdbms|dbms|relational|computer science|programming|data structures|algorithms|computer systems|networks|math library|cyber|computational thinking|artificial intelligence|machine learning|web development)/i.test(line)) {
                     const cleaned = line.replace(/^(class\s*[ivx0-9]+\s*[:\-]?\s*)/i, '').replace(/^[#*_\s]+|[#*_\s]+$/g, '').trim();
                     if (!isSuperficial(cleaned)) {
@@ -2464,7 +2464,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         if (candidateHeaders.length > 0) {
             // Prioritize headers with rich curriculum concepts over generic lines
-            const topSubject = candidateHeaders.find(h => /(database|sql|rdbms|relational|computer science|computational thinking|programming|computer systems)/i.test(h));
+            const topSubject = candidateHeaders.find(h => /(database|sql|rdbms|relational|computer science|computational thinking|programming|computer systems|data structure|network)/i.test(h));
             const bestHeader = topSubject || candidateHeaders.find(h => /(database|sql|rdbms|relational|python|math|class\s+[A-Za-z]|data\s+structure|network)/i.test(h)) || candidateHeaders[0];
             if (bestHeader) return bestHeader.replace(/^(unit|chapter|module|topic|course|subject)\s*[:\-]\s*/i, '').trim();
         }
@@ -2473,23 +2473,26 @@ Output MUST be ONLY valid JSON matching this schema:
         if (sqlScore >= 4 && sqlScore >= oopScore && sqlScore >= mathScore) {
             return 'Relational Databases & SQL Query Systems';
         }
-        if (mathScore >= 6 && mathScore > oopScore && mathScore > pandasScore) {
+        if (mathScore >= 4 && mathScore > oopScore && mathScore > pandasScore) {
             return 'Python: Math Library Modules & Numeric Algorithms';
         }
-        if (oopScore >= 6 && oopScore > mathScore) {
+        if (dataStructScore >= 3 && dataStructScore > oopScore) {
+            return 'Python: Data Structures & Algorithmic Problem Solving';
+        }
+        if (networkScore >= 3) {
+            return 'Computer Networks & Cyber Security Foundations';
+        }
+        if (oopScore >= 4 && oopScore > mathScore) {
             return 'Python: Object-Oriented Programming & Software Design';
         }
-        if (pandasScore >= 6) {
+        if (pandasScore >= 4) {
             return 'Python: Data Handling with Pandas & NumPy';
         }
-        if (sqlScore >= 4) {
+        if (progBasicsScore >= 3) {
+            return 'Python: Programming Fundamentals & Computational Thinking';
+        }
+        if (sqlScore >= 3) {
             return 'Relational Databases & SQL Query Systems';
-        }
-        if (dataStructScore >= 6) {
-            return 'Data Structures & Algorithmic Problem Solving';
-        }
-        if (networkScore >= 6) {
-            return 'Computer Networks & Cyber Security Foundations';
         }
 
         return cleanFileTitle || 'Computer Science Applied Curriculum';
@@ -2905,8 +2908,10 @@ Output MUST be ONLY valid JSON matching this schema:
         const isDatabaseModule = /\b(database|sql|dbms|rdbms|relational|create\s+table|primary\s+key|foreign\s+key|select\s+.*from|ddl|dml|mysql|sqlite|table|query|schema)\b/i.test(lowerDoc);
         const isMathModule = !isDatabaseModule && (lowerDoc.includes('math') || lowerDoc.includes('numeric') || lowerDoc.includes('ceil') || lowerDoc.includes('trigonometry'));
         const isOopModule = !isDatabaseModule && !isMathModule && (
-            /\b(class\s+[A-Za-z0-9_]+|inheritance|polymorphism|encapsulation|__init__|subclass|superclass|method\s+overriding)\b/i.test(lowerDoc) ||
-            lowerDoc.includes('object-oriented') || lowerDoc.includes('object oriented')
+            /(?:\bclass\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:\([a-zA-Z0-9_,\s]*\))?\s*:|\b(?:object-oriented|object\s+oriented|inheritance|polymorphism|encapsulation|__init__|subclass|superclass|method\s+overriding|abstract\s+class)\b)/i.test(lowerDoc)
+        );
+        const isDataStructModule = !isDatabaseModule && !isMathModule && !isOopModule && (
+            /\b(stack|queue|push|pop|dequeue|enqueue|linked\s+list|binary\s+tree|recursion)\b/i.test(lowerDoc)
         );
 
         if (isDatabaseModule) {
@@ -3618,6 +3623,202 @@ print(math.sin(rad))  # 0.49999999999999994 (~0.5)
                                     { input: 'Rectangle(4, 5).area()', expectedOutput: '20', isHidden: false }
                                 ],
                                 hints: ['Return self.w * self.h in Rectangle.area().']
+                            }
+                        ]
+                    }
+                ]
+            };
+        }
+
+        if (isDataStructModule) {
+            return {
+                title: 'Python: Data Structures & Algorithmic Problem Solving',
+                titleHindi: 'पायथन: डेटा संरचनाएं और एल्गोरिथम समाधान',
+                description: 'A comprehensive curriculum module covering linear data structures, Stack LIFO operations, Queue FIFO mechanics, and recursive algorithms in Python.',
+                language: 'python',
+                boardAligned: board || 'CBSE',
+                classLevel: Number(classLevel) || 12,
+                extractedSummary: 'Synthesized 3 progressive units covering Linear Data Structures & Stacks, Queue Implementations, and Applied Recursion.',
+                pedagogyConfig: { useBlooms: true, useObjectives: true, useTimeLimit: false },
+                units: [
+                    {
+                        unitNumber: 1,
+                        title: 'Unit 1: Linear Data Structures & Stack Implementation',
+                        description: 'LIFO principle, push/pop operations using Python lists, stack overflow and underflow inspection.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: [
+                            'Linear Data Structure concepts: contiguous vs non-contiguous',
+                            'Stack LIFO (Last In First Out) principle',
+                            'Push operation using list.append()',
+                            'Pop operation using list.pop() with underflow check',
+                            'Peek / Top element inspection without removal',
+                            'CBSE Board Practical: Stack of books / student records'
+                        ],
+                        theory: `### 1. The Stack Data Structure (LIFO)
+A Stack is a linear data structure following the **Last-In, First-Out (LIFO)** principle: the element inserted last is the first one to be removed.
+
+### 2. Stack Operations in Python
+In Python, a stack is commonly implemented using a standard \`list\`:
+- **Push**: Adding an element to the top of the stack using \`stack.append(element)\`.
+- **Pop**: Removing the top element using \`stack.pop()\`. Always verify that the stack is not empty to prevent \`IndexError: pop from empty list\` (**Underflow**).
+- **Peek / Top**: Accessing the top element using \`stack[-1]\`.
+
+\`\`\`python
+# Complete CBSE Stack Pattern
+stack = []
+
+def push(item):
+    stack.append(item)
+
+def pop():
+    if not stack:
+        print("Stack Underflow")
+        return None
+    return stack.pop()
+\`\`\`
+
+> **CBSE Examination Tip**:
+> - **Underflow**: Attempting to delete or pop from an already empty stack.
+> - **Overflow**: Attempting to push into a stack that has exceeded its allocated fixed memory limit (rare in Python dynamic lists, but tested conceptually in theory questions).`,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_ds_1',
+                                question: 'What condition occurs when attempting to pop an element from an empty stack?',
+                                options: ['Stack Overflow', 'Stack Underflow', 'Segmentation Fault', 'Memory Leak'],
+                                correctOption: 1,
+                                explanation: 'Underflow happens when an operation attempts to remove an item from an empty data structure.'
+                            },
+                            {
+                                id: 'cp_ds_2',
+                                question: 'Which built-in Python list method represents the Push operation in a list-based stack?',
+                                options: ['list.insert(0, item)', 'list.append(item)', 'list.extend(item)', 'list.add(item)'],
+                                correctOption: 1,
+                                explanation: 'list.append(item) adds an element to the end (top) of the list with O(1) amortized complexity.'
+                            }
+                        ],
+                        cbseTips: [
+                            'Always check if len(stack) == 0 before executing stack.pop() in CBSE lab practicals.',
+                            'Remember that list.pop() without arguments removes and returns the last element (top of stack).'
+                        ],
+                        exercises: [
+                            {
+                                title: 'Implement Stack Push and Pop Operations',
+                                description: 'Write a function `manage_stack(operations)` that takes a list of operations (e.g. `[("push", 10), ("push", 20), ("pop",)]`) and returns the final stack state as a list.',
+                                exerciseType: 'coding',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Implement stack push and pop mechanics with underflow safety.',
+                                xpReward: 20,
+                                timeLimit: 5,
+                                starterCode: `def manage_stack(operations):\n    stack = []\n    # Process operations\n    return stack\n`,
+                                solutionCode: `def manage_stack(operations):\n    stack = []\n    for op in operations:\n        if op[0] == "push":\n            stack.append(op[1])\n        elif op[0] == "pop" and stack:\n            stack.pop()\n    return stack\n`,
+                                testCases: [
+                                    { input: 'manage_stack([("push", 5), ("push", 15), ("pop",)])', expectedOutput: '[5]', isHidden: false },
+                                    { input: 'manage_stack([("push", "A"), ("push", "B"), ("push", "C")])', expectedOutput: "['A', 'B', 'C']", isHidden: false }
+                                ],
+                                hints: ['Iterate through operations, checking op[0] == "push" or "pop".']
+                            }
+                        ]
+                    },
+                    {
+                        unitNumber: 2,
+                        title: 'Unit 2: Queue Mechanics & FIFO Operations',
+                        description: 'First-In First-Out principle, enqueue and dequeue operations, circular queue concepts.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: [
+                            'Queue FIFO (First In First Out) principle',
+                            'Enqueue (insert at rear) vs Dequeue (remove from front)',
+                            'collections.deque for efficient O(1) queue operations'
+                        ],
+                        theory: `### 1. The Queue Data Structure (FIFO)
+A Queue is a linear data structure following the **First-In, First-Out (FIFO)** order. The first element added is the first one to be removed (like a ticket counter line).
+
+### 2. Operations
+- **Enqueue**: Add to rear (\`list.append()\`).
+- **Dequeue**: Remove from front (\`list.pop(0)\` or \`deque.popleft()\`).`,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_ds_3',
+                                question: 'Which principle governs Queue operations?',
+                                options: ['LIFO', 'FIFO', 'LILO', 'Random Access'],
+                                correctOption: 1,
+                                explanation: 'Queue is strictly First-In, First-Out (FIFO).'
+                            }
+                        ],
+                        cbseTips: ['In Python, list.pop(0) is O(n) while collections.deque.popleft() is O(1).'],
+                        exercises: [
+                            {
+                                title: 'Queue Simulation',
+                                description: 'Write a function `process_queue(items)` that enqueues items into a list and returns the first dequeued element, or None if empty.',
+                                exerciseType: 'coding',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Model queue FIFO dispatch.',
+                                xpReward: 20,
+                                timeLimit: 5,
+                                starterCode: `def process_queue(items):\n    # Return first item in FIFO order\n    pass\n`,
+                                solutionCode: `def process_queue(items):\n    return items[0] if items else None\n`,
+                                testCases: [
+                                    { input: 'process_queue([10, 20, 30])', expectedOutput: '10', isHidden: false }
+                                ],
+                                hints: ['The first element in FIFO order is items[0].']
+                            }
+                        ]
+                    },
+                    {
+                        unitNumber: 3,
+                        title: 'Unit 3: Applied Recursion & Algorithmic Problem Solving',
+                        description: 'Recursive functions, base case termination, call stack execution, and Divide-and-Conquer algorithms.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: [
+                            'Recursive definition: base condition and recursive step',
+                            'System Call Stack and RecursionError maximum recursion depth',
+                            'Recursive traversal: factorial, Fibonacci, binary search'
+                        ],
+                        theory: `### 1. Recursion Fundamentals
+A recursive function solves a problem by calling itself on smaller sub-problems until reaching a **base case**.
+
+\`\`\`python
+def factorial(n):
+    # Base Case: prevents infinite recursion
+    if n <= 1:
+        return 1
+    # Recursive Case: moves toward base case
+    return n * factorial(n - 1)
+\`\`\``,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_ds_4',
+                                question: 'What occurs if a recursive function lacks a valid base case?',
+                                options: ['RecursionError: maximum recursion depth exceeded', 'ZeroDivisionError', 'TypeError', 'Code compiles normally'],
+                                correctOption: 0,
+                                explanation: 'Without a base case, recursion continues indefinitely until the call stack limit is reached, raising RecursionError.'
+                            }
+                        ],
+                        cbseTips: ['Every recursive function in CBSE board questions must have at least one return statement for the base case.'],
+                        exercises: [
+                            {
+                                title: 'Recursive Factorial Function',
+                                description: 'Write a recursive function `factorial(n)` that returns the factorial of integer `n`. Return 1 if `n <= 1`.',
+                                exerciseType: 'coding',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Construct recursive algorithms with base case termination.',
+                                xpReward: 20,
+                                timeLimit: 5,
+                                starterCode: `def factorial(n):\n    # Write recursive solution\n    pass\n`,
+                                solutionCode: `def factorial(n):\n    if n <= 1:\n        return 1\n    return n * factorial(n - 1)\n`,
+                                testCases: [
+                                    { input: 'factorial(5)', expectedOutput: '120', isHidden: false },
+                                    { input: 'factorial(3)', expectedOutput: '6', isHidden: false }
+                                ],
+                                hints: ['Base case: if n <= 1: return 1. Recursive case: return n * factorial(n - 1).']
                             }
                         ]
                     }
