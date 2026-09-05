@@ -10,6 +10,7 @@ import {
     AlertTriangle, Lightbulb, Check, X, HelpCircle, Code2, Play, Flame, ShieldAlert
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import MathRenderer from '@/components/MathRenderer';
 
 export default function UnitTheoryPage() {
     const { moduleId, unitId } = useParams();
@@ -206,8 +207,8 @@ export default function UnitTheoryPage() {
 
                 {/* Theory Content Card */}
                 <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-sm space-y-6">
-                    <div className="prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 text-sm leading-relaxed space-y-4 whitespace-pre-line font-normal">
-                        {rawContent}
+                    <div className="prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 text-sm leading-relaxed">
+                        <MathRenderer content={rawContent} textClassName="text-slate-800 dark:text-slate-200 text-sm leading-relaxed" />
                     </div>
 
                     {/* CBSE Board Exam Corner & Common Traps Callout */}
@@ -221,7 +222,7 @@ export default function UnitTheoryPage() {
                                 {unit.cbseTips.map((tip, idx) => (
                                     <li key={idx} className="flex items-start gap-2">
                                         <span className="font-bold shrink-0">•</span>
-                                        <span>{tip}</span>
+                                        <span className="flex-1"><MathRenderer content={tip} inline /></span>
                                     </li>
                                 ))}
                             </ul>
@@ -270,9 +271,9 @@ export default function UnitTheoryPage() {
                                                 <span className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center justify-center shrink-0">
                                                     {cpIdx + 1}
                                                 </span>
-                                                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                                                    {cp.question}
-                                                </h4>
+                                                <div className="text-sm font-bold text-slate-900 dark:text-white">
+                                                    <MathRenderer content={cp.question} inline />
+                                                </div>
                                             </div>
                                             {isChecked && (
                                                 <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
@@ -317,8 +318,8 @@ export default function UnitTheoryPage() {
                                                         onClick={() => handleSelectOption(cp.id, optIdx)}
                                                         className={`w-full p-3 rounded-xl border text-xs text-left transition flex items-center justify-between ${optionStyle}`}
                                                     >
-                                                        <span>{opt}</span>
-                                                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                                                        <span className="flex-1 mr-2"><MathRenderer content={opt} inline /></span>
+                                                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
                                                             isSelected 
                                                                 ? 'border-indigo-600 bg-indigo-600 text-white' 
                                                                 : 'border-slate-300 dark:border-slate-600'
@@ -333,10 +334,10 @@ export default function UnitTheoryPage() {
                                         {/* Action Button & Feedback */}
                                         <div className="flex items-center justify-between gap-3">
                                             {isChecked && cp.explanation && (
-                                                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-start gap-1.5">
+                                                <div className="text-xs text-slate-500 dark:text-slate-400 flex items-start gap-1.5">
                                                     <Lightbulb className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
-                                                    <span>{cp.explanation}</span>
-                                                </p>
+                                                    <span className="flex-1"><MathRenderer content={cp.explanation} inline /></span>
+                                                </div>
                                             )}
                                             <div className="ml-auto">
                                                 {(!isChecked || !isCorrect) && (

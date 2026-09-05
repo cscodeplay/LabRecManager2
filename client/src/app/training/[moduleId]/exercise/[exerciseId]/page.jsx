@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Editor from '@monaco-editor/react';
+import MathRenderer from '@/components/MathRenderer';
+import CodeEditorWithConfig from '@/components/CodeEditorWithConfig';
 
 // Helper to detect input() occurrences and prompts in Python code
 function parseInputOccurrences(codeText) {
@@ -687,7 +689,7 @@ export default function ExerciseEditorPage() {
                                 <CheckSquare className="w-4 h-4" /> Code Tracing & Output Predictor
                             </h2>
                             <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
-                                {exercise.description}
+                                <MathRenderer content={exercise.description} textClassName="text-slate-300" />
                             </div>
                         </div>
 
@@ -713,7 +715,10 @@ export default function ExerciseEditorPage() {
                                 {showHint && (
                                     <div className="mt-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-200 text-xs space-y-1">
                                         {exercise.hints.map((h, hIdx) => (
-                                            <p key={hIdx}>💡 {h}</p>
+                                            <div key={hIdx} className="flex items-start gap-1.5">
+                                                <span className="shrink-0">💡</span>
+                                                <span className="flex-1"><MathRenderer content={h} inline /></span>
+                                            </div>
                                         ))}
                                     </div>
                                 )}
@@ -758,7 +763,7 @@ export default function ExerciseEditorPage() {
                                             }`}>
                                                 {String.fromCharCode(65 + idx)}
                                             </span>
-                                            <span className="font-mono text-xs flex-1 leading-relaxed">{opt}</span>
+                                            <span className="text-xs flex-1 leading-relaxed"><MathRenderer content={opt} inline /></span>
                                             {result && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
                                             {result && isWrongPick && <XCircle className="w-5 h-5 text-red-400 shrink-0" />}
                                         </button>
@@ -798,9 +803,10 @@ export default function ExerciseEditorPage() {
                                             </>
                                         )}
                                     </div>
-                                    <p className="text-xs text-slate-300 leading-relaxed font-sans mt-1">
-                                        <strong className="text-white">Explanation:</strong> {testResults[0].explanation}
-                                    </p>
+                                    <div className="text-xs text-slate-300 leading-relaxed font-sans mt-1">
+                                        <strong className="text-white">Explanation:</strong>
+                                        <MathRenderer content={testResults[0].explanation} textClassName="text-slate-300 mt-1" />
+                                    </div>
                                 </div>
 
                                 {socraticReview && (
@@ -808,7 +814,7 @@ export default function ExerciseEditorPage() {
                                         <h4 className="font-bold text-xs text-indigo-300 mb-1 flex items-center gap-1.5">
                                             🤖 Socratic Tutor
                                         </h4>
-                                        <p className="text-xs text-indigo-100 leading-relaxed">{socraticReview}</p>
+                                        <MathRenderer content={socraticReview} textClassName="text-indigo-100 text-xs" />
                                     </div>
                                 )}
                             </div>
@@ -829,7 +835,7 @@ export default function ExerciseEditorPage() {
                                 <FileText className="w-4 h-4" /> Syntax & Logic Cloze
                             </h2>
                             <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
-                                {exercise.description}
+                                <MathRenderer content={exercise.description} textClassName="text-slate-300" />
                             </div>
                         </div>
 
@@ -845,7 +851,10 @@ export default function ExerciseEditorPage() {
                                 {showHint && (
                                     <div className="mt-2 p-2.5 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-cyan-200 text-xs space-y-1">
                                         {exercise.hints.map((h, hIdx) => (
-                                            <p key={hIdx}>💡 {h}</p>
+                                            <div key={hIdx} className="flex items-start gap-1.5">
+                                                <span className="shrink-0">💡</span>
+                                                <span className="flex-1"><MathRenderer content={h} inline /></span>
+                                            </div>
                                         ))}
                                     </div>
                                 )}
@@ -942,8 +951,8 @@ export default function ExerciseEditorPage() {
                             <h2 className="text-sm font-bold text-white mt-2 mb-2">
                                 {exercise.testCases?.scenarioTitle || exercise.title}
                             </h2>
-                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed whitespace-pre-wrap bg-slate-900/80 p-4 rounded-xl border border-slate-700/80">
-                                {exercise.testCases?.scenarioContext || exercise.description}
+                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed bg-slate-900/80 p-4 rounded-xl border border-slate-700/80">
+                                <MathRenderer content={exercise.testCases?.scenarioContext || exercise.description} textClassName="text-slate-300" />
                             </div>
                         </div>
 
@@ -959,7 +968,10 @@ export default function ExerciseEditorPage() {
                                 {showHint && (
                                     <div className="mt-2 p-2.5 bg-purple-500/10 border border-purple-500/20 rounded-lg text-purple-200 text-xs space-y-1">
                                         {exercise.hints.map((h, hIdx) => (
-                                            <p key={hIdx}>💡 {h}</p>
+                                            <div key={hIdx} className="flex items-start gap-1.5">
+                                                <span className="shrink-0">💡</span>
+                                                <span className="flex-1"><MathRenderer content={h} inline /></span>
+                                            </div>
                                         ))}
                                     </div>
                                 )}
@@ -1060,7 +1072,7 @@ export default function ExerciseEditorPage() {
                                 <Compass className="w-4 h-4" /> CBSE Assertion & Reason
                             </h2>
                             <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
-                                {exercise.description}
+                                <MathRenderer content={exercise.description} textClassName="text-slate-300" />
                             </div>
                         </div>
 
@@ -1078,9 +1090,9 @@ export default function ExerciseEditorPage() {
                                 <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
                                     <Sparkles className="w-3.5 h-3.5" /> Conceptual Explanation:
                                 </span>
-                                <p className="text-xs text-slate-300 leading-relaxed">
-                                    {submittedData.results[0].explanation}
-                                </p>
+                                <div className="text-xs text-slate-300 leading-relaxed">
+                                    <MathRenderer content={submittedData.results[0].explanation} textClassName="text-slate-300" />
+                                </div>
                             </div>
                         )}
                     </div>
@@ -1093,9 +1105,9 @@ export default function ExerciseEditorPage() {
                                 <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px]">A</span>
                                 Assertion Statement:
                             </span>
-                            <p className="text-sm font-semibold text-white leading-relaxed">
-                                {exercise.testCases?.assertion || exercise.description}
-                            </p>
+                            <div className="text-sm font-semibold text-white leading-relaxed">
+                                <MathRenderer content={exercise.testCases?.assertion || exercise.description} textClassName="text-white" />
+                            </div>
                         </div>
 
                         {/* Reason Statement Card */}
@@ -1104,9 +1116,9 @@ export default function ExerciseEditorPage() {
                                 <span className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center text-[10px]">R</span>
                                 Reason Statement:
                             </span>
-                            <p className="text-sm font-semibold text-white leading-relaxed">
-                                {exercise.testCases?.reason || 'Evaluate based on foundational language semantics and execution rules.'}
-                            </p>
+                            <div className="text-sm font-semibold text-white leading-relaxed">
+                                <MathRenderer content={exercise.testCases?.reason || 'Evaluate based on foundational language semantics and execution rules.'} textClassName="text-white" />
+                            </div>
                         </div>
 
                         {/* 4 Standard CBSE Options */}
@@ -1178,7 +1190,7 @@ export default function ExerciseEditorPage() {
                                 <ListOrdered className="w-4 h-4" /> CBSE Dry-Run Trace Table
                             </h2>
                             <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
-                                {exercise.description}
+                                <MathRenderer content={exercise.description} textClassName="text-slate-300" />
                             </div>
                         </div>
 
@@ -1298,7 +1310,7 @@ export default function ExerciseEditorPage() {
                                 <AlertTriangle className="w-4 h-4" /> CBSE Error Spotting & Debugging
                             </h2>
                             <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
-                                {exercise.description}
+                                <MathRenderer content={exercise.description} textClassName="text-slate-300" />
                             </div>
                         </div>
 
@@ -1314,9 +1326,9 @@ export default function ExerciseEditorPage() {
                         {submittedData?.results?.[0]?.explanation && (
                             <div className="p-4 bg-slate-900 border border-slate-700 rounded-2xl space-y-2">
                                 <span className="text-xs font-bold text-emerald-400">CBSE Solution Note:</span>
-                                <p className="text-xs text-slate-300 leading-relaxed">
-                                    {submittedData.results[0].explanation}
-                                </p>
+                                <div className="text-xs text-slate-300 leading-relaxed">
+                                    <MathRenderer content={submittedData.results[0].explanation} textClassName="text-slate-300" />
+                                </div>
                             </div>
                         )}
                     </div>
@@ -1359,19 +1371,13 @@ export default function ExerciseEditorPage() {
 
                         {/* Monaco Editor with Buggy / Editable Code */}
                         <div className="flex-1 overflow-hidden">
-                            <Editor
+                            <CodeEditorWithConfig
                                 height="100%"
                                 language={moduleData?.language?.toLowerCase() || 'python'}
-                                theme="vs-dark"
                                 value={code}
                                 onChange={(val) => setCode(val || '')}
-                                options={{
-                                    minimap: { enabled: false },
-                                    fontSize: 13,
-                                    lineNumbers: 'on',
-                                    scrollBeyondLastLine: false,
-                                    automaticLayout: true
-                                }}
+                                fileName="debug_target.py"
+                                runtimeLabel="Debug Workspace"
                             />
                         </div>
                     </div>
@@ -1400,21 +1406,27 @@ export default function ExerciseEditorPage() {
                                     <h2 className="text-sm font-bold text-emerald-400 mb-2 flex items-center gap-1.5">
                                         📖 Learning Content
                                     </h2>
-                                    <div className="prose prose-invert prose-xs leading-relaxed whitespace-pre-wrap bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 mb-4 text-xs">
-                                        {exercise.description.split('---')[0].replace('## 📖 Learning Content', '').trim()}
+                                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 mb-4 text-xs">
+                                        <MathRenderer 
+                                            content={exercise.description.split('---')[0].replace('## 📖 Learning Content', '').trim()} 
+                                            textClassName="text-slate-200"
+                                        />
                                     </div>
                                     <h2 className="text-sm font-bold text-white mb-2 flex items-center gap-1.5">
                                         🎯 Problem Statement
                                     </h2>
-                                    <div className="prose prose-invert prose-xs leading-relaxed whitespace-pre-wrap text-xs">
-                                        {exercise.description.split('## 🎯 Problem Statement')[1]?.trim() || ''}
+                                    <div className="text-xs">
+                                        <MathRenderer 
+                                            content={exercise.description.split('## 🎯 Problem Statement')[1]?.trim() || ''} 
+                                            textClassName="text-slate-300"
+                                        />
                                     </div>
                                 </>
                             ) : (
                                 <>
                                     <h2 className="text-sm font-bold text-white mb-3">Problem Statement</h2>
-                                    <div className="prose prose-invert prose-xs leading-relaxed whitespace-pre-wrap text-xs text-slate-300">
-                                        {exercise.description}
+                                    <div className="text-xs text-slate-300">
+                                        <MathRenderer content={exercise.description} textClassName="text-slate-300" />
                                     </div>
                                 </>
                             )}
@@ -1432,7 +1444,10 @@ export default function ExerciseEditorPage() {
                                     {showHint && (
                                         <div className="mt-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-200 text-xs space-y-1">
                                             {exercise.hints.map((h, hIdx) => (
-                                                <p key={hIdx}>💡 {h}</p>
+                                                <div key={hIdx} className="flex items-start gap-1.5">
+                                                    <span className="shrink-0">💡</span>
+                                                    <span className="flex-1"><MathRenderer content={h} inline /></span>
+                                                </div>
                                             ))}
                                         </div>
                                     )}
@@ -1670,37 +1685,23 @@ export default function ExerciseEditorPage() {
                                     <h4 className="flex items-center gap-2 font-bold text-xs text-indigo-300">
                                         🤖 Socratic AI Reviewer
                                     </h4>
-                                    <p className="text-xs text-indigo-100 leading-relaxed whitespace-pre-wrap">
-                                        {socraticReview}
-                                    </p>
+                                    <div className="text-xs text-indigo-100 leading-relaxed">
+                                        <MathRenderer content={socraticReview} textClassName="text-indigo-100" />
+                                    </div>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Right Panel: Monaco Editor */}
-                    <div className="w-7/12 h-full pt-2 bg-slate-950 flex flex-col">
-                        <div className="px-4 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs text-slate-400">
-                            <span className="font-mono text-indigo-400">solution.py</span>
-                            <span>Python 3.11 Runtime</span>
-                        </div>
-                        <div className="flex-1">
-                            <Editor
-                                height="100%"
-                                language={exercise?.unit?.module?.language || 'python'}
-                                theme="vs-dark"
-                                value={code}
-                                onChange={(val) => setCode(val || '')}
-                                options={{
-                                    minimap: { enabled: false },
-                                    fontSize: 14,
-                                    lineHeight: 24,
-                                    fontFamily: 'JetBrains Mono, monospace',
-                                    scrollbar: { vertical: 'auto' },
-                                    padding: { top: 16 }
-                                }}
-                            />
-                        </div>
+                    {/* Right Panel: Enhanced Monaco Editor with Configurations */}
+                    <div className="w-7/12 h-full flex flex-col">
+                        <CodeEditorWithConfig
+                            language={exercise?.unit?.module?.language || 'python'}
+                            value={code}
+                            onChange={(val) => setCode(val || '')}
+                            fileName="solution.py"
+                            runtimeLabel={`${exercise?.unit?.module?.language ? exercise.unit.module.language.toUpperCase() : 'Python'} 3.11 Runtime`}
+                        />
                     </div>
                 </div>
             )}
