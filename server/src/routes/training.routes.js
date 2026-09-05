@@ -850,8 +850,18 @@ router.post('/exercises/:id/run', authenticate, [
         // For HTML, there is no execution Sandbox. The literal code is the output.
         execution = { stdout: code, stderr: '', code: 0 };
     } else {
-        // Python Execute
-        execution = await executePythonCode(code, customInput || '');
+        // Python Execute with auto-harness for function-only submissions
+        let codeToRun = code;
+        let stdinInput = customInput || '';
+
+        if (stdinInput.trim()) {
+            const funcCallMatch = stdinInput.trim().match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([\s\S]*)\)$/);
+            if (funcCallMatch && new RegExp(`def\\s+${funcCallMatch[1]}\\s*\\(`, 'm').test(code)) {
+                codeToRun = `${code}\n\n# Auto-harness invocation\ntry:\n    _res = ${stdinInput.trim()}\n    if _res is not None:\n        print(_res)\nexcept Exception as _e:\n    import sys\n    sys.stderr.write(str(_e))\n`;
+                stdinInput = '';
+            }
+        }
+        execution = await executePythonCode(codeToRun, stdinInput);
     }
 
     res.json({
@@ -1099,7 +1109,28 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
                 if (language === 'html') {
                     exe = { stdout: code, stderr: '', code: 0 };
                 } else {
-                    exe = await executePythonCode(code, testInput);
+                    let codeToRun = code;
+                    let stdinInput = testInput;
+
+                    // Auto-harness for function-only solutions:
+                    const trimmedInput = testInput.trim();
+                    const funcCallMatch = trimmedInput.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([\s\S]*)\)$/);
+                    if (funcCallMatch && new RegExp(`def\\s+${funcCallMatch[1]}\\s*\\(`, 'm').test(code)) {
+                        codeToRun = `${code}\n\n# Auto-harness call\ntry:\n    _res = ${trimmedInput}\n    if _res is not None:\n        print(_res)\nexcept Exception as _e:\n    import sys\n    sys.stderr.write(str(_e))\n`;
+                        stdinInput = '';
+                    } else if (!code.includes('input(')) {
+                        const singleFuncMatch = code.match(/def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\):/);
+                        if (singleFuncMatch) {
+                            const funcName = singleFuncMatch[1];
+                            const params = singleFuncMatch[2].split(',').map(p => p.trim()).filter(Boolean);
+                            const inputArgs = trimmedInput.split(/[\n,]+/).map(a => a.trim()).filter(Boolean);
+                            if (params.length > 0 && inputArgs.length === params.length) {
+                                codeToRun = `${code}\n\n# Auto-harness call\ntry:\n    _res = ${funcName}(${inputArgs.join(', ')})\n    if _res is not None:\n        print(_res)\nexcept Exception as _e:\n    import sys\n    sys.stderr.write(str(_e))\n`;
+                                stdinInput = '';
+                            }
+                        }
+                    }
+                    exe = await executePythonCode(codeToRun, stdinInput);
                 }
                 
                 const actualRaw = exe.stdout ? exe.stdout.replace(/\r\n/g, '\n') : '';
