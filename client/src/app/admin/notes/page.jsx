@@ -288,7 +288,8 @@ export default function AdminNotesPage() {
             }
         } catch (error) {
             console.error('AI Note Assist Error:', error);
-            toast.error(error.response?.data?.message || 'Failed to generate content with AI');
+            const serverMsg = error.response?.data?.message || (error.response?.status === 404 ? 'AI assist endpoint not found (404). Check backend service deployment.' : 'Failed to generate content with AI');
+            toast.error(serverMsg);
         } finally {
             setAiGenerating(false);
         }

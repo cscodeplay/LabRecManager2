@@ -59,6 +59,8 @@ In the **Environment** section, add these variables:
 | `JWT_REFRESH_EXPIRES_IN` | `30d` |
 | `CLIENT_URL` | (Leave empty for now, add frontend URL after deploying frontend) |
 | `PORT` | `5001` |
+| `GEMINI_API_KEY` | `AIzaSy...` (Required for all AI features, notes generation, evaluation) |
+| `GROQ_API_KEY` | `gsk_...` (Required for AI fallback & Chatbot) |
 
 ### 2.3 Deploy
 
