@@ -451,9 +451,16 @@ router.delete('/modules/:id', authenticate, authorize('admin', 'principal', 'ins
     });
 
     // Cleanup student mastery and progress
-    await prisma.studentUnitMastery.deleteMany({
-        where: { unit: { moduleId: id } }
+    const units = await prisma.trainingUnit.findMany({
+        where: { moduleId: id },
+        select: { id: true }
     });
+    const unitIds = units.map(u => u.id);
+    if (unitIds.length > 0) {
+        await prisma.studentUnitMastery.deleteMany({
+            where: { unitId: { in: unitIds } }
+        });
+    }
     await prisma.studentTrainingProgress.deleteMany({
         where: { moduleId: id }
     });

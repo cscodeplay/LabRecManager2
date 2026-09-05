@@ -7,11 +7,12 @@ import { trainingAPI, classesAPI } from '@/lib/api';
 import PageHeader from '@/components/PageHeader';
 import { 
     GraduationCap, Clock, Award, ChevronRight, BookOpen, 
-    AlertCircle, Plus, Sparkles, Edit3, BookCheck, ShieldCheck, Zap
+    AlertCircle, Plus, Sparkles, Edit3, Trash2, BookCheck, ShieldCheck, Zap
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import TrainingModuleWizard from '@/components/TrainingModuleWizard';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 export default function TrainingModulesPage() {
     const router = useRouter();
@@ -20,6 +21,12 @@ export default function TrainingModulesPage() {
     const [classes, setClasses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showWizard, setShowWizard] = useState(false);
+    const [deleteModalState, setDeleteModalState] = useState({
+        isOpen: false,
+        moduleId: null,
+        moduleTitle: '',
+        isDeleting: false
+    });
 
     const isInstructorOrAdmin = user?.role === 'admin' || user?.role === 'principal' || user?.role === 'instructor' || user?.role === 'lab_assistant';
 
@@ -41,6 +48,30 @@ export default function TrainingModulesPage() {
             toast.error('Failed to load training modules');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleDeleteClick = (e, mod) => {
+        e.stopPropagation();
+        setDeleteModalState({
+            isOpen: true,
+            moduleId: mod.id,
+            moduleTitle: mod.title,
+            isDeleting: false
+        });
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!deleteModalState.moduleId) return;
+        setDeleteModalState(prev => ({ ...prev, isDeleting: true }));
+        try {
+            await trainingAPI.deleteModule(deleteModalState.moduleId);
+            toast.success(`"${deleteModalState.moduleTitle}" deleted successfully`);
+            setDeleteModalState({ isOpen: false, moduleId: null, moduleTitle: '', isDeleting: false });
+            fetchModules();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to delete module');
+            setDeleteModalState(prev => ({ ...prev, isDeleting: false }));
         }
     };
 
@@ -202,13 +233,22 @@ export default function TrainingModulesPage() {
 
                                     <div className="flex items-center gap-2">
                                         {isInstructorOrAdmin && (
-                                            <button
-                                                onClick={() => router.push(`/admin/training/${mod.id}/builder`)}
-                                                className="p-2 text-slate-400 hover:text-indigo-600 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-950 transition"
-                                                title="Edit in Pedagogy Builder"
-                                            >
-                                                <Edit3 className="w-4 h-4" />
-                                            </button>
+                                            <>
+                                                <button
+                                                    onClick={() => router.push(`/admin/training/${mod.id}/builder`)}
+                                                    className="p-2 text-slate-400 hover:text-indigo-600 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-950 transition"
+                                                    title="Edit in Pedagogy Builder"
+                                                >
+                                                    <Edit3 className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => handleDeleteClick(e, mod)}
+                                                    className="p-2 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                                    title="Delete Course Module"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </>
                                         )}
                                         <Link
                                             href={`/training/${mod.id}`}
@@ -225,12 +265,24 @@ export default function TrainingModulesPage() {
                 </div>
             )}
 
-            {/* 5-Step Training Module Creator Wizard */}
+            {/* 6-Step Training Module Creator Wizard */}
             <TrainingModuleWizard
                 isOpen={showWizard}
                 onClose={() => setShowWizard(false)}
                 availableClasses={classes}
                 onSuccess={() => fetchModules()}
+            />
+
+            {/* Delete Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={deleteModalState.isOpen}
+                onClose={() => setDeleteModalState({ isOpen: false, moduleId: null, moduleTitle: '', isDeleting: false })}
+                onConfirm={handleConfirmDelete}
+                title="Delete Training Module"
+                message={`Are you sure you want to delete "${deleteModalState.moduleTitle}"? All associated units, exercises, and student progress records will be permanently removed.`}
+                confirmText="Delete Module"
+                type="danger"
+                loading={deleteModalState.isDeleting}
             />
         </div>
     );

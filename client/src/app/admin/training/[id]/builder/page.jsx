@@ -15,6 +15,7 @@ import api, { trainingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { formatDate } from '@/lib/dateUtils';
 import AiTrainingCopilot from '@/components/AiTrainingCopilot';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 // --- Pedagogy Score Engine ---
 function computePedagogyScore(moduleData) {
@@ -277,6 +278,10 @@ export default function PedagogyBuilderPage() {
         classLevel: 11
     });
 
+    // Delete Module State
+    const [showDeleteModuleModal, setShowDeleteModuleModal] = useState(false);
+    const [isDeletingModule, setIsDeletingModule] = useState(false);
+
     // Enforce SINGLE active modal at any given time (Zero Modal Stacking)
     const closeAllModals = () => {
         setShowAiCopilot(false);
@@ -286,6 +291,19 @@ export default function PedagogyBuilderPage() {
         setShowConfigModal(false);
         setShowAssignModal(false);
         setShowEditModuleModal(false);
+        setShowDeleteModuleModal(false);
+    };
+
+    const handleDeleteEntireModule = async () => {
+        setIsDeletingModule(true);
+        try {
+            await trainingAPI.deleteModule(id);
+            toast.success('Course module deleted successfully');
+            router.push('/admin/training');
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to delete course module');
+            setIsDeletingModule(false);
+        }
     };
 
     const handleOpenEditModule = () => {
@@ -926,6 +944,13 @@ export default function PedagogyBuilderPage() {
                             </button>
                             <button onClick={handleOpenEditModule} className="btn btn-secondary text-sm flex items-center gap-1.5">
                                 <Edit3 className="w-4 h-4 text-slate-500" /> Edit Course
+                            </button>
+                            <button 
+                                onClick={() => { closeAllModals(); setShowDeleteModuleModal(true); }}
+                                className="btn btn-secondary text-sm flex items-center gap-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-900/50"
+                                title="Delete Course Module"
+                            >
+                                <Trash2 className="w-4 h-4 text-rose-500" /> Delete
                             </button>
                             <button onClick={() => { closeAllModals(); setShowConfigModal(true); }} className="btn btn-secondary text-sm">
                                 <Settings className="w-4 h-4" /> Configure UI
@@ -2384,6 +2409,18 @@ export default function PedagogyBuilderPage() {
                     scaffoldLevel: exerciseForm.scaffoldLevel,
                     bloomsLevel: exerciseForm.bloomsLevel
                 }}
+            />
+
+            {/* Delete Entire Module Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={showDeleteModuleModal}
+                onClose={() => setShowDeleteModuleModal(false)}
+                onConfirm={handleDeleteEntireModule}
+                title="Delete Entire Course Module"
+                message={`Are you sure you want to delete "${moduleData?.title || 'this module'}"? All units, exercises, test cases, and student progress records will be permanently removed.`}
+                confirmText="Delete Module"
+                type="danger"
+                loading={isDeletingModule}
             />
         </div>
     );

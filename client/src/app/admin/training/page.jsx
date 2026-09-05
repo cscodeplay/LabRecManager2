@@ -11,6 +11,7 @@ import { trainingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import TrainingModuleWizard from '@/components/TrainingModuleWizard';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 export default function AdminTrainingModules() {
     const router = useRouter();
@@ -22,6 +23,12 @@ export default function AdminTrainingModules() {
     const [showWizard, setShowWizard] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [editingModule, setEditingModule] = useState(null);
+    const [deleteModalState, setDeleteModalState] = useState({
+        isOpen: false,
+        moduleId: null,
+        moduleTitle: '',
+        isDeleting: false
+    });
     const [editForm, setEditForm] = useState({
         title: '',
         titleHindi: '',
@@ -88,17 +95,27 @@ export default function AdminTrainingModules() {
         }
     };
 
-    const handleDeleteModule = async (e, modId, modTitle) => {
+    const handleDeleteModule = (e, modId, modTitle) => {
         e.stopPropagation();
-        if (!confirm(`Are you sure you want to delete "${modTitle}"? All units, exercises, and student progress will be removed.`)) {
-            return;
-        }
+        setDeleteModalState({
+            isOpen: true,
+            moduleId: modId,
+            moduleTitle: modTitle,
+            isDeleting: false
+        });
+    };
+
+    const handleConfirmDeleteModule = async () => {
+        if (!deleteModalState.moduleId) return;
+        setDeleteModalState(prev => ({ ...prev, isDeleting: true }));
         try {
-            await trainingAPI.deleteModule(modId);
+            await trainingAPI.deleteModule(deleteModalState.moduleId);
             toast.success('Course module deleted successfully');
+            setDeleteModalState({ isOpen: false, moduleId: null, moduleTitle: '', isDeleting: false });
             loadData();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to delete module');
+            setDeleteModalState(prev => ({ ...prev, isDeleting: false }));
         }
     };
 
@@ -325,12 +342,24 @@ export default function AdminTrainingModules() {
                 </div>
             )}
 
-            {/* 5-Step Training Module Creator Wizard */}
+            {/* 6-Step Training Module Creator Wizard */}
             <TrainingModuleWizard
                 isOpen={showWizard}
                 onClose={() => setShowWizard(false)}
                 availableClasses={classes}
                 onSuccess={() => loadData()}
+            />
+
+            {/* Delete Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={deleteModalState.isOpen}
+                onClose={() => setDeleteModalState({ isOpen: false, moduleId: null, moduleTitle: '', isDeleting: false })}
+                onConfirm={handleConfirmDeleteModule}
+                title="Delete Course Module"
+                message={`Are you sure you want to delete "${deleteModalState.moduleTitle}"? All units, exercises, test cases, and student progress will be permanently removed.`}
+                confirmText="Delete Module"
+                type="danger"
+                loading={deleteModalState.isDeleting}
             />
         </div>
     );
