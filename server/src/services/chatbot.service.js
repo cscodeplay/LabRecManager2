@@ -337,7 +337,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     // ═══ GROQ CALL ═══
     async callGroq(messages) {
         if (!this.groqClient) throw new Error('Groq not configured');
-        const groqModels = ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b', 'llama-3.1-8b-instant'];
+        const groqModels = ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
         let lastError = null;
 
         for (const model of groqModels) {
@@ -1949,7 +1949,7 @@ Return JSON ONLY with this exact format:
                 if (this.groqClient) {
                     try {
                         const res = await this.groqClient.chat.completions.create({
-                            model: 'llama-3.3-70b-versatile',
+                            model: 'openai/gpt-oss-120b',
                             messages: [{ role: 'user', content: classExtractPrompt }],
                             temperature: 0.1,
                             response_format: { type: 'json_object' }
@@ -2064,7 +2064,7 @@ Return JSON ONLY in this format:
                 if (this.groqClient) {
                     try {
                         const res = await this.groqClient.chat.completions.create({
-                            model: 'llama-3.3-70b-versatile',
+                            model: 'openai/gpt-oss-120b',
                             messages: [{ role: 'user', content: userExtractPrompt }],
                             temperature: 0.1,
                             response_format: { type: 'json_object' }
@@ -3782,7 +3782,7 @@ User Request: ${message}
                     if (this.groqClient) {
                         try {
                             const res = await this.groqClient.chat.completions.create({
-                                model: 'llama-3.3-70b-versatile',
+                                model: 'openai/gpt-oss-120b',
                                 messages: [{ role: 'user', content: eventExtractPrompt }],
                                 temperature: 0.1
                             });
@@ -3903,7 +3903,7 @@ ${documentContext || message}
                     if (this.groqClient) {
                         try {
                             const res = await this.groqClient.chat.completions.create({
-                                model: 'llama-3.3-70b-versatile',
+                                model: 'openai/gpt-oss-120b',
                                 messages: [{ role: 'user', content: holidayExtractPrompt }],
                                 temperature: 0.1
                             });

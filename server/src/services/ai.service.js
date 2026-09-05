@@ -2,7 +2,7 @@ const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const ACTIVE_GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-3.6-flash'];
-const ACTIVE_GROQ_MODELS = ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+const ACTIVE_GROQ_MODELS = ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
 
 class AIService {
     constructor() {
@@ -715,33 +715,7 @@ FORMATTING RULES:
 4. Ensure lists (<ul>, <ol>) and bullet points are clean, concise, and easy to scan.
 5. If drafting from scratch and no title was provided, suggest a title on the first line inside an <h2> tag.`;
 
-        // 1. Try Gemini first
-        if (this.genAI) {
-            try {
-                for (const modelName of ACTIVE_GEMINI_MODELS) {
-                    try {
-                        const model = this.genAI.getGenerativeModel({ model: modelName });
-                        const result = await model.generateContent(systemPrompt);
-                        let responseText = result.response.text() || '';
-                        responseText = responseText.replace(/^```html\n?/i, '').replace(/^```\n?/i, '').replace(/```$/i, '').trim();
-                        responseText = responseText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-                        if (responseText) {
-                            return {
-                                success: true,
-                                html: responseText,
-                                provider: `gemini/${modelName}`
-                            };
-                        }
-                    } catch (e) {
-                        console.warn(`[AIService] Gemini ${modelName} failed for admin notes:`, e.message);
-                    }
-                }
-            } catch (err) {
-                console.warn('[AIService] Gemini failed for notes assist, trying Groq fallback:', err.message);
-            }
-        }
-
-        // 2. Fallback: Groq
+        // 1. Try Groq first (Ultra-fast ~2-3s response, prevents reverse-proxy 30s timeouts)
         if (this.groq) {
             for (const gModel of ACTIVE_GROQ_MODELS) {
                 try {
@@ -767,6 +741,32 @@ FORMATTING RULES:
                 } catch (groqErr) {
                     console.warn(`[AIService] Groq ${gModel} failed for notes assist:`, groqErr.message);
                 }
+            }
+        }
+
+        // 2. Fallback: Gemini
+        if (this.genAI) {
+            try {
+                for (const modelName of ACTIVE_GEMINI_MODELS) {
+                    try {
+                        const model = this.genAI.getGenerativeModel({ model: modelName });
+                        const result = await model.generateContent(systemPrompt);
+                        let responseText = result.response.text() || '';
+                        responseText = responseText.replace(/^```html\n?/i, '').replace(/^```\n?/i, '').replace(/```$/i, '').trim();
+                        responseText = responseText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+                        if (responseText) {
+                            return {
+                                success: true,
+                                html: responseText,
+                                provider: `gemini/${modelName}`
+                            };
+                        }
+                    } catch (e) {
+                        console.warn(`[AIService] Gemini ${modelName} failed for admin notes:`, e.message);
+                    }
+                }
+            } catch (err) {
+                console.warn('[AIService] Gemini failed for notes assist:', err.message);
             }
         }
 
@@ -830,7 +830,7 @@ Return ONLY a valid JSON array of slot objects with the following schema:
             try {
                 console.log('[AIService] Generating timetable slots via Groq...');
                 const completion = await this.groq.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
+                    model: ACTIVE_GROQ_MODELS[0],
                     messages: [
                         { role: 'system', content: 'You are an educational scheduling AI. Output ONLY a valid JSON array.' },
                         { role: 'user', content: systemPrompt }
@@ -1306,7 +1306,7 @@ Output MUST be ONLY valid JSON matching this schema:
         if ((provider === 'groq' || provider === 'auto') && this.groq) {
             try {
                 const completion = await this.groq.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
+                    model: ACTIVE_GROQ_MODELS[0],
                     messages: [
                         { role: 'system', content: 'You are an educational AI assistant. Output ONLY valid JSON matching the requested schema. No markdown code blocks.' },
                         { role: 'user', content: systemPrompt }
@@ -1322,13 +1322,16 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            try {
-                const model = this.genAI.getGenerativeModel({ model: ACTIVE_GEMINI_MODELS[0] });
-                const result = await model.generateContent(systemPrompt);
-                const responseText = result.response.text();
-                return this.parseJSONResponse(responseText);
-            } catch (geminiErr) {
-                console.warn('[AIService] Gemini card-assist failed:', geminiErr.message);
+            for (const modelName of ACTIVE_GEMINI_MODELS) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(systemPrompt);
+                    const responseText = result.response.text();
+                    const parsed = this.parseJSONResponse(responseText);
+                    if (parsed) return parsed;
+                } catch (geminiErr) {
+                    console.warn(`[AIService] Gemini (${modelName}) card-assist failed:`, geminiErr.message);
+                }
             }
         }
 
@@ -1383,7 +1386,7 @@ Output ONLY a valid JSON object matching this schema:
         if (this.groq) {
             try {
                 const completion = await this.groq.chat.completions.create({
-                    model: 'llama-3.1-8b-instant',
+                    model: ACTIVE_GROQ_MODELS[0],
                     messages: [
                         { role: 'system', content: 'Output ONLY valid JSON. No markdown wrappers.' },
                         { role: 'user', content: systemPrompt }
