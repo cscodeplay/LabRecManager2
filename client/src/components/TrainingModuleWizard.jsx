@@ -17,7 +17,8 @@ const STEP_TITLES = [
     { step: 2, title: 'Units & Mastery', desc: 'Curriculum & Gate Thresholds' },
     { step: 3, title: 'Exercise Arena', desc: 'Coding, MCQs, Cloze & Labs' },
     { step: 4, title: 'Pedagogy Rules', desc: 'Bloom\'s & Gamification' },
-    { step: 5, title: 'Deploy & Assign', desc: 'Classes & Publishing' }
+    { step: 5, title: 'Module Preview', desc: 'Full Curriculum & Theory Review' },
+    { step: 6, title: 'Deploy & Assign', desc: 'Classes & Publishing' }
 ];
 
 // Robust UUID checker to distinguish persisted DB records from in-memory client IDs
@@ -296,15 +297,17 @@ export default function TrainingModuleWizard({
     const isStep2Complete = Boolean(isStep1Complete && units.length > 0 && units.every(u => u.title && u.title.trim().length > 0));
     const totalExercises = useMemo(() => units.reduce((acc, u) => acc + (u.exercises?.length || 0), 0), [units]);
     const isStep3Complete = Boolean(isStep2Complete && totalExercises > 0);
-    const isStep4Complete = Boolean(isStep3Complete && currentStep > 4);
-    const isStep5Complete = false;
+    const isStep4Complete = Boolean(isStep3Complete);
+    const isStep5Complete = Boolean(isStep4Complete);
+    const isStep6Complete = false;
 
     const canAccessStep = (stepNumber) => {
         if (stepNumber <= 1) return true;
         if (stepNumber === 2) return isStep1Complete;
         if (stepNumber === 3) return isStep1Complete && isStep2Complete;
         if (stepNumber === 4) return isStep1Complete && isStep2Complete && isStep3Complete;
-        if (stepNumber === 5) return isStep1Complete && isStep2Complete && isStep3Complete && currentStep >= 4;
+        if (stepNumber === 5) return isStep1Complete && isStep2Complete && isStep3Complete;
+        if (stepNumber === 6) return isStep1Complete && isStep2Complete && isStep3Complete;
         return false;
     };
 
@@ -1350,47 +1353,70 @@ export default function TrainingModuleWizard({
         setIsSubmitting(true);
         try {
             // 1. Create or Update Module
+            const isPublishing = Boolean(shouldPublishNow);
             const createPayload = {
                 ...moduleForm,
-                isPublished: shouldPublishNow || moduleForm.isPublished,
+                isPublished: isPublishing, // Strictly false when saving as draft!
                 totalUnits: units.length,
                 totalExercises: pedagogyStats.totalExercises
             };
 
-            let moduleId = (initialData?.id && isRealDbUuid(initialData.id)) ? initialData.id : null;
+            const isExistingModule = Boolean(initialData?.id && isRealDbUuid(initialData.id));
+            let moduleId = isExistingModule ? initialData.id : null;
             if (moduleId) {
                 await trainingAPI.updateModule(moduleId, createPayload);
             } else {
                 const modRes = await trainingAPI.createModule(createPayload);
-                const createdModule = modRes.data.data.module;
-                moduleId = createdModule.id;
+                const createdModule = modRes.data?.data?.module || modRes.data?.module;
+                moduleId = createdModule?.id;
+            }
+
+            if (!moduleId || !isRealDbUuid(moduleId)) {
+                throw new Error('Failed to obtain a valid Module ID from server.');
             }
 
             // 2. Create / Update Units & Exercises in order
+            const updatedUnitsWithRealIds = [...units];
             for (let uIdx = 0; uIdx < units.length; uIdx++) {
                 const u = units[uIdx];
-                let createdUnitId = isRealDbUuid(u.id) ? u.id : null;
+                let createdUnitId = null;
 
-                if (!createdUnitId) {
+                // Only attempt to update if this is an existing module being edited AND u.id is a real DB UUID
+                if (isExistingModule && isRealDbUuid(u.id)) {
+                    try {
+                        const updateRes = await trainingAPI.updateUnit(u.id, {
+                            unitNumber: uIdx + 1,
+                            title: u.title || `Unit ${uIdx + 1}`,
+                            description: u.description || '',
+                            expectedHours: Number(u.expectedHours) || 4,
+                            unlockThreshold: Number(u.unlockThreshold) || 80,
+                            sequenceOrder: uIdx
+                        });
+                        createdUnitId = updateRes.data?.data?.unit?.id || updateRes.data?.unit?.id || u.id;
+                    } catch (uErr) {
+                        console.warn(`Unit update failed for ${u.id}, will create fresh:`, uErr.message);
+                        createdUnitId = null;
+                    }
+                }
+
+                // If new module or unit does not exist in DB yet, create it fresh
+                if (!createdUnitId || !isRealDbUuid(createdUnitId)) {
                     const unitRes = await trainingAPI.createUnit(moduleId, {
                         unitNumber: uIdx + 1,
-                        title: u.title,
-                        description: u.description,
+                        title: u.title || `Unit ${uIdx + 1}`,
+                        description: u.description || '',
                         expectedHours: Number(u.expectedHours) || 4,
                         unlockThreshold: Number(u.unlockThreshold) || 80,
                         sequenceOrder: uIdx
                     });
-                    createdUnitId = unitRes.data.data.unit.id;
-                } else {
-                    await trainingAPI.updateUnit(createdUnitId, {
-                        unitNumber: uIdx + 1,
-                        title: u.title,
-                        description: u.description,
-                        expectedHours: Number(u.expectedHours) || 4,
-                        unlockThreshold: Number(u.unlockThreshold) || 80,
-                        sequenceOrder: uIdx
-                    });
+                    createdUnitId = unitRes.data?.data?.unit?.id || unitRes.data?.unit?.id || unitRes.data?.id;
                 }
+
+                if (!createdUnitId || !isRealDbUuid(createdUnitId)) {
+                    throw new Error(`Failed to create or update Unit #${uIdx + 1} (${u.title || 'Untitled'}).`);
+                }
+
+                updatedUnitsWithRealIds[uIdx] = { ...u, id: createdUnitId };
 
                 // Save Pre-Lab Theory & Checkpoints if available
                 const theoryToSave = u.theoryData || (u.theory ? {
@@ -1401,7 +1427,7 @@ export default function TrainingModuleWizard({
                     cbseTips: Array.isArray(u.cbseTips) ? u.cbseTips : []
                 } : null);
 
-                if (theoryToSave) {
+                if (theoryToSave && createdUnitId && isRealDbUuid(createdUnitId)) {
                     try {
                         await trainingAPI.updateUnitTheory(createdUnitId, {
                             summary: theoryToSave.summary || u.description || '',
@@ -1416,7 +1442,7 @@ export default function TrainingModuleWizard({
                 }
 
                 // Create Exercises for this unit
-                if (u.exercises && u.exercises.length > 0) {
+                if (u.exercises && u.exercises.length > 0 && createdUnitId && isRealDbUuid(createdUnitId)) {
                     for (let eIdx = 0; eIdx < u.exercises.length; eIdx++) {
                         const ex = u.exercises[eIdx];
                         const fullDescription = ex.theory
@@ -1428,8 +1454,8 @@ export default function TrainingModuleWizard({
                         const safeHints = typeof ex.hints === 'string' ? ex.hints : JSON.stringify(ex.hints || []);
 
                         await trainingAPI.createExercise(createdUnitId, {
-                            title: ex.title,
-                            description: fullDescription,
+                            title: ex.title || `Exercise ${eIdx + 1}`,
+                            description: fullDescription || '',
                             exerciseType: ex.exerciseType || 'coding',
                             difficulty: ex.difficulty || 'beginner',
                             scaffoldLevel: ex.scaffoldLevel || 'guided',
@@ -1448,36 +1474,39 @@ export default function TrainingModuleWizard({
                 }
             }
 
-            // 3. Ensure module is published if requested
-            if (shouldPublishNow) {
+            // Sync local state with genuine DB IDs
+            setUnits(updatedUnitsWithRealIds);
+
+            // 3. Ensure module is published ONLY if isPublishing is true
+            if (isPublishing) {
                 try {
                     await trainingAPI.updateModule(moduleId, { isPublished: true });
                 } catch (pErr) {
                     console.warn('Publish flag update notice:', pErr.message);
                 }
-            }
 
-            // 4. Assign to Classes if selected
-            if (targetClasses.length > 0) {
-                try {
-                    await trainingAPI.assignModule(moduleId, {
-                        classIds: targetClasses,
-                        deadline: deadline || undefined,
-                        notes: specialNotes || undefined
-                    });
-                } catch (assignErr) {
-                    console.warn('Class allocation warning:', assignErr.message);
+                // 4. Assign to Classes ONLY if isPublishing is true AND targetClasses are selected
+                if (targetClasses.length > 0) {
+                    try {
+                        await trainingAPI.assignModule(moduleId, {
+                            classIds: targetClasses,
+                            deadline: deadline || undefined,
+                            notes: specialNotes || undefined
+                        });
+                    } catch (assignErr) {
+                        console.warn('Class allocation warning:', assignErr.message);
+                    }
                 }
             }
 
-            toast.success(shouldPublishNow ? '🎉 Training Module Created & Published!' : '🎉 Training Module Saved as Draft!');
+            toast.success(isPublishing ? '🎉 Training Module Created & Published!' : '💾 Training Module Saved as Draft!');
             localStorage.removeItem('ulrms_training_wizard_draft');
-            if (onSuccess) onSuccess({ id: moduleId, ...createPayload, isPublished: shouldPublishNow || createPayload.isPublished });
+            if (onSuccess) onSuccess({ id: moduleId, ...createPayload, isPublished: isPublishing });
             onClose();
             router.push(`/admin/training/${moduleId}/builder`);
         } catch (err) {
             console.error('Module creation error:', err);
-            toast.error(err.response?.data?.message || 'Failed to create training module');
+            toast.error(err.response?.data?.message || err.message || 'Failed to create training module');
         } finally {
             setIsSubmitting(false);
         }
@@ -1494,7 +1523,7 @@ export default function TrainingModuleWizard({
                     <div>
                         <div className="flex items-center gap-2 mb-0.5">
                             <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
-                                Pedagogy Course Architect • Step {currentStep} of 5
+                                Pedagogy Course Architect • Step {currentStep} of 6
                             </span>
                             <span className="text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -1509,7 +1538,7 @@ export default function TrainingModuleWizard({
                     {/* Step indicator pills */}
                     <div className="flex items-center gap-2">
                         {STEP_TITLES.map(s => {
-                            const isCompleted = s.step === 1 ? isStep1Complete : s.step === 2 ? isStep2Complete : s.step === 3 ? isStep3Complete : s.step === 4 ? isStep4Complete : isStep5Complete;
+                            const isCompleted = s.step === 1 ? isStep1Complete : s.step === 2 ? isStep2Complete : s.step === 3 ? isStep3Complete : s.step === 4 ? isStep4Complete : s.step === 5 ? isStep5Complete : isStep6Complete;
                             const isAccessible = canAccessStep(s.step);
 
                             return (
@@ -2971,9 +3000,271 @@ export default function TrainingModuleWizard({
                     )}
 
                     {/* ========================================================= */}
-                    {/* STEP 5: DEPLOY & ASSIGN                                   */}
+                    {/* STEP 5: FULL MODULE PREVIEW                              */}
                     {/* ========================================================= */}
                     {currentStep === 5 && (
+                        <div className="space-y-6 max-w-4xl mx-auto pb-4">
+                            {/* Module Master Banner */}
+                            <div className="p-6 bg-gradient-to-br from-indigo-50/80 via-white to-purple-50/50 dark:from-indigo-950/40 dark:via-slate-900 dark:to-purple-950/30 rounded-3xl border border-indigo-200/80 dark:border-indigo-900 shadow-sm space-y-4">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                                            <span className="text-[11px] font-extrabold uppercase px-2.5 py-1 rounded-xl bg-indigo-600 text-white shadow-xs">
+                                                {moduleForm.language}
+                                            </span>
+                                            <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                                {moduleForm.boardAligned || 'CBSE'} • Class {moduleForm.classLevel}
+                                            </span>
+                                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                                Draft / Unpublished
+                                            </span>
+                                        </div>
+                                        <h3 className="text-2xl font-black text-slate-900 dark:text-white">
+                                            {moduleForm.title || 'Untitled Training Module'}
+                                        </h3>
+                                        {moduleForm.titleHindi && (
+                                            <p className="text-sm font-semibold text-slate-600 dark:text-slate-400 mt-0.5">
+                                                {moduleForm.titleHindi}
+                                            </p>
+                                        )}
+                                        {moduleForm.description && (
+                                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                                                {moduleForm.description}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentStep(1)}
+                                        className="btn btn-secondary text-xs font-bold shrink-0 flex items-center gap-1.5"
+                                        title="Edit Title, Language & Alignment"
+                                    >
+                                        <Edit3 className="w-3.5 h-3.5" /> Edit Meta
+                                    </button>
+                                </div>
+
+                                {/* Quick Metric Chips */}
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-indigo-100 dark:border-indigo-900/60">
+                                    <div className="p-3 bg-white/80 dark:bg-slate-800/80 rounded-2xl border border-indigo-100 dark:border-indigo-900/40 text-center">
+                                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Units</div>
+                                        <div className="text-xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-0.5">{units.length}</div>
+                                    </div>
+                                    <div className="p-3 bg-white/80 dark:bg-slate-800/80 rounded-2xl border border-indigo-100 dark:border-indigo-900/40 text-center">
+                                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Exercises</div>
+                                        <div className="text-xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-0.5">{pedagogyStats.totalExercises}</div>
+                                    </div>
+                                    <div className="p-3 bg-white/80 dark:bg-slate-800/80 rounded-2xl border border-indigo-100 dark:border-indigo-900/40 text-center">
+                                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Est. Hours</div>
+                                        <div className="text-xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-0.5">
+                                            {units.reduce((acc, u) => acc + (Number(u.expectedHours) || 4), 0)}h
+                                        </div>
+                                    </div>
+                                    <div className="p-3 bg-white/80 dark:bg-slate-800/80 rounded-2xl border border-indigo-100 dark:border-indigo-900/40 text-center">
+                                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pedagogy Score</div>
+                                        <div className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">{pedagogyStats.score}/100</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Aggregated Reading Topics Section */}
+                            {(() => {
+                                const allTopics = Array.from(new Set([
+                                    ...(Array.isArray(ragKeyTopics) ? ragKeyTopics : []),
+                                    ...units.flatMap(u => extractTopicsFromUnit(u))
+                                ])).filter(Boolean);
+
+                                if (allTopics.length === 0) return null;
+
+                                return (
+                                    <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-2xl border border-indigo-200/70 dark:border-indigo-900/60 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-extrabold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                                                <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                                Extracted Reading Topics & Syllabus Concepts ({allTopics.length}):
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {allTopics.map((top, idx) => (
+                                                <span
+                                                    key={idx}
+                                                    className="inline-flex items-center gap-1 text-[11px] bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 font-semibold px-2.5 py-1 rounded-xl border border-indigo-200/80 dark:border-indigo-800 shadow-2xs"
+                                                >
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                                    {top}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Detailed Unit-by-Unit Review Cards */}
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                        <Layers className="w-4 h-4 text-indigo-500" />
+                                        Curriculum Units & Practice Breakdown ({units.length})
+                                    </h4>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentStep(2)}
+                                        className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1"
+                                    >
+                                        <Edit3 className="w-3.5 h-3.5" /> Edit Units & Structure
+                                    </button>
+                                </div>
+
+                                {units.map((u, uIdx) => {
+                                    const uTopics = extractTopicsFromUnit(u);
+                                    const uExercises = u.exercises || [];
+                                    const theoryData = u.theoryData || (u.theory ? { summary: u.description, content: u.theory } : null);
+
+                                    return (
+                                        <div
+                                            key={u.id || uIdx}
+                                            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs space-y-4 hover:border-slate-300 dark:hover:border-slate-700 transition"
+                                        >
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                                                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                                                            Unit {u.unitNumber || uIdx + 1}
+                                                        </span>
+                                                        <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                                                            <Clock className="w-3 h-3" /> {u.expectedHours || 4} hrs
+                                                        </span>
+                                                        <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                                            <Award className="w-3 h-3" /> {u.unlockThreshold || 80}% Gate
+                                                        </span>
+                                                    </div>
+                                                    <h5 className="text-base font-bold text-slate-900 dark:text-white">
+                                                        {u.title}
+                                                    </h5>
+                                                    {u.description && (
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                                            {u.description}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setSelectedUnitIdx(uIdx); setCurrentStep(3); }}
+                                                        className="btn btn-secondary text-xs py-1.5 px-3 font-semibold flex items-center gap-1"
+                                                    >
+                                                        <Code2 className="w-3 h-3" /> {uExercises.length} Exercises
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Unit Reading Topics */}
+                                            {uTopics.length > 0 && (
+                                                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-1.5">
+                                                    <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 mr-1">
+                                                        <BookOpen className="w-3 h-3 text-indigo-500" /> Key Topics:
+                                                    </span>
+                                                    {uTopics.map((top, ti) => (
+                                                        <span
+                                                            key={ti}
+                                                            className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700"
+                                                        >
+                                                            {top}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {/* Pre-Lab Theory Preview Snippet */}
+                                            {theoryData && (theoryData.content || theoryData.summary) && (
+                                                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/70 dark:border-slate-800 text-xs space-y-1.5">
+                                                    <div className="font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                                                        <span className="flex items-center gap-1.5">
+                                                            <FileText className="w-3.5 h-3.5 text-indigo-500" /> Pre-Lab Theory & Learning Content
+                                                        </span>
+                                                        {theoryData.miniCheckpoints?.length > 0 && (
+                                                            <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-semibold">
+                                                                {theoryData.miniCheckpoints.length} Checkpoint Qs
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-2">
+                                                        {theoryData.summary || theoryData.content?.slice(0, 180)}...
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {/* Exercises inside Unit */}
+                                            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                                                    <span>Challenges & Problem Sets ({uExercises.length})</span>
+                                                </div>
+                                                {uExercises.length === 0 ? (
+                                                    <div className="text-center py-3 bg-amber-500/5 rounded-xl border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400 font-medium">
+                                                        ⚠️ No exercises added to this unit yet. (Click to generate or add in Step 3)
+                                                    </div>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        {uExercises.map((ex, eIdx) => (
+                                                            <div
+                                                                key={ex.id || eIdx}
+                                                                className="p-2.5 rounded-xl bg-slate-50/70 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2"
+                                                            >
+                                                                <div className="min-w-0">
+                                                                    <div className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">
+                                                                        {eIdx + 1}. {ex.title}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400">
+                                                                        <span className="capitalize font-semibold text-indigo-600 dark:text-indigo-400">{ex.exerciseType || 'coding'}</span>
+                                                                        <span>•</span>
+                                                                        <span className="capitalize">{ex.difficulty || 'beginner'}</span>
+                                                                        <span>•</span>
+                                                                        <span>{ex.xpReward || 15} XP</span>
+                                                                    </div>
+                                                                </div>
+                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
+                                                                    {ex.bloomsLevel || 'apply'}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* CTA Banner at end of Preview */}
+                            <div className="p-4 bg-gradient-to-r from-slate-100 to-indigo-50/60 dark:from-slate-800 dark:to-indigo-950/40 rounded-2xl border border-indigo-200/60 dark:border-indigo-900/60 flex items-center justify-between gap-4">
+                                <div>
+                                    <h5 className="font-bold text-sm text-slate-900 dark:text-white">Ready with this Curriculum?</h5>
+                                    <p className="text-xs text-slate-500">Save as an unpublished draft or proceed to assign target classes.</p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleFinalDeploy(false)}
+                                        disabled={isSubmitting}
+                                        className="btn btn-secondary text-xs font-bold"
+                                    >
+                                        💾 Save as Draft
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentStep(6)}
+                                        className="btn btn-primary text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/20"
+                                    >
+                                        Next: Deploy & Assign <ArrowRight className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ========================================================= */}
+                    {/* STEP 6: DEPLOY & ASSIGN                                   */}
+                    {/* ========================================================= */}
+                    {currentStep === 6 && (
                         <div className="space-y-5 max-w-3xl mx-auto">
                             <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-900">
                                 <h4 className="font-bold text-sm text-indigo-900 dark:text-indigo-200">Course Summary</h4>
@@ -3088,7 +3379,7 @@ export default function TrainingModuleWizard({
                         </div>
                     ) : (
                         <>
-                            <div>
+                            <div className="flex items-center gap-2">
                                 {currentStep > 1 && (
                                     <button
                                         onClick={() => setCurrentStep(prev => prev - 1)}
@@ -3104,7 +3395,19 @@ export default function TrainingModuleWizard({
                                     Cancel
                                 </button>
 
-                                {currentStep < 5 ? (
+                                {moduleForm.title?.trim() && currentStep < 6 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleFinalDeploy(false)}
+                                        disabled={isSubmitting}
+                                        className="btn btn-secondary text-xs font-bold"
+                                        title="Save your progress as a draft without assigning or publishing"
+                                    >
+                                        💾 Save as Draft
+                                    </button>
+                                )}
+
+                                {currentStep < 6 ? (
                                     <div className="flex items-center gap-2">
                                         {currentStep === 1 && !isStep1Complete && (
                                             <span className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
@@ -3125,7 +3428,7 @@ export default function TrainingModuleWizard({
                                             onClick={() => handleAttemptNavigateStep(currentStep + 1)}
                                             className="btn btn-primary text-xs flex items-center gap-1.5 font-bold shadow-md shadow-indigo-600/20"
                                         >
-                                            Next Step <ArrowRight className="w-4 h-4" />
+                                            {currentStep === 5 ? 'Next: Deploy & Assign' : 'Next Step'} <ArrowRight className="w-4 h-4" />
                                         </button>
                                     </div>
                                 ) : (
@@ -3135,7 +3438,7 @@ export default function TrainingModuleWizard({
                                             disabled={isSubmitting}
                                             className="btn btn-secondary text-xs font-bold"
                                         >
-                                            Save as Draft
+                                            💾 Save as Draft
                                         </button>
                                         <button
                                             onClick={() => handleFinalDeploy(true)}
