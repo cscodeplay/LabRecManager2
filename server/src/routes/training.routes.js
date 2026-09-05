@@ -23,6 +23,9 @@ const upload = multer({
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
+// UUID validation helper for PostgreSQL / Prisma UUID fields
+const isUUID = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+
 /**
  * AI Socratic Review Function
  */
@@ -219,6 +222,9 @@ router.get('/modules', authenticate, asyncHandler(async (req, res) => {
  */
 router.get('/modules/:id', authenticate, asyncHandler(async (req, res) => {
     const moduleId = req.params.id;
+    if (!isUUID(moduleId)) {
+        return res.status(400).json({ success: false, message: 'Invalid module ID' });
+    }
 
     const isAdmin = ['admin', 'principal', 'instructor'].includes(req.user.role);
 
@@ -359,9 +365,14 @@ router.post('/modules', authenticate, authorize('admin', 'principal', 'instructo
         }
     }
 
+    const effectiveSchoolId = req.user.schoolId || (await prisma.school.findFirst())?.id;
+    if (!effectiveSchoolId) {
+        return res.status(400).json({ success: false, message: 'No school associated with user or system' });
+    }
+
     const newModule = await prisma.trainingModule.create({
         data: {
-            schoolId: req.user.schoolId,
+            schoolId: effectiveSchoolId,
             academicYearId: validAcademicYearId,
             title,
             titleHindi,
@@ -386,10 +397,13 @@ router.post('/modules', authenticate, authorize('admin', 'principal', 'instructo
  */
 router.put('/modules/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
     const { id } = req.params;
+    if (!isUUID(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid module ID' });
+    }
     const { title, titleHindi, description, language, boardAligned, classLevel, isPublished, pedagogyConfig } = req.body;
 
     const existing = await prisma.trainingModule.findFirst({
-        where: { id, schoolId: req.user.schoolId }
+        where: req.user.schoolId ? { id, schoolId: req.user.schoolId } : { id }
     });
     if (!existing) {
         return res.status(404).json({ success: false, message: 'Training module not found' });
@@ -419,9 +433,12 @@ router.put('/modules/:id', authenticate, authorize('admin', 'principal', 'instru
  */
 router.delete('/modules/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
     const { id } = req.params;
+    if (!isUUID(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid module ID' });
+    }
 
     const existing = await prisma.trainingModule.findFirst({
-        where: { id, schoolId: req.user.schoolId }
+        where: req.user.schoolId ? { id, schoolId: req.user.schoolId } : { id }
     });
     if (!existing) {
         return res.status(404).json({ success: false, message: 'Training module not found' });
@@ -460,6 +477,9 @@ router.post('/modules/:id/units', authenticate, authorize('admin', 'principal', 
     body('unlockThreshold').isNumeric().withMessage('Unlock threshold is required')
 ], asyncHandler(async (req, res) => {
     const { id } = req.params;
+    if (!isUUID(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid module ID' });
+    }
     const { title, description, unitNumber, expectedHours, unlockThreshold, sequenceOrder } = req.body;
 
     const unit = await prisma.trainingUnit.create({
@@ -493,6 +513,9 @@ router.post('/units/:id/exercises', authenticate, authorize('admin', 'principal'
     body('scaffoldLevel').notEmpty().withMessage('Scaffold level is required')
 ], asyncHandler(async (req, res) => {
     const { id } = req.params;
+    if (!isUUID(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid unit ID' });
+    }
     
     // Find module to update total exercises count
     const unit = await prisma.trainingUnit.findUnique({
@@ -571,6 +594,9 @@ router.post('/units/:id/exercises', authenticate, authorize('admin', 'principal'
  */
 router.put('/units/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
     const { id } = req.params;
+    if (!isUUID(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid unit ID' });
+    }
     const { title, description, unitNumber, expectedHours, unlockThreshold, sequenceOrder } = req.body;
 
     const existingUnit = await prisma.trainingUnit.findUnique({ where: { id } });
@@ -598,6 +624,9 @@ router.put('/units/:id', authenticate, authorize('admin', 'principal', 'instruct
  */
 router.delete('/units/:id', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
     const { id } = req.params;
+    if (!isUUID(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid unit ID' });
+    }
     const unit = await prisma.trainingUnit.findUnique({
         where: { id },
         include: { _count: { select: { exercises: true } } }
@@ -626,6 +655,9 @@ router.delete('/units/:id', authenticate, authorize('admin', 'principal', 'instr
  */
 router.get('/units/:id/theory', authenticate, asyncHandler(async (req, res) => {
     const { id } = req.params;
+    if (!isUUID(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid unit ID' });
+    }
     const unit = await prisma.trainingUnit.findUnique({
         where: { id },
         include: {
@@ -646,6 +678,7 @@ router.get('/units/:id/theory', authenticate, asyncHandler(async (req, res) => {
         unitNumber: unit.unitNumber,
         summary: unit.description || '',
         content: '',
+        keyConcepts: [],
         miniCheckpoints: [],
         cbseTips: []
     };
@@ -655,7 +688,8 @@ router.get('/units/:id/theory', authenticate, asyncHandler(async (req, res) => {
             const parsed = JSON.parse(unit.description);
             if (parsed && typeof parsed === 'object') {
                 theoryData.summary = parsed.summary || '';
-                theoryData.content = parsed.content || parsed.text || '';
+                theoryData.content = parsed.content || parsed.text || parsed.readingContent || '';
+                theoryData.keyConcepts = Array.isArray(parsed.keyConcepts) ? parsed.keyConcepts : [];
                 theoryData.miniCheckpoints = Array.isArray(parsed.miniCheckpoints) ? parsed.miniCheckpoints : [];
                 theoryData.cbseTips = Array.isArray(parsed.cbseTips) ? parsed.cbseTips : [];
             }
@@ -687,14 +721,18 @@ router.get('/units/:id/theory', authenticate, asyncHandler(async (req, res) => {
  */
 router.put('/units/:id/theory', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { summary, content, miniCheckpoints, cbseTips } = req.body;
+    if (!isUUID(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid unit ID' });
+    }
+    const { summary, content, readingContent, miniCheckpoints, cbseTips, keyConcepts } = req.body;
 
     const existingUnit = await prisma.trainingUnit.findUnique({ where: { id } });
     if (!existingUnit) return res.status(404).json({ success: false, message: 'Unit not found' });
 
     const payload = {
         summary: summary || '',
-        content: content || '',
+        content: content || readingContent || '',
+        keyConcepts: Array.isArray(keyConcepts) ? keyConcepts : [],
         miniCheckpoints: Array.isArray(miniCheckpoints) ? miniCheckpoints : [],
         cbseTips: Array.isArray(cbseTips) ? cbseTips : []
     };
@@ -716,6 +754,9 @@ router.put('/units/:id/theory', authenticate, authorize('admin', 'principal', 'i
  */
 router.post('/units/:id/theory/complete', authenticate, asyncHandler(async (req, res) => {
     const { id } = req.params;
+    if (!isUUID(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid unit ID' });
+    }
     const studentId = req.user.id;
 
     const unit = await prisma.trainingUnit.findUnique({
@@ -1638,9 +1679,12 @@ router.put('/modules/:id/config', authenticate, authorize('admin', 'principal', 
  * @access  Private (Admin/Instructor)
  */
 router.post('/modules/:id/assign', authenticate, authorize('admin', 'principal', 'instructor'), [
-    body('deadline').optional().isISO8601().withMessage('Invalid deadline format'),
+    body('deadline').optional(),
 ], asyncHandler(async (req, res) => {
     const { id } = req.params;
+    if (!isUUID(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid module ID' });
+    }
     const { classIds, groupIds, deadline, notes, subjectId } = req.body;
 
     const mod = await prisma.trainingModule.findUnique({ where: { id } });
@@ -1651,25 +1695,40 @@ router.post('/modules/:id/assign', authenticate, authorize('admin', 'principal',
         await prisma.trainingModule.update({ where: { id }, data: { isPublished: true } });
     }
 
-    // Need a subjectId for the assignment. If not provided, find the school's first subject.
+    const effectiveSchoolId = req.user.schoolId || mod.schoolId || (await prisma.school.findFirst())?.id;
+    if (!effectiveSchoolId) {
+        return res.status(400).json({ success: false, message: 'No school associated with user or module' });
+    }
+
+    // Need a subjectId for the assignment. If not provided, find or create the school's subject.
     let resolvedSubjectId = subjectId;
-    if (!resolvedSubjectId) {
-        const firstSubject = await prisma.subject.findFirst({
-            where: { schoolId: req.user.schoolId }
+    if (!resolvedSubjectId || !isUUID(resolvedSubjectId)) {
+        let firstSubject = await prisma.subject.findFirst({
+            where: { schoolId: effectiveSchoolId }
         });
         if (!firstSubject) {
-            return res.status(400).json({ success: false, message: 'No subjects found. Create a subject first.' });
+            firstSubject = await prisma.subject.findFirst();
+        }
+        if (!firstSubject) {
+            firstSubject = await prisma.subject.create({
+                data: {
+                    name: 'Computer Science',
+                    code: 'CS101',
+                    schoolId: effectiveSchoolId
+                }
+            });
         }
         resolvedSubjectId = firstSubject.id;
     }
 
     // Create an assignment record that links the training module to classes
-    const dueDate = deadline ? new Date(deadline) : null;
+    const dueDate = (deadline && !isNaN(new Date(deadline).getTime())) ? new Date(deadline) : null;
+    const assignmentTitle = `Training: ${mod.title}`.slice(0, 250);
     const assignment = await prisma.assignment.create({
         data: {
-            schoolId: req.user.schoolId,
+            schoolId: effectiveSchoolId,
             createdById: req.user.id,
-            title: `Training: ${mod.title}`,
+            title: assignmentTitle,
             description: notes || `Complete the training module: ${mod.title}`,
             assignmentType: 'training_module',
             trainingModuleId: id,
@@ -1683,38 +1742,44 @@ router.post('/modules/:id/assign', authenticate, authorize('admin', 'principal',
 
     // Create AssignmentTarget records for each class
     const targets = [];
-    if (classIds && classIds.length > 0) {
+    if (Array.isArray(classIds) && classIds.length > 0) {
         for (const classId of classIds) {
-            targets.push(prisma.assignmentTarget.create({
-                data: {
-                    assignmentId: assignment.id,
-                    targetType: 'class',
-                    targetClassId: classId,
-                    assignedById: req.user.id,
-                    dueDate,
-                    specialInstructions: notes || null
-                }
-            }));
+            if (isUUID(classId)) {
+                targets.push(prisma.assignmentTarget.create({
+                    data: {
+                        assignmentId: assignment.id,
+                        targetType: 'class',
+                        targetClassId: classId,
+                        assignedById: req.user.id,
+                        dueDate,
+                        specialInstructions: notes || null
+                    }
+                }));
+            }
         }
     }
 
     // Create AssignmentTarget records for each group
-    if (groupIds && groupIds.length > 0) {
+    if (Array.isArray(groupIds) && groupIds.length > 0) {
         for (const groupId of groupIds) {
-            targets.push(prisma.assignmentTarget.create({
-                data: {
-                    assignmentId: assignment.id,
-                    targetType: 'group',
-                    targetGroupId: groupId,
-                    assignedById: req.user.id,
-                    dueDate,
-                    specialInstructions: notes || null
-                }
-            }));
+            if (isUUID(groupId)) {
+                targets.push(prisma.assignmentTarget.create({
+                    data: {
+                        assignmentId: assignment.id,
+                        targetType: 'group',
+                        targetGroupId: groupId,
+                        assignedById: req.user.id,
+                        dueDate,
+                        specialInstructions: notes || null
+                    }
+                }));
+            }
         }
     }
 
-    await Promise.all(targets);
+    if (targets.length > 0) {
+        await Promise.all(targets);
+    }
 
     res.status(201).json({
         success: true,
@@ -1730,6 +1795,9 @@ router.post('/modules/:id/assign', authenticate, authorize('admin', 'principal',
  */
 router.get('/modules/:id/assignments', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
     const { id } = req.params;
+    if (!isUUID(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid module ID' });
+    }
 
     const assignments = await prisma.assignment.findMany({
         where: { trainingModuleId: id },

@@ -20,6 +20,9 @@ const STEP_TITLES = [
     { step: 5, title: 'Deploy & Assign', desc: 'Classes & Publishing' }
 ];
 
+// Robust UUID checker to distinguish persisted DB records from in-memory client IDs
+const isRealDbUuid = (id) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim());
+
 export default function TrainingModuleWizard({
     isOpen,
     onClose,
@@ -45,6 +48,7 @@ export default function TrainingModuleWizard({
     const [step1DocumentText, setStep1DocumentText] = useState('');
     const [step1ImageBase64, setStep1ImageBase64] = useState(null);
     const [step1MimeType, setStep1MimeType] = useState('image/jpeg');
+    const [ragKeyTopics, setRagKeyTopics] = useState([]);
 
     // Step 1 Form: Module Meta
     const [moduleForm, setModuleForm] = useState({
@@ -326,65 +330,95 @@ export default function TrainingModuleWizard({
         setCurrentStep(nextStep);
     };
 
-    // Helper to extract checklist topics from a unit's theoryData and title
+    // Helper to extract checklist topics from a unit's keyConcepts, theoryData, checkpoints, and headings
     const extractTopicsFromUnit = useCallback((unit) => {
         if (!unit) return [];
         const topics = [];
 
-        // 1. From Mini Checkpoints
+        const addTopic = (text) => {
+            if (!text || typeof text !== 'string') return;
+            const clean = text
+                .replace(/^#+\s+/, '')
+                .replace(/^[-*]\s+/, '')
+                .replace(/^\d+[\.\)]\s+/, '')
+                .replace(/[*_`]/g, '')
+                .trim();
+            if (clean.length >= 3 && clean.length <= 90 && !topics.includes(clean)) {
+                topics.push(clean);
+            }
+        };
+
+        // 1. From Unit Key Concepts (direct array from RAG generation)
+        if (Array.isArray(unit.keyConcepts)) {
+            unit.keyConcepts.forEach(c => addTopic(c));
+        }
+        if (Array.isArray(unit.theoryData?.keyConcepts)) {
+            unit.theoryData.keyConcepts.forEach(c => addTopic(c));
+        }
+
+        // 2. From Mini Checkpoints questions
         if (Array.isArray(unit.theoryData?.miniCheckpoints)) {
             unit.theoryData.miniCheckpoints.forEach((cp, idx) => {
                 if (cp.question) {
-                    topics.push(`Checkpoint ${idx + 1}: ${cp.question.replace(/\?$/, '')}`);
+                    addTopic(`Checkpoint ${idx + 1}: ${cp.question.replace(/\?$/, '')}`);
                 }
             });
         }
 
-        // 2. From Theory Content lines / bullet points
-        if (unit.theoryData?.content && typeof unit.theoryData.content === 'string') {
-            const lines = unit.theoryData.content.split('\n');
+        // 3. From Theory Content lines / markdown headings / bullet points / bold terms
+        const rawTheoryContent = unit.theoryData?.content || unit.theory || '';
+        if (typeof rawTheoryContent === 'string' && rawTheoryContent.trim()) {
+            const lines = rawTheoryContent.split('\n');
             lines.forEach(line => {
                 const trimmed = line.trim();
-                if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-                    const clean = trimmed.replace(/^[-*]\s+/, '').replace(/[*_`]/g, '').trim();
-                    if (clean.length > 4 && clean.length < 85 && !topics.includes(clean)) {
-                        topics.push(clean);
-                    }
-                } else if (trimmed.startsWith('### ')) {
-                    const clean = trimmed.replace(/^###\s+/, '').replace(/[*_`]/g, '').trim();
-                    if (clean.length > 3 && clean.length < 65 && !topics.includes(clean)) {
-                        topics.push(clean);
+                // Headings (#, ##, ###, ####)
+                if (/^#{1,4}\s+/.test(trimmed)) {
+                    addTopic(trimmed);
+                }
+                // Bullet points (- or *)
+                else if (/^[-*]\s+/.test(trimmed)) {
+                    addTopic(trimmed);
+                }
+                // Numbered list items (1. or 1))
+                else if (/^\d+[\.\)]\s+/.test(trimmed)) {
+                    addTopic(trimmed);
+                }
+                // Bold inline headings like **Topic Name**:
+                else if (/^\*\*[^*]+\*\*:?/.test(trimmed)) {
+                    const match = trimmed.match(/^\*\*([^*]+)\*\*/);
+                    if (match && match[1]) {
+                        addTopic(match[1]);
                     }
                 }
             });
         }
 
-        // 3. From CBSE Tips
+        // 4. From CBSE Tips
         if (Array.isArray(unit.theoryData?.cbseTips)) {
             unit.theoryData.cbseTips.forEach(tip => {
                 if (tip && typeof tip === 'string') {
-                    const clean = tip.replace(/^[-*]\s+/, '').replace(/[*_`]/g, '').trim();
-                    if (clean.length > 4 && clean.length < 80 && !topics.includes(clean)) {
-                        topics.push(`Exam Tip: ${clean}`);
-                    }
+                    addTopic(`Exam Tip: ${tip}`);
                 }
             });
         }
 
-        // 4. Fallback topics from unit title & description
+        // 5. If topics are still sparse, add from ragKeyTopics if relevant
+        if (topics.length < 3 && Array.isArray(ragKeyTopics) && ragKeyTopics.length > 0) {
+            ragKeyTopics.forEach(rk => addTopic(rk));
+        }
+
+        // 6. Fallback topics from unit title & description
         if (topics.length === 0) {
             const titleParts = (unit.title || 'Core Programming').split(/[,:&]/).map(s => s.trim()).filter(Boolean);
-            titleParts.forEach(tp => topics.push(tp));
+            titleParts.forEach(tp => addTopic(tp));
             if (unit.description) {
                 const descParts = unit.description.split(/[,.;]/).map(s => s.trim()).filter(s => s.length > 4 && s.length < 60);
-                descParts.slice(0, 3).forEach(dp => {
-                    if (!topics.includes(dp)) topics.push(dp);
-                });
+                descParts.slice(0, 3).forEach(dp => addTopic(dp));
             }
         }
 
-        return topics.slice(0, 12);
-    }, []);
+        return topics.slice(0, 16);
+    }, [ragKeyTopics]);
 
     // Current unit's available topics and selected topics for Step 3
     const activeUnitForTopics = units[selectedUnitIdx];
@@ -543,9 +577,13 @@ export default function TrainingModuleWizard({
     };
 
     // Helper to synthesize complete course (Title, Units, Theory, Checkpoints, Exercises) from RAG document
-    const buildCompleteCourseFromDocument = async ({ docText, imgBase64, mime, suggestedTitle, promptHint, language }) => {
+    const buildCompleteCourseFromDocument = async ({ docText, imgBase64, mime, suggestedTitle, promptHint, language, keyTopics }) => {
         setStep1AiLoading(true);
         const synthToastId = toast.loading('⚡ Synthesizing complete grounded course: Units, Pre-Lab Theory & Exercises...');
+
+        if (Array.isArray(keyTopics) && keyTopics.length > 0) {
+            setRagKeyTopics(keyTopics);
+        }
 
         try {
             const promptToUse = promptHint || suggestedTitle || moduleForm.title || step1AiPrompt || 'Comprehensive Technical Module';
@@ -576,19 +614,27 @@ export default function TrainingModuleWizard({
 
                 // 2. Populate Full-Blown Units with Pre-Lab Theory, Checkpoints, CBSE Tips & Exercises
                 if (Array.isArray(data.units) && data.units.length > 0) {
-                    setUnits(data.units.map((u, i) => ({
-                        id: `rag_unit_${i + 1}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-                        unitNumber: u.unitNumber || i + 1,
-                        title: u.title || `Unit ${i + 1}`,
-                        description: u.description || '',
-                        expectedHours: u.expectedHours || 4,
-                        unlockThreshold: u.unlockThreshold || 80,
-                        theoryData: {
-                            summary: u.description || `Key concepts of ${u.title}`,
-                            content: u.theory || (Array.isArray(u.keyConcepts) ? `## Key Concepts\n\n${u.keyConcepts.map(c => `- ${c}`).join('\n')}` : ''),
-                            miniCheckpoints: Array.isArray(u.miniCheckpoints) ? u.miniCheckpoints : [],
-                            cbseTips: Array.isArray(u.cbseTips) ? u.cbseTips : []
-                        },
+                    setUnits(data.units.map((u, i) => {
+                        const unitKeyConcepts = Array.isArray(u.keyConcepts) && u.keyConcepts.length > 0
+                            ? u.keyConcepts
+                            : (Array.isArray(keyTopics) && keyTopics.length > 0 ? keyTopics : []);
+
+                        return {
+                            id: `rag_unit_${i + 1}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                            unitNumber: u.unitNumber || i + 1,
+                            title: u.title || `Unit ${i + 1}`,
+                            description: u.description || '',
+                            expectedHours: u.expectedHours || 4,
+                            unlockThreshold: u.unlockThreshold || 80,
+                            keyConcepts: unitKeyConcepts,
+                            theory: u.theory || '',
+                            theoryData: {
+                                summary: u.description || `Key concepts of ${u.title}`,
+                                content: u.theory || (unitKeyConcepts.length > 0 ? `## Key Concepts\n\n${unitKeyConcepts.map(c => `- ${c}`).join('\n')}` : ''),
+                                keyConcepts: unitKeyConcepts,
+                                miniCheckpoints: Array.isArray(u.miniCheckpoints) ? u.miniCheckpoints : [],
+                                cbseTips: Array.isArray(u.cbseTips) ? u.cbseTips : []
+                            },
                         exercises: Array.isArray(u.exercises) ? u.exercises.map((ex, eIdx) => {
                             const parsedTestCases = Array.isArray(ex.testCases) ? ex.testCases : (ex.testCases && typeof ex.testCases === 'object' ? ex.testCases : []);
                             const effectiveStarterCode = ex.starterCode || (ex.exerciseType === 'code_debug' ? parsedTestCases?.buggyCode : '') || '';
@@ -612,8 +658,9 @@ export default function TrainingModuleWizard({
                                 hints: Array.isArray(ex.hints) ? ex.hints : []
                             };
                         }) : []
-                    })));
-                }
+                    };
+                }));
+            }
 
                 toast.success('🚀 Complete module successfully built from RAG document! Title, 3 Units, Theory & Exercises are ready and editable.', { id: synthToastId });
             } else {
@@ -660,8 +707,13 @@ export default function TrainingModuleWizard({
                     suggestedTitle,
                     titleHindi,
                     description,
-                    suggestedLanguage
+                    suggestedLanguage,
+                    keyTopics
                 } = uploadRes.data.data;
+
+                if (Array.isArray(keyTopics) && keyTopics.length > 0) {
+                    setRagKeyTopics(keyTopics);
+                }
 
                 if (extractedText) {
                     setStep1DocumentText(extractedText);
@@ -694,7 +746,8 @@ export default function TrainingModuleWizard({
                     mime: mimeType || file.type,
                     suggestedTitle: finalTitle,
                     promptHint: finalTitle,
-                    language: finalLang
+                    language: finalLang,
+                    keyTopics: Array.isArray(keyTopics) ? keyTopics : []
                 });
             } else {
                 throw new Error(uploadRes.data?.message || 'Upload failed');
@@ -1304,7 +1357,7 @@ export default function TrainingModuleWizard({
                 totalExercises: pedagogyStats.totalExercises
             };
 
-            let moduleId = initialData?.id;
+            let moduleId = (initialData?.id && isRealDbUuid(initialData.id)) ? initialData.id : null;
             if (moduleId) {
                 await trainingAPI.updateModule(moduleId, createPayload);
             } else {
@@ -1316,7 +1369,7 @@ export default function TrainingModuleWizard({
             // 2. Create / Update Units & Exercises in order
             for (let uIdx = 0; uIdx < units.length; uIdx++) {
                 const u = units[uIdx];
-                let createdUnitId = u.id && !String(u.id).startsWith('temp_') && !String(u.id).startsWith('ai_') ? u.id : null;
+                let createdUnitId = isRealDbUuid(u.id) ? u.id : null;
 
                 if (!createdUnitId) {
                     const unitRes = await trainingAPI.createUnit(moduleId, {
@@ -1340,9 +1393,23 @@ export default function TrainingModuleWizard({
                 }
 
                 // Save Pre-Lab Theory & Checkpoints if available
-                if (u.theoryData) {
+                const theoryToSave = u.theoryData || (u.theory ? {
+                    summary: u.description || `Key concepts of ${u.title}`,
+                    content: u.theory,
+                    keyConcepts: Array.isArray(u.keyConcepts) ? u.keyConcepts : [],
+                    miniCheckpoints: Array.isArray(u.miniCheckpoints) ? u.miniCheckpoints : [],
+                    cbseTips: Array.isArray(u.cbseTips) ? u.cbseTips : []
+                } : null);
+
+                if (theoryToSave) {
                     try {
-                        await trainingAPI.updateUnitTheory(createdUnitId, u.theoryData);
+                        await trainingAPI.updateUnitTheory(createdUnitId, {
+                            summary: theoryToSave.summary || u.description || '',
+                            content: theoryToSave.content || theoryToSave.readingContent || theoryToSave.text || u.theory || '',
+                            keyConcepts: Array.isArray(theoryToSave.keyConcepts) ? theoryToSave.keyConcepts : (Array.isArray(u.keyConcepts) ? u.keyConcepts : []),
+                            miniCheckpoints: Array.isArray(theoryToSave.miniCheckpoints) ? theoryToSave.miniCheckpoints : [],
+                            cbseTips: Array.isArray(theoryToSave.cbseTips) ? theoryToSave.cbseTips : []
+                        });
                     } catch (tErr) {
                         console.warn('Could not save unit theory:', tErr.message);
                     }
@@ -1613,11 +1680,30 @@ export default function TrainingModuleWizard({
                                                         </span>
                                                         <button
                                                             type="button"
-                                                            onClick={() => { setStep1FileName(''); setStep1DocumentText(''); setStep1ImageBase64(null); }}
+                                                            onClick={() => { setStep1FileName(''); setStep1DocumentText(''); setStep1ImageBase64(null); setRagKeyTopics([]); }}
                                                             className="text-rose-500 hover:underline text-[11px] font-semibold ml-2 shrink-0"
                                                         >
                                                             Remove
                                                         </button>
+                                                    </div>
+                                                )}
+                                                {ragKeyTopics && ragKeyTopics.length > 0 && (
+                                                    <div className="mt-2 p-2.5 bg-indigo-50/60 dark:bg-indigo-950/40 rounded-xl border border-indigo-200/70 dark:border-indigo-800/60">
+                                                        <span className="text-[11px] font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5 mb-1.5">
+                                                            <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                                            Reading Topics Extracted from Document:
+                                                        </span>
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {ragKeyTopics.map((top, tIdx) => (
+                                                                <span
+                                                                    key={tIdx}
+                                                                    className="inline-flex items-center gap-1 text-[11px] bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 font-medium px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-700 shadow-2xs"
+                                                                >
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                                                    {top}
+                                                                </span>
+                                                            ))}
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
@@ -2073,6 +2159,29 @@ export default function TrainingModuleWizard({
                                                 />
                                             </div>
                                         </div>
+
+                                        {/* Reading Topics Pill Row in Step 2 Unit Card */}
+                                        {(() => {
+                                            const unitTopics = extractTopicsFromUnit(unit);
+                                            if (!unitTopics || unitTopics.length === 0) return null;
+                                            return (
+                                                <div className="pt-2 border-t border-slate-100 dark:border-slate-800/60 flex flex-wrap items-center gap-1.5">
+                                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 flex items-center gap-1 mr-1">
+                                                        <BookOpen className="w-3 h-3 text-indigo-500" /> Reading Topics:
+                                                    </span>
+                                                    {unitTopics.slice(0, 5).map((t, ti) => (
+                                                        <span key={ti} className="text-[10px] bg-indigo-50/70 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-medium px-2 py-0.5 rounded-md border border-indigo-200/60 dark:border-indigo-800/60">
+                                                            {t}
+                                                        </span>
+                                                    ))}
+                                                    {unitTopics.length > 5 && (
+                                                        <span className="text-[10px] text-slate-400 font-semibold">
+                                                            +{unitTopics.length - 5} more
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
 
                                         <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                                             <div className="flex items-center gap-2">
