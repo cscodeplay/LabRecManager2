@@ -56,7 +56,7 @@ class GeminiService {
         }
         this.genAI = new GoogleGenerativeAI(apiKey);
         // Use the latest flash model
-        this.model = this.genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+        this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
     }
 
     async generateSQL(naturalLanguageQuery) {
@@ -70,7 +70,7 @@ USER REQUEST: ${naturalLanguageQuery}
 
 Generate a PostgreSQL query for the above request. Return ONLY the SQL query, nothing else.`;
 
-        const geminiModels = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+        const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash-lite'];
         let lastError = null;
 
         for (const modelName of geminiModels) {
@@ -98,9 +98,8 @@ Generate a PostgreSQL query for the above request. Return ONLY the SQL query, no
                 console.error(`Gemini ${modelName} API Error:`, error.message);
                 if (error.status === 503 || error.message?.includes('503') || error.message?.includes('429')) {
                     await new Promise(r => setTimeout(r, 1000));
-                    continue;
                 }
-                break;
+                continue;
             }
         }
         throw new Error(`Failed to generate SQL: ${lastError?.message}`);
@@ -130,7 +129,7 @@ Return ONLY valid JSON in the format below, without any markdown formatting or c
 ]
 If no inventory items are found, return an empty array [].`;
 
-        const geminiModels = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+        const geminiModels = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash-lite'];
         let lastError = null;
 
         for (const modelName of geminiModels) {
@@ -158,9 +157,8 @@ If no inventory items are found, return an empty array [].`;
                 console.error(`Gemini ${modelName} extraction Error:`, error.message);
                 if (error.status === 503 || error.message?.includes('503') || error.message?.includes('429')) {
                     await new Promise(r => setTimeout(r, 1000));
-                    continue;
                 }
-                break;
+                continue;
             }
         }
         throw new Error(`Failed to extract inventory from document: ${lastError?.message}`);

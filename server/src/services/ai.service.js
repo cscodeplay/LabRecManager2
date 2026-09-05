@@ -1,7 +1,7 @@
 const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const ACTIVE_GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+const ACTIVE_GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
 const ACTIVE_GROQ_MODELS = ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
 
 class AIService {
@@ -850,7 +850,7 @@ Return ONLY a valid JSON array of slot objects with the following schema:
         if (this.genAI) {
             try {
                 console.log('[AIService] Generating timetable slots via Gemini...');
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+                const model = this.genAI.getGenerativeModel({ model: ACTIVE_GEMINI_MODELS[0] });
                 const result = await model.generateContent(systemPrompt);
                 const responseText = result.response.text();
                 const parsed = this.parseJSONResponse(responseText);
@@ -1323,7 +1323,7 @@ Output MUST be ONLY valid JSON matching this schema:
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
             try {
-                const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+                const model = this.genAI.getGenerativeModel({ model: ACTIVE_GEMINI_MODELS[0] });
                 const result = await model.generateContent(systemPrompt);
                 const responseText = result.response.text();
                 return this.parseJSONResponse(responseText);

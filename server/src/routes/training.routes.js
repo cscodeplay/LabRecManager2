@@ -33,7 +33,7 @@ async function evaluateStudentCodeWithAI(code, problemStatement, failedCases) {
     if (!process.env.GEMINI_API_KEY) return "AI Assessor is not configured (Missing API Key).";
     
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = `
         You are an expert AI Computer Science tutor. The student submitted the following code:
         \`\`\`

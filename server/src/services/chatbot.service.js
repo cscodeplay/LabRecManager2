@@ -4376,7 +4376,7 @@ EXTRACTION INSTRUCTIONS:
             const geminiKey = process.env.GEMINI_API_KEY;
             if (geminiKey) {
                 const genAI = new GoogleGenerativeAI(geminiKey);
-                const visionModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+                const visionModels = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-2.5-pro'];
                 for (const modelName of visionModels) {
                     try {
                         console.log(`[ChatBot] Running Gemini Vision (${modelName}) on ${fileName}...`);
