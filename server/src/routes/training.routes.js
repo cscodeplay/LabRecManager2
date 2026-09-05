@@ -852,13 +852,37 @@ router.post('/exercises/:id/run', authenticate, [
     } else {
         // Python Execute with auto-harness for function-only submissions
         let codeToRun = code;
-        let stdinInput = customInput || '';
+        let stdinInput = (customInput || '').trim();
 
-        if (stdinInput.trim()) {
-            const funcCallMatch = stdinInput.trim().match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([\s\S]*)\)$/);
-            if (funcCallMatch && new RegExp(`def\\s+${funcCallMatch[1]}\\s*\\(`, 'm').test(code)) {
-                codeToRun = `${code}\n\n# Auto-harness invocation\ntry:\n    _res = ${stdinInput.trim()}\n    if _res is not None:\n        print(_res)\nexcept Exception as _e:\n    import sys\n    sys.stderr.write(str(_e))\n`;
-                stdinInput = '';
+        // If no custom input was provided, default to the exercise's first sample test case
+        if (!stdinInput && Array.isArray(exercise.testCases) && exercise.testCases.length > 0) {
+            stdinInput = String(exercise.testCases[0].input || '').trim();
+        }
+
+        if (stdinInput) {
+            const funcCallMatch = stdinInput.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([\s\S]*)\)$/);
+            if (funcCallMatch) {
+                const calledFuncName = funcCallMatch[1];
+                const rawArgs = funcCallMatch[2].trim();
+                const hasInputCall = code.includes('input(');
+                if (!hasInputCall && new RegExp(`def\\s+${calledFuncName}\\s*\\(`, 'm').test(code)) {
+                    codeToRun = `${code}\n\n# Auto-harness invocation\ntry:\n    _res = ${stdinInput}\n    if _res is not None:\n        print(_res)\nexcept Exception as _e:\n    import sys\n    sys.stderr.write(str(_e))\n`;
+                    stdinInput = '';
+                } else if (hasInputCall) {
+                    const argsList = rawArgs ? rawArgs.split(',').map(a => a.trim().replace(/^['"]|['"]$/g, '')) : [];
+                    stdinInput = argsList.join('\n') + '\n';
+                }
+            } else if (!code.includes('input(')) {
+                const singleFuncMatch = code.match(/def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\):/);
+                if (singleFuncMatch) {
+                    const funcName = singleFuncMatch[1];
+                    const params = singleFuncMatch[2].split(',').map(p => p.trim()).filter(Boolean);
+                    const inputArgs = stdinInput.split(/[\n,]+/).map(a => a.trim()).filter(Boolean);
+                    if (params.length > 0 && inputArgs.length === params.length) {
+                        codeToRun = `${code}\n\n# Auto-harness invocation\ntry:\n    _res = ${funcName}(${inputArgs.join(', ')})\n    if _res is not None:\n        print(_res)\nexcept Exception as _e:\n    import sys\n    sys.stderr.write(str(_e))\n`;
+                        stdinInput = '';
+                    }
+                }
             }
         }
         execution = await executePythonCode(codeToRun, stdinInput);
@@ -1112,13 +1136,23 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
                     let codeToRun = code;
                     let stdinInput = testInput;
 
-                    // Auto-harness for function-only solutions:
+                    // Auto-harness for function-only solutions or feeding args into scripts with input():
                     const trimmedInput = testInput.trim();
                     const funcCallMatch = trimmedInput.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([\s\S]*)\)$/);
-                    if (funcCallMatch && new RegExp(`def\\s+${funcCallMatch[1]}\\s*\\(`, 'm').test(code)) {
-                        codeToRun = `${code}\n\n# Auto-harness call\ntry:\n    _res = ${trimmedInput}\n    if _res is not None:\n        print(_res)\nexcept Exception as _e:\n    import sys\n    sys.stderr.write(str(_e))\n`;
-                        stdinInput = '';
-                    } else if (!code.includes('input(')) {
+                    const hasInputCall = code.includes('input(');
+
+                    if (funcCallMatch) {
+                        const calledFuncName = funcCallMatch[1];
+                        const rawArgs = funcCallMatch[2].trim();
+                        if (!hasInputCall && new RegExp(`def\\s+${calledFuncName}\\s*\\(`, 'm').test(code)) {
+                            codeToRun = `${code}\n\n# Auto-harness call\ntry:\n    _res = ${trimmedInput}\n    if _res is not None:\n        print(_res)\nexcept Exception as _e:\n    import sys\n    sys.stderr.write(str(_e))\n`;
+                            stdinInput = '';
+                        } else if (hasInputCall) {
+                            // Extract arguments from func(a, b) and provide them as separate lines on STDIN
+                            const argsList = rawArgs ? rawArgs.split(',').map(a => a.trim().replace(/^['"]|['"]$/g, '')) : [];
+                            stdinInput = argsList.join('\n') + '\n';
+                        }
+                    } else if (!hasInputCall) {
                         const singleFuncMatch = code.match(/def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\):/);
                         if (singleFuncMatch) {
                             const funcName = singleFuncMatch[1];
@@ -1141,7 +1175,27 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
                 const actualClean = actualRaw.trim();
                 const expectedClean = expectedString.trim();
                 
-                const passed = (exe.code === 0) && (actualClean === expectedClean);
+                let passed = (exe.code === 0) && (actualClean === expectedClean);
+
+                // Flexible comparison for numeric equality and outputs with labels (e.g. "Value is: 10" or float "10.0")
+                if (!passed && exe.code === 0) {
+                    if (!isNaN(Number(expectedClean)) && !isNaN(Number(actualClean)) && Number(expectedClean) === Number(actualClean)) {
+                        passed = true;
+                    } else {
+                        const lines = actualClean.split('\n').map(l => l.trim()).filter(Boolean);
+                        const lastLine = lines[lines.length - 1] || '';
+                        const strippedLastLine = lastLine.replace(/^.*?(?:value\s*(?:is)?|output\s*(?:is)?|result\s*(?:is)?|ans\s*(?:is)?)\s*[:=]?\s*/i, '').trim();
+                        if (strippedLastLine === expectedClean || (!isNaN(Number(expectedClean)) && !isNaN(Number(strippedLastLine)) && Number(expectedClean) === Number(strippedLastLine))) {
+                            passed = true;
+                        } else {
+                            const lastToken = lastLine.split(/\s+/).pop();
+                            if (lastToken === expectedClean || (!isNaN(Number(expectedClean)) && !isNaN(Number(lastToken)) && Number(expectedClean) === Number(lastToken))) {
+                                passed = true;
+                            }
+                        }
+                    }
+                }
+
                 if (!passed) passedAll = false;
 
                 if (exe.code !== 0 && !firstErrorOutput) {

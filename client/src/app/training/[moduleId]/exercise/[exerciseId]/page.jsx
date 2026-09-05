@@ -336,7 +336,8 @@ export default function ExerciseEditorPage() {
             return;
         }
 
-        const effectiveInput = occurrenceInputs.join('\n');
+        const joinedInput = occurrenceInputs.join('\n');
+        const effectiveInput = joinedInput.trim() ? joinedInput : (exercise?.testCases?.[0]?.input || '');
 
         try {
             const res = await trainingAPI.runCode(exerciseId, { code, customInput: effectiveInput });
