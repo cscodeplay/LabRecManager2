@@ -1,6 +1,9 @@
 const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
+const ACTIVE_GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+const ACTIVE_GROQ_MODELS = ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+
 class AIService {
     constructor() {
         this.groq = null;
@@ -60,7 +63,7 @@ RULES:
 
         // 1. Try Gemini (Primary Default)
         if ((preferredProvider === 'gemini' || preferredProvider === 'auto') && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     console.log(`[AIService] Extracting assignments via Gemini (${modelName})...`);
@@ -110,7 +113,7 @@ RULES:
 
         // Secondary Gemini retry if preferredProvider was groq
         if (preferredProvider === 'groq' && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -165,7 +168,7 @@ RULES:
 
         // 1. Try Gemini (Primary Default)
         if ((preferredProvider === 'gemini' || preferredProvider === 'auto') && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     console.log(`[AIService] Generating assignments from text via Gemini (${modelName})...`);
@@ -181,7 +184,7 @@ RULES:
 
         // 2. Try Groq (Fallback)
         if (this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            const groqModels = ACTIVE_GROQ_MODELS;
             for (const modelName of groqModels) {
                 try {
                     console.log(`[AIService] Generating assignments from text via Groq (${modelName})...`);
@@ -200,7 +203,7 @@ RULES:
 
         // Secondary Gemini retry if preferredProvider was groq
         if (preferredProvider === 'groq' && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -257,7 +260,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            const groqModels = ACTIVE_GROQ_MODELS;
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -275,7 +278,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -333,7 +336,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            const groqModels = ACTIVE_GROQ_MODELS;
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -351,7 +354,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -403,7 +406,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            const groqModels = ACTIVE_GROQ_MODELS;
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -421,7 +424,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -488,7 +491,7 @@ RULES:
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            const groqModels = ACTIVE_GROQ_MODELS;
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -509,7 +512,7 @@ RULES:
 
         // 2. Try Gemini (Fallback)
         if (this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -715,13 +718,13 @@ FORMATTING RULES:
         // 1. Try Gemini first
         if (this.genAI) {
             try {
-                const modelNames = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
-                for (const modelName of modelNames) {
+                for (const modelName of ACTIVE_GEMINI_MODELS) {
                     try {
                         const model = this.genAI.getGenerativeModel({ model: modelName });
                         const result = await model.generateContent(systemPrompt);
                         let responseText = result.response.text() || '';
                         responseText = responseText.replace(/^```html\n?/i, '').replace(/^```\n?/i, '').replace(/```$/i, '').trim();
+                        responseText = responseText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
                         if (responseText) {
                             return {
                                 success: true,
@@ -738,27 +741,32 @@ FORMATTING RULES:
             }
         }
 
-        // 2. Fallback: Groq (llama-3.3-70b-versatile)
+        // 2. Fallback: Groq
         if (this.groq) {
-            try {
-                const completion = await this.groq.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
-                    messages: [
-                        { role: 'system', content: 'You are an expert educational and administrative writing assistant. Output ONLY valid rich HTML tags (<h2>, <p>, <ul>, <li>, <ol>, <strong>) without markdown code fence wrapper.' },
-                        { role: 'user', content: systemPrompt }
-                    ],
-                    temperature: 0.3
-                });
+            for (const gModel of ACTIVE_GROQ_MODELS) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: gModel,
+                        messages: [
+                            { role: 'system', content: 'You are an expert educational and administrative writing assistant. Output ONLY valid rich HTML tags (<h2>, <h3>, <p>, <ul>, <li>, <ol>, <strong>) without markdown code fence wrapper.' },
+                            { role: 'user', content: systemPrompt }
+                        ],
+                        temperature: 0.3
+                    });
 
-                let responseText = completion.choices[0]?.message?.content || '';
-                responseText = responseText.replace(/^```html\n?/i, '').replace(/^```\n?/i, '').replace(/```$/i, '').trim();
-                return {
-                    success: true,
-                    html: responseText,
-                    provider: 'groq/llama-3.3-70b'
-                };
-            } catch (groqErr) {
-                console.error('[AIService] Groq failed for notes assist:', groqErr.message);
+                    let responseText = completion.choices[0]?.message?.content || '';
+                    responseText = responseText.replace(/^```html\n?/i, '').replace(/^```\n?/i, '').replace(/```$/i, '').trim();
+                    responseText = responseText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+                    if (responseText) {
+                        return {
+                            success: true,
+                            html: responseText,
+                            provider: `groq/${gModel}`
+                        };
+                    }
+                } catch (groqErr) {
+                    console.warn(`[AIService] Groq ${gModel} failed for notes assist:`, groqErr.message);
+                }
             }
         }
 
@@ -1473,7 +1481,7 @@ Output MUST be ONLY valid JSON matching this exact schema:
 
         // 1. Try Gemini first (Default provider)
         if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1488,7 +1496,7 @@ Output MUST be ONLY valid JSON matching this exact schema:
 
         // 2. Try Groq (Ultra-fast fallback or primary if explicitly requested)
         if (this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            const groqModels = ACTIVE_GROQ_MODELS;
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1509,7 +1517,7 @@ Output MUST be ONLY valid JSON matching this exact schema:
 
         // Secondary Gemini retry if provider was groq but groq failed
         if (provider === 'groq' && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1643,7 +1651,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 1. Try Gemini first (Default provider)
         if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1658,7 +1666,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 2. Try Groq (Fallback)
         if (this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            const groqModels = ACTIVE_GROQ_MODELS;
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1679,7 +1687,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // Secondary Gemini retry if provider was groq but groq failed
         if (provider === 'groq' && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1881,7 +1889,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 1. Try Gemini first (Default provider)
         if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -1896,7 +1904,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 2. Try Groq (Fallback)
         if (this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            const groqModels = ACTIVE_GROQ_MODELS;
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -1917,7 +1925,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // Secondary Gemini retry if provider was groq but groq failed
         if (provider === 'groq' && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2139,7 +2147,7 @@ Output MUST be ONLY valid JSON:
 
         // 1. Try Gemini first (Default provider)
         if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2154,7 +2162,7 @@ Output MUST be ONLY valid JSON:
 
         // 2. Try Groq (Fallback)
         if (this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            const groqModels = ACTIVE_GROQ_MODELS;
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -2175,7 +2183,7 @@ Output MUST be ONLY valid JSON:
 
         // Secondary Gemini retry if provider was groq but groq failed
         if (provider === 'groq' && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2267,7 +2275,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 1. Try Gemini first (Default provider)
         if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2284,7 +2292,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 2. Try Groq (Fallback)
         if (this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            const groqModels = ACTIVE_GROQ_MODELS;
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -2307,7 +2315,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // Secondary Gemini retry if provider was groq but groq failed
         if (provider === 'groq' && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2550,7 +2558,7 @@ Output MUST be ONLY valid JSON matching this schema:
         // 1. Vision Mode if imageBase64 is provided
         if (imageBase64) {
             if (this.genAI) {
-                const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+                const geminiModels = ACTIVE_GEMINI_MODELS;
                 for (const modelName of geminiModels) {
                     try {
                         const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2597,7 +2605,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 2. Text Mode: Try Gemini first (Default provider)
         if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2612,7 +2620,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 3. Text Mode: Try Groq fallback
         if (this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            const groqModels = ACTIVE_GROQ_MODELS;
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -2633,7 +2641,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 4. Secondary Gemini retry if provider was groq but groq failed
         if (provider === 'groq' && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2782,7 +2790,7 @@ Output MUST be ONLY valid JSON matching this schema:
         if (imageBase64) {
             // Try Gemini Vision first (Default)
             if (this.genAI) {
-                const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+                const geminiModels = ACTIVE_GEMINI_MODELS;
                 for (const modelName of geminiModels) {
                     try {
                         const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2830,7 +2838,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 2. Text Grounding Mode: Try Gemini first (Default provider)
         if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });
@@ -2845,7 +2853,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 3. Try Groq (Fallback or if requested)
         if (this.groq) {
-            const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+            const groqModels = ACTIVE_GROQ_MODELS;
             for (const modelName of groqModels) {
                 try {
                     const completion = await this.groq.chat.completions.create({
@@ -2866,7 +2874,7 @@ Output MUST be ONLY valid JSON matching this schema:
 
         // 4. Secondary Gemini retry if provider was groq but groq failed
         if (provider === 'groq' && this.genAI) {
-            const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const geminiModels = ACTIVE_GEMINI_MODELS;
             for (const modelName of geminiModels) {
                 try {
                     const model = this.genAI.getGenerativeModel({ model: modelName });

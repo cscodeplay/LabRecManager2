@@ -211,7 +211,7 @@ router.post('/ai-assist', asyncHandler(async (req, res) => {
         console.error('Admin Notes AI Assist Error:', err.message);
         res.status(500).json({
             success: false,
-            message: 'Failed to generate note content using AI.',
+            message: err.message || 'Failed to generate note content using AI.',
             error: err.message
         });
     }
