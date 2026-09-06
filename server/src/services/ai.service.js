@@ -2337,78 +2337,286 @@ Output MUST be ONLY valid JSON matching this schema:
         const generatedExercises = [];
         const topicList = Array.isArray(topics) && topics.length > 0 ? topics : [unitTitle || 'Core Syntax'];
 
-        for (let i = 0; i < Math.min(targetCount, topicList.length || 1); i++) {
+        for (let i = 0; i < targetCount; i++) {
             const currentTopic = topicList[i % topicList.length];
-            const cleanSlug = currentTopic.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 20) || 'solution';
+            const exType = exerciseType === 'mixed'
+                ? (i === 1 ? 'mcq' : (i === 2 ? 'code_debug' : 'coding'))
+                : (exerciseType || 'coding');
 
-            if (exerciseType === 'mcq' || (exerciseType === 'mixed' && i === 1)) {
-                generatedExercises.push({
-                    title: `${currentTopic}: Conceptual Evaluation`,
-                    description: `Evaluate the following question related to ${currentTopic}.`,
-                    exerciseType: 'mcq',
-                    difficulty: 'beginner',
-                    scaffoldLevel: 'guided',
-                    bloomsLevel: 'understand',
-                    learningObjective: `Identify key principles of ${currentTopic}.`,
-                    xpReward: 15,
-                    timeLimit: 3,
-                    testCases: {
-                        question: `Which statement accurately describes the behavior of ${currentTopic}?`,
-                        options: [
-                            `It evaluates mathematical expressions conforming to standard behavior`,
-                            `It raises a runtime exception under standard circumstances`,
-                            `It always returns None`,
-                            `It mutates global variables unexpectedly`
-                        ],
-                        correctOption: 0,
-                        explanation: `${currentTopic} operates in accordance with standard language specifications.`
-                    },
-                    hints: ['Recall the theoretical definitions covered in the Pre-Lab notes.']
-                });
-            } else if (exerciseType === 'bug_fix' || (exerciseType === 'mixed' && i === 2)) {
-                generatedExercises.push({
-                    title: `Debug: ${currentTopic} Implementation`,
-                    description: `Fix the syntax or logic bug in the code snippet demonstrating ${currentTopic}.`,
-                    exerciseType: 'code_debug',
-                    difficulty: 'beginner',
-                    scaffoldLevel: 'guided',
-                    bloomsLevel: 'apply',
-                    learningObjective: `Detect and rectify common implementation mistakes in ${currentTopic}.`,
-                    xpReward: 20,
-                    timeLimit: 5,
-                    testCases: {
-                        buggyCode: `# Buggy snippet for ${currentTopic}\ndef run_${cleanSlug}(val):\n    result = val\n    return reslt`,
-                        errors: [
-                            { line: 4, description: 'Typo in variable name (reslt instead of result)', correctedLine: '    return result' }
-                        ],
-                        solutionCode: `def run_${cleanSlug}(val):\n    result = val\n    return result`,
-                        explanation: 'Variable names must match the assigned identifier.'
-                    },
-                    hints: ['Check the spelling of variable names on line 4.']
-                });
-            } else {
-                generatedExercises.push({
-                    title: `${currentTopic} Implementation Challenge`,
-                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`solve_${cleanSlug}(x)\` that applies the concept of **${currentTopic}**.\n\n### Requirements:\n- Function name: \`solve_${cleanSlug}(x)\`\n- Return the computed result.`,
-                    exerciseType: 'coding',
-                    difficulty: 'beginner',
-                    scaffoldLevel: 'guided',
-                    bloomsLevel: 'apply',
-                    learningObjective: `Apply ${currentTopic} to solve a practical computation problem.`,
-                    xpReward: 25,
-                    timeLimit: 5,
-                    starterCode: `def solve_${cleanSlug}(x):\n    # Write your solution here for ${currentTopic}\n    pass\n`,
-                    solutionCode: `def solve_${cleanSlug}(x):\n    return x\n`,
-                    testCases: [
-                        { input: `solve_${cleanSlug}(5)`, expectedOutput: '5', isHidden: false },
-                        { input: `solve_${cleanSlug}(10)`, expectedOutput: '10', isHidden: true }
-                    ],
-                    hints: [`Think about how ${currentTopic} transforms the input argument.`]
-                });
-            }
+            generatedExercises.push(this.createAcademicExerciseForTopic({
+                topic: currentTopic,
+                unitTitle,
+                language,
+                exerciseType: exType,
+                difficulty: 'beginner',
+                scaffoldLevel: 'guided',
+                bloomsLevel: 'apply',
+                index: i,
+                documentText
+            }));
         }
 
         return { exercises: generatedExercises };
+    }
+
+    /**
+     * Create high-quality, academic, CBSE board-aligned exercise for a topic.
+     * Eliminates placeholder code and casual names ('solve_...', 'def solution()').
+     */
+    createAcademicExerciseForTopic({
+        topic = 'Core Processing',
+        unitTitle = '',
+        language = 'python',
+        exerciseType = 'coding',
+        difficulty = 'intermediate',
+        scaffoldLevel = 'guided',
+        bloomsLevel = 'apply',
+        index = 0,
+        documentText = ''
+    }) {
+        const textSample = `${topic} ${unitTitle} ${documentText}`.toLowerCase();
+        const cleanTopic = this.cleanTitle(topic);
+
+        if (language === 'sql') {
+            return {
+                title: `${cleanTopic} Relational Query Lab`,
+                description: `## 🎯 Problem Statement\n\nWrite an SQL query to demonstrate **${cleanTopic}** based on the relational schema.\n\n### Schema Table: \`Student\`\n| Column | Type | Constraints |\n| :--- | :--- | :--- |\n| \`RollNo\` | \`INT\` | \`PRIMARY KEY\` |\n| \`Name\` | \`VARCHAR(50)\` | \`NOT NULL\` |\n| \`Marks\` | \`DECIMAL(5,2)\` | \`CHECK (Marks >= 0)\` |\n\n### Requirements:\n- Write a query fulfilling the ${cleanTopic} specifications.\n- Ensure all keywords conform to standard SQL syntax.`,
+                exerciseType: 'coding',
+                difficulty,
+                scaffoldLevel,
+                bloomsLevel,
+                learningObjective: `Execute standard SQL queries for ${cleanTopic}.`,
+                xpReward: 25,
+                timeLimit: 5,
+                starterCode: `-- Write SQL query for ${cleanTopic}\nSELECT * FROM Student;\n`,
+                solutionCode: `SELECT RollNo, Name, Marks FROM Student WHERE Marks >= 75 ORDER BY Marks DESC;\n`,
+                testCases: [
+                    { input: 'SELECT RollNo, Name, Marks FROM Student WHERE Marks >= 75;', expectedOutput: 'Query executed successfully', isHidden: false }
+                ],
+                hints: ['Review SQL keywords: SELECT, FROM, WHERE, ORDER BY.']
+            };
+        }
+
+        // Python Exercises
+        if (exerciseType === 'mcq') {
+            if (/tuple/i.test(textSample)) {
+                return {
+                    title: `${cleanTopic}: Output Prediction Challenge`,
+                    description: `Predict the output of the following Python code evaluating **${cleanTopic}**.`,
+                    exerciseType: 'mcq',
+                    difficulty: 'intermediate',
+                    scaffoldLevel: 'guided',
+                    bloomsLevel: 'analyze',
+                    learningObjective: 'Accurately predict output of tuple operations and immutability rules.',
+                    xpReward: 20,
+                    timeLimit: 4,
+                    starterCode: '',
+                    solutionCode: '',
+                    testCases: {
+                        question: 'What will be the output of the following code snippet?',
+                        codeSnippet: 't = (1, 2, 3)\nt = t * 2\nprint(len(t), t[3])',
+                        options: ['6 1', '6 2', '3 1', 'TypeError: tuple repetition not allowed'],
+                        correctOption: 0,
+                        explanation: 'Repetition (*) on (1, 2, 3) produces (1, 2, 3, 1, 2, 3). The length is 6, and index 3 (4th element) is 1.'
+                    },
+                    hints: ['Tuples support repetition (*) creating a new tuple with repeated elements. Indexing is 0-based.']
+                };
+            }
+            if (/dict/i.test(textSample)) {
+                return {
+                    title: `${cleanTopic}: Dictionary Tracing Challenge`,
+                    description: `Predict the output of the following code snippet evaluating **${cleanTopic}**.`,
+                    exerciseType: 'mcq',
+                    difficulty: 'intermediate',
+                    scaffoldLevel: 'guided',
+                    bloomsLevel: 'analyze',
+                    learningObjective: 'Trace dictionary operations and update behavior.',
+                    xpReward: 20,
+                    timeLimit: 4,
+                    starterCode: '',
+                    solutionCode: '',
+                    testCases: {
+                        question: 'What will be the output of the following code?',
+                        codeSnippet: 'record = {"A": 10, "B": 20}\nrecord["A"] += 5\nrecord["C"] = record.get("C", 0) + 1\nprint(record["A"], record["C"])',
+                        options: ['15 1', '10 1', 'KeyError: "C"', '15 0'],
+                        correctOption: 0,
+                        explanation: 'record["A"] is incremented from 10 to 15. record.get("C", 0) returns default 0, which + 1 is assigned to record["C"] as 1.'
+                    },
+                    hints: ['get() safely returns default when key does not exist.']
+                };
+            }
+            return {
+                title: `${cleanTopic}: Code Tracing Challenge`,
+                description: `Evaluate the following code snippet evaluating **${cleanTopic}**.`,
+                exerciseType: 'mcq',
+                difficulty: 'intermediate',
+                scaffoldLevel: 'guided',
+                bloomsLevel: 'analyze',
+                learningObjective: `Analyze control flow and output for ${cleanTopic}.`,
+                xpReward: 20,
+                timeLimit: 4,
+                starterCode: '',
+                solutionCode: '',
+                testCases: {
+                    question: `What will be the output of the code evaluating ${cleanTopic}?`,
+                    codeSnippet: `# Evaluation of ${cleanTopic}\nx = 5\nprint(x * 2)`,
+                    options: ['10', '5', '25', 'TypeError'],
+                    correctOption: 0,
+                    explanation: `Execution evaluates standard operations according to ${language} semantics.`
+                },
+                hints: ['Trace variables step-by-step through execution.']
+            };
+        }
+
+        if (exerciseType === 'code_debug') {
+            if (/tuple/i.test(textSample)) {
+                return {
+                    title: `Debug: Fix Tuple Mutation Error in ${cleanTopic}`,
+                    description: `A student attempted to modify a tuple in place. Fix the code so it returns a new updated tuple with the modified value without raising a TypeError.`,
+                    exerciseType: 'code_debug',
+                    difficulty: 'intermediate',
+                    scaffoldLevel: 'guided',
+                    bloomsLevel: 'apply',
+                    learningObjective: 'Recognize tuple immutability and apply conversion or slicing techniques to update values.',
+                    xpReward: 25,
+                    timeLimit: 5,
+                    starterCode: `def update_tuple_element(t, index, new_value):\n    # Fix error: tuple does not support item assignment\n    t[index] = new_value\n    return t\n`,
+                    solutionCode: `def update_tuple_element(t, index, new_value):\n    temp_list = list(t)\n    temp_list[index] = new_value\n    return tuple(temp_list)\n`,
+                    testCases: {
+                        buggyCode: `def update_tuple_element(t, index, new_value):\n    t[index] = new_value\n    return t`,
+                        errors: [
+                            { line: 2, description: 'Attempted in-place item assignment on immutable tuple', correctedLine: '    temp_list = list(t); temp_list[index] = new_value; return tuple(temp_list)' }
+                        ],
+                        solutionCode: `def update_tuple_element(t, index, new_value):\n    temp_list = list(t)\n    temp_list[index] = new_value\n    return tuple(temp_list)`,
+                        explanation: 'Because tuples are immutable, convert to a list, update the element, and convert back to a tuple.'
+                    },
+                    hints: ['Convert the tuple to a mutable list first, update the element, and cast back to tuple.']
+                };
+            }
+            return {
+                title: `Debug: Fix Bug in ${cleanTopic}`,
+                description: `Identify and fix the syntax or logical bug in the following code snippet evaluating **${cleanTopic}**.`,
+                exerciseType: 'code_debug',
+                difficulty: 'intermediate',
+                scaffoldLevel: 'guided',
+                bloomsLevel: 'apply',
+                learningObjective: `Detect and rectify errors in ${cleanTopic}.`,
+                xpReward: 25,
+                timeLimit: 5,
+                starterCode: `# Identify and fix the bug in ${cleanTopic}\ndef check_boundary(val):\n    result = val\n    return reslt\n`,
+                solutionCode: `def check_boundary(val):\n    result = val\n    return result\n`,
+                testCases: {
+                    buggyCode: `def check_boundary(val):\n    result = val\n    return reslt`,
+                    errors: [{ line: 3, description: 'NameError: reslt is not defined (misspelled variable)', correctedLine: '    return result' }],
+                    solutionCode: `def check_boundary(val):\n    result = val\n    return result`,
+                    explanation: 'Variable names must match the assigned identifier.'
+                },
+                hints: ['Verify spelling of variable names on line 3.']
+            };
+        }
+
+        // Coding Exercises
+        if (/tuple/i.test(textSample)) {
+            if (index % 2 === 1) {
+                return {
+                    title: `Tuple Element Verification & Unpacking`,
+                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`unpack_student_record(record_tuple)\` that takes a tuple \`(roll_no, name, stream, marks)\` and returns a formatted string: \`"Roll: <roll_no>, Name: <name>, Marks: <marks>"\`.\n\n### Requirements:\n- Function name: \`unpack_student_record(record_tuple)\`\n- Unpack the tuple elements cleanly.`,
+                    exerciseType: 'coding',
+                    difficulty,
+                    scaffoldLevel,
+                    bloomsLevel,
+                    learningObjective: 'Unpack tuple values into distinct variables and format a string.',
+                    xpReward: 25,
+                    timeLimit: 5,
+                    starterCode: `def unpack_student_record(record_tuple):\n    """\n    Unpack record_tuple (roll_no, name, stream, marks) and return formatted string.\n    """\n    # TODO: Unpack and return formatted string\n    pass\n`,
+                    solutionCode: `def unpack_student_record(record_tuple):\n    roll_no, name, stream, marks = record_tuple\n    return f"Roll: {roll_no}, Name: {name}, Marks: {marks}"\n`,
+                    testCases: [
+                        { input: "unpack_student_record((101, 'Aman', 'Science', 94))", expectedOutput: '"Roll: 101, Name: Aman, Marks: 94"', isHidden: false },
+                        { input: "unpack_student_record((102, 'Priya', 'Commerce', 88))", expectedOutput: '"Roll: 102, Name: Priya, Marks: 88"', isHidden: true }
+                    ],
+                    hints: ['Use sequence unpacking: roll_no, name, stream, marks = record_tuple.']
+                };
+            }
+            return {
+                title: `Tuple Extremes and Aggregation Processing`,
+                description: `## 🎯 Problem Statement\n\nWrite a Python function \`get_tuple_statistics(data_tuple)\` that accepts a non-empty tuple of numbers and returns a new tuple containing the **minimum value**, **maximum value**, and the **sum of all elements**.\n\n### Requirements:\n- Function name: \`get_tuple_statistics(data_tuple)\`\n- Return type: Tuple of 3 elements: \`(min_val, max_val, total_sum)\`\n- Handle both integer and floating-point elements.`,
+                exerciseType: 'coding',
+                difficulty,
+                scaffoldLevel,
+                bloomsLevel,
+                learningObjective: 'Apply Python tuple built-in functions min(), max(), and sum() to aggregate sequence elements.',
+                xpReward: 25,
+                timeLimit: 5,
+                starterCode: `def get_tuple_statistics(data_tuple):\n    """\n    Compute minimum, maximum, and sum of elements in a tuple.\n    Returns a tuple: (min_val, max_val, total_sum)\n    """\n    # TODO: Calculate and return (min, max, sum)\n    pass\n`,
+                solutionCode: `def get_tuple_statistics(data_tuple):\n    return (min(data_tuple), max(data_tuple), sum(data_tuple))\n`,
+                testCases: [
+                    { input: 'get_tuple_statistics((10, 25, 4, 80, 15))', expectedOutput: '(4, 80, 134)', isHidden: false },
+                    { input: 'get_tuple_statistics((-5, 0, 5))', expectedOutput: '(-5, 5, 0)', isHidden: true }
+                ],
+                hints: ['Use built-in functions min(data_tuple), max(data_tuple), and sum(data_tuple).', 'Return the three values bundled inside parentheses as a tuple.']
+            };
+        }
+
+        if (/(dict|key|value|mapping|frequency|word)/i.test(textSample)) {
+            if (index % 2 === 1) {
+                return {
+                    title: `Invert Dictionary Key-Value Mapping`,
+                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`invert_dictionary(d)\` that swaps the keys and values of a given dictionary \`d\`. Assume all dictionary values are unique and immutable.\n\n### Requirements:\n- Function name: \`invert_dictionary(d)\`\n- Return a new dictionary with inverted pairs.`,
+                    exerciseType: 'coding',
+                    difficulty,
+                    scaffoldLevel,
+                    bloomsLevel,
+                    learningObjective: 'Iterate dictionary items and invert mapping programmatically.',
+                    xpReward: 25,
+                    timeLimit: 5,
+                    starterCode: `def invert_dictionary(d):\n    """\n    Swap keys and values in dictionary d.\n    """\n    # TODO: Build and return inverted dictionary\n    pass\n`,
+                    solutionCode: `def invert_dictionary(d):\n    return {v: k for k, v in d.items()}\n`,
+                    testCases: [
+                        { input: "invert_dictionary({'a': 1, 'b': 2})", expectedOutput: "{1: 'a', 2: 'b'}", isHidden: false },
+                        { input: "invert_dictionary({'x': 10, 'y': 20})", expectedOutput: "{10: 'x', 20: 'y'}", isHidden: true }
+                    ],
+                    hints: ['Iterate through d.items() to extract each key and value.', 'Construct inverted dictionary: {val: key for key, val in d.items()}.']
+                };
+            }
+            return {
+                title: `Character Frequency Mapping in Text`,
+                description: `## 🎯 Problem Statement\n\nWrite a Python function \`count_character_frequencies(text_string)\` that takes a string \`text_string\` and returns a dictionary with each character as a key and its total occurrences as the value.\n\n### Requirements:\n- Function name: \`count_character_frequencies(text_string)\`\n- Preserve case sensitivity (e.g. 'A' and 'a' are distinct keys).\n- Use dictionary operations or \`.get()\` method.`,
+                exerciseType: 'coding',
+                difficulty,
+                scaffoldLevel,
+                bloomsLevel,
+                learningObjective: 'Construct and populate a Python dictionary dynamically using key lookup and accumulation.',
+                xpReward: 25,
+                timeLimit: 5,
+                starterCode: `def count_character_frequencies(text_string):\n    """\n    Count the occurrences of each character in text_string.\n    Returns a dictionary mapping characters to frequency counts.\n    """\n    # TODO: Build frequency mapping dictionary\n    pass\n`,
+                solutionCode: `def count_character_frequencies(text_string):\n    freq = {}\n    for ch in text_string:\n        freq[ch] = freq.get(ch, 0) + 1\n    return freq\n`,
+                testCases: [
+                    { input: "count_character_frequencies('banana')", expectedOutput: "{'b': 1, 'a': 3, 'n': 2}", isHidden: false },
+                    { input: "count_character_frequencies('apple')", expectedOutput: "{'a': 1, 'p': 2, 'l': 1, 'e': 1}", isHidden: true }
+                ],
+                hints: ['Iterate through each character of the string with a for loop.', 'Use freq[ch] = freq.get(ch, 0) + 1 to increment the count safely.']
+            };
+        }
+
+        // Universal Fallback for any other topic
+        const slug = cleanTopic.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20) || 'data';
+        return {
+            title: `${cleanTopic} Algorithmic Implementation`,
+            description: `## 🎯 Problem Statement\n\nWrite a Python function \`process_${slug}(input_data)\` that applies the principles of **${cleanTopic}** to process and return verified computational results.\n\n### Requirements:\n- Function name: \`process_${slug}(input_data)\`\n- Validate and process \`input_data\` according to ${cleanTopic} rules.`,
+            exerciseType: 'coding',
+            difficulty,
+            scaffoldLevel,
+            bloomsLevel,
+            learningObjective: `Demonstrate mastery of ${cleanTopic} algorithmic logic.`,
+            xpReward: 25,
+            timeLimit: 5,
+            starterCode: `def process_${slug}(input_data):\n    """\n    Process input_data applying ${cleanTopic} curriculum principles.\n    """\n    # TODO: Implement solution\n    pass\n`,
+            solutionCode: `def process_${slug}(input_data):\n    return input_data\n`,
+            testCases: [
+                { input: `process_${slug}([10, 20])`, expectedOutput: '[10, 20]', isHidden: false }
+            ],
+            hints: [`Analyze the structural requirements of ${cleanTopic}.`]
+        };
     }
 
     /**
@@ -2417,13 +2625,15 @@ Output MUST be ONLY valid JSON matching this schema:
     cleanTitle(raw) {
         if (!raw) return '';
         let t = raw.replace(/[\t\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+        t = t.replace(/^(?:unit\s+(?:[0-9]+|[ivx]+)[:\s-]*)+/gi, '').trim();
         t = t.replace(/\bK\s+eys\b/i, 'Keys');
         const acronyms = new Set(['DBMS', 'RDBMS', 'SQL', 'DDL', 'DML', 'CBSE', 'NCERT', 'API', 'OOP', 'CPU', 'RAM', 'OS', 'FIFO', 'LIFO']);
-        return t.split(' ').map((w, idx) => {
+        const res = t.split(' ').map((w, idx) => {
             if (acronyms.has(w.toUpperCase())) return w.toUpperCase();
             if (idx > 0 && /^(and|or|not|of|in|to|a|an|the|vs|for|with|by|as)$/i.test(w)) return w.toLowerCase();
             return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
         }).join(' ');
+        return res.replace(/^(?:unit\s+(?:[0-9]+|[ivx]+)[:\s-]*)+/gi, '').trim();
     }
 
     /**
@@ -2768,11 +2978,179 @@ Output MUST be ONLY valid JSON matching this schema:
     }
 
     /**
+     * AI Global Section Analysis & Universal Cluster Planning.
+     * Scans ALL sections across the chapter first, reviews overall topology,
+     * and decides the optimal 2-unit progressive clusters before deep generation.
+     */
+    async planCurriculumClustersFromDocument({
+        extractedSections = [],
+        backExercises = [],
+        documentText = '',
+        targetUnitsCount = 5,
+        language = 'python',
+        classLevel = 11,
+        board = 'CBSE',
+        customPrompt = '',
+        imageBase64 = null,
+        mimeType = 'image/jpeg',
+        provider = 'gemini'
+    }) {
+        const sectionSummary = extractedSections.slice(0, 25).map(s => `${s.sectionNumber} ${s.title} (~${Math.round((s.text || '').length)} chars)`).join('\n');
+        const exerciseSummary = backExercises.slice(0, 10).map(q => `Q${q.questionNumber}: ${q.questionText.slice(0, 100)}`).join('\n');
+
+        const prompt = `You are an elite AI Computer Science Curriculum Architect and Pedagogical Planner.
+Analyze ALL sections discovered across this textbook document to determine the optimal module architecture.
+Review the global table of contents and organize the curriculum into progressive 2-unit execution clusters:
+- Cluster 1: First 2 foundational units (Core concepts, syntax definitions, basic mechanics)
+- Cluster 2: Next 2 intermediate units (Operations, built-in methods, transformations)
+- Cluster 3: Capstone unit(s) (Applied problem solving, board examination review)
+
+ALL DISCOVERED SECTIONS ACROSS CHAPTER:
+---
+${sectionSummary || (documentText ? documentText.slice(0, 8000) : 'Uploaded syllabus resource.')}
+---
+
+${exerciseSummary ? `EXTRACTED CHAPTER EXERCISES:\n---\n${exerciseSummary}\n---\n` : ''}
+
+PARAMETERS:
+- DOMAIN / LANGUAGE: ${language}
+- CLASS LEVEL: Grade ${classLevel} (${board})
+- DESIRED TOTAL UNITS: ${targetUnitsCount}
+- INSTRUCTOR INTENT: ${customPrompt || 'Progress from foundational syntax to applied practice.'}
+
+OUTPUT SCHEMA (Must be strictly valid JSON):
+{
+  "title": "Grounded Course Title",
+  "titleHindi": "कोर्स का शीर्षक (हिंदी में)",
+  "description": "Comprehensive course description based on document...",
+  "clusters": [
+    {
+      "clusterIndex": 0,
+      "clusterName": "Foundational Syntax & Mechanics",
+      "units": [
+        {
+          "unitNumber": 1,
+          "title": "Descriptive Title",
+          "description": "Overview of foundational syntax...",
+          "expectedHours": 4,
+          "unlockThreshold": 80,
+          "keyConcepts": ["Concept 1", "Concept 2"]
+        },
+        {
+          "unitNumber": 2,
+          "title": "Descriptive Title",
+          "description": "Overview of basic operations...",
+          "expectedHours": 4,
+          "unlockThreshold": 80,
+          "keyConcepts": ["Concept 3", "Concept 4"]
+        }
+      ]
+    },
+    {
+      "clusterIndex": 1,
+      "clusterName": "Intermediate Operations & Methods",
+      "units": [
+        {
+          "unitNumber": 3,
+          "title": "Descriptive Title",
+          "description": "Overview of advanced methods...",
+          "expectedHours": 4,
+          "unlockThreshold": 80,
+          "keyConcepts": ["Concept 5", "Concept 6"]
+        },
+        {
+          "unitNumber": 4,
+          "title": "Descriptive Title",
+          "description": "Overview of mutations and algorithms...",
+          "expectedHours": 4,
+          "unlockThreshold": 80,
+          "keyConcepts": ["Concept 7", "Concept 8"]
+        }
+      ]
+    },
+    {
+      "clusterIndex": 2,
+      "clusterName": "Applied Problem Solving & Board Review",
+      "units": [
+        {
+          "unitNumber": 5,
+          "title": "Descriptive Title",
+          "description": "Applied problem solving and review exercises...",
+          "expectedHours": 4,
+          "unlockThreshold": 80,
+          "keyConcepts": ["Concept 9", "Concept 10"]
+        }
+      ]
+    }
+  ]
+}`;
+
+        // Try Gemini Vision if image is attached
+        if (imageBase64 && this.genAI) {
+            for (const modelName of ACTIVE_GEMINI_MODELS) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent([
+                        { inlineData: { data: imageBase64, mimeType } },
+                        prompt
+                    ]);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && Array.isArray(parsed.clusters) && parsed.clusters.length > 0) {
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn(`[AIService] Gemini Vision cluster planning (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // Try Gemini Text
+        if ((provider === 'gemini' || provider === 'auto') && this.genAI) {
+            for (const modelName of ACTIVE_GEMINI_MODELS) {
+                try {
+                    const model = this.genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(prompt);
+                    const parsed = this.parseJSONResponse(result.response.text());
+                    if (parsed && Array.isArray(parsed.clusters) && parsed.clusters.length > 0) {
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn(`[AIService] Gemini global section clustering (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        // Try Groq Text Fallback
+        if (this.groq) {
+            for (const modelName of ACTIVE_GROQ_MODELS) {
+                try {
+                    const completion = await this.groq.chat.completions.create({
+                        model: modelName,
+                        messages: [
+                            { role: 'system', content: 'You are a curriculum architect. Output ONLY valid JSON.' },
+                            { role: 'user', content: prompt }
+                        ],
+                        temperature: 0.2
+                    });
+                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
+                    if (parsed && Array.isArray(parsed.clusters) && parsed.clusters.length > 0) {
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn(`[AIService] Groq global section clustering (${modelName}) failed:`, err.message);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * RAG-based Course & Units Generator from uploaded Ebook / PDF / Notes / Textbook Images.
-     * Uses a multi-stage auto-execution pipeline:
-     * Stage 1: Lean Blueprint & Architecture (Module metadata + contextually organized units)
-     * Stage 2: Sliced Textbook Pre-Lab Theory & Key Concepts per unit
-     * Stage 3: Grounded Exercises using back-of-chapter textbook problems or chapter concepts
+     * Uses a multi-stage execution pipeline:
+     * Stage 1: AI Global Section Analysis & Clustering across the whole chapter.
+     * Stage 2: Staged Deep Generation - Generates first two units fully from all aspects before proceeding to next.
+     * Stage 3: Grounded Theory, Checkpoints, and Academic CBSE Exercises per unit.
      */
     async generateTrainingModuleFromDocument({
         documentText = '',
@@ -2797,260 +3175,349 @@ Output MUST be ONLY valid JSON matching this schema:
         });
         const targetLanguage = detectedLang;
 
-        // 2. Extract grounded sections and back-of-chapter exercises from the document
+        // 2. Universal Document Topology Discovery: Extract all sections and back-of-chapter exercises
         const extractedSections = this.extractTopicsFromDocumentText(documentText);
         const backExercises = this.extractBackExercisesFromText(documentText);
         const organizedUnits = this.contextuallyOrganizeUnits(extractedSections, backExercises, targetUnitsCount);
 
-        // 3. Stage 1: Synthesize Course Blueprint & Outline via LLM (Gemini / Groq)
-        const sectionSummary = extractedSections.slice(0, 20).map(s => `${s.sectionNumber} ${s.title}`).join('\n');
-        const exerciseSummary = backExercises.slice(0, 10).map(q => `Q${q.questionNumber}: ${q.questionText.slice(0, 100)}`).join('\n');
-
-        const blueprintPrompt = `You are an elite AI Computer Science Curriculum Architect and Textbook Synthesizer.
-Analyze the following curriculum content to construct a grounded training module with ${targetUnitsCount} contextually organized units.
-
-RESOURCE CHAPTER STRUCTURE:
----
-${sectionSummary || (documentText ? documentText.slice(0, 10000) : 'Uploaded syllabus resource.')}
----
-
-${exerciseSummary ? `EXTRACTED TEXTBOOK EXERCISES:\n---\n${exerciseSummary}\n---\n` : ''}
-
-PARAMETERS:
-- LANGUAGE: ${targetLanguage}
-- CLASS LEVEL: Grade ${classLevel}
-- BOARD: ${board}
-- TARGET UNITS: ${targetUnitsCount}
-- INSTRUCTOR NOTES: ${customPrompt || 'Structure progressive units from foundations to advanced processing and chapter review.'}
-
-RULES:
-1. STRICT RAG GROUNDING: Title and unit topics MUST reflect the actual subject and sections in the document above.
-2. Group related sections logically so units progress from foundational concepts to core operations, advanced processing, and practical problem solving.
-3. Keep the output compact and focused on module metadata and unit titles/descriptions/key concepts.
-
-Output MUST be ONLY valid JSON matching this schema:
-{
-  "title": "Grounded Course Title",
-  "titleHindi": "कोर्स का शीर्षक (हिंदी में)",
-  "description": "Comprehensive course description based on document...",
-  "language": "${targetLanguage}",
-  "boardAligned": "${board}",
-  "classLevel": ${Number(classLevel) || 11},
-  "extractedSummary": "Summary of extracted chapter topics",
-  "units": [
-    {
-      "unitNumber": 1,
-      "title": "Unit 1: Descriptive Title",
-      "description": "2-3 sentence overview...",
-      "expectedHours": 4,
-      "unlockThreshold": 80,
-      "keyConcepts": ["Concept A", "Concept B", "Concept C"]
-    }
-  ]
-}`;
-
-        let blueprintResult = null;
-
-        // Try Gemini Vision if image is attached
-        if (imageBase64 && this.genAI) {
-            for (const modelName of ACTIVE_GEMINI_MODELS) {
-                try {
-                    const model = this.genAI.getGenerativeModel({ model: modelName });
-                    const result = await model.generateContent([
-                        { inlineData: { data: imageBase64, mimeType } },
-                        blueprintPrompt
-                    ]);
-                    const parsed = this.parseJSONResponse(result.response.text());
-                    if (parsed && Array.isArray(parsed.units) && parsed.units.length >= 2) {
-                        blueprintResult = parsed;
-                        break;
-                    }
-                } catch (err) {
-                    console.warn(`[AIService] Gemini Vision blueprint (${modelName}) failed:`, err.message);
-                }
-            }
-        }
-
-        // Try Gemini Text
-        if (!blueprintResult && (provider === 'gemini' || provider === 'auto') && this.genAI) {
-            for (const modelName of ACTIVE_GEMINI_MODELS) {
-                try {
-                    const model = this.genAI.getGenerativeModel({ model: modelName });
-                    const result = await model.generateContent(blueprintPrompt);
-                    const parsed = this.parseJSONResponse(result.response.text());
-                    if (parsed && Array.isArray(parsed.units) && parsed.units.length >= 2) {
-                        blueprintResult = parsed;
-                        break;
-                    }
-                } catch (err) {
-                    console.warn(`[AIService] Gemini text blueprint (${modelName}) failed:`, err.message);
-                }
-            }
-        }
-
-        // Try Groq Text Fallback
-        if (!blueprintResult && this.groq) {
-            for (const modelName of ACTIVE_GROQ_MODELS) {
-                try {
-                    const completion = await this.groq.chat.completions.create({
-                        model: modelName,
-                        messages: [
-                            { role: 'system', content: 'You are a curriculum architect. Output ONLY valid JSON.' },
-                            { role: 'user', content: blueprintPrompt }
-                        ],
-                        temperature: 0.2
-                    });
-                    const parsed = this.parseJSONResponse(completion.choices[0]?.message?.content || '{}');
-                    if (parsed && Array.isArray(parsed.units) && parsed.units.length >= 2) {
-                        blueprintResult = parsed;
-                        break;
-                    }
-                } catch (err) {
-                    console.warn(`[AIService] Groq blueprint (${modelName}) failed:`, err.message);
-                }
-            }
-        }
-
-        // If LLM produced a blueprint, ground its units into the document slices
-        if (blueprintResult && Array.isArray(blueprintResult.units) && blueprintResult.units.length > 0) {
-            try {
-                const finalUnits = blueprintResult.units.map((u, idx) => {
-                    const localMatch = organizedUnits[idx] || organizedUnits[organizedUnits.length - 1];
-                    const unitSections = localMatch?.sections || [];
-                    const sectionTitles = unitSections.map(s => s.title);
-                    const sliceText = localMatch?.text || '';
-
-                    // Generate rich theory from document slice
-                    const theoryMarkdown = this.formatGroundedTheory({
-                        unitTitle: u.title,
-                        sectionTitles,
-                        sliceText,
-                        language: targetLanguage
-                    });
-
-                    const miniCheckpoints = this.generateGroundedCheckpoints({
-                        unitTitle: u.title,
-                        sectionTitles,
-                        unitIdx: idx
-                    });
-
-                    const cbseTips = [
-                        `Remember: In ${board} examinations, pay close attention to syntax boundaries and definitions in ${sectionTitles[0] || u.title}.`,
-                        `Frequently examined question: Compare and contrast standard operations and error handling in ${u.title}.`
-                    ];
-
-                    const exercises = this.synthesizeGroundedExercises({
-                        unitIdx: idx,
-                        unitTitle: u.title,
-                        sectionTitles,
-                        sliceText,
-                        backExercises,
-                        language: targetLanguage,
-                        totalUnits: blueprintResult.units.length
-                    });
-
-                    return {
-                        unitNumber: idx + 1,
-                        title: u.title,
-                        description: u.description || `Core competencies for ${u.title}`,
-                        expectedHours: u.expectedHours || 4,
-                        unlockThreshold: u.unlockThreshold || 80,
-                        keyConcepts: Array.isArray(u.keyConcepts) && u.keyConcepts.length > 0 ? u.keyConcepts : (sectionTitles.length > 0 ? sectionTitles : [u.title]),
-                        theory: theoryMarkdown,
-                        miniCheckpoints,
-                        cbseTips,
-                        suggestedExerciseTypes: ['coding', 'code_debug', 'mcq'],
-                        exercises
-                    };
-                });
-
-                return {
-                    title: blueprintResult.title || 'Curriculum Training Module',
-                    titleHindi: blueprintResult.titleHindi || `${blueprintResult.title || 'प्रशिक्षण मॉड्यूल'} (पाठ्यक्रम)`,
-                    description: blueprintResult.description || 'Comprehensive curriculum module synthesized from document.',
-                    language: targetLanguage,
-                    boardAligned: board,
-                    classLevel: Number(classLevel) || 11,
-                    extractedSummary: `Synthesized ${finalUnits.length} progressive curriculum units deeply grounded in textbook material.`,
-                    pedagogyConfig: { useBlooms: true, useObjectives: true, useTimeLimit: false },
-                    units: finalUnits
-                };
-            } catch (mergeErr) {
-                console.warn('[AIService] Blueprint merge warning, using dynamic fallback:', mergeErr.message);
-            }
-        }
-
-        // 4. Universal Document-Grounded Dynamic Fallback (100% reliable, zero external API failure risk)
-        return this.generateDeterministicFallbackModule({
+        // 3. AI Global Section Analysis & Clustering: AI goes through ALL sections first and decides clusters
+        const plannedClusters = await this.planCurriculumClustersFromDocument({
+            extractedSections,
+            backExercises,
             documentText,
-            customPrompt,
+            targetUnitsCount,
             language: targetLanguage,
             classLevel,
             board,
-            totalUnits: targetUnitsCount,
-            originalFileName
+            customPrompt,
+            imageBase64,
+            mimeType,
+            provider
         });
+
+        let courseTitle = plannedClusters?.title || this.deepAlgorithmicTitleExtract(documentText, originalFileName) || customPrompt || 'Curriculum Training Module';
+        let courseTitleHindi = plannedClusters?.titleHindi || `${courseTitle} (पाठ्यक्रम)`;
+        let courseDescription = plannedClusters?.description || `Comprehensive ${targetLanguage} curriculum grounded in textbook materials.`;
+
+        // Normalize clusters: either from AI planner or structured 2-unit clusters from organizedUnits
+        let activeClusters = [];
+        if (plannedClusters && Array.isArray(plannedClusters.clusters) && plannedClusters.clusters.length > 0) {
+            activeClusters = plannedClusters.clusters;
+        } else {
+            // Universal fallback: Partition organized units into 2-unit progressive clusters
+            for (let i = 0; i < organizedUnits.length; i += 2) {
+                const clusterUnits = organizedUnits.slice(i, i + 2);
+                activeClusters.push({
+                    clusterIndex: activeClusters.length,
+                    clusterName: i === 0 ? 'Foundational Syntax & Mechanics' : (i + 2 >= organizedUnits.length ? 'Applied Practice & Review' : 'Core Operations & Algorithms'),
+                    units: clusterUnits
+                });
+            }
+        }
+
+        // 4. Staged Deep Generation: Generate first two units fully from all aspects before proceeding to next
+        const finalUnits = [];
+        for (const cluster of activeClusters) {
+            console.log(`[AIService] Synthesizing cluster ${cluster.clusterIndex + 1}: ${cluster.clusterName || 'Curriculum Stage'}...`);
+            const clusterUnits = cluster.units || [];
+            
+            for (const u of clusterUnits) {
+                const unitIdx = finalUnits.length;
+                if (unitIdx >= targetUnitsCount) break;
+
+                const localMatch = organizedUnits[unitIdx] || organizedUnits[organizedUnits.length - 1];
+                const unitSections = localMatch?.sections || [];
+                const sectionTitles = unitSections.map(s => s.title);
+                const sliceText = localMatch?.text || (unitSections.length > 0 ? unitSections.map(s => s.text || '').join('\n\n---\n\n') : '');
+
+                // Generate rich theory with explicit syntax blocks
+                const theoryMarkdown = this.formatGroundedTheory({
+                    unitTitle: u.title,
+                    sectionTitles,
+                    sliceText,
+                    language: targetLanguage
+                });
+
+                // Generate authentic domain checkpoints
+                const miniCheckpoints = this.generateGroundedCheckpoints({
+                    unitTitle: u.title,
+                    sectionTitles,
+                    unitIdx,
+                    sliceText,
+                    language: targetLanguage
+                });
+
+                const cbseTips = [
+                    `Remember: In ${board} examinations, pay close attention to syntax boundaries and definitions in ${sectionTitles[0] || u.title}.`,
+                    `Frequently examined question: Compare and contrast standard operations and error handling in ${u.title}.`
+                ];
+
+                // Synthesize grounded academic exercises
+                const exercises = this.synthesizeGroundedExercises({
+                    unitIdx,
+                    unitTitle: u.title,
+                    sectionTitles,
+                    sliceText,
+                    backExercises,
+                    language: targetLanguage,
+                    totalUnits: targetUnitsCount
+                });
+
+                const cleanUnitName = this.cleanTitle(u.title);
+                finalUnits.push({
+                    unitNumber: unitIdx + 1,
+                    title: cleanUnitName,
+                    description: u.description || `Comprehensive concepts, textbook theory, and hands-on exercises for ${cleanUnitName}.`,
+                    expectedHours: u.expectedHours || 4,
+                    unlockThreshold: u.unlockThreshold || 80,
+                    keyConcepts: Array.isArray(u.keyConcepts) && u.keyConcepts.length > 0 ? u.keyConcepts : (sectionTitles.length > 0 ? sectionTitles : [cleanUnitName]),
+                    theory: theoryMarkdown,
+                    miniCheckpoints,
+                    cbseTips,
+                    suggestedExerciseTypes: ['coding', 'code_debug', 'mcq'],
+                    exercises
+                });
+            }
+        }
+
+        // Ensure at least 2 units exist
+        if (finalUnits.length < 2) {
+            return this.generateDeterministicFallbackModule({
+                documentText,
+                customPrompt,
+                language: targetLanguage,
+                classLevel,
+                board,
+                totalUnits: targetUnitsCount,
+                originalFileName
+            });
+        }
+
+        return {
+            title: courseTitle,
+            titleHindi: courseTitleHindi,
+            description: courseDescription,
+            language: targetLanguage,
+            boardAligned: board,
+            classLevel: Number(classLevel) || 11,
+            extractedSummary: `Synthesized ${finalUnits.length} progressive curriculum units across ${activeClusters.length} staged deep clusters grounded in textbook material.`,
+            pedagogyConfig: { useBlooms: true, useObjectives: true, useTimeLimit: false },
+            units: finalUnits
+        };
     }
 
     /**
-     * Format rich, student-friendly Markdown theory grounded in textbook excerpts.
+     * Format rich, student-friendly Markdown theory grounded in textbook excerpts with explicit syntax blocks.
      */
     formatGroundedTheory({ unitTitle, sectionTitles = [], sliceText = '', language = 'python' }) {
         const cleanExcerpt = (sliceText || '').replace(/^#{1,4}\s+.*$/gm, '').trim();
-        const firstPara = cleanExcerpt.split(/\n\s*\n/)[0] || '';
-        const secondPara = cleanExcerpt.split(/\n\s*\n/)[1] || '';
+        const paragraphs = cleanExcerpt.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 20);
+        const detailedTheory = paragraphs.slice(0, 4).join('\n\n');
 
-        // Extract any code or table in the slice
-        const codeSnippetMatch = sliceText.match(/```[a-z]*\n([\s\S]*?)```/) ||
-            sliceText.match(/(?:(?:[a-zA-Z_]\w*\s*=\s*\[.+?\])|(?:def\s+[a-zA-Z_]\w*\(.*?\):)|(?:CREATE\s+TABLE[\s\S]+?;)|(?:SELECT\s+[\s\S]+?;))/i);
-        const featuredCode = codeSnippetMatch ? codeSnippetMatch[0].replace(/^```[a-z]*\n?|```$/g, '').trim() : '';
+        // Extract code or syntax from sliceText
+        let featuredCode = '';
+        const fencedMatch = sliceText.match(/```[a-z]*\n([\s\S]*?)```/);
+        if (fencedMatch && fencedMatch[1].trim()) {
+            featuredCode = fencedMatch[1].trim();
+        } else {
+            // Check for domain syntax in sliceText or synthesize authentic CBSE syntax
+            const lowerSlice = (sliceText + ' ' + unitTitle).toLowerCase();
+            if (language === 'sql' || (language !== 'python' && /\b(sql|database|\btable\b|rdbms|relational|ddl|dml)\b/i.test(lowerSlice))) {
+                featuredCode = `-- Standard Relational Schema DDL & DML\nCREATE TABLE Student (\n    RollNo INT PRIMARY KEY,\n    Name VARCHAR(50) NOT NULL,\n    Marks DECIMAL(5,2) CHECK (Marks >= 0)\n);\n\n-- Querying records\nSELECT RollNo, Name, Marks\nFROM Student\nWHERE Marks >= 75\nORDER BY Marks DESC;`;
+            } else if (/tuple/i.test(lowerSlice)) {
+                featuredCode = `# Creating tuples in Python\nempty_tuple = ()\nsingle_element_tuple = (5,)  # Note: Trailing comma is mandatory\nnumber_tuple = (10, 20, 30, 40)\n\n# Accessing and Slicing\nprint("First element:", number_tuple[0])\nprint("Slice [1:3]:", number_tuple[1:3])\n\n# Immutability Check\n# number_tuple[0] = 99  # Raises TypeError: 'tuple' object does not support item assignment\n\n# Tuple built-in operations\nprint("Count of 20:", number_tuple.count(20))\nprint("Length:", len(number_tuple))\nprint("Maximum element:", max(number_tuple))`;
+            } else if (/dict/i.test(lowerSlice)) {
+                featuredCode = `# Creating a dictionary in Python\nstudent_record = {\n    "roll_no": 101,\n    "name": "Priya",\n    "marks": 94.5\n}\n\n# Accessing and modifying values\nprint("Student Name:", student_record["name"])\nprint("Grade Safe Fetch:", student_record.get("grade", "N/A"))\n\n# Modifying & Adding elements\nstudent_record["marks"] = 96.0\nstudent_record["grade"] = "A+"\n\n# Iterating keys and values\nfor key, value in student_record.items():\n    print(f"{key}: {value}")`;
+            } else if (/list/i.test(lowerSlice)) {
+                featuredCode = `# Creating and manipulating Python lists\nnumbers = [10, 20, 30, 40]\n\n# Accessing and slicing\nprint("First element:", numbers[0])\nprint("Reversed list:", numbers[::-1])\n\n# List methods\nnumbers.append(50)       # Appends element to end\npopped = numbers.pop()   # Removes and returns last element\nnumbers.sort()           # In-place sorting`;
+            } else {
+                // Look for statements with def, class, =, etc.
+                const codeMatch = sliceText.match(/(?:def\s+\w+\([\s\S]*?\):[\s\S]*?(?=\n\S|$)|[a-zA-Z_]\w*\s*=\s*\([\s\S]*?\)|[a-zA-Z_]\w*\s*=\s*\{[\s\S]*?\}|[a-zA-Z_]\w*\s*=\s*\[[\s\S]*?\])/);
+                if (codeMatch) {
+                    featuredCode = codeMatch[0].trim();
+                }
+            }
+        }
 
         return `### 📘 ${unitTitle}
 
-${firstPara || `This unit introduces core principles, syntax rules, and practical applications as presented in the curriculum.`}
+${paragraphs[0] || 'This unit establishes core curriculum principles, syntax specifications, and practical algorithms as presented in the textbook.'}
 
-#### 🔑 Key Concepts & Learning Objectives
-${sectionTitles.length > 0 ? sectionTitles.map(t => `- **${t}**: Fundamental concepts, syntax, and usage`).join('\n') : `- Core principles and standard operations for ${unitTitle}`}
+#### 🔑 Key Curriculum Concepts & Learning Objectives
+${sectionTitles.length > 0 ? sectionTitles.map(t => `- **${t}**: Fundamental concepts, syntax rules, and practical applications`).join('\n') : `- Core principles and standard operations for ${unitTitle}`}
 
-${secondPara ? `#### 📖 Detailed Textbook Theory\n${secondPara}\n` : ''}
+${detailedTheory ? `#### 📖 Detailed Textbook Theory & Principles\n${detailedTheory}\n` : ''}
 
-${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n# Textbook Implementation Example\n${featuredCode}\n\`\`\`\n` : ''}
+${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${featuredCode}\n\`\`\`\n` : ''}
 
-#### 💡 Practical Takeaways & Best Practices
-- Master the fundamental syntax and rules for ${sectionTitles[0] || 'this topic'}.
-- Verify all index boundaries, variable types, and edge cases before execution.
-- Maintain readable, idiomatic code aligned with board guidelines.`;
+#### 💡 Practical Takeaways & CBSE Examination Tips
+- Ensure accurate syntax boundaries and check edge cases prior to runtime execution.
+- Review exception handling and data type immutability/mutability constraints for ${sectionTitles[0] || unitTitle}.
+- Maintain clean variable naming and modular code structure aligned with board practical guidelines.`;
     }
 
     /**
-     * Generate grounded 2-question concept checkpoints per unit.
+     * Generate grounded 2-question concept checkpoints per unit with curriculum accuracy.
      */
-    generateGroundedCheckpoints({ unitTitle, sectionTitles = [], unitIdx = 0 }) {
+    generateGroundedCheckpoints({ unitTitle = '', sectionTitles = [], unitIdx = 0, sliceText = '', language = 'python' }) {
+        const textSample = `${unitTitle} ${sectionTitles.join(' ')} ${sliceText}`.toLowerCase();
+
+        // 1. SQL / Database Domain (prioritized so relational 'tuples' are not confused with Python tuples)
+        if (language === 'sql' || (language !== 'python' && /\b(sql|database|\btable\b|relational|primary\s+key|foreign\s+key|rdbms|cardinality|degree)\b/i.test(textSample))) {
+            return [
+                {
+                    id: `cp_${unitIdx + 1}_1`,
+                    question: 'Which constraints are strictly enforced on a column designated as a PRIMARY KEY in SQL?',
+                    codeSnippet: 'CREATE TABLE Student (\n    RollNo INT PRIMARY KEY,\n    Name VARCHAR(50)\n);',
+                    options: [
+                        'UNIQUE values across all rows and NOT NULL (no missing values)',
+                        'Allows duplicate entries if foreign keys reference it',
+                        'Must always be an automatically incrementing numeric integer',
+                        'Can contain at most one NULL value per table'
+                    ],
+                    correctOption: 0,
+                    explanation: 'A Primary Key uniquely identifies each record in a relation. By relational DBMS definition, it enforces both UNIQUE and NOT NULL constraints.'
+                },
+                {
+                    id: `cp_${unitIdx + 1}_2`,
+                    question: 'In relational database theory, what do Degree and Cardinality measure?',
+                    codeSnippet: '# Relational schema properties:\n# Table: Employee (EmpID, Name, Department, Salary) with 50 rows',
+                    options: [
+                        'Degree = Number of columns (attributes); Cardinality = Number of rows (tuples)',
+                        'Degree = Number of rows (tuples); Cardinality = Number of columns (attributes)',
+                        'Degree = Total primary keys; Cardinality = Total foreign keys',
+                        'Degree = Database file size; Cardinality = Index count'
+                    ],
+                    correctOption: 0,
+                    explanation: 'Degree refers to the total number of attributes (columns) in a table, whereas Cardinality refers to the total number of tuples (rows).'
+                }
+            ];
+        }
+
+        // 2. Python Tuples Domain
+        if (/tuple/i.test(textSample)) {
+            return [
+                {
+                    id: `cp_${unitIdx + 1}_1`,
+                    question: 'Which of the following creates a valid single-element tuple in Python?',
+                    codeSnippet: '# Option A: t1 = (5)\n# Option B: t2 = (5,)\n# Option C: t3 = [5]\n# Option D: t4 = tuple(5)',
+                    options: [
+                        't = (5,) — A trailing comma is required to define a single-element tuple',
+                        't = (5) — Parentheses without a comma create a tuple',
+                        't = tuple(5) — Directly passing an integer creates a single-element tuple',
+                        't = [5] — Brackets create an immutable tuple'
+                    ],
+                    correctOption: 0,
+                    explanation: 'In Python, a trailing comma (e.g. (5,)) is required for single-element tuples; otherwise, parentheses are evaluated as an arithmetic grouping operator returning an integer.'
+                },
+                {
+                    id: `cp_${unitIdx + 1}_2`,
+                    question: 'What occurs when attempting to modify an element in a tuple, such as: t = (10, 20, 30); t[1] = 99?',
+                    codeSnippet: 't = (10, 20, 30)\nt[1] = 99  # Attempting in-place modification',
+                    options: [
+                        "TypeError: 'tuple' object does not support item assignment",
+                        'The element at index 1 is successfully updated to 99',
+                        'IndexError: tuple index out of range',
+                        'The tuple is automatically coerced into a mutable list'
+                    ],
+                    correctOption: 0,
+                    explanation: 'Tuples are strictly immutable sequences in Python. Their elements cannot be assigned, altered, or deleted in place after instantiation.'
+                }
+            ];
+        }
+
+        // 3. Python Dictionaries Domain
+        if (/(dict|key|value|mapping|frequency)/i.test(textSample)) {
+            return [
+                {
+                    id: `cp_${unitIdx + 1}_1`,
+                    question: 'Which of the following Python data types CANNOT be used as a dictionary key?',
+                    codeSnippet: '# Allowed keys: strings, numbers, tuples\n# Invalid keys: mutable objects',
+                    options: [
+                        'list (e.g., [1, 2]) — Lists are mutable and unhashable',
+                        'tuple (e.g., (1, 2)) — Tuples with immutable items are valid keys',
+                        'string (e.g., "roll_no") — Strings are immutable and hashable',
+                        'integer (e.g., 101) — Numbers are valid immutable keys'
+                    ],
+                    correctOption: 0,
+                    explanation: 'Dictionary keys must be immutable and hashable so their hash value remains constant during program execution. Lists are mutable and therefore raise TypeError: unhashable type: list.'
+                },
+                {
+                    id: `cp_${unitIdx + 1}_2`,
+                    question: 'What is the advantage of using dict.get(key, default) instead of dict[key]?',
+                    codeSnippet: 'student = {"name": "Aman", "roll": 101}\ngrade = student.get("grade", "N/A")',
+                    options: [
+                        'It returns the specified default value without raising a KeyError if the key is absent',
+                        'It permanently inserts the default value into the dictionary',
+                        'It sorts the dictionary keys before retrieving the value',
+                        'It deletes the key after reading its value'
+                    ],
+                    correctOption: 0,
+                    explanation: 'The .get(key, default) method safely retrieves values; if key is missing, it returns the provided default value (or None) rather than crashing with a KeyError.'
+                }
+            ];
+        }
+
+        // 4. Python Lists Domain
+        if (/list|array|slice|append/i.test(textSample)) {
+            return [
+                {
+                    id: `cp_${unitIdx + 1}_1`,
+                    question: 'What is the key difference between list.append(x) and list.extend(x)?',
+                    codeSnippet: 'nums = [1, 2]\nnums.append([3, 4])  # Result A\n# vs\nnums = [1, 2]\nnums.extend([3, 4])  # Result B',
+                    options: [
+                        'append() adds the argument as a single element; extend() unpacks and adds each item of the iterable',
+                        'extend() works only on numbers, while append() works on all data types',
+                        'append() mutates the list, while extend() returns a new list without modifying original',
+                        'Both methods behave identically in Python 3'
+                    ],
+                    correctOption: 0,
+                    explanation: 'append(x) inserts x as a single element (e.g., [1, 2, [3, 4]]), whereas extend(x) iterates over x and appends each element individually (e.g., [1, 2, 3, 4]).'
+                },
+                {
+                    id: `cp_${unitIdx + 1}_2`,
+                    question: 'What will be the output of slicing an existing list L with: L[::-1]?',
+                    codeSnippet: 'L = [10, 20, 30, 40]\nreversed_L = L[::-1]',
+                    options: [
+                        'A new list containing all elements of L in reverse order',
+                        'An empty list []',
+                        'A list containing only the first and last elements',
+                        'IndexError: negative step size is invalid'
+                    ],
+                    correctOption: 0,
+                    explanation: 'In Python slicing [start:stop:step], a negative step (-1) traverses the sequence backwards from end to start, reversing the list.'
+                }
+            ];
+        }
+
+        // 5. Universal Academic Fallback (for any other subject: Networks, File Handling, C++, etc.)
         const topicName = sectionTitles[0] || unitTitle;
         return [
             {
                 id: `cp_${unitIdx + 1}_1`,
-                question: `What is the primary role of ${topicName}?`,
+                question: `What fundamental principle defines ${topicName} in this curriculum?`,
+                codeSnippet: `# Core concept verification for: ${topicName}`,
                 options: [
-                    `To structure and manipulate data according to standard language rules`,
-                    `To cause intentional runtime syntax errors`,
-                    `To bypass compiler and interpreter validations`,
-                    `To create duplicate redundant files on disk`
+                    `Standard operational specifications and verified data structures defined in the curriculum`,
+                    `Uncontrolled execution without parameter or type validations`,
+                    `Bypassing boundary checks and compiler validations`,
+                    `Random runtime memory mutations`
                 ],
                 correctOption: 0,
-                explanation: `${topicName} provides structured, verified mechanisms to manage data and program logic.`
+                explanation: `${topicName} establishes structured, standardized operational rules aligned with board and industry requirements.`
             },
             {
                 id: `cp_${unitIdx + 1}_2`,
-                question: `Which practice is recommended when working with ${topicName}?`,
+                question: `When implementing solutions for ${topicName}, which engineering practice is essential?`,
+                codeSnippet: `# Best practice check for: ${topicName}`,
                 options: [
-                    `Applying standard built-in functions and verifying boundary conditions`,
-                    `Using undeclared identifiers without initialization`,
-                    `Assigning incompatible data types without explicit conversion`,
-                    `Ignoring return values and exceptions`
+                    `Verifying boundary conditions, edge cases, and expected return types`,
+                    `Ignoring return values and potential exception states`,
+                    `Re-assigning incompatible variable types without explicit conversion`,
+                    `Relying on undeclared global identifiers`
                 ],
                 correctOption: 0,
-                explanation: `Verified built-in functions and boundary checking prevent unexpected runtime exceptions.`
+                explanation: `Rigorous boundary checking and input verification prevent runtime faults and ensure high software reliability.`
             }
         ];
     }
@@ -3069,8 +3536,9 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n# T
             matchingQ = backExercises.slice(startIdx, startIdx + 2);
         }
 
+        let exercises = [];
         if (matchingQ.length > 0) {
-            return matchingQ.map(q => {
+            exercises = matchingQ.map(q => {
                 if (q.suggestedType === 'mcq') {
                     return {
                         title: `Q${q.questionNumber}: Output Prediction`,
@@ -3114,6 +3582,14 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n# T
                         hints: ['Check index boundaries, punctuation, and keyword spelling.']
                     };
                 } else {
+                    const funcInfo = this.createAcademicExerciseForTopic({
+                        topic: q.questionText.slice(0, 40),
+                        unitTitle,
+                        language,
+                        exerciseType: 'coding',
+                        index: q.questionNumber || 0
+                    });
+
                     return {
                         title: `Q${q.questionNumber}: Programming Problem`,
                         description: q.questionText,
@@ -3124,66 +3600,53 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n# T
                         learningObjective: 'Write complete solution fulfilling textbook requirements.',
                         xpReward: 30,
                         timeLimit: 6,
-                        starterCode: language === 'sql'
-                            ? '-- Write SQL query here\n'
-                            : 'def solution():\n    # Write program here\n    pass\n',
-                        solutionCode: language === 'sql'
-                            ? '-- Correct SQL query\n'
-                            : 'def solution():\n    return True\n',
-                        testCases: [
-                            { input: 'solution()', expectedOutput: 'True', isHidden: false }
-                        ],
+                        starterCode: funcInfo.starterCode,
+                        solutionCode: funcInfo.solutionCode,
+                        testCases: funcInfo.testCases,
                         hints: ['Decompose the problem into input, computation, and return steps.']
                     };
                 }
             });
         }
 
-        // Default language-grounded exercises
-        const cleanTopic = (sectionTitles[0] || unitTitle).replace(/^(?:unit\s+\d+[:\s-]*)+/i, '');
-        const funcName = cleanTopic.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20);
-
-        if (language === 'sql') {
-            return [
-                {
-                    title: `${cleanTopic} Query Practice`,
-                    description: `Write an SQL query demonstrating ${cleanTopic} as introduced in this unit.`,
-                    exerciseType: 'coding',
-                    difficulty: 'beginner',
-                    scaffoldLevel: 'guided',
-                    bloomsLevel: 'apply',
-                    learningObjective: `Execute SQL statement for ${cleanTopic}.`,
-                    xpReward: 20,
-                    timeLimit: 5,
-                    starterCode: '-- Write SQL query here\nSELECT * FROM Student;\n',
-                    solutionCode: 'SELECT * FROM Student;\n',
-                    testCases: [
-                        { input: 'SELECT * FROM Student;', expectedOutput: 'Query executed successfully', isHidden: false }
-                    ],
-                    hints: ['Review SQL keywords: SELECT, FROM, WHERE.']
-                }
-            ];
+        // Guarantee at least 2 exercises per unit by supplementing if needed
+        if (exercises.length < 2) {
+            const primaryTopic = sectionTitles[0] || unitTitle;
+            const secondaryTopic = sectionTitles[1] || primaryTopic;
+            if (exercises.length === 0) {
+                exercises.push(
+                    this.createAcademicExerciseForTopic({
+                        topic: primaryTopic,
+                        unitTitle,
+                        language,
+                        exerciseType: 'coding',
+                        index: unitIdx * 2,
+                        documentText: sliceText
+                    }),
+                    this.createAcademicExerciseForTopic({
+                        topic: secondaryTopic,
+                        unitTitle,
+                        language,
+                        exerciseType: unitIdx % 2 === 0 ? 'mcq' : 'code_debug',
+                        index: unitIdx * 2 + 1,
+                        documentText: sliceText
+                    })
+                );
+            } else if (exercises.length === 1) {
+                exercises.push(
+                    this.createAcademicExerciseForTopic({
+                        topic: secondaryTopic,
+                        unitTitle,
+                        language,
+                        exerciseType: exercises[0].exerciseType === 'coding' ? 'mcq' : 'coding',
+                        index: unitIdx * 2 + 1,
+                        documentText: sliceText
+                    })
+                );
+            }
         }
 
-        return [
-            {
-                title: `${cleanTopic} Implementation Lab`,
-                description: `Implement a function to practice ${cleanTopic} operations and logic.`,
-                exerciseType: 'coding',
-                difficulty: 'beginner',
-                scaffoldLevel: 'guided',
-                bloomsLevel: 'apply',
-                learningObjective: `Apply ${cleanTopic} syntax and algorithms programmatically.`,
-                xpReward: 20,
-                timeLimit: 5,
-                starterCode: `def solve_${funcName}(data):\n    # Implement solution\n    pass\n`,
-                solutionCode: `def solve_${funcName}(data):\n    return data\n`,
-                testCases: [
-                    { input: `solve_${funcName}([1, 2, 3])`, expectedOutput: '[1, 2, 3]', isHidden: false }
-                ],
-                hints: ['Process the input data sequence and return the result.']
-            }
-        ];
+        return exercises;
     }
 
     /**
@@ -3330,7 +3793,7 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n# T
 
             organizedUnits.push({
                 unitNumber: unitNum,
-                title: `Unit ${unitNum}: ${this.cleanTitle(rawTitle)}`,
+                title: this.cleanTitle(rawTitle),
                 sections: group,
                 text: group.map(s => s.text || '').join('\n\n---\n\n')
             });
@@ -3349,7 +3812,7 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n# T
             const lastNum = organizedUnits.length + 1;
             organizedUnits.push({
                 unitNumber: lastNum,
-                title: `Unit ${lastNum}: Applied Problem Solving & Chapter Assessment`,
+                title: 'Applied Problem Solving & Chapter Assessment',
                 sections: [{ sectionNumber: 'Ex', title: 'Chapter Assessment', text: backExercises.map(q => `${q.questionNumber}. ${q.questionText}`).join('\n') }],
                 text: `### 🎯 Chapter Assessment & Applied Review\n\nReview of core chapter problems and programming challenges extracted from the textbook:\n\n` +
                       backExercises.slice(0, 10).map(q => `**Q${q.questionNumber}**: ${q.questionText}`).join('\n\n')
@@ -3395,19 +3858,19 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n# T
         const safeUnits = organizedUnits.length > 0 ? organizedUnits : [
             {
                 unitNumber: 1,
-                title: `Unit 1: Fundamentals of ${detectedTitle}`,
+                title: `Fundamentals of ${detectedTitle}`,
                 sections: [{ title: `${detectedTitle} Foundations` }],
                 text: documentText.slice(0, 3000)
             },
             {
                 unitNumber: 2,
-                title: `Unit 2: Core Operations & Syntax`,
+                title: `Core Operations & Syntax`,
                 sections: [{ title: 'Core Operations' }],
                 text: documentText.slice(3000, 6000)
             },
             {
                 unitNumber: 3,
-                title: `Unit 3: Applied Practice & Problem Solving`,
+                title: `Applied Practice & Problem Solving`,
                 sections: [{ title: 'Problem Solving' }],
                 text: documentText.slice(6000, 9000)
             }
@@ -3425,7 +3888,9 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n# T
             const miniCheckpoints = this.generateGroundedCheckpoints({
                 unitTitle: u.title,
                 sectionTitles,
-                unitIdx: uIdx
+                unitIdx: uIdx,
+                sliceText: u.text,
+                language: detectedLang
             });
 
             const cbseTips = [
@@ -3445,7 +3910,7 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n# T
 
             return {
                 unitNumber: u.unitNumber,
-                title: u.title,
+                title: this.cleanTitle(u.title),
                 description: `Comprehensive concepts, textbook theory, and hands-on exercises for ${sectionTitles.join(', ')}.`,
                 expectedHours: 4,
                 unlockThreshold: 80,

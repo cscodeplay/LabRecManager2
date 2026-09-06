@@ -90,7 +90,7 @@ export default function TrainingModulePage() {
                                         ) : (
                                             <PlayCircle className="w-5 h-5 text-primary-500" />
                                         )}
-                                        <h2 className="text-lg font-bold text-slate-800">Unit {unit.unitNumber}: {unit.title}</h2>
+                                        <h2 className="text-lg font-bold text-slate-800">Unit {unit.unitNumber}: {unit.title?.replace(/^(?:unit\s+\d+[:\s-]*)+/i, '')}</h2>
                                     </div>
                                     <div className="flex items-center gap-3">
                                         {unlocked && (

@@ -602,7 +602,7 @@ export default function ExerciseEditorPage() {
                             {moduleData?.units?.map((unit, uIdx) => (
                                 <div key={unit.id} className="space-y-1.5">
                                     <div className="flex items-center justify-between text-xs px-2 py-1 font-bold text-slate-400">
-                                        <span className="truncate">Unit {unit.unitNumber}: {unit.title}</span>
+                                        <span className="truncate">Unit {unit.unitNumber}: {unit.title?.replace(/^(?:unit\s+\d+[:\s-]*)+/i, '')}</span>
                                         <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">
                                             ≥{unit.unlockThreshold}%
                                         </span>

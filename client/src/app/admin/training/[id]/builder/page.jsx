@@ -8,7 +8,7 @@ import {
     Lightbulb, Trash2, Edit3, Lock, Trophy, CheckCircle,
     AlertTriangle, XCircle, Sparkles, FlaskConical, Eye,
     GripVertical, Send, Users, Calendar, Globe, Settings, Clock,
-    CheckSquare, FileText, Code2, RefreshCw
+    CheckSquare, FileText, Code2, RefreshCw, X
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api, { trainingAPI, classesAPI } from '@/lib/api';
@@ -751,12 +751,23 @@ export default function PedagogyBuilderPage() {
         try {
             const res = await trainingAPI.getUnitTheory(unit.id);
             const data = res.data?.data?.unit || {};
+            const rawCheckpoints = Array.isArray(data.miniCheckpoints) ? data.miniCheckpoints : [];
+            const normalizedCheckpoints = rawCheckpoints.map((cp, idx) => ({
+                id: cp.id || `cp_${Date.now()}_${idx}`,
+                question: cp.question || '',
+                codeSnippet: cp.codeSnippet || '',
+                options: Array.isArray(cp.options) && cp.options.length >= 4 
+                    ? cp.options 
+                    : [...(Array.isArray(cp.options) ? cp.options : []), '', '', '', ''].slice(0, 4),
+                correctOption: typeof cp.correctOption === 'number' ? cp.correctOption : 0,
+                explanation: cp.explanation || ''
+            }));
             setTheoryForm({
                 unitId: unit.id,
                 title: data.title || unit.title,
                 summary: data.summary || '',
                 content: data.content || '',
-                miniCheckpoints: Array.isArray(data.miniCheckpoints) ? data.miniCheckpoints : [],
+                miniCheckpoints: normalizedCheckpoints,
                 cbseTips: Array.isArray(data.cbseTips) ? data.cbseTips : []
             });
             setShowTheoryModal(true);
@@ -1044,7 +1055,7 @@ export default function PedagogyBuilderPage() {
                                                     {unit.unitNumber}
                                                 </div>
                                                 <div className="min-w-0 flex-1">
-                                                    <div className="text-xs font-bold truncate">{unit.title}</div>
+                                                    <div className="text-xs font-bold truncate">{unit.title?.replace(/^(?:unit\s+\d+[:\s-]*)+/i, '')}</div>
                                                     <div className="text-[10px] text-slate-400 mt-0.5">{unit.exercises?.length || 0} exercises</div>
                                                 </div>
                                             </div>
@@ -1106,7 +1117,7 @@ export default function PedagogyBuilderPage() {
                                                 </span>
                                             )}
                                         </div>
-                                        <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{activeUnit.title}</h2>
+                                        <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{activeUnit.title?.replace(/^(?:unit\s+\d+[:\s-]*)+/i, '')}</h2>
                                         {activeUnit.description && (
                                             <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">{activeUnit.description}</p>
                                         )}

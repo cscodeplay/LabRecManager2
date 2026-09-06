@@ -2036,7 +2036,37 @@ router.post('/ai/theory', authenticate, asyncHandler(async (req, res) => {
         });
     } catch (err) {
         console.error('[AI Theory Error]:', err.message);
-        res.status(500).json({ success: false, message: err.message || 'Failed to synthesize theory' });
+        // Seamless fallback so the theory endpoint never throws 500
+        const topicToUse = payload.topic || payload.unitTitle || 'Unit Theory';
+        const fallbackTheory = aiService.formatGroundedTheory({
+            unitTitle: payload.unitTitle || topicToUse,
+            sectionTitles: [topicToUse],
+            sliceText: payload.documentText || '',
+            language: payload.language || 'python'
+        });
+        const fallbackCheckpoints = aiService.generateGroundedCheckpoints({
+            unitTitle: payload.unitTitle || topicToUse,
+            sectionTitles: [topicToUse],
+            unitIdx: 0,
+            sliceText: payload.documentText || '',
+            language: payload.language || 'python'
+        });
+        res.json({
+            success: true,
+            data: {
+                theory: {
+                    summary: `Fundamental concepts and rules of ${topicToUse}`,
+                    theoryMarkdown: fallbackTheory,
+                    contentMarkdown: fallbackTheory,
+                    content: fallbackTheory,
+                    miniCheckpoints: fallbackCheckpoints,
+                    cbseTips: [
+                        `CBSE Tip: Pay close attention to syntax boundaries and exception cases in ${topicToUse}.`,
+                        `Common Pitfall: Ensure variables and data types are verified before operations.`
+                    ]
+                }
+            }
+        });
     }
 }));
 
@@ -2073,7 +2103,23 @@ router.post('/ai/exercise', authenticate, asyncHandler(async (req, res) => {
         });
     } catch (err) {
         console.error('[AI Exercise Error]:', err.message);
-        res.status(500).json({ success: false, message: err.message || 'Failed to synthesize exercise' });
+        const fallbackEx = aiService.createAcademicExerciseForTopic({
+            topic: payload.topic || 'Core Programming',
+            unitTitle: payload.unitTitle || '',
+            language: payload.language || 'python',
+            exerciseType: payload.exerciseType || 'coding',
+            difficulty: payload.difficulty || 'beginner',
+            scaffoldLevel: payload.scaffoldLevel || 'guided',
+            bloomsLevel: payload.bloomsLevel || 'apply',
+            index: 0,
+            documentText: payload.documentText || ''
+        });
+        res.json({
+            success: true,
+            data: {
+                exercise: fallbackEx
+            }
+        });
     }
 }));
 
@@ -2108,7 +2154,32 @@ router.post('/ai/exercises/batch', authenticate, asyncHandler(async (req, res) =
         });
     } catch (err) {
         console.error('[AI Exercise Batch Error]:', err.message);
-        res.status(500).json({ success: false, message: err.message || 'Failed to generate exercises batch' });
+        const targetCount = Math.max(1, Math.min(8, parseInt(payload.count) || 3));
+        const fallbackExercises = [];
+        const topicsList = Array.isArray(payload.topics) && payload.topics.length > 0 
+            ? payload.topics 
+            : [payload.unitTitle || 'Core Syntax'];
+        
+        for (let i = 0; i < targetCount; i++) {
+            const topic = topicsList[i % topicsList.length];
+            const exType = payload.exerciseType === 'mixed'
+                ? (i === 1 ? 'mcq' : (i === 2 ? 'code_debug' : 'coding'))
+                : (payload.exerciseType || 'coding');
+            fallbackExercises.push(aiService.createAcademicExerciseForTopic({
+                topic,
+                unitTitle: payload.unitTitle || '',
+                language: payload.language || 'python',
+                exerciseType: exType,
+                index: i,
+                documentText: payload.documentText || ''
+            }));
+        }
+        res.json({
+            success: true,
+            data: {
+                exercises: fallbackExercises
+            }
+        });
     }
 }));
 
