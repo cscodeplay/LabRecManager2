@@ -2176,6 +2176,100 @@ router.post('/ai/from-document', authenticate, asyncHandler(async (req, res) => 
 }));
 
 /**
+ * Cleans, unwraps line breaks, and formats raw extracted PDF text into structured Markdown.
+ */
+function formatAndStyleDocumentText(rawText) {
+    if (!rawText || typeof rawText !== 'string') return '';
+    let text = rawText
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n');
+
+    // Remove pagination & NCERT artifacts
+    text = text.replace(/^[ \t]*(?:chapter\s*[0-9ivx.-]*\.indd|rationali[sz]ed\s*\d{4}[-\d]*|[0-9]+\s+computer\s+science|computer\s+science\s+[–-]\s+class\s*[ivx0-9]+|page\s*[0-9]+).*$/gmi, '');
+    text = text.replace(/\b\d{1,2}-[A-Za-z]{3}-\d{2,4}\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?\b/gi, '');
+
+    // Fix hyphenated line breaks
+    text = text.replace(/([A-Za-z]{2,})-\s*\n\s*([a-z]{2,})/g, '$1$2');
+
+    const rawLines = text.split('\n');
+    const processedLines = [];
+    let currentParagraph = [];
+
+    const flushParagraph = () => {
+        if (currentParagraph.length > 0) {
+            const joined = currentParagraph.join(' ').replace(/[ \t]{2,}/g, ' ').trim();
+            if (joined) processedLines.push(joined);
+            currentParagraph = [];
+        }
+    };
+
+    for (let i = 0; i < rawLines.length; i++) {
+        let line = rawLines[i].trim();
+        if (!line) {
+            flushParagraph();
+            continue;
+        }
+
+        const isBullet = /^[»•›▪▫*o\-]\s+/i.test(line);
+        if (isBullet) {
+            flushParagraph();
+            const cleanBulletText = line.replace(/^[»•›▪▫*o\-]\s+/i, '').replace(/\s+/g, ' ').trim();
+            processedLines.push(`- ${cleanBulletText}`);
+            continue;
+        }
+
+        const chapterMatch = line.match(/^(?:chapter|unit)\s+([0-9ivx]+)[:\-\s]+(.+)/i);
+        if (chapterMatch) {
+            flushParagraph();
+            processedLines.push(`\n## Chapter ${chapterMatch[1]}: ${chapterMatch[2].trim()}\n`);
+            continue;
+        }
+
+        const sectionMatch = line.match(/^(\d+\.\d+(?:\.\d+)?)\s+([A-Za-z0-9\s,–\-()&]+)$/);
+        if (sectionMatch && sectionMatch[2].length <= 65) {
+            flushParagraph();
+            processedLines.push(`\n### ${sectionMatch[1]} ${sectionMatch[2].trim()}\n`);
+            continue;
+        }
+
+        const isHeadingCandidate = line.length >= 4 && line.length <= 55 &&
+            !/[.,;:]$/.test(line) &&
+            !/^(and|or|the|in|at|by|for|with|to|from|is|are|which|that)\b/i.test(line) &&
+            (line === line.toUpperCase() && /[A-Z]/.test(line) || /^[A-Z][A-Za-z0-9\s,–\-()]{3,50}$/.test(line)) &&
+            (rawLines[i + 1]?.trim() === '' || i === 0);
+
+        if (isHeadingCandidate && !isBullet) {
+            flushParagraph();
+            processedLines.push(`\n### ${line}\n`);
+            continue;
+        }
+
+        if (/^(SELECT|CREATE\s+TABLE|INSERT\s+INTO|UPDATE|DELETE\s+FROM|ALTER\s+TABLE)\b/i.test(line)) {
+            flushParagraph();
+            processedLines.push(`\`\`\`sql\n${line}`);
+            let qIdx = i + 1;
+            while (qIdx < rawLines.length && rawLines[qIdx].trim() && !/^[A-Z0-9.\s]+:/.test(rawLines[qIdx].trim())) {
+                processedLines.push(rawLines[qIdx].trim());
+                if (rawLines[qIdx].trim().endsWith(';')) {
+                    qIdx++;
+                    break;
+                }
+                qIdx++;
+            }
+            processedLines.push('```\n');
+            i = qIdx - 1;
+            continue;
+        }
+
+        currentParagraph.push(line);
+    }
+    flushParagraph();
+
+    return processedLines.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
  * @route   POST /api/training/ai/rag/upload
  * @desc    Upload syllabus document for RAG, save to Documents > RAG Documents folder, and extract text
  * @access  Private (Admin/Instructor/Principal)
@@ -2255,6 +2349,9 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
     } else if (req.file.mimetype.startsWith('text/') || ['txt', 'md', 'json', 'py', 'csv'].includes(ext)) {
         extractedText = req.file.buffer.toString('utf8');
     }
+
+    // Format and style extracted text into structured Markdown
+    extractedText = formatAndStyleDocumentText(extractedText);
 
     // 3. Deep Analysis of Sufficient PDF content to extract Course Title and Metadata
     const isDbInitially = /\b(database|sql|dbms|rdbms|relational|create\s+table|primary\s+key|foreign\s+key)\b/i.test((extractedText || '').toLowerCase());

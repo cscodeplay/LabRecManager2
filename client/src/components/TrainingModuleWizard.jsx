@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import api, { trainingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import MathRenderer from '@/components/MathRenderer';
+import { formatAndStyleDocumentText, getTextStats } from '@/lib/textUtils';
 
 const STEP_TITLES = [
     { step: 1, title: 'Blueprint & Meta', desc: 'Title, Language & Board' },
@@ -47,6 +49,7 @@ export default function TrainingModuleWizard({
     const [isAnalyzingTitle, setIsAnalyzingTitle] = useState(false);
     const [step1FileName, setStep1FileName] = useState('');
     const [step1DocumentText, setStep1DocumentText] = useState('');
+    const [step1TextMode, setStep1TextMode] = useState('formatted'); // 'formatted' | 'edit'
     const [step1ImageBase64, setStep1ImageBase64] = useState(null);
     const [step1MimeType, setStep1MimeType] = useState('image/jpeg');
     const [ragKeyTopics, setRagKeyTopics] = useState([]);
@@ -695,7 +698,13 @@ export default function TrainingModuleWizard({
         setStep1AiMode('rag');
         setIsAnalyzingTitle(true);
 
-        const toastId = toast.loading(`📖 Reading sufficient PDF content from "${file.name}" with Gemini AI...`);
+        const toastId = toast.loading(`📖 Reading & extracting curriculum content from "${file.name}"...`);
+
+        let uploadSucceeded = false;
+        let finalExtractedText = '';
+        let finalTitle = cleanFileTitle;
+        let finalLang = 'python';
+        let keyTopicsList = [];
 
         try {
             const formData = new FormData();
@@ -705,8 +714,6 @@ export default function TrainingModuleWizard({
             if (uploadRes.data?.success) {
                 const {
                     extractedText,
-                    imageBase64,
-                    mimeType,
                     suggestedTitle,
                     titleHindi,
                     description,
@@ -714,21 +721,21 @@ export default function TrainingModuleWizard({
                     keyTopics
                 } = uploadRes.data.data;
 
-                if (Array.isArray(keyTopics) && keyTopics.length > 0) {
-                    setRagKeyTopics(keyTopics);
+                uploadSucceeded = true;
+                finalExtractedText = formatAndStyleDocumentText(extractedText || '');
+                keyTopicsList = Array.isArray(keyTopics) ? keyTopics : [];
+                finalTitle = (suggestedTitle && suggestedTitle.trim().length >= 4) ? suggestedTitle.trim() : cleanFileTitle;
+                const isSqlDomain = /(database|sql|dbms|rdbms|relational)/i.test(finalTitle + ' ' + finalExtractedText);
+                finalLang = suggestedLanguage || (isSqlDomain ? 'sql' : 'python');
+
+                if (keyTopicsList.length > 0) {
+                    setRagKeyTopics(keyTopicsList);
                 }
 
-                if (extractedText) {
-                    setStep1DocumentText(extractedText);
+                if (finalExtractedText) {
+                    setStep1DocumentText(finalExtractedText);
+                    setStep1TextMode('formatted');
                 }
-                if (imageBase64) {
-                    setStep1ImageBase64(imageBase64);
-                    setStep1MimeType(mimeType || file.type);
-                }
-
-                const finalTitle = (suggestedTitle && suggestedTitle.trim().length >= 4) ? suggestedTitle.trim() : cleanFileTitle;
-                const isSqlDomain = /(database|sql|dbms|rdbms|relational)/i.test(finalTitle + ' ' + (extractedText || ''));
-                const finalLang = suggestedLanguage || (isSqlDomain ? 'sql' : 'python');
 
                 setModuleForm(prev => ({
                     ...prev,
@@ -740,23 +747,14 @@ export default function TrainingModuleWizard({
                 setStep1AiPrompt(finalTitle);
                 setIsAnalyzingTitle(false);
 
-                toast.success(`📖 Analyzed "${file.name}" & synthesized title: "${finalTitle}"!`, { id: toastId });
-
-                // Automatically build the entire module (Units, Theory, Checkpoints, Exercises)
-                await buildCompleteCourseFromDocument({
-                    docText: extractedText,
-                    imgBase64: imageBase64,
-                    mime: mimeType || file.type,
-                    suggestedTitle: finalTitle,
-                    promptHint: finalTitle,
-                    language: finalLang,
-                    keyTopics: Array.isArray(keyTopics) ? keyTopics : []
-                });
-            } else {
-                throw new Error(uploadRes.data?.message || 'Upload failed');
+                toast.success(`📖 Analyzed "${file.name}" & extracted ${finalExtractedText.length} chars of curriculum text!`, { id: toastId });
             }
         } catch (uploadErr) {
             console.warn('Backend RAG upload failed, falling back to client FileReader:', uploadErr);
+        }
+
+        // If backend upload failed, fallback for images and plain text files
+        if (!uploadSucceeded) {
             setIsAnalyzingTitle(false);
             setModuleForm(prev => ({ ...prev, title: prev.title?.trim() ? prev.title : cleanFileTitle }));
             setStep1AiPrompt(cleanFileTitle);
@@ -776,39 +774,44 @@ export default function TrainingModuleWizard({
                     });
                 };
                 reader.readAsDataURL(file);
-            } else {
+                return;
+            } else if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
                 const reader = new FileReader();
                 reader.onload = async () => {
-                    if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
-                        const text = reader.result;
-                        setStep1DocumentText(text);
-                        toast.success(`📄 "${file.name}" loaded (${text.length} chars) for RAG Grounding`, { id: toastId });
-                        await buildCompleteCourseFromDocument({
-                            docText: text,
-                            suggestedTitle: cleanFileTitle,
-                            promptHint: cleanFileTitle
-                        });
-                    } else {
-                        // PDF binary fallback
-                        const base64 = typeof reader.result === 'string' ? reader.result.split(',')[1] : null;
-                        if (base64) {
-                            setStep1ImageBase64(base64);
-                            setStep1MimeType(file.type || 'application/pdf');
-                        }
-                        toast.success(`📄 "${file.name}" loaded for RAG Grounding`, { id: toastId });
-                        await buildCompleteCourseFromDocument({
-                            imgBase64: base64,
-                            mime: file.type || 'application/pdf',
-                            suggestedTitle: cleanFileTitle,
-                            promptHint: cleanFileTitle
-                        });
-                    }
+                    const text = reader.result;
+                    const styled = formatAndStyleDocumentText(text);
+                    setStep1DocumentText(styled);
+                    setStep1TextMode('formatted');
+                    finalExtractedText = styled;
+                    toast.success(`📄 "${file.name}" loaded (${styled.length} chars) for RAG Grounding`, { id: toastId });
+                    await buildCompleteCourseFromDocument({
+                        docText: styled,
+                        suggestedTitle: cleanFileTitle,
+                        promptHint: cleanFileTitle
+                    });
                 };
-                if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
-                    reader.readAsText(file);
-                } else {
-                    reader.readAsDataURL(file);
-                }
+                reader.readAsText(file);
+                return;
+            } else {
+                toast.error(`Unable to parse PDF on server. Please copy/paste the syllabus text or retry upload.`, { id: toastId });
+                return;
+            }
+        }
+
+        // Automatically synthesize complete course (Units, Theory, Checkpoints, Exercises)
+        // Wrapped in an isolated try/catch so if synthesis times out or errors, the extracted text is NEVER lost!
+        if (finalExtractedText) {
+            try {
+                await buildCompleteCourseFromDocument({
+                    docText: finalExtractedText,
+                    suggestedTitle: finalTitle,
+                    promptHint: finalTitle,
+                    language: finalLang,
+                    keyTopics: keyTopicsList
+                });
+            } catch (synthErr) {
+                console.warn('Course synthesis error:', synthErr);
+                toast.error('Curriculum synthesis took too long, but your text was successfully extracted! Click "✨ Synthesize Grounded Course" to generate units.');
             }
         }
     };
@@ -1751,16 +1754,93 @@ export default function TrainingModuleWizard({
                                             </div>
                                         </div>
 
-                                        <div>
-                                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                                                Or Paste Syllabus Curriculum Text Directly:
-                                            </label>
-                                            <textarea
-                                                value={step1DocumentText}
-                                                onChange={e => setStep1DocumentText(e.target.value)}
-                                                placeholder="Paste chapter excerpts, topic lists, syllabus learning outcomes here..."
-                                                className="input h-20 text-xs font-mono"
-                                            />
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                                        <FileText className="w-3.5 h-3.5 text-indigo-500" />
+                                                        Syllabus Curriculum Resource Text:
+                                                    </label>
+                                                    {step1DocumentText?.trim() && (
+                                                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800">
+                                                            {getTextStats(step1DocumentText).characters.toLocaleString()} chars • ~{getTextStats(step1DocumentText).words.toLocaleString()} words
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex items-center gap-1.5">
+                                                    {step1DocumentText?.trim() && (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const styled = formatAndStyleDocumentText(step1DocumentText);
+                                                                    setStep1DocumentText(styled);
+                                                                    setStep1TextMode('formatted');
+                                                                    toast.success('✨ Text formatted into structured Markdown headings & paragraphs');
+                                                                }}
+                                                                className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800"
+                                                                title="Auto-format lines, headings & bullet points into Markdown"
+                                                            >
+                                                                <Sparkles className="w-3 h-3" /> Format & Style
+                                                            </button>
+
+                                                            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setStep1TextMode('formatted')}
+                                                                    className={`px-2 py-0.5 rounded-md transition flex items-center gap-1 ${
+                                                                        step1TextMode === 'formatted'
+                                                                            ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs font-bold'
+                                                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                                    }`}
+                                                                >
+                                                                    <Eye className="w-3 h-3" /> Formatted
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setStep1TextMode('edit')}
+                                                                    className={`px-2 py-0.5 rounded-md transition flex items-center gap-1 ${
+                                                                        step1TextMode === 'edit'
+                                                                            ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs font-bold'
+                                                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                                    }`}
+                                                                >
+                                                                    <Edit3 className="w-3 h-3" /> Raw Text
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {step1TextMode === 'formatted' && step1DocumentText?.trim() ? (
+                                                <div className="relative rounded-2xl border border-indigo-100 dark:border-indigo-900/60 bg-slate-50/90 dark:bg-slate-900/90 overflow-hidden shadow-inner">
+                                                    <div className="h-44 overflow-y-auto p-4 text-xs font-sans leading-relaxed text-slate-800 dark:text-slate-200 space-y-2">
+                                                        <MathRenderer
+                                                            content={step1DocumentText}
+                                                            className="prose dark:prose-invert max-w-none text-xs text-slate-800 dark:text-slate-200 leading-relaxed font-sans"
+                                                        />
+                                                    </div>
+                                                    <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 text-[10px] text-slate-500 font-medium shadow-2xs">
+                                                        <span>📖 Styled Document Preview</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setStep1TextMode('edit')}
+                                                            className="text-indigo-600 dark:text-indigo-400 hover:underline font-bold ml-1"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <textarea
+                                                    value={step1DocumentText}
+                                                    onChange={e => setStep1DocumentText(e.target.value)}
+                                                    placeholder="Paste chapter excerpts, topic lists, syllabus learning outcomes, or SQL statements here..."
+                                                    className="input h-44 text-xs font-mono p-3 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800 focus:ring-2 focus:ring-indigo-500/20"
+                                                />
+                                            )}
                                         </div>
 
                                         <div className="flex items-center justify-between pt-1">

@@ -2455,17 +2455,25 @@ Output MUST be ONLY valid JSON matching this schema:
             return false;
         };
 
+        const stripPunct = (s) => (s || '')
+            .replace(/^[»•›▪▫*_\-#\s\t\x00-\x1F\u2022\u2023\u25E6\u2043\u2219]+|[»•›▪▫*_\-#\s\t\x00-\x1F\u2022\u2023\u25E6\u2043\u2219]+$/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
         for (const line of lines.slice(0, 80)) {
-            const match = line.match(/^(?:unit\s+[ivx0-9]+|chapter\s+[ivx0-9]+|module\s+[ivx0-9]+|topic|course|subject)[:\-\s]+(.+)/i);
+            const cleanLine = stripPunct(line);
+            const match = cleanLine.match(/^(?:unit\s+[ivx0-9]+|chapter\s+[ivx0-9]+|module\s+[ivx0-9]+|topic|course|subject)[:\-\s]+(.+)/i);
             if (match && match[1]) {
-                let cand = match[1].replace(/^[#*_\s]+|[#*_\s]+$/g, '').trim();
+                let cand = stripPunct(match[1]);
                 cand = cand.replace(/^(code|no\.?|subject code)\s*[:\-]?\s*[0-9]+/i, '').trim();
+                cand = stripPunct(cand);
                 if (cand.length >= 6 && cand.length <= 80 && !isSuperficial(cand)) {
                     candidateHeaders.push(cand);
                 }
-            } else if (line.length >= 8 && line.length <= 85 && !isSuperficial(line) && !line.startsWith('http')) {
-                if (/(database|sql|rdbms|dbms|relational|computer science|programming|data structures|algorithms|computer systems|networks|math library|cyber|computational thinking|artificial intelligence|machine learning|web development)/i.test(line)) {
-                    const cleaned = line.replace(/^(class\s*[ivx0-9]+\s*[:\-]?\s*)/i, '').replace(/^[#*_\s]+|[#*_\s]+$/g, '').trim();
+            } else if (cleanLine.length >= 8 && cleanLine.length <= 85 && !isSuperficial(cleanLine) && !cleanLine.startsWith('http')) {
+                if (/(database|sql|rdbms|dbms|relational|computer science|programming|data structures|algorithms|computer systems|networks|math library|cyber|computational thinking|artificial intelligence|machine learning|web development)/i.test(cleanLine)) {
+                    let cleaned = cleanLine.replace(/^(class\s*[ivx0-9]+\s*[:\-]?\s*)/i, '').trim();
+                    cleaned = stripPunct(cleaned);
                     if (!isSuperficial(cleaned)) {
                         candidateHeaders.push(cleaned);
                     }
@@ -2477,7 +2485,10 @@ Output MUST be ONLY valid JSON matching this schema:
             // Prioritize headers with rich curriculum concepts over generic lines
             const topSubject = candidateHeaders.find(h => /(database|sql|rdbms|relational|computer science|computational thinking|programming|computer systems|data structure|network)/i.test(h));
             const bestHeader = topSubject || candidateHeaders.find(h => /(database|sql|rdbms|relational|python|math|class\s+[A-Za-z]|data\s+structure|network)/i.test(h)) || candidateHeaders[0];
-            if (bestHeader) return bestHeader.replace(/^(unit|chapter|module|topic|course|subject)\s*[:\-]\s*/i, '').trim();
+            if (bestHeader) {
+                const unwrapped = bestHeader.replace(/^(unit|chapter|module|topic|course|subject)\s*[:\-]\s*/i, '').trim();
+                return stripPunct(unwrapped);
+            }
         }
 
         // Domain density clear winners
@@ -2915,8 +2926,10 @@ Output MUST be ONLY valid JSON matching this schema:
         totalUnits = 3,
         originalFileName = ''
     }) {
-        const lowerDoc = (documentText + ' ' + customPrompt).toLowerCase();
-        const isDatabaseModule = /\b(database|sql|dbms|rdbms|relational|create\s+table|primary\s+key|foreign\s+key|select\s+.*from|ddl|dml|mysql|sqlite|table|query|schema)\b/i.test(lowerDoc);
+        const lowerDoc = (documentText + ' ' + customPrompt + ' ' + (originalFileName || '')).toLowerCase();
+        const isDatabaseModule = language === 'sql' ||
+            /\b(database|sql|dbms|rdbms|relational|create\s+table|primary\s+key|foreign\s+key|select\s+.*from|ddl|dml|mysql|sqlite|table|query|schema)\b/i.test(lowerDoc) ||
+            /\b(database|dbms|rdbms|sql)\b/i.test(originalFileName || '');
         const isMathModule = !isDatabaseModule && (lowerDoc.includes('math') || lowerDoc.includes('numeric') || lowerDoc.includes('ceil') || lowerDoc.includes('trigonometry'));
         const isOopModule = !isDatabaseModule && !isMathModule && (
             /(?:\bclass\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:\([a-zA-Z0-9_,\s]*\))?\s*:|\b(?:object-oriented|object\s+oriented|inheritance|polymorphism|encapsulation|__init__|subclass|superclass|method\s+overriding|abstract\s+class)\b)/i.test(lowerDoc)

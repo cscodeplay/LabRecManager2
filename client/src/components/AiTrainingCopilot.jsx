@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { trainingAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import MathRenderer from '@/components/MathRenderer';
+import { formatAndStyleDocumentText, getTextStats } from '@/lib/textUtils';
 
 const PRESETS = {
     outline: [
@@ -71,6 +73,7 @@ export default function AiTrainingCopilot({
     
     // RAG Document & Vision State
     const [documentText, setDocumentText] = useState('');
+    const [ragTextMode, setRagTextMode] = useState('formatted'); // 'formatted' | 'edit'
     const [uploadedFileName, setUploadedFileName] = useState('');
     const [imageBase64, setImageBase64] = useState(null);
     const [imageMimeType, setImageMimeType] = useState('image/jpeg');
@@ -99,40 +102,58 @@ export default function AiTrainingCopilot({
         }
     }, [isOpen, activeTab, context]);
 
-    const handleFileUpload = (e) => {
+    const handleFileUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         setUploadedFileName(file.name);
 
-        if (file.type.startsWith('image/')) {
+        if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+            const toastId = toast.loading(`📖 Reading & extracting curriculum from "${file.name}"...`);
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                const uploadRes = await trainingAPI.uploadRagDocument(formData);
+
+                if (uploadRes.data?.success) {
+                    const { extractedText, suggestedTitle, suggestedLanguage } = uploadRes.data.data;
+                    const styled = formatAndStyleDocumentText(extractedText || '');
+                    setDocumentText(styled);
+                    setRagTextMode('formatted');
+                    setTab('rag');
+                    if (suggestedTitle) setPrompt(suggestedTitle);
+                    if (suggestedLanguage) setLanguage(suggestedLanguage);
+                    toast.success(`📖 Extracted ${styled.length} chars of curriculum text from "${file.name}"!`, { id: toastId });
+                } else {
+                    throw new Error(uploadRes.data?.message || 'Failed to extract text from PDF');
+                }
+            } catch (err) {
+                console.error('PDF upload error in Copilot:', err);
+                toast.error(`Unable to parse PDF on server: ${err.message || 'Please paste text directly'}`, { id: toastId });
+            }
+        } else if (file.type.startsWith('image/')) {
             const reader = new FileReader();
             reader.onload = () => {
                 const base64 = reader.result.split(',')[1];
                 setImageBase64(base64);
                 setImageMimeType(file.type);
+                setTab('rag');
                 toast.success(`📸 Image "${file.name}" loaded for Vision RAG Grounding`);
             };
             reader.readAsDataURL(file);
-        } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf') || file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+        } else if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
             const reader = new FileReader();
             reader.onload = () => {
                 const text = reader.result;
                 if (typeof text === 'string') {
-                    setDocumentText(text);
-                    toast.success(`📄 "${file.name}" text loaded (${text.length} chars) for RAG Grounding`);
-                } else {
-                    const base64 = reader.result.split(',')[1];
-                    setImageBase64(base64);
-                    setImageMimeType(file.type || 'application/pdf');
-                    toast.success(`📄 Document "${file.name}" loaded for RAG Grounding`);
+                    const styled = formatAndStyleDocumentText(text);
+                    setDocumentText(styled);
+                    setRagTextMode('formatted');
+                    setTab('rag');
+                    toast.success(`📄 "${file.name}" text loaded (${styled.length} chars) for RAG Grounding`);
                 }
             };
-            if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
-                reader.readAsText(file);
-            } else {
-                reader.readAsDataURL(file);
-            }
+            reader.readAsText(file);
         } else {
             toast.error('Supported formats: PDF, Images (PNG/JPG), TXT, Markdown');
         }
@@ -423,15 +444,89 @@ export default function AiTrainingCopilot({
                         {/* Tab 4: RAG Resource Paste Area (If Tab === 'rag') */}
                         {tab === 'rag' && (
                             <div className="space-y-2">
-                                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 block">
-                                    Resource Text / Chapter Notes
-                                </label>
-                                <textarea
-                                    value={documentText}
-                                    onChange={e => setDocumentText(e.target.value)}
-                                    placeholder="Paste chapter excerpts, lab manual experiments, syllabus topics, or code examples here..."
-                                    className="w-full h-24 p-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono focus:ring-2 focus:ring-purple-500/20 outline-none"
-                                />
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 block">
+                                            Resource Text / Chapter Notes
+                                        </label>
+                                        {documentText?.trim() && (
+                                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-800">
+                                                {getTextStats(documentText).characters.toLocaleString()} chars • ~{getTextStats(documentText).words.toLocaleString()} words
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {documentText?.trim() && (
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const styled = formatAndStyleDocumentText(documentText);
+                                                    setDocumentText(styled);
+                                                    setRagTextMode('formatted');
+                                                    toast.success('✨ Text formatted into structured Markdown');
+                                                }}
+                                                className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800"
+                                                title="Format text into Markdown headings & paragraphs"
+                                            >
+                                                <Sparkles className="w-3 h-3" /> Format & Style
+                                            </button>
+
+                                            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setRagTextMode('formatted')}
+                                                    className={`px-2 py-0.5 rounded-md transition flex items-center gap-1 ${
+                                                        ragTextMode === 'formatted'
+                                                            ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
+                                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                    }`}
+                                                >
+                                                    <Eye className="w-3 h-3" /> Formatted
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setRagTextMode('edit')}
+                                                    className={`px-2 py-0.5 rounded-md transition flex items-center gap-1 ${
+                                                        ragTextMode === 'edit'
+                                                            ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
+                                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                    }`}
+                                                >
+                                                    <Edit3 className="w-3 h-3" /> Raw
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {ragTextMode === 'formatted' && documentText?.trim() ? (
+                                    <div className="relative rounded-2xl border border-purple-200 dark:border-purple-800/60 bg-slate-50/90 dark:bg-slate-900/90 overflow-hidden shadow-inner">
+                                        <div className="h-36 overflow-y-auto p-3 text-xs font-sans leading-relaxed text-slate-800 dark:text-slate-200 space-y-2">
+                                            <MathRenderer
+                                                content={documentText}
+                                                className="prose dark:prose-invert max-w-none text-xs text-slate-800 dark:text-slate-200 leading-relaxed font-sans"
+                                            />
+                                        </div>
+                                        <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs px-2.5 py-0.5 rounded-xl border border-slate-200 dark:border-slate-700 text-[10px] text-slate-500 font-medium">
+                                            <span>📖 Styled Preview</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setRagTextMode('edit')}
+                                                className="text-purple-600 dark:text-purple-400 hover:underline font-bold ml-1"
+                                            >
+                                                Edit
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <textarea
+                                        value={documentText}
+                                        onChange={e => setDocumentText(e.target.value)}
+                                        placeholder="Paste chapter excerpts, lab manual experiments, syllabus topics, or code examples here..."
+                                        className="w-full h-36 p-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono focus:ring-2 focus:ring-purple-500/20 outline-none"
+                                    />
+                                )}
                             </div>
                         )}
 

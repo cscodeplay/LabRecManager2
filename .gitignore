@@ -37,6 +37,7 @@ Thumbs.db
 # Uploads (user generated content)
 server/uploads/
 uploads/
+RAG/
 
 # Testing
 coverage/
