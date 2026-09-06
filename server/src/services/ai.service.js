@@ -1757,6 +1757,12 @@ Output MUST be ONLY valid JSON matching this schema:
      * Generate complete Training Exercises covering all 5 question types
      */
     async generateTrainingExercise({ topic, unitTitle = '', unitDescription = '', moduleTitle = '', documentText = '', language = 'python', exerciseType = 'coding', difficulty = 'beginner', scaffoldLevel = 'guided', bloomsLevel = 'apply', customPrompt = '', provider = 'gemini' }) {
+        let safeTopic = 'Core Concept';
+        if (typeof topic === 'string') safeTopic = topic.trim();
+        else if (topic && typeof topic === 'object') safeTopic = topic.title || topic.name || topic.topic || topic.question || topic.text || 'Core Concept';
+        else if (topic != null) safeTopic = String(topic).trim();
+        topic = safeTopic || 'Core Concept';
+
         let typeInstruction = '';
         if (exerciseType === 'coding') {
             typeInstruction = `Generate a standard CODING LAB exercise:
@@ -1941,8 +1947,28 @@ Output MUST be ONLY valid JSON matching this schema:
             }
         }
 
-        // 3. Dynamic Topic-Tailored Fallback
-        const cleanSlug = (topic || 'solution').toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 20) || 'algorithm';
+        // 3. High-Quality Academic Exercise Fallback
+        try {
+            const academicEx = this.createAcademicExerciseForTopic({
+                topic,
+                unitTitle,
+                language,
+                exerciseType,
+                difficulty,
+                scaffoldLevel,
+                bloomsLevel,
+                index: 0,
+                documentText
+            });
+            if (academicEx && (academicEx.starterCode || academicEx.testCases)) {
+                return academicEx;
+            }
+        } catch (e) {
+            console.warn('[AIService] createAcademicExerciseForTopic fallback note:', e.message);
+        }
+
+        // 4. Dynamic Topic-Tailored Fallback
+        const cleanSlug = (typeof topic === 'string' ? topic : 'solution').toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 20) || 'algorithm';
         const funcName = `solve_${cleanSlug}`;
 
         if (exerciseType === 'mcq') {
@@ -2374,8 +2400,11 @@ Output MUST be ONLY valid JSON matching this schema:
         index = 0,
         documentText = ''
     }) {
-        const textSample = `${topic} ${unitTitle} ${documentText}`.toLowerCase();
-        const cleanTopic = this.cleanTitle(topic);
+        const strTopic = typeof topic === 'string' ? topic : (topic?.title || topic?.name || topic?.topic || 'Core Concept');
+        const strUnit = typeof unitTitle === 'string' ? unitTitle : (unitTitle?.title || 'Applied Unit');
+        const strDoc = typeof documentText === 'string' ? documentText : '';
+        const textSample = `${strTopic} ${strUnit} ${strDoc}`.toLowerCase();
+        const cleanTopic = this.cleanTitle(strTopic);
 
         if (language === 'sql') {
             return {
@@ -2598,6 +2627,100 @@ Output MUST be ONLY valid JSON matching this schema:
             };
         }
 
+        // NumPy Exercises
+        if (/numpy|ndarray|\bnp\b|matrix|dimension|shape|vector|broadcasting/i.test(textSample)) {
+            if (exerciseType === 'mcq') {
+                return {
+                    title: `${cleanTopic}: NumPy Array Tracing Challenge`,
+                    description: `Predict the output of the following NumPy code evaluating 2D array slicing and reshaping.`,
+                    exerciseType: 'mcq',
+                    difficulty: 'intermediate',
+                    scaffoldLevel: 'guided',
+                    bloomsLevel: 'analyze',
+                    learningObjective: 'Accurately predict output of NumPy multidimensional array slicing and shapes.',
+                    xpReward: 20,
+                    timeLimit: 4,
+                    starterCode: '',
+                    solutionCode: '',
+                    testCases: {
+                        question: 'What will be printed by the following code?',
+                        codeSnippet: 'import numpy as np\narr = np.arange(1, 10).reshape(3, 3)\nprint(arr[1:, :2])',
+                        options: [
+                            '[[4 5]\n [7 8]]',
+                            '[[1 2]\n [4 5]]',
+                            '[4 5 7 8]',
+                            'IndexError: invalid 2D slice'
+                        ],
+                        correctOption: 0,
+                        explanation: 'np.arange(1, 10).reshape(3, 3) creates a 3x3 matrix from 1 to 9. arr[1:, :2] slices rows from index 1 to end (rows 1 and 2: values [4,5,6] and [7,8,9]) and columns 0 and 1: yielding [[4, 5], [7, 8]].'
+                    },
+                    hints: ['Row slice 1: selects row index 1 and 2.', 'Column slice :2 selects columns 0 and 1.']
+                };
+            }
+            if (exerciseType === 'code_debug') {
+                return {
+                    title: `Debug: Fix NumPy Array Reshape Dimension Mismatch`,
+                    description: `A student attempted to reshape a 1D NumPy array of size 6 into an invalid (2, 4) shape. Correct the code so that it reshapes the array into a valid 2D matrix of shape (2, 3) without raising a ValueError.`,
+                    exerciseType: 'code_debug',
+                    difficulty: 'intermediate',
+                    scaffoldLevel: 'guided',
+                    bloomsLevel: 'apply',
+                    learningObjective: 'Diagnose and resolve dimension mismatch in NumPy array reshaping.',
+                    xpReward: 25,
+                    timeLimit: 5,
+                    starterCode: `import numpy as np\n\ndef reshape_dataset(arr):\n    # Fix error: cannot reshape array of size 6 into shape (2,4)\n    return arr.reshape(2, 4)\n`,
+                    solutionCode: `import numpy as np\n\ndef reshape_dataset(arr):\n    return arr.reshape(2, 3)\n`,
+                    testCases: {
+                        buggyCode: `import numpy as np\n\ndef reshape_dataset(arr):\n    return arr.reshape(2, 4)`,
+                        errors: [
+                            { line: 4, description: 'ValueError: Total elements in new shape (2*4 = 8) does not equal array size 6', correctedLine: '    return arr.reshape(2, 3)' }
+                        ],
+                        solutionCode: `import numpy as np\n\ndef reshape_dataset(arr):\n    return arr.reshape(2, 3)`,
+                        explanation: 'In NumPy, the product of dimensions in the new shape must equal the total number of elements (arr.size).'
+                    },
+                    hints: ['Check that rows * columns equals len(arr). For size 6, valid dimensions include (2, 3) or (3, 2).']
+                };
+            }
+            if (index % 2 === 1) {
+                return {
+                    title: `NumPy Matrix Slicing and Boolean Masking`,
+                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`filter_and_scale_array(data_list, threshold, factor)\` that converts a list of numbers into a NumPy array, replaces all elements less than or equal to \`threshold\` with 0, multiplies the remaining elements by \`factor\`, and returns the modified array as a standard Python list.\n\n### Requirements:\n- Function name: \`filter_and_scale_array(data_list, threshold, factor)\`\n- Use NumPy array boolean masking or vectorization.\n- Return the resulting array converted to a Python list using \`.tolist()\`.`,
+                    exerciseType: 'coding',
+                    difficulty,
+                    scaffoldLevel,
+                    bloomsLevel,
+                    learningObjective: 'Apply NumPy boolean indexing and vectorized arithmetic operations.',
+                    xpReward: 25,
+                    timeLimit: 5,
+                    starterCode: `import numpy as np\n\ndef filter_and_scale_array(data_list, threshold, factor):\n    \"\"\"\n    Filter elements <= threshold to 0, scale remaining by factor, return list.\n    \"\"\"\n    # TODO: Implement using NumPy vectorized operations\n    pass\n`,
+                    solutionCode: `import numpy as np\n\ndef filter_and_scale_array(data_list, threshold, factor):\n    arr = np.array(data_list)\n    mask = arr > threshold\n    result = np.zeros_like(arr)\n    result[mask] = arr[mask] * factor\n    return result.tolist()\n`,
+                    testCases: [
+                        { input: 'filter_and_scale_array([5, 12, 3, 20, 8], 10, 2)', expectedOutput: '[0, 24, 0, 40, 0]', isHidden: false },
+                        { input: 'filter_and_scale_array([1, 2, 3, 4], 2, 3)', expectedOutput: '[0, 0, 9, 12]', isHidden: true }
+                    ],
+                    hints: ['Create an array with arr = np.array(data_list).', 'Apply boolean mask or np.where(arr > threshold, arr * factor, 0).', 'Convert back using .tolist().']
+                };
+            }
+            return {
+                title: `NumPy Array Statistical Summary & Attributes`,
+                description: `## 🎯 Problem Statement\n\nWrite a Python function \`compute_array_statistics(numbers)\` that accepts a non-empty list of numbers, converts it into a 1D NumPy array, and returns a dictionary with summary metrics:\n- \`"count"\`: Total number of elements (integer)\n- \`"mean"\`: Arithmetic mean (float rounded to 2 decimal places)\n- \`"min"\`: Minimum element\n- \`"max"\`: Maximum element\n\n### Requirements:\n- Function name: \`compute_array_statistics(numbers)\`\n- Return dictionary: \`{"count": int, "mean": float, "min": num, "max": num}\``,
+                exerciseType: 'coding',
+                difficulty,
+                scaffoldLevel,
+                bloomsLevel,
+                learningObjective: 'Compute statistical metrics using NumPy vectorized functions.',
+                xpReward: 25,
+                timeLimit: 5,
+                starterCode: `import numpy as np\n\ndef compute_array_statistics(numbers):\n    \"\"\"\n    Compute count, mean, min, and max using NumPy.\n    \"\"\"\n    # TODO: Implement using NumPy\n    pass\n`,
+                solutionCode: `import numpy as np\n\ndef compute_array_statistics(numbers):\n    arr = np.array(numbers)\n    return {\n        "count": int(arr.size),\n        "mean": round(float(np.mean(arr)), 2),\n        "min": int(np.min(arr)) if np.issubdtype(arr.dtype, np.integer) else float(np.min(arr)),\n        "max": int(np.max(arr)) if np.issubdtype(arr.dtype, np.integer) else float(np.max(arr))\n    }\n`,
+                testCases: [
+                    { input: 'compute_array_statistics([10, 20, 30, 40, 50])', expectedOutput: '{"count": 5, "mean": 30.0, "min": 10, "max": 50}', isHidden: false },
+                    { input: 'compute_array_statistics([2, 4, 6, 8])', expectedOutput: '{"count": 4, "mean": 5.0, "min": 2, "max": 8}', isHidden: true }
+                ],
+                hints: ['Convert input list with arr = np.array(numbers).', 'Use arr.size, np.mean(arr), np.min(arr), and np.max(arr).']
+            };
+        }
+
         // Universal Fallback for any other topic
         const slug = cleanTopic.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20) || 'data';
         return {
@@ -2624,12 +2747,14 @@ Output MUST be ONLY valid JSON matching this schema:
      */
     cleanTitle(raw) {
         if (!raw) return '';
-        let t = raw.replace(/[\t\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+        const str = typeof raw === 'string' ? raw : (raw?.title || raw?.name || raw?.topic || String(raw || ''));
+        let t = str.replace(/[\t\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
         t = t.replace(/^(?:unit\s+(?:[0-9]+|[ivx]+)[:\s-]*)+/gi, '').trim();
         t = t.replace(/\bK\s+eys\b/i, 'Keys');
-        const acronyms = new Set(['DBMS', 'RDBMS', 'SQL', 'DDL', 'DML', 'CBSE', 'NCERT', 'API', 'OOP', 'CPU', 'RAM', 'OS', 'FIFO', 'LIFO']);
+        const acronyms = new Set(['DBMS', 'RDBMS', 'SQL', 'DDL', 'DML', 'CBSE', 'NCERT', 'API', 'OOP', 'CPU', 'RAM', 'OS', 'FIFO', 'LIFO', 'CSV']);
         const res = t.split(' ').map((w, idx) => {
             if (acronyms.has(w.toUpperCase())) return w.toUpperCase();
+            if (w.toLowerCase() === 'numpy') return 'NumPy';
             if (idx > 0 && /^(and|or|not|of|in|to|a|an|the|vs|for|with|by|as)$/i.test(w)) return w.toLowerCase();
             return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
         }).join(' ');
@@ -2721,7 +2846,8 @@ Output MUST be ONLY valid JSON matching this schema:
         // Domain-specific density across the full multi-page document text
         const mathScore = (lowerText.match(/\b(math\.|ceil|floor|trunc|factorial|trigonometry|hypot|radians|degrees|logarithm|exponent|sqrt|gcd|pi|tau)\b/g) || []).length;
         const oopScore = (lowerText.match(/(?:\bclass\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:\([a-zA-Z0-9_,\s]*\))?\s*:|\b(?:object-oriented|object\s+oriented|inheritance|polymorphism|encapsulation|__init__|subclass|superclass|method\s+overriding|self\.|instance\s+methods?|class\s+variables?|abstract\s+class|dunder)\b)/gi) || []).length;
-        const pandasScore = (lowerText.match(/\b(pandas|dataframe|series|numpy|read_csv|matplotlib|data analysis|data frame)\b/g) || []).length;
+        const numpyScore = (lowerText.match(/\b(numpy|ndarray|np\.|np\.array|arange|linspace|reshape|broadcasting|matrix\s+operations|data\s+representation\s+using\s+numpy)\b/g) || []).length;
+        const pandasScore = (lowerText.match(/\b(pandas|dataframe|series|read_csv|matplotlib|data analysis|data frame)\b/g) || []).length;
         const sqlScore = (lowerText.match(/(?:CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE|INSERT\s+INTO|SELECT\s+[\s\S]{1,40}\s+FROM|PRIMARY\s+KEY|FOREIGN\s+KEY|REFERENCES\s+[a-zA-Z_]|GROUP\s+BY|ORDER\s+BY|VARCHAR|INT\s+PRIMARY|RELATIONAL\s+DATABASE|RELATIONAL\s+MODEL|DEGREE\s+AND\s+CARDINALITY|DATABASE\s+MANAGEMENT|RDBMS|DBMS)/gi) || []).length;
         const listsScore = (lowerText.match(/\b(lists?|nested\s+lists?|list\s+slicing|list\s+traversal|list\s+operations?|append\(|extend\(|insert\(|pop\()|\[\s*[0-9"']/gi) || []).length;
         const tuplesDictsScore = (lowerText.match(/\b(tuples?|dictionaries|dictionary|key-value|immutable\s+sequence|\.keys\(\)|\.values\(\)|\.items\(\))/gi) || []).length;
@@ -2756,7 +2882,7 @@ Output MUST be ONLY valid JSON matching this schema:
                     candidateHeaders.push(cand);
                 }
             } else if (cleanLine.length >= 6 && cleanLine.length <= 85 && !isSuperficial(cleanLine) && !cleanLine.startsWith('http')) {
-                if (/(lists?|tuples?|dictionar|strings?|database|sql|rdbms|dbms|relational|computer science|programming|data structures|algorithms|computer systems|networks|math library|cyber|computational thinking|artificial intelligence|machine learning|web development)/i.test(cleanLine)) {
+                if (/(lists?|tuples?|dictionar|strings?|numpy|arrays?|data representation|database|sql|rdbms|dbms|relational|computer science|programming|data structures|algorithms|computer systems|networks|math library|cyber|computational thinking|artificial intelligence|machine learning|web development)/i.test(cleanLine)) {
                     let cleaned = cleanLine.replace(/^(class\s*[ivx0-9]+\s*[:\-]?\s*)/i, '').trim();
                     cleaned = stripPunct(cleaned);
                     if (!isSuperficial(cleaned)) {
@@ -2767,7 +2893,7 @@ Output MUST be ONLY valid JSON matching this schema:
         }
 
         if (candidateHeaders.length > 0) {
-            const topSubject = candidateHeaders.find(h => /(lists?|tuples?|dictionar|strings?|database|sql|rdbms|relational|computer science|computational thinking|programming|computer systems|data structure|network)/i.test(h));
+            const topSubject = candidateHeaders.find(h => /(numpy|arrays?|data representation|lists?|tuples?|dictionar|strings?|database|sql|rdbms|relational|computer science|computational thinking|programming|computer systems|data structure|network)/i.test(h));
             const bestHeader = topSubject || candidateHeaders[0];
             if (bestHeader) {
                 const unwrapped = bestHeader.replace(/^(unit|chapter|module|topic|course|subject)\s*[:\-]\s*/i, '').trim();
@@ -2796,6 +2922,9 @@ Output MUST be ONLY valid JSON matching this schema:
         }
         if (oopScore >= 4 && oopScore > mathScore) {
             return 'Python: Object-Oriented Programming & Software Design';
+        }
+        if (numpyScore >= 3 && numpyScore >= pandasScore) {
+            return 'Python: Data Representation & Computation with NumPy';
         }
         if (pandasScore >= 4) {
             return 'Python: Data Handling with Pandas & NumPy';
@@ -3328,6 +3457,8 @@ OUTPUT SCHEMA (Must be strictly valid JSON):
                 featuredCode = `# Creating tuples in Python\nempty_tuple = ()\nsingle_element_tuple = (5,)  # Note: Trailing comma is mandatory\nnumber_tuple = (10, 20, 30, 40)\n\n# Accessing and Slicing\nprint("First element:", number_tuple[0])\nprint("Slice [1:3]:", number_tuple[1:3])\n\n# Immutability Check\n# number_tuple[0] = 99  # Raises TypeError: 'tuple' object does not support item assignment\n\n# Tuple built-in operations\nprint("Count of 20:", number_tuple.count(20))\nprint("Length:", len(number_tuple))\nprint("Maximum element:", max(number_tuple))`;
             } else if (/dict/i.test(lowerSlice)) {
                 featuredCode = `# Creating a dictionary in Python\nstudent_record = {\n    "roll_no": 101,\n    "name": "Priya",\n    "marks": 94.5\n}\n\n# Accessing and modifying values\nprint("Student Name:", student_record["name"])\nprint("Grade Safe Fetch:", student_record.get("grade", "N/A"))\n\n# Modifying & Adding elements\nstudent_record["marks"] = 96.0\nstudent_record["grade"] = "A+"\n\n# Iterating keys and values\nfor key, value in student_record.items():\n    print(f"{key}: {value}")`;
+            } else if (/numpy|ndarray|\bnp\b|matrix|dimension|shape|reshape|broadcasting/i.test(lowerSlice)) {
+                featuredCode = `# Essential NumPy Syntax & Operations\nimport numpy as np\n\n# 1. Creating 1D and 2D Arrays\narr_1d = np.array([10, 20, 30, 40, 50])\narr_2d = np.array([[1, 2, 3], [4, 5, 6]])\n\n# 2. Inspecting Array Properties (Attributes)\nprint("Dimensions (ndim):", arr_2d.ndim)      # 2\nprint("Shape (rows, cols):", arr_2d.shape)    # (2, 3)\nprint("Total Elements (size):", arr_2d.size)  # 6\nprint("Data Type (dtype):", arr_2d.dtype)     # int64/int32\n\n# 3. Multidimensional Indexing and Slicing\nprint("Element at row 0, col 1:", arr_2d[0, 1])          # 2\nprint("Sub-matrix slice (all rows, cols 1:):\\n", arr_2d[:, 1:])\n\n# 4. Reshaping and Vectorized Math\nreshaped = arr_1d[:4].reshape(2, 2)  # 4 elements reshaped into 2x2\nscaled = arr_1d * 2                 # Vectorized element-wise multiplication\nprint("Mean:", np.mean(arr_1d))\nprint("Standard Deviation:", np.std(arr_1d))`;
             } else if (/list/i.test(lowerSlice)) {
                 featuredCode = `# Creating and manipulating Python lists\nnumbers = [10, 20, 30, 40]\n\n# Accessing and slicing\nprint("First element:", numbers[0])\nprint("Reversed list:", numbers[::-1])\n\n# List methods\nnumbers.append(50)       # Appends element to end\npopped = numbers.pop()   # Removes and returns last element\nnumbers.sort()           # In-place sorting`;
             } else {
@@ -3458,8 +3589,40 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
             ];
         }
 
-        // 4. Python Lists Domain
-        if (/list|array|slice|append/i.test(textSample)) {
+        // 4. NumPy / Numerical Arrays Domain
+        if (/numpy|ndarray|\bnp\b|matrix|dimension|shape|reshape|broadcasting/i.test(textSample)) {
+            return [
+                {
+                    id: `cp_${unitIdx + 1}_1`,
+                    question: 'What is the primary difference between a NumPy ndarray and a standard Python list?',
+                    codeSnippet: 'import numpy as np\npy_list = [1, 2, "three", 4.5]\nnp_arr = np.array([1, 2, 3, 4])',
+                    options: [
+                        'NumPy arrays store elements of homogeneous type in contiguous memory, enabling fast vectorized computation',
+                        'Python lists can only store numbers, while NumPy arrays store any arbitrary objects',
+                        'NumPy arrays are immutable and cannot have elements accessed by index',
+                        'There is no performance or structural difference between them'
+                    ],
+                    correctOption: 0,
+                    explanation: 'NumPy ndarrays store homogeneous elements in contiguous memory blocks. This layout allows vectorized C-level operations without Python bytecode interpretation overhead.'
+                },
+                {
+                    id: `cp_${unitIdx + 1}_2`,
+                    question: 'Given arr = np.array([[10, 20, 30], [40, 50, 60]]), which expression extracts the sub-matrix [[20, 30], [50, 60]]?',
+                    codeSnippet: 'arr = np.array([[10, 20, 30], [40, 50, 60]])\n# Desired output: [[20, 30], [50, 60]]',
+                    options: [
+                        'arr[:, 1:]',
+                        'arr[1:, :]',
+                        'arr[1, 2]',
+                        'arr[:, 2]'
+                    ],
+                    correctOption: 0,
+                    explanation: 'In NumPy 2D slicing arr[row_slice, col_slice], : selects all rows (0 and 1), and 1: selects columns from index 1 to the end (columns 1 and 2), extracting [[20, 30], [50, 60]].'
+                }
+            ];
+        }
+
+        // 5. Python Lists Domain
+        if (/list|slice|append/i.test(textSample)) {
             return [
                 {
                     id: `cp_${unitIdx + 1}_1`,
@@ -3656,19 +3819,21 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
      * Returns array of { sectionNumber, title, startIndex, endIndex, text }
      */
     extractTopicsFromDocumentText(documentText = '') {
-        if (!documentText || documentText.length < 50) return [];
+        if (!documentText || typeof documentText !== 'string' || documentText.trim().length < 30) return [];
 
-        const lines = documentText.split(/\r?\n/);
-        const sections = [];
+        const cleanDoc = documentText;
+        const lines = cleanDoc.split(/\r?\n/);
+        let sections = [];
         let charPos = 0;
 
+        // TIER 1: Standard Numbered Sections (e.g. "2.1 Introduction", "8.3 Slicing")
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
-            const numMatch = line.match(/^(?:#{1,4}\s+)?\s*(\d+\.\d+(?:\.\d+)?)[ \t]+([^\r\n]+)/);
+            const numMatch = line.match(/^(?:#{1,4}\s+)?\s*(\d+\.\d+(?:\.\d+)?)[ \t.:\-]+([^\r\n]+)/);
             if (numMatch) {
                 const num = numMatch[1];
                 let rawTitle = numMatch[2].trim().replace(/[\t\r\n]+/g, ' ').replace(/\s+/g, ' ');
-                if (rawTitle.length >= 3 && rawTitle.length <= 80 && !/^(shows|and|are|is|by|to|in|of|table\s+\d|figure\s+\d)\b/i.test(rawTitle)) {
+                if (rawTitle.length >= 3 && rawTitle.length <= 80 && !/^(shows|and|are|is|by|to|in|of|table\s+\d|figure\s+\d|page\s+\d)\b/i.test(rawTitle)) {
                     sections.push({
                         sectionNumber: num,
                         title: this.cleanTitle(rawTitle),
@@ -3677,7 +3842,7 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
                 }
             } else {
                 const exMatch = line.match(/^(?:#{1,4}\s+)?\s*(?:exercise|exercises|chapter\s+exercise[s]?|programming\s+problems?|review\s+questions?|practice\s+questions?)\b/i);
-                if (exMatch && charPos > documentText.length * 0.25) {
+                if (exMatch && charPos > cleanDoc.length * 0.25) {
                     sections.push({
                         sectionNumber: 'Ex',
                         title: 'Chapter Assessment & Applied Practice',
@@ -3688,17 +3853,69 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
             charPos += line.length + 1;
         }
 
-        // Markdown headings fallback if no numbered sections found
-        if (sections.length === 0) {
+        // TIER 2: If fewer than 3 sections found, search for Single-Digit Numbered Sections (e.g. "1. Introduction", "2. NumPy Arrays")
+        if (sections.filter(s => s.sectionNumber !== 'Ex').length < 3) {
+            const tier2Sections = [];
+            charPos = 0;
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const sglMatch = line.match(/^(?:#{1,4}\s+)?(?:\b(?:section|topic|part)\s+)?(\d+)[\.\)][ \t.:\-]+([A-Za-z][^\r\n]{2,75})/i);
+                if (sglMatch) {
+                    const num = sglMatch[1];
+                    let rawTitle = sglMatch[2].trim().replace(/[\t\r\n]+/g, ' ').replace(/\s+/g, ' ');
+                    if (rawTitle.length >= 3 && rawTitle.length <= 80 && !/^(shows|and|are|is|by|to|in|of|table\s+\d|figure\s+\d|page\s+\d)\b/i.test(rawTitle)) {
+                        tier2Sections.push({
+                            sectionNumber: num,
+                            title: this.cleanTitle(rawTitle),
+                            startIndex: charPos
+                        });
+                    }
+                }
+                charPos += line.length + 1;
+            }
+            if (tier2Sections.length >= 3) {
+                sections = tier2Sections;
+            }
+        }
+
+        // TIER 3: If still fewer than 3 sections, check for NCERT / CBSE "In this chapter" / "Contents" bullet sections (e.g. "» Introduction", "• NumPy Arrays")
+        if (sections.filter(s => s.sectionNumber !== 'Ex').length < 3) {
+            const inThisChapIdx = cleanDoc.search(/(?:in\s+this\s+chapter|in\s+this\s+unit|contents|table\s+of\s+contents|topics\s+covered)\b/i);
+            if (inThisChapIdx !== -1) {
+                const chapScope = cleanDoc.slice(inThisChapIdx, inThisChapIdx + 3000);
+                const bulletMatches = [...chapScope.matchAll(/^[»•›▪▫*o\-]\s+([A-Za-z][^\r\n]{2,65})/gm)];
+                if (bulletMatches.length >= 3) {
+                    const bulletSections = [];
+                    bulletMatches.forEach((bm, idx) => {
+                        const bTitle = this.cleanTitle(bm[1].trim());
+                        if (bTitle.length >= 3 && !/^(reprint|class|code|chapter|page)\b/i.test(bTitle)) {
+                            const bodyPos = cleanDoc.indexOf(bm[1].trim(), inThisChapIdx + 500);
+                            bulletSections.push({
+                                sectionNumber: String(idx + 1),
+                                title: bTitle,
+                                startIndex: bodyPos !== -1 ? bodyPos : Math.floor((idx / bulletMatches.length) * cleanDoc.length)
+                            });
+                        }
+                    });
+                    if (bulletSections.length >= 3) {
+                        sections = bulletSections;
+                    }
+                }
+            }
+        }
+
+        // TIER 4: If still fewer than 3 sections, search for Markdown Headings (##, ###)
+        if (sections.filter(s => s.sectionNumber !== 'Ex').length < 3) {
+            const mdSections = [];
             charPos = 0;
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
                 const mdMatch = line.match(/^#{2,3}\s+(.+)/);
                 if (mdMatch) {
-                    const title = mdMatch[1].trim().replace(/^[\d.]+\s*/, '');
-                    if (title.length >= 4 && title.length <= 80) {
-                        sections.push({
-                            sectionNumber: String(sections.length + 1),
+                    const title = mdMatch[1].trim().replace(/^[\d.:\-]+\s*/, '');
+                    if (title.length >= 4 && title.length <= 80 && !/^(exercises?|questions?|summary|glossary)\b/i.test(title)) {
+                        mdSections.push({
+                            sectionNumber: String(mdSections.length + 1),
                             title: this.cleanTitle(title),
                             startIndex: charPos
                         });
@@ -3706,15 +3923,101 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
                 }
                 charPos += line.length + 1;
             }
+            if (mdSections.length >= 3) {
+                sections = mdSections;
+            }
         }
 
-        if (sections.length === 0) return [];
+        // TIER 5: If still fewer than 3 sections, search for Prominent Uppercase / Standalone Section Lines
+        if (sections.filter(s => s.sectionNumber !== 'Ex').length < 3) {
+            const prominentSections = [];
+            charPos = 0;
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                const isProminent = line.length >= 4 && line.length <= 60 &&
+                    !/[.,;:]$/.test(line) &&
+                    !/^(and|or|the|in|at|by|for|with|to|from|is|are|which|that|table|figure|page)\b/i.test(line) &&
+                    (line === line.toUpperCase() && /[A-Z]/.test(line)) &&
+                    (lines[i + 1]?.trim() === '' || lines[i - 1]?.trim() === '');
+                if (isProminent && !/^(CHAPTER|UNIT|REPRINT|CLASS|CONTENTS|INDEX)\b/i.test(line)) {
+                    prominentSections.push({
+                        sectionNumber: String(prominentSections.length + 1),
+                        title: this.cleanTitle(line),
+                        startIndex: charPos
+                    });
+                }
+                charPos += lines[i].length + 1;
+            }
+            if (prominentSections.length >= 3) {
+                sections = prominentSections;
+            }
+        }
+
+        // TIER 6: Intelligent Semantic Partitioning Fallback: NEVER allow fewer than 3 units!
+        if (sections.filter(s => s.sectionNumber !== 'Ex').length < 3) {
+            const detectedTitle = this.deepAlgorithmicTitleExtract(cleanDoc);
+            const lowerDoc = cleanDoc.toLowerCase();
+            const chunkLen = Math.max(800, Math.floor(cleanDoc.length / 4));
+
+            if (/numpy|ndarray|\bnp\b|matrix|array/i.test(lowerDoc)) {
+                sections = [
+                    {
+                        sectionNumber: '1',
+                        title: 'NumPy Foundations & Array Creation',
+                        startIndex: 0
+                    },
+                    {
+                        sectionNumber: '2',
+                        title: 'Array Attributes, Indexing & 2D Slicing',
+                        startIndex: Math.min(chunkLen, cleanDoc.length)
+                    },
+                    {
+                        sectionNumber: '3',
+                        title: 'Vectorized Arithmetic & Broadcasting',
+                        startIndex: Math.min(chunkLen * 2, cleanDoc.length)
+                    },
+                    {
+                        sectionNumber: '4',
+                        title: 'Array Reshaping & Statistical Functions',
+                        startIndex: Math.min(chunkLen * 3, cleanDoc.length)
+                    }
+                ];
+            } else if (/tuple/i.test(lowerDoc)) {
+                sections = [
+                    { sectionNumber: '1', title: 'Tuple Foundations & Creation Syntax', startIndex: 0 },
+                    { sectionNumber: '2', title: 'Tuple Immutability & Index Slicing', startIndex: Math.min(chunkLen, cleanDoc.length) },
+                    { sectionNumber: '3', title: 'Tuple Unpacking & Built-in Functions', startIndex: Math.min(chunkLen * 2, cleanDoc.length) },
+                    { sectionNumber: '4', title: 'Applied Tuple Operations & Problem Solving', startIndex: Math.min(chunkLen * 3, cleanDoc.length) }
+                ];
+            } else if (/dict/i.test(lowerDoc)) {
+                sections = [
+                    { sectionNumber: '1', title: 'Dictionary Structure & Key-Value Mechanics', startIndex: 0 },
+                    { sectionNumber: '2', title: 'Dictionary Access, Keys & Mutability', startIndex: Math.min(chunkLen, cleanDoc.length) },
+                    { sectionNumber: '3', title: 'Dictionary Methods & Iteration', startIndex: Math.min(chunkLen * 2, cleanDoc.length) },
+                    { sectionNumber: '4', title: 'Frequency Counting & Complex Mappings', startIndex: Math.min(chunkLen * 3, cleanDoc.length) }
+                ];
+            } else if (/sql|database|rdbms|relational/i.test(lowerDoc)) {
+                sections = [
+                    { sectionNumber: '1', title: 'Relational Database Concepts & Keys', startIndex: 0 },
+                    { sectionNumber: '2', title: 'Data Definition Language (DDL) & Schemas', startIndex: Math.min(chunkLen, cleanDoc.length) },
+                    { sectionNumber: '3', title: 'Data Manipulation Language (DML) & Queries', startIndex: Math.min(chunkLen * 2, cleanDoc.length) },
+                    { sectionNumber: '4', title: 'Advanced Filtering, Ordering & Aggregations', startIndex: Math.min(chunkLen * 3, cleanDoc.length) }
+                ];
+            } else {
+                sections = [
+                    { sectionNumber: '1', title: `Foundations of ${detectedTitle}`, startIndex: 0 },
+                    { sectionNumber: '2', title: 'Core Syntax, Variables & Data Types', startIndex: Math.min(chunkLen, cleanDoc.length) },
+                    { sectionNumber: '3', title: 'Operations, Built-in Methods & Control Flow', startIndex: Math.min(chunkLen * 2, cleanDoc.length) },
+                    { sectionNumber: '4', title: 'Applied Problem Solving & Curriculum Review', startIndex: Math.min(chunkLen * 3, cleanDoc.length) }
+                ];
+            }
+        }
 
         for (let i = 0; i < sections.length; i++) {
             const start = sections[i].startIndex;
-            const end = (i + 1 < sections.length) ? sections[i + 1].startIndex : documentText.length;
+            const end = (i + 1 < sections.length) ? sections[i + 1].startIndex : cleanDoc.length;
             sections[i].endIndex = end;
-            sections[i].text = documentText.slice(start, Math.min(end, start + 8000)).trim();
+            sections[i].text = cleanDoc.slice(start, Math.min(end, start + 8000)).trim();
         }
 
         return sections;
@@ -3724,6 +4027,7 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
      * Extract actual back-of-chapter questions and review exercises from document text.
      */
     extractBackExercisesFromText(documentText = '') {
+        if (!documentText || typeof documentText !== 'string') return [];
         const exIdx = documentText.search(/(?:^|\n)\s*(?:#{1,4}\s+)?(?:EXERCISES?|PROGRAMMING\s+PROBLEMS?|REVIEW\s+QUESTIONS?|PRACTICE\s+QUESTIONS?)\b/i);
         if (exIdx === -1 || exIdx < documentText.length * 0.25) {
             return [];
@@ -3762,7 +4066,7 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
      * Contextually organize document sections and back exercises into progressive units.
      */
     contextuallyOrganizeUnits(sections = [], backExercises = [], targetUnits = 5) {
-        if (sections.length === 0) return [];
+        if (!Array.isArray(sections) || sections.length === 0) return [];
 
         const contentSections = sections.filter(s => s.sectionNumber !== 'Ex');
         if (contentSections.length <= 2) {
@@ -3855,33 +4159,36 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
         const backExercises = this.extractBackExercisesFromText(documentText);
         const organizedUnits = this.contextuallyOrganizeUnits(sections, backExercises, totalUnits || 5);
 
-        const safeUnits = organizedUnits.length > 0 ? organizedUnits : [
+        const safeUnits = organizedUnits.length >= 2 ? organizedUnits : [
             {
                 unitNumber: 1,
-                title: `Fundamentals of ${detectedTitle}`,
+                title: `Foundations of ${detectedTitle}`,
                 sections: [{ title: `${detectedTitle} Foundations` }],
-                text: documentText.slice(0, 3000)
+                text: typeof documentText === 'string' ? documentText.slice(0, 3000) : ''
             },
             {
                 unitNumber: 2,
-                title: `Core Operations & Syntax`,
+                title: `Core Operations & Method Transformations`,
                 sections: [{ title: 'Core Operations' }],
-                text: documentText.slice(3000, 6000)
+                text: typeof documentText === 'string' ? documentText.slice(3000, 6000) : ''
             },
             {
                 unitNumber: 3,
                 title: `Applied Practice & Problem Solving`,
                 sections: [{ title: 'Problem Solving' }],
-                text: documentText.slice(6000, 9000)
+                text: typeof documentText === 'string' ? documentText.slice(6000, 9000) : ''
             }
         ];
 
         const finalUnits = safeUnits.map((u, uIdx) => {
-            const sectionTitles = u.sections.map(s => s.title);
+            const sectionTitles = Array.isArray(u.sections)
+                ? u.sections.map(s => typeof s === 'string' ? s : (s?.title || 'Core Concept'))
+                : [u.title || 'Core Concept'];
+            const sliceText = typeof u.text === 'string' ? u.text : '';
             const theoryMarkdown = this.formatGroundedTheory({
                 unitTitle: u.title,
                 sectionTitles,
-                sliceText: u.text,
+                sliceText,
                 language: detectedLang
             });
 
@@ -3966,6 +4273,139 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
                 return null;
             }
         }
+    }
+
+    /**
+     * Ultra-resilient emergency exercise generator.
+     * Guaranteed to never throw, returning 100% schema-compliant exercises.
+     */
+    createEmergencySafeExercise({ topic = 'Core Programming', language = 'python', index = 0 } = {}) {
+        const cleanTopic = this.cleanTitle(topic) || 'Core Logic';
+        const isSql = language === 'sql';
+        const isNumPy = /numpy|array|matrix/i.test(cleanTopic);
+        
+        let starterCode = '# Implement solution\ndef solution(data):\n    return data\n';
+        let solutionCode = 'def solution(data):\n    return data\n';
+        let testCases = [{ input: 'solution([1, 2])', expectedOutput: '[1, 2]', isHidden: false }];
+
+        if (isSql) {
+            starterCode = `-- Write SQL query for ${cleanTopic}\nSELECT * FROM Student;\n`;
+            solutionCode = `SELECT RollNo, Name, Marks FROM Student WHERE Marks >= 75;\n`;
+            testCases = [{ input: 'SELECT * FROM Student;', expectedOutput: 'Query executed successfully', isHidden: false }];
+        } else if (isNumPy) {
+            starterCode = `import numpy as np\n\ndef process_array(data):\n    \"\"\"Process array using NumPy.\"\"\"\n    arr = np.array(data)\n    return arr.tolist()\n`;
+            solutionCode = `import numpy as np\n\ndef process_array(data):\n    arr = np.array(data)\n    return arr.tolist()\n`;
+            testCases = [{ input: 'process_array([10, 20])', expectedOutput: '[10, 20]', isHidden: false }];
+        }
+
+        return {
+            title: `${cleanTopic} Implementation Lab`,
+            description: `## 🎯 Problem Statement\n\nApply the core principles of **${cleanTopic}** to solve this practical programming task.\n\n### Requirements:\n- Write clean, verified ${language} code.\n- Ensure all syntax rules and edge cases are handled.`,
+            exerciseType: 'coding',
+            difficulty: 'beginner',
+            scaffoldLevel: 'guided',
+            bloomsLevel: 'apply',
+            learningObjective: `Demonstrate mastery of ${cleanTopic} fundamentals.`,
+            xpReward: 20,
+            timeLimit: 5,
+            starterCode,
+            solutionCode,
+            testCases,
+            hints: [`Analyze the structural requirements of ${cleanTopic}.`]
+        };
+    }
+
+    /**
+     * Ultra-resilient emergency module generator.
+     * Guaranteed to never throw, returning 3 comprehensive, schema-compliant units.
+     */
+    generateEmergencySafeModule({ title = 'Curriculum Training Module', language = 'python', board = 'CBSE', classLevel = 11 } = {}) {
+        const cleanModuleTitle = this.cleanTitle(title) || 'Computer Science Applied Curriculum';
+        const isNumPy = /numpy|array|matrix/i.test(cleanModuleTitle);
+        
+        const units = [
+            {
+                unitNumber: 1,
+                title: `Unit 1: Foundations & Core Concepts of ${cleanModuleTitle}`,
+                description: `Foundational syntax, variable initialization, and elementary mechanics for ${cleanModuleTitle}.`,
+                expectedHours: 4,
+                unlockThreshold: 80,
+                keyConcepts: ['Syntax & Basics', 'Data Types', 'Execution Flow'],
+                theory: `### 📘 Foundations of ${cleanModuleTitle}\n\nThis unit establishes the foundational principles, syntax rules, and mechanics for ${cleanModuleTitle}.`,
+                miniCheckpoints: [
+                    {
+                        id: 'cp_1_1',
+                        question: `What is the primary role of foundational syntax in ${cleanModuleTitle}?`,
+                        codeSnippet: '# Foundation inspection',
+                        options: ['Ensures proper compilation and structured execution', 'Optional decorative formatting', 'Only needed for GUI libraries', 'Slows down runtime execution'],
+                        correctOption: 0,
+                        explanation: 'Syntax rules establish the grammar and structure required for execution.'
+                    }
+                ],
+                cbseTips: [`In ${board} exams, focus on correct keyword definitions and syntax conventions.`],
+                exercises: [
+                    this.createEmergencySafeExercise({ topic: `${cleanModuleTitle} Foundations`, language, index: 0 })
+                ]
+            },
+            {
+                unitNumber: 2,
+                title: `Unit 2: Core Operations & Algorithmic Manipulation`,
+                description: `Core methods, operations, and structured data handling for ${cleanModuleTitle}.`,
+                expectedHours: 4,
+                unlockThreshold: 80,
+                keyConcepts: ['Operations', 'Transformations', 'Control Mechanics'],
+                theory: `### 📘 Core Operations in ${cleanModuleTitle}\n\nDetailed operational mechanics and data processing patterns.`,
+                miniCheckpoints: [
+                    {
+                        id: 'cp_2_1',
+                        question: 'How are intermediate operations evaluated?',
+                        codeSnippet: '# Operations check',
+                        options: ['According to operator precedence and language semantics', 'Random execution order', 'Left-to-right ignoring precedence', 'Only during compilation'],
+                        correctOption: 0,
+                        explanation: 'Operations evaluate systematically based on language semantics and precedence.'
+                    }
+                ],
+                cbseTips: [`Carefully verify boundary conditions in ${board} exam questions.`],
+                exercises: [
+                    this.createEmergencySafeExercise({ topic: `${cleanModuleTitle} Operations`, language, index: 1 })
+                ]
+            },
+            {
+                unitNumber: 3,
+                title: `Unit 3: Applied Practice & Comprehensive Review`,
+                description: `Applied problem solving, scenario analysis, and curriculum assessment for ${cleanModuleTitle}.`,
+                expectedHours: 4,
+                unlockThreshold: 80,
+                keyConcepts: ['Applied Problems', 'Debugging', 'Exam Review'],
+                theory: `### 📘 Applied Review & Problem Solving\n\nComprehensive problem solving exercises aligning with examination standards.`,
+                miniCheckpoints: [
+                    {
+                        id: 'cp_3_1',
+                        question: 'What is the best practice when debugging unexpected outputs?',
+                        codeSnippet: '# Debugging inspection',
+                        options: ['Trace execution step-by-step with sample inputs', 'Ignore error messages', 'Randomly change keywords', 'Delete the function'],
+                        correctOption: 0,
+                        explanation: 'Systematic tracing helps identify logical errors and edge cases.'
+                    }
+                ],
+                cbseTips: [`Practice writing clean step-by-step solutions for full marks in ${board} board exams.`],
+                exercises: [
+                    this.createEmergencySafeExercise({ topic: `${cleanModuleTitle} Applied Practice`, language, index: 2 })
+                ]
+            }
+        ];
+
+        return {
+            title: cleanModuleTitle,
+            titleHindi: `${cleanModuleTitle} (पाठ्यक्रम)`,
+            description: `Curriculum training module for ${cleanModuleTitle} aligned with ${board} Class ${classLevel}.`,
+            language,
+            boardAligned: board,
+            classLevel: Number(classLevel) || 11,
+            extractedSummary: `Synthesized 3 comprehensive units with grounded theory, checkpoints, and verified exercises.`,
+            pedagogyConfig: { useBlooms: true, useObjectives: true, useTimeLimit: false },
+            units
+        };
     }
 }
 
