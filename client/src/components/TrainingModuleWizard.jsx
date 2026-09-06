@@ -593,7 +593,7 @@ export default function TrainingModuleWizard({
 
         try {
             const promptToUse = promptHint || suggestedTitle || moduleForm.title || step1AiPrompt || 'Comprehensive Technical Module';
-            const langToUse = language || moduleForm.language || (/(database|sql|dbms|rdbms|relational)/i.test(promptToUse + ' ' + (docText || '')) ? 'sql' : 'python');
+            const langToUse = language || moduleForm.language || (suggestedTitle && /\b(sql|database|dbms|rdbms)\b/i.test(suggestedTitle) ? 'sql' : 'python');
             const res = await trainingAPI.aiFromDocument({
                 documentText: docText || step1DocumentText,
                 imageBase64: imgBase64 || step1ImageBase64,
@@ -725,8 +725,7 @@ export default function TrainingModuleWizard({
                 finalExtractedText = formatAndStyleDocumentText(extractedText || '');
                 keyTopicsList = Array.isArray(keyTopics) ? keyTopics : [];
                 finalTitle = (suggestedTitle && suggestedTitle.trim().length >= 4) ? suggestedTitle.trim() : cleanFileTitle;
-                const isSqlDomain = /(database|sql|dbms|rdbms|relational)/i.test(finalTitle + ' ' + finalExtractedText);
-                finalLang = suggestedLanguage || (isSqlDomain ? 'sql' : 'python');
+                finalLang = suggestedLanguage || 'python';
 
                 if (keyTopicsList.length > 0) {
                     setRagKeyTopics(keyTopicsList);
@@ -827,7 +826,8 @@ export default function TrainingModuleWizard({
                 imgBase64: step1ImageBase64,
                 mime: step1MimeType,
                 suggestedTitle: moduleForm.title || promptToUse,
-                promptHint: promptToUse
+                promptHint: promptToUse,
+                language: moduleForm.language
             });
             return;
         }

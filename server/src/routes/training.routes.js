@@ -2120,12 +2120,12 @@ router.post('/ai/from-document', authenticate, asyncHandler(async (req, res) => 
     const payload = req.body.payload || req.body;
     const provider = req.body.provider || payload.provider || 'gemini';
 
-    const textToCheck = ((payload.documentText || '') + ' ' + (payload.customPrompt || '')).toLowerCase();
-    const isDbRelated = /\b(database|sql|dbms|rdbms|relational|create\s+table|primary\s+key|foreign\s+key)\b/i.test(textToCheck);
-    let resolvedLanguage = payload.language || (isDbRelated ? 'sql' : 'python');
-    if (isDbRelated && resolvedLanguage === 'python') {
-        resolvedLanguage = 'sql';
-    }
+    const resolvedLanguage = payload.language || aiService.detectDocumentLanguage({
+        documentText: payload.documentText || '',
+        title: payload.customPrompt || '',
+        customPrompt: payload.customPrompt || '',
+        originalFileName: payload.originalFileName || ''
+    });
 
     try {
         const result = await aiService.generateTrainingModuleFromDocument({
@@ -2355,13 +2355,17 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
     extractedText = formatAndStyleDocumentText(extractedText);
 
     // 3. Deep Analysis of Sufficient PDF content to extract Course Title and Metadata
-    const isDbInitially = /\b(database|sql|dbms|rdbms|relational|create\s+table|primary\s+key|foreign\s+key)\b/i.test((extractedText || '').toLowerCase());
+    const initialLang = aiService.detectDocumentLanguage({
+        documentText: extractedText || '',
+        title: cleanFileNameTitle,
+        originalFileName: originalName
+    });
     let analyzedMeta = {
         title: cleanFileNameTitle,
-        titleHindi: isDbInitially ? 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम' : `${cleanFileNameTitle} (पाठ्यक्रम)`,
-        description: isDbInitially ? 'Comprehensive curriculum module covering Relational Databases & SQL.' : 'Comprehensive curriculum module synthesized from syllabus material.',
-        keyTopics: isDbInitially ? ['Relational Data Model & Keys', 'SQL Data Definition (DDL)', 'SQL Data Manipulation (DML)'] : [],
-        suggestedLanguage: isDbInitially ? 'sql' : 'python'
+        titleHindi: `${cleanFileNameTitle} (पाठ्यक्रम)`,
+        description: 'Comprehensive curriculum module synthesized from syllabus material.',
+        keyTopics: [],
+        suggestedLanguage: initialLang
     };
 
     if (extractedText && extractedText.trim().length >= 20) {
@@ -2373,26 +2377,30 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
                 originalFileName: originalName
             });
             if (aiMeta && aiMeta.title && aiMeta.title.length >= 4) {
-                const combinedCheck = (aiMeta.title + ' ' + (extractedText || '')).toLowerCase();
-                const isSqlTopic = /\b(database|sql|dbms|rdbms|relational)\b/i.test(combinedCheck);
+                const detectedLang = aiMeta.suggestedLanguage || aiService.detectDocumentLanguage({
+                    documentText: extractedText,
+                    title: aiMeta.title,
+                    originalFileName: originalName
+                });
                 analyzedMeta = {
                     title: aiMeta.title,
-                    titleHindi: aiMeta.titleHindi || (isSqlTopic ? 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम' : `${aiMeta.title} (पाठ्यक्रम)`),
+                    titleHindi: aiMeta.titleHindi || `${aiMeta.title} (पाठ्यक्रम)`,
                     description: aiMeta.description || analyzedMeta.description,
-                    keyTopics: Array.isArray(aiMeta.keyTopics) && aiMeta.keyTopics.length > 0 ? aiMeta.keyTopics : (isSqlTopic ? ['Relational Data Model & Keys', 'SQL Data Definition (DDL)', 'SQL Data Manipulation (DML)'] : []),
-                    suggestedLanguage: isSqlTopic ? 'sql' : (aiMeta.suggestedLanguage || 'python')
+                    keyTopics: Array.isArray(aiMeta.keyTopics) && aiMeta.keyTopics.length > 0 ? aiMeta.keyTopics : [],
+                    suggestedLanguage: detectedLang
                 };
             }
         } catch (metaErr) {
             console.warn('[RAG Upload] Title extraction warning:', metaErr.message);
             const algoTitle = aiService.deepAlgorithmicTitleExtract(extractedText, originalName);
-            const isSqlTopic = /\b(database|sql|dbms|rdbms|relational)\b/i.test((algoTitle + ' ' + extractedText).toLowerCase());
+            const detectedLang = aiService.detectDocumentLanguage({
+                documentText: extractedText,
+                title: algoTitle,
+                originalFileName: originalName
+            });
             analyzedMeta.title = algoTitle || cleanFileNameTitle;
-            if (isSqlTopic) {
-                analyzedMeta.suggestedLanguage = 'sql';
-                analyzedMeta.titleHindi = 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम';
-                analyzedMeta.keyTopics = ['Relational Data Model & Keys', 'SQL Data Definition (DDL)', 'SQL Data Manipulation (DML)'];
-            }
+            analyzedMeta.suggestedLanguage = detectedLang;
+            analyzedMeta.titleHindi = `${analyzedMeta.title} (पाठ्यक्रम)`;
         }
     } else if (req.file.mimetype.startsWith('image/')) {
         try {
@@ -2403,14 +2411,12 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
                 originalFileName: originalName
             });
             if (aiMeta && aiMeta.title && aiMeta.title.length >= 4) {
-                const combinedCheck = (aiMeta.title + ' ' + (extractedText || '')).toLowerCase();
-                const isSqlTopic = /\b(database|sql|dbms|rdbms|relational)\b/i.test(combinedCheck);
                 analyzedMeta = {
                     title: aiMeta.title,
-                    titleHindi: aiMeta.titleHindi || (isSqlTopic ? 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम' : `${aiMeta.title} (पाठ्यक्रम)`),
+                    titleHindi: aiMeta.titleHindi || `${aiMeta.title} (पाठ्यक्रम)`,
                     description: aiMeta.description || analyzedMeta.description,
                     keyTopics: Array.isArray(aiMeta.keyTopics) ? aiMeta.keyTopics : [],
-                    suggestedLanguage: isSqlTopic ? 'sql' : (aiMeta.suggestedLanguage || 'python')
+                    suggestedLanguage: aiMeta.suggestedLanguage || 'python'
                 };
             }
         } catch (imgErr) {
@@ -2418,13 +2424,14 @@ router.post('/ai/rag/upload', authenticate, upload.single('file'), asyncHandler(
         }
     } else {
         const algoTitle = aiService.deepAlgorithmicTitleExtract(extractedText, originalName);
-        const isSqlTopic = /\b(database|sql|dbms|rdbms|relational)\b/i.test((algoTitle + ' ' + extractedText).toLowerCase());
+        const detectedLang = aiService.detectDocumentLanguage({
+            documentText: extractedText,
+            title: algoTitle,
+            originalFileName: originalName
+        });
         analyzedMeta.title = algoTitle || cleanFileNameTitle;
-        if (isSqlTopic) {
-            analyzedMeta.suggestedLanguage = 'sql';
-            analyzedMeta.titleHindi = 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम';
-            analyzedMeta.keyTopics = ['Relational Data Model & Keys', 'SQL Data Definition (DDL)', 'SQL Data Manipulation (DML)'];
-        }
+        analyzedMeta.suggestedLanguage = detectedLang;
+        analyzedMeta.titleHindi = `${analyzedMeta.title} (पाठ्यक्रम)`;
     }
 
     const suggestedTitle = analyzedMeta.title || cleanFileNameTitle;
