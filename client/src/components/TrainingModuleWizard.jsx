@@ -602,7 +602,7 @@ export default function TrainingModuleWizard({
                 language: langToUse,
                 classLevel: moduleForm.classLevel || 11,
                 board: moduleForm.boardAligned || 'CBSE',
-                totalUnits: 3
+                totalUnits: (Array.isArray(keyTopics) && keyTopics.length > 2) ? keyTopics.length : 6
             }, step1AiProvider);
 
             const data = res.data?.data?.module || res.data?.data?.outline || res.data?.data;
@@ -668,7 +668,7 @@ export default function TrainingModuleWizard({
                 }));
             }
 
-                toast.success('🚀 Complete module successfully built from RAG document! Title, 3 Units, Theory & Exercises are ready and editable.', { id: synthToastId });
+                toast.success(`🚀 Complete module successfully built from RAG document! Title, ${data.units?.length || 0} Units, Theory & Exercises are ready and editable.`, { id: synthToastId });
             } else {
                 throw new Error('AI did not return valid course structure');
             }
@@ -842,7 +842,7 @@ export default function TrainingModuleWizard({
                     language: moduleForm.language || 'python',
                     classLevel: moduleForm.classLevel || 11,
                     board: moduleForm.boardAligned || 'CBSE',
-                    totalUnits: 3
+                    totalUnits: (Array.isArray(ragKeyTopics) && ragKeyTopics.length > 2) ? ragKeyTopics.length : 6
                 }, step1AiProvider);
 
                 const data = res.data?.data?.outline || res.data?.data;

@@ -840,6 +840,26 @@ export default function PedagogyBuilderPage() {
                     unlockThreshold: u.unlockThreshold || 80
                 });
                 const unitId = uRes.data.data.unit.id;
+
+                // Persist theory data (content, miniCheckpoints, cbseTips) so reading pages are populated
+                const theoryContent = u.theory || u.theoryData?.content || '';
+                const theoryKeyConcepts = u.keyConcepts || u.theoryData?.keyConcepts || [];
+                const theoryCheckpoints = u.miniCheckpoints || u.theoryData?.miniCheckpoints || [];
+                const theoryCbseTips = u.cbseTips || u.theoryData?.cbseTips || [];
+                if (theoryContent || theoryKeyConcepts.length > 0 || theoryCheckpoints.length > 0) {
+                    try {
+                        await trainingAPI.updateUnitTheory(unitId, {
+                            summary: u.description || `Key concepts of ${u.title}`,
+                            content: theoryContent || (theoryKeyConcepts.length > 0 ? `## Key Concepts\n\n${theoryKeyConcepts.map(c => `- ${c}`).join('\n')}` : ''),
+                            keyConcepts: theoryKeyConcepts,
+                            miniCheckpoints: theoryCheckpoints,
+                            cbseTips: theoryCbseTips
+                        });
+                    } catch (theoryErr) {
+                        console.warn(`[Builder] Failed to save theory for unit "${u.title}":`, theoryErr.message);
+                    }
+                }
+
                 if (u.exercises && u.exercises.length > 0) {
                     for (let eIdx = 0; eIdx < u.exercises.length; eIdx++) {
                         const ex = u.exercises[eIdx];
@@ -863,7 +883,7 @@ export default function PedagogyBuilderPage() {
                     }
                 }
             }
-            toast.success('🎉 AI Blueprint Units & Exercises created in course!');
+            toast.success('🎉 AI Blueprint Units, Theory & Exercises created in course!');
             loadData();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to auto-deploy units');

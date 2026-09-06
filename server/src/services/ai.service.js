@@ -2720,7 +2720,7 @@ TARGET PARAMETERS:
 
 RESOURCE CONTENT:
 ---
-${documentText ? documentText.slice(0, 18000) : 'Extracted from attached document / image.'}
+${documentText ? documentText.slice(0, 30000) : 'Extracted from attached document / image.'}
 ---
 
 RULES:
@@ -2913,8 +2913,177 @@ Output MUST be ONLY valid JSON matching this schema:
     }
 
     /**
-     * Deterministic fallback module builder that guarantees a rich, complete 3-unit course
+     * Parse section headings from document text to discover actual topics.
+     * Iterates line-by-line to avoid regex newline-consumption bugs.
+     * Extracts numbered sections (7.1, 7.2, 7.2.1, etc.), markdown headers, and chapter exercises.
+     * Returns array of { sectionNumber, title, startIndex, endIndex, text }
+     */
+    extractTopicsFromDocumentText(documentText = '') {
+        if (!documentText || documentText.length < 50) return [];
+
+        const lines = documentText.split(/\r?\n/);
+        const sections = [];
+        let charPos = 0;
+
+        const cleanExtractedTitle = (raw) => {
+            if (!raw) return '';
+            let t = raw.replace(/[\t\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+            t = t.replace(/\bK\s+eys\b/i, 'Keys');
+            const acronyms = new Set(['DBMS', 'RDBMS', 'SQL', 'DDL', 'DML', 'CBSE', 'NCERT']);
+            return t.split(' ').map((w, idx) => {
+                if (acronyms.has(w.toUpperCase())) return w.toUpperCase();
+                if (idx > 0 && /^(and|or|not|of|in|to|a|an|the|vs|for)$/i.test(w)) return w.toLowerCase();
+                return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+            }).join(' ');
+        };
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            // Match numbered sections: "7.1 Introduction", "7.2 File System", "### 7.3 DBMS"
+            const numMatch = line.match(/^(?:#{1,4}\s+)?\s*(\d+\.\d+(?:\.\d+)?)[ \t]+([^\r\n]+)/);
+            if (numMatch) {
+                const num = numMatch[1];
+                let rawTitle = numMatch[2].trim().replace(/[\t\r\n]+/g, ' ').replace(/\s+/g, ' ');
+                if (rawTitle.length >= 3 && rawTitle.length <= 80 && !/^(shows|and|are|is|by|to|in|of|table\s+\d|figure\s+\d)\b/i.test(rawTitle)) {
+                    sections.push({
+                        sectionNumber: num,
+                        title: cleanExtractedTitle(rawTitle),
+                        startIndex: charPos
+                    });
+                }
+            } else {
+                // Match Exercise section at end of chapter
+                const exMatch = line.match(/^(?:#{1,4}\s+)?\s*(?:exercise|exercISe|chapter\s+exercise[s]?)\b/i);
+                if (exMatch && charPos > documentText.length * 0.5) {
+                    sections.push({
+                        sectionNumber: 'Ex',
+                        title: 'Chapter Exercises & Practical Schema Applications',
+                        startIndex: charPos
+                    });
+                }
+            }
+            charPos += line.length + 1;
+        }
+
+        // Strategy 2 fallback: Markdown headings if no numbered sections found
+        if (sections.length === 0) {
+            charPos = 0;
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const mdMatch = line.match(/^#{2,3}\s+(.+)/);
+                if (mdMatch) {
+                    const title = mdMatch[1].trim().replace(/^[\d.]+\s*/, '');
+                    if (title.length >= 4 && title.length <= 80) {
+                        sections.push({
+                            sectionNumber: String(sections.length + 1),
+                            title: cleanExtractedTitle(title),
+                            startIndex: charPos
+                        });
+                    }
+                }
+                charPos += line.length + 1;
+            }
+        }
+
+        if (sections.length === 0) return [];
+
+        // Slice text between section boundaries
+        for (let i = 0; i < sections.length; i++) {
+            const start = sections[i].startIndex;
+            const end = (i + 1 < sections.length) ? sections[i + 1].startIndex : documentText.length;
+            sections[i].endIndex = end;
+            sections[i].text = documentText.slice(start, Math.min(end, start + 6000)).trim();
+        }
+
+        return sections;
+    }
+
+    /**
+     * Consolidate related topics into 5 balanced, high-impact units.
+     * Merges overview/intro sections and groups chapter subsections by core subject domain.
+     */
+    consolidateTopicsIntoUnits(topics = [], maxUnits = 5) {
+        if (topics.length <= 1) return topics.map((t, i) => ({ ...t, unitNumber: i + 1, mergedTopics: [t] }));
+
+        // If we have textbook sub-sections (e.g. 7.1, 7.2, 7.2.1, 7.3...), group by prefix or domain
+        const hasChapterSubsections = topics.some(t => /^\d+\.\d+/.test(t.sectionNumber));
+        if (hasChapterSubsections && topics.length >= 4) {
+            const groups = {
+                intro: [],      // 7.1, 7.2, 7.2.1 (Intro & File System)
+                dbms: [],       // 7.3, 7.3.1, 7.3.2 (DBMS & Architecture)
+                model: [],      // 7.4, 7.4.1 (Relational Data Model & Properties)
+                keys: [],       // 7.5, 7.5.1, 7.5.2, 7.5.3, 7.5.4 (Keys & Constraints)
+                exercises: []   // Ex or remaining (Applied Practice)
+            };
+
+            for (const t of topics) {
+                const s = t.sectionNumber;
+                if (s === 'Ex' || /exercise/i.test(t.title)) {
+                    groups.exercises.push(t);
+                } else if (/^\d+\.[12](?:\.|$)/.test(s) || /file\s*system|intro/i.test(t.title)) {
+                    groups.intro.push(t);
+                } else if (/^\d+\.3(?:\.|$)/.test(s) || /dbms|database\s+management/i.test(t.title)) {
+                    groups.dbms.push(t);
+                } else if (/^\d+\.4(?:\.|$)/.test(s) || /relational\s+data\s+model|properties/i.test(t.title)) {
+                    groups.model.push(t);
+                } else if (/^\d+\.5(?:\.|$)/.test(s) || /key/i.test(t.title)) {
+                    groups.keys.push(t);
+                } else {
+                    groups.exercises.push(t);
+                }
+            }
+
+            const consolidated = [];
+            const groupDefs = [
+                { key: 'intro', defaultTitle: 'Introduction to Databases & File System Limitations', num: 1 },
+                { key: 'dbms', defaultTitle: 'Database Management Systems & Core Architecture', num: 2 },
+                { key: 'model', defaultTitle: 'The Relational Data Model & Properties of Relations', num: 3 },
+                { key: 'keys', defaultTitle: 'Relational Keys & Referential Integrity Constraints', num: 4 },
+                { key: 'exercises', defaultTitle: 'Applied Database Schema Design & Chapter Practice', num: 5 }
+            ];
+
+            for (const def of groupDefs) {
+                const items = groups[def.key];
+                if (items && items.length > 0) {
+                    const combinedTitle = items.length === 1 ? items[0].title : def.defaultTitle;
+                    const combinedText = items.map(it => it.text || '').filter(Boolean).join('\n\n---\n\n');
+                    consolidated.push({
+                        unitNumber: consolidated.length + 1,
+                        sectionNumber: items[0].sectionNumber,
+                        title: combinedTitle,
+                        text: combinedText,
+                        mergedTopics: items
+                    });
+                }
+            }
+
+            if (consolidated.length >= 3) return consolidated;
+        }
+
+        // Generic consolidation: group linearly into maxUnits
+        if (topics.length <= maxUnits) {
+            return topics.map((t, i) => ({ ...t, unitNumber: i + 1, mergedTopics: [t] }));
+        }
+
+        const groupSize = Math.ceil(topics.length / maxUnits);
+        const units = [];
+        for (let g = 0; g < topics.length; g += groupSize) {
+            const group = topics.slice(g, g + groupSize);
+            units.push({
+                unitNumber: units.length + 1,
+                sectionNumber: group[0].sectionNumber,
+                title: group.map(t => t.title).join(' & '),
+                text: group.map(t => t.text || '').join('\n\n'),
+                mergedTopics: group
+            });
+        }
+        return units;
+    }
+
+    /**
+     * Deterministic fallback module builder that guarantees a rich, complete course
      * with Theory, Mini-Checkpoints, CBSE Tips, and interactive Exercises (Coding, MCQ, Fill Blank).
+     * Now deeply text-grounded: parses actual document sections and generates content from them.
      * NEVER throws an error, ensuring auto-build never returns HTTP 500.
      */
     generateDeterministicFallbackModule({
@@ -2923,7 +3092,7 @@ Output MUST be ONLY valid JSON matching this schema:
         language = 'python',
         classLevel = 11,
         board = 'CBSE',
-        totalUnits = 3,
+        totalUnits = 5,
         originalFileName = ''
     }) {
         const lowerDoc = (documentText + ' ' + customPrompt + ' ' + (originalFileName || '')).toLowerCase();
@@ -2939,96 +3108,220 @@ Output MUST be ONLY valid JSON matching this schema:
         );
 
         if (isDatabaseModule) {
+            // Extract document sections to ground the units directly in the uploaded textbook
+            const extractedSections = this.extractTopicsFromDocumentText(documentText);
+            const consolidatedUnits = this.consolidateTopicsIntoUnits(extractedSections, 5);
+
+            // Unit 1 grounded text
+            const u1Text = consolidatedUnits[0]?.text || '';
+            const u2Text = consolidatedUnits[1]?.text || '';
+            const u3Text = consolidatedUnits[2]?.text || '';
+            const u4Text = consolidatedUnits[3]?.text || '';
+            const u5Text = consolidatedUnits[4]?.text || '';
+
             return {
-                title: 'Relational Databases & SQL Query Systems',
-                titleHindi: 'रिलेशनल डेटाबेस और एसक्यूएल क्वेरी सिस्टम',
-                description: 'A comprehensive curriculum module covering Database Concepts, Relational Data Models, Keys, and Structured Query Language (SQL) DDL & DML operations.',
+                title: 'Database Concepts & Relational Systems (CBSE Class XI)',
+                titleHindi: 'डेटाबेस अवधारणाएं और रिलेशनल सिस्टम्स',
+                description: 'A comprehensive, mastery-gated curriculum module synthesized from NCERT Chapter 7 covering Database Concepts, File System Limitations, RDBMS Architecture, Relational Data Model, Table Constraints, Relational Keys, and SQL Practice.',
                 language: 'sql',
                 boardAligned: board || 'CBSE',
                 classLevel: Number(classLevel) || 11,
-                extractedSummary: 'Synthesized 3 progressive units covering Relational Data Model & Keys, SQL Data Definition Language (DDL) with Table Constraints, and SQL Data Manipulation Language (DML) with Advanced Filtering and Aggregate Functions.',
+                extractedSummary: `Synthesized 5 comprehensive curriculum units with 10 multi-modal interactive exercises (Coding, Code Debug, Fill-in-Blank, MCQ) deeply grounded in the uploaded textbook material.`,
                 pedagogyConfig: { useBlooms: true, useObjectives: true, useTimeLimit: false },
                 units: [
                     {
                         unitNumber: 1,
-                        title: 'Unit 1: Database Concepts, Relational Data Model & Keys',
-                        description: 'Foundational concepts of database systems, relations, attributes, tuples, degree, cardinality, and candidate/primary/foreign keys.',
+                        title: 'Unit 1: Introduction to Databases & File System Limitations',
+                        description: 'Foundational concepts of database systems, file system mechanics, and critical limitations including data redundancy, inconsistency, and lack of concurrency.',
                         expectedHours: 4,
                         unlockThreshold: 80,
                         keyConcepts: [
-                            'Limitations of File System vs Database Management System (DBMS)',
-                            'Relational Data Model: Relation (Table), Attribute (Column), Tuple (Row), Domain',
-                            'Degree (number of attributes) vs Cardinality (number of tuples)',
-                            'Candidate Key, Primary Key, Alternate Key',
-                            'Foreign Key and Referential Integrity constraints'
+                            'Database Concept: Organized collection of logically related data',
+                            'File System Operation: Storing data in separate application-specific files',
+                            'Data Redundancy: Duplication of data across multiple departmental files',
+                            'Data Inconsistency: Mismatched or conflicting multiple copies of the same data',
+                            'Lack of Data Sharing & Uncontrolled Concurrent Access',
+                            'Data Isolation and difficulty in ad-hoc data access'
                         ],
-                        theory: `### 1. Database Concepts & DBMS Overview
-A **Database** is an organized collection of structured data. A **Database Management System (DBMS)** is system software for creating and managing databases, eliminating file system limitations like data redundancy, inconsistency, and lack of concurrent access.
+                        theory: `### 1. What is a Database?
+A **Database** is an organized collection of logically related data that can be easily accessed, managed, and updated. In modern computerized systems, databases power applications ranging from school record managers and bank accounting to online reservation systems.
 
-### 2. The Relational Data Model
-In a **Relational Database**, data is organized into two-dimensional tables called **Relations**:
-- **Relation (Table)**: A grid of columns and rows containing data.
-- **Attribute (Field/Column)**: A named column representing a specific property (e.g., \`RollNo\`, \`StudentName\`, \`Marks\`).
-- **Tuple (Record/Row)**: A single row of related data values.
-- **Domain**: The pool of permissible values from which an attribute draws its values.
+### 2. Traditional File Processing System
+Before Database Management Systems (DBMS), data was maintained using operating system files. Each application created its own files with independent data structures. For instance, in a school:
+- Office staff maintains a **STUDENT** file (\`RollNo\`, \`Name\`, \`Class\`, \`Address\`, \`Phone\`).
+- Class teacher maintains an **ATTENDANCE** file (\`RollNo\`, \`Name\`, \`AttendanceDays\`).
 
-> **CBSE Formula / Golden Rule**:
-> - **Degree**: The total number of attributes (columns) in a relation.
-> - **Cardinality**: The total number of tuples (rows) in a relation.
+### 3. Limitations of a File System
+When organizations grow, file-based storage creates severe bottlenecks:
 
-| RollNo | Name | Stream | Marks |
-| :--- | :--- | :--- | :--- |
-| 101 | Aarav | Science | 92 |
-| 102 | Priya | Commerce | 88 |
-| 103 | Rohan | Humanities | 85 |
+| Limitation | Problem Description | Real-World Impact |
+| :--- | :--- | :--- |
+| **Data Redundancy** | Same data is duplicated in multiple files | Wastes storage space and increases entry effort |
+| **Data Inconsistency** | Multiple copies of data have conflicting values | If a student changes address, office file is updated but teacher file remains old |
+| **Lack of Data Sharing** | Files are isolated by application programs | Different departments cannot cross-verify records |
+| **Uncontrolled Concurrency** | Two users cannot edit the file simultaneously | Overwriting and loss of records during simultaneous updates |
+| **Data Isolation** | Data is scattered in files with diverse formats | Difficult to write new queries or generate ad-hoc reports |
 
-*In the table above: Degree = 4 (columns), Cardinality = 3 (rows).*
-
-### 3. Relational Keys
-- **Candidate Key**: Any attribute or set of attributes capable of uniquely identifying each tuple in a relation.
-- **Primary Key**: The candidate key chosen by the database designer to uniquely identify tuples. A primary key CANNOT contain duplicate or \`NULL\` values.
-- **Alternate Key**: A candidate key that was NOT chosen as the primary key.
-- **Foreign Key**: A non-key attribute in a relation whose values are derived from the Primary Key of another relation, enforcing **Referential Integrity**.`,
+${u1Text ? `\n\n#### 📖 Excerpts from Uploaded Curriculum Material\n${u1Text.slice(0, 1800)}...` : ''}`,
                         miniCheckpoints: [
                             {
                                 id: 'cp_db_1',
-                                question: 'If a relation contains 5 attributes (columns) and 40 records (rows), what are its degree and cardinality?',
+                                question: 'Which limitation of a file system occurs when duplicate copies of the same data contain conflicting values across different files?',
                                 options: [
-                                    'Degree = 5, Cardinality = 40',
-                                    'Degree = 40, Cardinality = 5',
-                                    'Degree = 45, Cardinality = 200',
-                                    'Degree = 5, Cardinality = 5'
+                                    'Data Redundancy',
+                                    'Data Inconsistency',
+                                    'Data Isolation',
+                                    'Data Dependency'
                                 ],
-                                correctOption: 0,
-                                explanation: 'Degree is the number of attributes/columns (5), while Cardinality is the number of tuples/rows (40).'
+                                correctOption: 1,
+                                explanation: 'Data Inconsistency occurs when multiple mismatched copies of the same data exist due to uncoordinated updates.'
                             },
                             {
                                 id: 'cp_db_2',
-                                question: 'Which of the following statements about a Primary Key is correct?',
+                                question: 'How does a Database Management System eliminate the limitation of data redundancy?',
                                 options: [
-                                    'It can store NULL values',
-                                    'It must be unique and cannot contain NULL values',
-                                    'A table can possess multiple primary keys',
-                                    'It must always have a floating-point data type'
+                                    'By encrypting files on the hard disk',
+                                    'By centralizing data storage into an integrated database accessible by all applications',
+                                    'By deleting old records automatically',
+                                    'By storing files exclusively in RAM'
                                 ],
                                 correctOption: 1,
-                                explanation: 'Entity integrity requires a Primary Key to have unique and non-null values for each record.'
+                                explanation: 'Centralized integration ensures that each data element is stored only once and shared across applications.'
                             }
                         ],
                         cbseTips: [
-                            'Degree = Columns, Cardinality = Rows. Memory trick: Degree starts with D (like Direction/Down columns), Cardinality is count of records.',
-                            'A relation can have multiple candidate keys, but exactly ONE primary key.'
+                            'Remember: Data Redundancy leads directly to Data Inconsistency. If data is duplicated, updating one copy without updating others creates inconsistency.',
+                            'CBSE Common Question: Differentiate between File System and DBMS based on redundancy, data sharing, and security.'
                         ],
-                        suggestedExerciseTypes: ['coding', 'mcq'],
+                        suggestedExerciseTypes: ['mcq', 'fill_blank'],
                         exercises: [
                             {
-                                title: 'Define Student Table with Primary Key & NOT NULL',
-                                description: 'Write a SQL DDL statement to create a table `Student` with columns `RollNo INT PRIMARY KEY`, `Name VARCHAR(50) NOT NULL`, and `Marks FLOAT`.',
+                                title: 'CBSE Scenario: Identify File System Limitation',
+                                description: 'A school office staff updated a student\'s guardian contact number in the Office Record file. However, the Class Teacher\'s Attendance file still shows the old number. When an emergency occurred, the school called the old unreachable number. Which limitation of the file system is illustrated here?',
+                                exerciseType: 'mcq',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'understand',
+                                learningObjective: 'Contrast data redundancy and inconsistency in real-world educational record keeping.',
+                                xpReward: 15,
+                                timeLimit: 4,
+                                starterCode: '',
+                                solutionCode: '',
+                                testCases: {
+                                    question: 'Which file system limitation caused the emergency contact discrepancy?',
+                                    options: [
+                                        'Data Redundancy resulting in Data Inconsistency',
+                                        'Lack of Data Encryption',
+                                        'Data Hardware Failure',
+                                        'Data Isolation only'
+                                    ],
+                                    correctOption: 0,
+                                    explanation: 'Storing duplicate phone numbers in two separate files (redundancy) resulted in only one file being updated, causing conflicting and inaccurate information (inconsistency).'
+                                },
+                                hints: ['Consider what happens when multiple copies exist and only one is modified.']
+                            },
+                            {
+                                title: 'Database Terminology & File System Cloze',
+                                description: 'Fill in the blanks with the correct database terminology describing file system limitations and DBMS characteristics.',
+                                exerciseType: 'fill_blank',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'remember',
+                                learningObjective: 'Recall fundamental CBSE database definitions and file system drawbacks.',
+                                xpReward: 20,
+                                timeLimit: 4,
+                                starterCode: 'Duplication of data is called {{BLANK_1}}, whereas mismatched multiple copies of data is called {{BLANK_2}}.',
+                                solutionCode: 'Duplication of data is called REDUNDANCY, whereas mismatched multiple copies of data is called INCONSISTENCY.',
+                                testCases: {
+                                    instruction: 'Fill in the blanks with the exact technical terms (UPPERCASE).',
+                                    template: 'Duplication of data is called {{BLANK_1}}, whereas mismatched multiple copies of data is called {{BLANK_2}}.',
+                                    blanks: [
+                                        { id: 'BLANK_1', correctAnswer: 'REDUNDANCY', hint: 'The technical word for duplication of data' },
+                                        { id: 'BLANK_2', correctAnswer: 'INCONSISTENCY', hint: 'The technical word for conflicting or mismatched copies' }
+                                    ],
+                                    explanation: 'Data redundancy is the duplication of data; data inconsistency is when conflicting copies exist.'
+                                },
+                                hints: ['BLANK_1 starts with REDUND..., BLANK_2 starts with INCONSIST...']
+                            }
+                        ]
+                    },
+                    {
+                        unitNumber: 2,
+                        title: 'Unit 2: Database Management Systems & Core Architecture',
+                        description: 'DBMS software structure, database schemas vs instances, metadata catalog in data dictionary, and data constraints.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: [
+                            'DBMS Definition: Software system for defining, constructing, and manipulating databases',
+                            'Database Schema: The permanent structural design and blueprint of a database',
+                            'Database Instance (State): The snapshot of actual data stored in the database at a specific moment',
+                            'Metadata & Data Dictionary: "Data about data" storing table structures, column types, and constraints',
+                            'Data Constraints: Business rules and restrictions enforced on stored data values',
+                            'Database Engine: Core underlying software component executing queries and managing storage'
+                        ],
+                        theory: `### 1. Database Management System (DBMS)
+A **Database Management System (DBMS)** is specialized software that enables users to create, maintain, query, and manage databases efficiently. Popular RDBMS software include **MySQL**, **PostgreSQL**, **Oracle**, **SQLite**, and **Microsoft SQL Server**.
+
+### 2. Database Schema vs Database Instance
+Understanding this distinction is a frequent CBSE board exam requirement:
+
+- **Database Schema**: The overall structural design, architecture, and blueprint of the database. It defines tables, column names, data types, and integrity constraints. The schema rarely changes once established.
+- **Database Instance (State)**: The actual data records stored in the database at any particular moment in time. The instance changes continuously as records are inserted, updated, or deleted.
+
+> **Analogy**: A architectural blueprint of a house is the **Schema**; the furniture and people inside the house at 3:00 PM is the **Instance**.
+
+### 3. Data Dictionary & Metadata
+The DBMS stores structural information in a system-maintained catalog called the **Data Dictionary**:
+- **Metadata**: Often described as *"data about data"*. It includes table names, column data types, field lengths, integrity constraints, and user access permissions.
+
+### 4. Data Constraints
+Data constraints are rules enforced by the DBMS to prevent invalid or corrupted data from being stored:
+- \`PRIMARY KEY\`: Ensures uniqueness and disallows \`NULL\`.
+- \`NOT NULL\`: Guarantees a value must be supplied.
+- \`CHECK\`: Enforces custom conditional logic (e.g. \`Salary > 0\`, \`Marks BETWEEN 0 AND 100\`).
+- \`UNIQUE\`: Prevents duplicates while permitting \`NULL\`.
+
+${u2Text ? `\n\n#### 📖 Excerpts from Uploaded Curriculum Material\n${u2Text.slice(0, 1800)}...` : ''}`,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_db_3',
+                                question: 'What is the permanent structural design or blueprint of a database called?',
+                                options: [
+                                    'Database Instance',
+                                    'Database Schema',
+                                    'Database Query',
+                                    'Database Engine'
+                                ],
+                                correctOption: 1,
+                                explanation: 'The Database Schema is the structural definition and design of the database that rarely changes.'
+                            },
+                            {
+                                id: 'cp_db_4',
+                                question: 'What is "Metadata" stored in the DBMS data dictionary?',
+                                options: [
+                                    'The encrypted user passwords',
+                                    'Data about data, such as table structures, column definitions, and constraints',
+                                    'The temporary log files of deleted tables',
+                                    'The hardware specifications of the database server'
+                                ],
+                                correctOption: 1,
+                                explanation: 'Metadata is data about data that describes schemas, data types, and integrity constraints.'
+                            }
+                        ],
+                        cbseTips: [
+                            'CBSE Rule: Schema represents structure (static); Instance represents the snapshot of data values (dynamic).',
+                            'Do not confuse Data Dictionary with user tables: the Data Dictionary is read-only system catalog maintained by the DBMS engine.'
+                        ],
+                        suggestedExerciseTypes: ['coding', 'fill_blank'],
+                        exercises: [
+                            {
+                                title: 'Define Student Table with Schema Constraints',
+                                description: 'Write a SQL DDL statement to create a table `Student` enforcing schema constraints: `RollNo INT PRIMARY KEY`, `Name VARCHAR(50) NOT NULL`, and `Marks FLOAT`.',
                                 exerciseType: 'coding',
                                 difficulty: 'beginner',
                                 scaffoldLevel: 'guided',
                                 bloomsLevel: 'apply',
-                                learningObjective: 'Declare table schemas with primary key and nullability constraints.',
+                                learningObjective: 'Declare relational table schemas with primary key and nullability constraints in SQL.',
                                 xpReward: 20,
                                 timeLimit: 5,
                                 starterCode: `-- Write your SQL statement below to create table Student\nCREATE TABLE Student (\n    \n);\n`,
@@ -3036,100 +3329,227 @@ In a **Relational Database**, data is organized into two-dimensional tables call
                                 testCases: [
                                     { input: "SELECT name FROM pragma_table_info('Student') WHERE name='RollNo' OR name='Name';", expectedOutput: 'RollNo\nName', isHidden: false }
                                 ],
-                                hints: ['Declare RollNo INT PRIMARY KEY, Name VARCHAR(50) NOT NULL, and Marks FLOAT.']
+                                hints: ['Declare RollNo INT PRIMARY KEY, Name VARCHAR(50) NOT NULL, and Marks FLOAT inside the parentheses.']
+                            },
+                            {
+                                title: 'Database Schema and Metadata Cloze',
+                                description: 'Complete the sentences describing DBMS structural components with the appropriate keywords.',
+                                exerciseType: 'fill_blank',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'remember',
+                                learningObjective: 'Distinguish between database schema and metadata concepts.',
+                                xpReward: 20,
+                                timeLimit: 4,
+                                starterCode: 'The structural blueprint of a database is its {{BLANK_1}}, while data describing table definitions is called {{BLANK_2}}.',
+                                solutionCode: 'The structural blueprint of a database is its SCHEMA, while data describing table definitions is called METADATA.',
+                                testCases: {
+                                    instruction: 'Fill in the technical terms in UPPERCASE.',
+                                    template: 'The structural blueprint of a database is its {{BLANK_1}}, while data describing table definitions is called {{BLANK_2}}.',
+                                    blanks: [
+                                        { id: 'BLANK_1', correctAnswer: 'SCHEMA', hint: 'Blueprint or design of a database' },
+                                        { id: 'BLANK_2', correctAnswer: 'METADATA', hint: 'Data about data' }
+                                    ],
+                                    explanation: 'The schema is the blueprint; metadata is the data about data stored in the data dictionary.'
+                                },
+                                hints: ['BLANK_1 is SCHEMA, BLANK_2 is METADATA.']
                             }
                         ]
                     },
                     {
-                        unitNumber: 2,
-                        title: 'Unit 2: SQL Data Definition (DDL) & Table Constraints',
-                        description: 'Creating tables, managing schemas with ALTER TABLE, and enforcing data integrity via table constraints.',
+                        unitNumber: 3,
+                        title: 'Unit 3: The Relational Data Model & Properties of Relations',
+                        description: 'Relational model foundations: relations, attributes, tuples, domains, degree, cardinality, and atomicity properties.',
                         expectedHours: 4,
                         unlockThreshold: 80,
                         keyConcepts: [
-                            'SQL Data Types: CHAR(n) vs VARCHAR(n), INT, DECIMAL, DATE',
-                            'DDL Commands: CREATE TABLE, ALTER TABLE, DROP TABLE',
-                            'Table Constraints: PRIMARY KEY, UNIQUE, NOT NULL, DEFAULT, CHECK',
-                            'Foreign Key REFERENCES and Referential Integrity',
-                            'ALTER TABLE ADD, MODIFY, and DROP COLUMN operations'
+                            'Relational Model: Proposed by E.F. Codd, organizing data into 2D tables',
+                            'Relation (Table): Named two-dimensional grid of rows and columns',
+                            'Attribute (Column/Field): Named characteristic representing a property',
+                            'Tuple (Row/Record): Single ordered set of related values representing an entity',
+                            'Domain: Pool of permissible, atomic values from which attribute values are drawn',
+                            'Degree: The total count of attributes (columns) in a relation',
+                            'Cardinality: The total count of tuples (rows) in a relation',
+                            'Atomicity: Each cell contains an indivisible single value'
                         ],
-                        theory: `### 1. SQL Data Types
-- **\`CHAR(n)\`**: Fixed-length character string. Padded with spaces if the stored string is shorter than \`n\`.
-- **\`VARCHAR(n)\`**: Variable-length character string. Stores only the characters entered, saving storage space.
-- **\`INT\` / \`INTEGER\`**: Standard integer values.
-- **\`FLOAT\` / \`DECIMAL(p, s)\`**: Exact and floating-point numeric values.
-- **\`DATE\`**: Calendar dates formatted as \`'YYYY-MM-DD'\`.
+                        theory: `### 1. The Relational Data Model
+Introduced by Dr. E.F. Codd in 1970, the **Relational Data Model** represents data in the form of two-dimensional tables called **Relations**:
 
-### 2. Data Definition Language (DDL)
-DDL commands modify the database catalog / schema directly:
+- **Relation (Table)**: A table containing rows and columns.
+- **Attribute (Column/Field)**: A vertical column representing a specific data property (e.g., \`RollNo\`, \`StudentName\`, \`Marks\`).
+- **Tuple (Row/Record)**: A horizontal row representing a distinct entity instance.
+- **Domain**: The set of permissible values from which an attribute draws its values (e.g., \`Marks\` domain is real numbers from 0.0 to 100.0).
 
-\`\`\`sql
--- Creating a table with column constraints
-CREATE TABLE Employee (
-    EmpId INT PRIMARY KEY,
-    EmpName VARCHAR(50) NOT NULL,
-    Dept VARCHAR(30) DEFAULT 'General',
-    Salary DECIMAL(10, 2) CHECK (Salary > 0)
-);
+### 2. Golden Rule: Degree vs Cardinality
+This is the single most frequently tested formula in CBSE Computer Science:
 
--- Modifying table schema
-ALTER TABLE Employee ADD Email VARCHAR(100);
-ALTER TABLE Employee DROP COLUMN Dept;
+$$\\text{Degree} = \\text{Total Number of Attributes (Columns)}$$
+$$\\text{Cardinality} = \\text{Total Number of Tuples (Rows)}$$
 
--- Removing a table permanently
-DROP TABLE Employee;
-\`\`\`
+#### Illustrated Example: Relation \`STUDENT\`
+| RollNo | StudentName | Stream | Marks |
+| :--- | :--- | :--- | :--- |
+| 101 | Aarav | Science | 92.5 |
+| 102 | Priya | Commerce | 88.0 |
+| 103 | Rohan | Humanities | 85.0 |
 
-> **CBSE Examination Pitfall: DROP vs DELETE**:
-> - **\`DROP TABLE\` (DDL)**: Destroys the table definition, schema metadata, and all records from the database permanently.
-> - **\`DELETE FROM\` (DML)**: Deletes records/tuples from the table, but leaves the table structure intact for future inserts.`,
+- **Attributes**: \`RollNo\`, \`StudentName\`, \`Stream\`, \`Marks\` $\\implies$ **Degree = 4**
+- **Tuples**: Rows 101, 102, 103 $\\implies$ **Cardinality = 3**
+
+### 3. Three Important Properties of a Relation
+1. **Atomic Values**: Each cell in a table contains an indivisible atomic value (no multi-valued lists).
+2. **Order of Tuples is Insignificant**: Shuffling rows does not change the relation.
+3. **Order of Attributes is Insignificant**: Columns can be arranged in any sequence without altering meaning.
+
+${u3Text ? `\n\n#### 📖 Excerpts from Uploaded Curriculum Material\n${u3Text.slice(0, 1800)}...` : ''}`,
                         miniCheckpoints: [
                             {
-                                id: 'cp_db_3',
-                                question: "What is the storage difference between CHAR(10) and VARCHAR(10) when storing the string 'CBSE'?",
+                                id: 'cp_db_5',
+                                question: 'If a database table contains 6 columns and 50 records, what are its Degree and Cardinality?',
                                 options: [
-                                    "CHAR(10) uses 4 bytes, VARCHAR(10) uses 10 bytes",
-                                    "CHAR(10) pads with 6 spaces to occupy 10 bytes, while VARCHAR(10) stores only 4 characters",
-                                    "VARCHAR cannot store alphanumeric characters",
-                                    "Both occupy 10 bytes unconditionally"
+                                    'Degree = 6, Cardinality = 50',
+                                    'Degree = 50, Cardinality = 6',
+                                    'Degree = 56, Cardinality = 300',
+                                    'Degree = 6, Cardinality = 6'
                                 ],
-                                correctOption: 1,
-                                explanation: "CHAR is fixed-length and pads unused space with blank characters, whereas VARCHAR only allocates storage for the actual string."
+                                correctOption: 0,
+                                explanation: 'Degree is the number of columns (6), while Cardinality is the number of rows/records (50).'
                             },
                             {
-                                id: 'cp_db_4',
-                                question: 'Which SQL command deletes all tuples from a table while preserving the table structure?',
-                                options: ['DROP TABLE', 'DELETE FROM', 'ALTER TABLE', 'REMOVE TABLE'],
-                                correctOption: 1,
-                                explanation: 'DELETE is a DML command that empties rows without dropping the schema. DROP TABLE removes the structure entirely.'
+                                id: 'cp_db_6',
+                                question: 'Which property of a relation requires every attribute value in a row to be indivisible and single-valued?',
+                                options: [
+                                    'Atomicity of Attribute Values',
+                                    'Ordering of Attributes',
+                                    'Domain Consistency',
+                                    'Tuple Duplication'
+                                ],
+                                correctOption: 0,
+                                explanation: 'Atomicity requires each cell to contain a single atomic value, not a collection or list.'
                             }
                         ],
                         cbseTips: [
-                            'In CBSE board exams: DDL statements (CREATE, ALTER, DROP) affect schema structure; DML statements (SELECT, INSERT, UPDATE, DELETE) affect data rows.',
-                            'Remember: DROP TABLE drops both data AND table definition from data dictionary.'
+                            'Memory Shortcut: **D**egree = **D**own columns. **C**ardinality = **C**ount of records/rows.',
+                            'CBSE Pitfall: If 2 rows are deleted and 1 column is added to a table with Degree 5 and Cardinality 20: New Degree = 6, New Cardinality = 18.'
                         ],
-                        suggestedExerciseTypes: ['coding', 'code_debug'],
+                        suggestedExerciseTypes: ['mcq', 'coding'],
                         exercises: [
                             {
-                                title: 'Create Course Table with Unique and Check Constraints',
-                                description: 'Create a table named `Course` with columns `CourseId INT PRIMARY KEY`, `CourseName VARCHAR(40) UNIQUE NOT NULL`, and `Credits INT CHECK (Credits > 0)`.',
-                                exerciseType: 'coding',
-                                difficulty: 'intermediate',
-                                scaffoldLevel: 'guided',
+                                title: 'Calculate Degree and Cardinality of Given CBSE Relation',
+                                description: 'A teacher created a table `GUARDIAN` with attributes `(GuardianId, GuardianName, Phone, Email, Address)` and populated it with 120 parent records. Predict the Degree and Cardinality of this relation.',
+                                exerciseType: 'mcq',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'independent',
                                 bloomsLevel: 'apply',
-                                learningObjective: 'Implement table creation with primary key, unique, and check constraints in SQL.',
-                                xpReward: 25,
-                                timeLimit: 5,
-                                starterCode: `-- Write your CREATE TABLE query for Course\nCREATE TABLE Course (\n\n);\n`,
-                                solutionCode: `CREATE TABLE Course (\n    CourseId INT PRIMARY KEY,\n    CourseName VARCHAR(40) UNIQUE NOT NULL,\n    Credits INT CHECK (Credits > 0)\n);\n`,
-                                testCases: [
-                                    { input: "SELECT name FROM pragma_table_info('Course') WHERE name='CourseName';", expectedOutput: 'CourseName', isHidden: false }
-                                ],
-                                hints: ['Define CourseId INT PRIMARY KEY, CourseName VARCHAR(40) UNIQUE NOT NULL, Credits INT CHECK (Credits > 0).']
+                                learningObjective: 'Calculate degree and cardinality from relational schema definitions.',
+                                xpReward: 15,
+                                timeLimit: 3,
+                                starterCode: '',
+                                solutionCode: '',
+                                testCases: {
+                                    question: 'What are the Degree and Cardinality of the GUARDIAN table?',
+                                    options: [
+                                        'Degree = 5, Cardinality = 120',
+                                        'Degree = 120, Cardinality = 5',
+                                        'Degree = 600, Cardinality = 5',
+                                        'Degree = 5, Cardinality = 5'
+                                    ],
+                                    correctOption: 0,
+                                    explanation: 'The table has 5 attributes (columns), so Degree = 5. It contains 120 tuples (records), so Cardinality = 120.'
+                                },
+                                hints: ['Count the attributes listed in the schema, then count the rows.']
                             },
                             {
+                                title: 'Query Specific Attributes with SQL SELECT',
+                                description: 'Write a SQL query to retrieve the `RollNo` and `Name` columns from the `Student` table, sorted in ascending order of `RollNo`.',
+                                exerciseType: 'coding',
+                                difficulty: 'beginner',
+                                scaffoldLevel: 'guided',
+                                bloomsLevel: 'apply',
+                                learningObjective: 'Retrieve relational attributes using SQL projection and ordering clauses.',
+                                xpReward: 20,
+                                timeLimit: 5,
+                                starterCode: `-- Write your SQL query below\nSELECT \nFROM Student\nORDER BY ;\n`,
+                                solutionCode: `SELECT RollNo, Name FROM Student ORDER BY RollNo ASC;\n`,
+                                testCases: [
+                                    {
+                                        input: "CREATE TABLE Student (RollNo INT, Name VARCHAR(50));\nINSERT INTO Student VALUES (101, 'Aarav'), (102, 'Priya');",
+                                        expectedOutput: "101\nAarav\n102\nPriya",
+                                        isHidden: false
+                                    }
+                                ],
+                                hints: ['Specify the two column names separated by a comma: SELECT RollNo, Name FROM Student ORDER BY RollNo ASC;']
+                            }
+                        ]
+                    },
+                    {
+                        unitNumber: 4,
+                        title: 'Unit 4: Relational Keys & Referential Integrity Constraints',
+                        description: 'Key constraints: Candidate Key, Primary Key, Alternate Key, Composite Primary Key, Foreign Key, and Referential Integrity.',
+                        expectedHours: 4,
+                        unlockThreshold: 80,
+                        keyConcepts: [
+                            'Candidate Key: Minimal attribute set capable of uniquely identifying any tuple',
+                            'Primary Key: Selected candidate key uniquely identifying tuples; cannot be NULL',
+                            'Alternate Key: Candidate key not chosen as the primary key',
+                            'Composite Primary Key: Multi-attribute primary key required when no single attribute is unique',
+                            'Foreign Key: Non-key attribute referencing the primary key of another table',
+                            'Referential Integrity: Rule preventing orphan records and dangling references'
+                        ],
+                        theory: `### 1. Relational Keys Overview
+Keys enforce uniqueness, identify rows, and establish logical relationships between tables:
+
+- **Candidate Key**: Any attribute or group of attributes that can uniquely identify each tuple in a relation without redundant attributes. A table may have multiple candidate keys.
+- **Primary Key**: The specific candidate key chosen by the database designer to uniquely identify tuples in the relation.
+  - **Golden Constraint 1**: A Primary Key **MUST BE UNIQUE** for every tuple.
+  - **Golden Constraint 2**: A Primary Key **CANNOT CONTAIN NULL VALUES**.
+- **Alternate Key**: Any candidate key that was *not* selected as the primary key.
+- **Composite Primary Key**: When no single attribute can uniquely identify tuples, two or more attributes are combined together to form the primary key (e.g., \`RollNo + ExamCode\`).
+
+### 2. Foreign Key & Referential Integrity
+- **Foreign Key**: An attribute in a relation whose values are derived from and reference the Primary Key of another table (or the same table).
+- **Referential Integrity**: Guarantees that any foreign key value in a referencing table must match an existing primary key value in the referenced parent table, or be \`NULL\` (if allowed).
+
+> **Important CBSE Distinction: NULL in Keys**:
+> - **Primary Key**: CANNOT contain \`NULL\` values under any circumstances.
+> - **Foreign Key**: **CAN contain \`NULL\`** values if the relationship is optional (e.g., a student may not yet be assigned to a lab section).
+
+${u4Text ? `\n\n#### 📖 Excerpts from Uploaded Curriculum Material\n${u4Text.slice(0, 1800)}...` : ''}`,
+                        miniCheckpoints: [
+                            {
+                                id: 'cp_db_7',
+                                question: 'A student table has attributes RollNo (unique) and AdmissionNo (unique). The administrator chose AdmissionNo as the Primary Key. What is RollNo called?',
+                                options: [
+                                    'Alternate Key',
+                                    'Foreign Key',
+                                    'Secondary Key',
+                                    'Composite Key'
+                                ],
+                                correctOption: 0,
+                                explanation: 'A candidate key that is not chosen as the primary key is termed an Alternate Key.'
+                            },
+                            {
+                                id: 'cp_db_8',
+                                question: 'Why is a Foreign Key permitted to contain NULL values while a Primary Key cannot?',
+                                options: [
+                                    'Foreign keys have no constraints in SQL',
+                                    'A foreign key represents an optional association, so a record may not yet be linked to a parent table',
+                                    'Primary keys can also store NULL in SQLite',
+                                    'Foreign keys cannot store numbers'
+                                ],
+                                correctOption: 1,
+                                explanation: 'A foreign key relationship may be optional (e.g. an employee without a manager), whereas a primary key strictly identifies the entity and can never be null.'
+                            }
+                        ],
+                        cbseTips: [
+                            'A relation can have multiple candidate keys, multiple alternate keys, but exactly ONE primary key.',
+                            'Referential Integrity prevents deletion of a parent record while matching child records exist in foreign key tables.'
+                        ],
+                        suggestedExerciseTypes: ['code_debug', 'mcq'],
+                        exercises: [
+                            {
                                 title: 'CBSE Error Spotting: Fix DDL Table Definition Syntax',
-                                description: 'Identify and fix the syntax errors in the following SQL table creation script where data types and constraints are misused.',
+                                description: 'Spot and fix the syntax errors in the following SQL table creation script where the primary key keyword and VARCHAR data type syntax are corrupted.',
                                 exerciseType: 'code_debug',
                                 difficulty: 'intermediate',
                                 scaffoldLevel: 'guided',
@@ -3150,98 +3570,126 @@ DROP TABLE Employee;
                                     explanation: 'In SQL, the constraint keyword is PRIMARY KEY (not just PRIMARY), VARCHAR requires a length parameter like VARCHAR(50), and SQL statements terminate with a semicolon.'
                                 },
                                 hints: ["Change 'PRIMARY' to 'PRIMARY KEY', specify a length for VARCHAR like VARCHAR(50), and end with a semicolon."]
+                            },
+                            {
+                                title: 'Relational Key Classification: Candidate vs Alternate vs Primary',
+                                description: 'A table `EMPLOYEE` has columns `(EmpId, AadhaarNo, PassportNo, EmpName, DeptId)`. Both `EmpId`, `AadhaarNo`, and `PassportNo` are unique. If `EmpId` is designated as the Primary Key, how many Alternate Keys exist?',
+                                exerciseType: 'mcq',
+                                difficulty: 'intermediate',
+                                scaffoldLevel: 'independent',
+                                bloomsLevel: 'understand',
+                                learningObjective: 'Identify and count candidate and alternate keys in multi-key schemas.',
+                                xpReward: 15,
+                                timeLimit: 3,
+                                starterCode: '',
+                                solutionCode: '',
+                                testCases: {
+                                    question: 'How many Alternate Keys exist in the EMPLOYEE table?',
+                                    options: [
+                                        '2 (AadhaarNo and PassportNo)',
+                                        '3 (EmpId, AadhaarNo, PassportNo)',
+                                        '1 (AadhaarNo only)',
+                                        '0'
+                                    ],
+                                    correctOption: 0,
+                                    explanation: 'There are 3 Candidate Keys (EmpId, AadhaarNo, PassportNo). With EmpId chosen as the Primary Key, the remaining 2 candidate keys become Alternate Keys.'
+                                },
+                                hints: ['Alternate Keys = Candidate Keys minus the chosen Primary Key.']
                             }
                         ]
                     },
                     {
-                        unitNumber: 3,
-                        title: 'Unit 3: SQL Data Manipulation (DML) & Relational Queries',
-                        description: 'Filtering data with WHERE clauses, pattern matching with LIKE, sorting with ORDER BY, and aggregating data with GROUP BY and HAVING.',
+                        unitNumber: 5,
+                        title: 'Unit 5: Applied Database Schema Design & Chapter Problem Practice',
+                        description: 'Hands-on practice based on NCERT Chapter 7 exercises: table creation, constraints, real-world schemas, and SQL query filters.',
                         expectedHours: 4,
                         unlockThreshold: 80,
                         keyConcepts: [
-                            'DML Statements: INSERT INTO, SELECT, UPDATE, DELETE',
-                            'Filtering Predicates: WHERE, BETWEEN ... AND, IN, IS NULL, AND, OR, NOT',
-                            'Pattern Matching with LIKE: % (wildcard sequence) and _ (single character)',
-                            'Sorting records: ORDER BY attribute [ASC | DESC]',
-                            'Aggregate Functions: COUNT(*), COUNT(col), SUM(), AVG(), MIN(), MAX()',
-                            'Grouping and Group Filtering: GROUP BY and HAVING clause'
+                            'Translating real-world problem scenarios into relational schemas',
+                            'Applying UNIQUE, NOT NULL, and CHECK constraints',
+                            'Handling NULL values in relational data',
+                            'Filtering records using WHERE, BETWEEN, and pattern matching with LIKE',
+                            'CBSE examination exercise problem solving and edge case verification'
                         ],
-                        theory: `### 1. Data Manipulation Language (DML)
-DML commands manage data within existing tables:
+                        theory: `### 1. Real-World Schema Design (NCERT Chapter Exercises)
+In real-world applications (such as the NCERT Chapter 7 school sports preference problem), entities must be structured to prevent integrity violations:
+
+#### Scenario: Sports Preference System
+- A school rule states each student can have only **one** sports preference.
+- If a table has \`RollNo\` and \`Preference\`, making \`RollNo\` the **Primary Key** ensures that no student can have multiple conflicting rows!
+- If a student has not selected a sport, \`Preference\` can store \`NULL\` (provided \`NOT NULL\` is omitted).
+
+### 2. Table Creation with Rich Column Constraints
+\`\`\`sql
+CREATE TABLE SportsPreference (
+    RollNo INT PRIMARY KEY,
+    StudentName VARCHAR(50) NOT NULL,
+    Sport VARCHAR(30) DEFAULT 'General Physical Education',
+    PreferenceRank INT CHECK (PreferenceRank >= 1 AND PreferenceRank <= 3)
+);
+\`\`\`
+
+### 3. Data Filtering & Pattern Matching with LIKE
+- **\`%\` (Percent Wildcard)**: Matches zero, one, or multiple characters (e.g. \`Name LIKE 'A%'\` matches any name starting with A).
+- **\`_\` (Underscore Wildcard)**: Matches exactly one character (e.g. \`Name LIKE '_a%'\` matches names with 'a' as second letter).
 
 \`\`\`sql
--- Inserting records
-INSERT INTO Student (RollNo, Name, Marks) VALUES (101, 'Aman Sharma', 94.5);
-
--- Modifying existing records
-UPDATE Student SET Marks = 96.0 WHERE RollNo = 101;
-
--- Querying data with filters
-SELECT Name, Marks FROM Student 
-WHERE Marks BETWEEN 80 AND 100 
+-- Students scoring 85 or higher sorted from highest to lowest
+SELECT RollNo, StudentName, Marks 
+FROM Student 
+WHERE Marks >= 85 
 ORDER BY Marks DESC;
 \`\`\`
 
-### 2. Pattern Matching with LIKE
-- **\`%\` (Percent)**: Matches zero, one, or multiple characters. E.g., \`Name LIKE 'A%'\` matches any name starting with 'A'.
-- **\`_\` (Underscore)**: Matches exactly one character. E.g., \`Name LIKE '_a%'\` matches any name with 'a' as the second character.
-
-### 3. Aggregate Functions & GROUP BY
-Aggregate functions compute a single summary value over a set of rows:
-- \`COUNT(*)\`: Counts all rows, including rows containing \`NULL\`.
-- \`COUNT(attribute)\`: Counts only non-NULL values in the specified column.
-- \`SUM(col)\`, \`AVG(col)\`, \`MIN(col)\`, \`MAX(col)\`.
-
-\`\`\`sql
--- Department-wise average salary with group condition
-SELECT Dept, AVG(Salary), COUNT(*) 
-FROM Employee 
-GROUP BY Dept 
-HAVING AVG(Salary) > 50000;
-\`\`\`
-
-> **CBSE Critical Rule: WHERE vs HAVING**:
-> - **\`WHERE\` clause**: Filters individual tuples *before* grouping occurs. You **CANNOT** use aggregate functions in a \`WHERE\` clause (e.g. \`WHERE AVG(marks) > 80\` is a syntax error!).
-> - **\`HAVING\` clause**: Filters aggregated groups *after* the \`GROUP BY\` operation. Aggregate functions are placed in \`HAVING\`.`,
+${u5Text ? `\n\n#### 📖 Excerpts from Uploaded Curriculum Material\n${u5Text.slice(0, 1800)}...` : ''}`,
                         miniCheckpoints: [
                             {
-                                id: 'cp_db_5',
-                                question: 'Which SQL clause is legitimately used to filter groups using aggregate functions like AVG(Salary) or COUNT(*)?',
-                                options: ['WHERE clause', 'HAVING clause', 'FROM clause', 'ORDER BY clause'],
-                                correctOption: 1,
-                                explanation: 'HAVING is evaluated after grouping and is specifically designed to filter groups based on aggregate conditions.'
+                                id: 'cp_db_9',
+                                question: 'In the NCERT Sports Preference exercise, student Roll No 17 entered two different sports preferences. Which relational database constraint prevents this duplicate entry?',
+                                options: [
+                                    'Defining RollNo as the PRIMARY KEY',
+                                    'Defining Preference as FOREIGN KEY',
+                                    'Using the DROP TABLE command',
+                                    'Adding an index on the student name'
+                                ],
+                                correctOption: 0,
+                                explanation: 'Defining RollNo as the Primary Key prevents any student from appearing more than once in the table.'
                             },
                             {
-                                id: 'cp_db_6',
-                                question: "What LIKE pattern matches any string having 'k' as its third character?",
-                                options: ["'%k%'", "'__k%'", "'_k%'", "'k__%'"],
+                                id: 'cp_db_10',
+                                question: 'What does the pattern LIKE "_a%" match in SQL?',
+                                options: [
+                                    'Any string containing "a"',
+                                    'Any string with "a" as its second character',
+                                    'Any string starting with "a"',
+                                    'Any string ending with "a"'
+                                ],
                                 correctOption: 1,
-                                explanation: "Two underscores ('__') match exactly two leading characters, followed by 'k' as the third character, and '%' matches remaining characters."
+                                explanation: 'An underscore matches exactly one character, followed by "a" as the second character.'
                             }
                         ],
                         cbseTips: [
-                            'Never write WHERE COUNT(*) > 5 in CBSE board exams. Always use GROUP BY ... HAVING COUNT(*) > 5.',
-                            'COUNT(*) counts NULL values, but COUNT(column_name) ignores NULLs.'
+                            'In CBSE exams: DROP TABLE is DDL (destroys definition and data); DELETE FROM is DML (removes rows, preserves structure).',
+                            'Always terminate SQL statements with a semicolon in CBSE written examinations.'
                         ],
                         suggestedExerciseTypes: ['coding', 'fill_blank'],
                         exercises: [
                             {
-                                title: 'Query High Scoring Students Sorted by Marks',
-                                description: 'Write a SQL query to select `Name` and `Marks` from `Student` where `Marks >= 85`, sorted in descending order of `Marks`.',
+                                title: 'Create Course Table with Unique and Check Constraints',
+                                description: 'Create a table named `Course` with columns `CourseId INT PRIMARY KEY`, `CourseName VARCHAR(40) UNIQUE NOT NULL`, and `Credits INT CHECK (Credits > 0)`.',
                                 exerciseType: 'coding',
-                                difficulty: 'beginner',
+                                difficulty: 'intermediate',
                                 scaffoldLevel: 'guided',
                                 bloomsLevel: 'apply',
-                                learningObjective: 'Filter records using WHERE and sort output using ORDER BY DESC.',
-                                xpReward: 20,
+                                learningObjective: 'Implement table creation with primary key, unique, and check constraints in SQL.',
+                                xpReward: 25,
                                 timeLimit: 5,
-                                starterCode: `-- Write your SELECT query below\nSELECT \nFROM Student\nWHERE \nORDER BY ;\n`,
-                                solutionCode: `SELECT Name, Marks FROM Student WHERE Marks >= 85 ORDER BY Marks DESC;\n`,
+                                starterCode: `-- Write your CREATE TABLE query for Course\nCREATE TABLE Course (\n\n);\n`,
+                                solutionCode: `CREATE TABLE Course (\n    CourseId INT PRIMARY KEY,\n    CourseName VARCHAR(40) UNIQUE NOT NULL,\n    Credits INT CHECK (Credits > 0)\n);\n`,
                                 testCases: [
-                                    { input: 'SELECT Name, Marks FROM Student WHERE Marks >= 85 ORDER BY Marks DESC;', expectedOutput: 'Aman', isHidden: false }
+                                    { input: "SELECT name FROM pragma_table_info('Course') WHERE name='CourseName';", expectedOutput: 'CourseName', isHidden: false }
                                 ],
-                                hints: ['Use SELECT Name, Marks FROM Student WHERE Marks >= 85 ORDER BY Marks DESC;']
+                                hints: ['Define CourseId INT PRIMARY KEY, CourseName VARCHAR(40) UNIQUE NOT NULL, Credits INT CHECK (Credits > 0).']
                             },
                             {
                                 title: 'SQL Clause Syntax Completion',

@@ -77,7 +77,8 @@ async function executePythonCode(code, input = '', language = 'python') {
     );
 
     if (isSql) {
-        const fullSql = code + (input ? `\n${input}` : '');
+        const isSetupSql = input && /^\s*(CREATE|INSERT|DROP|ALTER|PRAGMA\s+foreign_keys)\b/i.test(input) && !/pragma_table_info/i.test(input);
+        const fullSql = isSetupSql ? `${input}\n${code}` : (code + (input ? `\n${input}` : ''));
         const pySqlRunner = `
 import sqlite3, sys
 con = sqlite3.connect(':memory:')
@@ -1072,7 +1073,7 @@ router.post('/exercises/:id/run', authenticate, [
                 }
             }
         }
-        execution = await executePythonCode(codeToRun, stdinInput);
+        execution = await executePythonCode(codeToRun, stdinInput, language);
     }
 
     res.json({
@@ -1283,7 +1284,7 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
         let exeSuccess = false;
         if (userFixCode) {
             try {
-                const exe = await executePythonCode(userFixCode, '');
+                const exe = await executePythonCode(userFixCode, '', language);
                 exeSuccess = !exe.stderr && (exe.code === 0 || exe.code === null);
             } catch (e) {}
         }
@@ -1351,7 +1352,7 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
                             }
                         }
                     }
-                    exe = await executePythonCode(codeToRun, stdinInput);
+                    exe = await executePythonCode(codeToRun, stdinInput, language);
                 }
                 
                 const actualRaw = exe.stdout ? exe.stdout.replace(/\r\n/g, '\n') : '';

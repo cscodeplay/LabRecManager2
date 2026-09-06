@@ -68,7 +68,7 @@ export default function AiTrainingCopilot({
     const [difficulty, setDifficulty] = useState('beginner');
     const [scaffoldLevel, setScaffoldLevel] = useState('guided');
     const [bloomsLevel, setBloomsLevel] = useState('apply');
-    const [totalUnits, setTotalUnits] = useState(3);
+    const [totalUnits, setTotalUnits] = useState(5);
     const [provider, setProvider] = useState('groq'); // 'groq' | 'gemini'
     
     // RAG Document & Vision State
@@ -123,6 +123,9 @@ export default function AiTrainingCopilot({
                     setTab('rag');
                     if (suggestedTitle) setPrompt(suggestedTitle);
                     if (suggestedLanguage) setLanguage(suggestedLanguage);
+                    if (Array.isArray(uploadRes.data.data?.keyTopics) && uploadRes.data.data.keyTopics.length > 2) {
+                        setTotalUnits(Math.max(3, Math.min(8, uploadRes.data.data.keyTopics.length)));
+                    }
                     toast.success(`📖 Extracted ${styled.length} chars of curriculum text from "${file.name}"!`, { id: toastId });
                 } else {
                     throw new Error(uploadRes.data?.message || 'Failed to extract text from PDF');
