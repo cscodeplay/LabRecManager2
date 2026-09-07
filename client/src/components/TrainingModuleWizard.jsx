@@ -161,6 +161,39 @@ export default function TrainingModuleWizard({
         }
     });
 
+    // Themed Deploying & Publishing Processing State
+    const [deployProgressStage, setDeployProgressStage] = useState(0); // 1: Blueprint, 2: Theory, 3: Exercises, 4: Live
+    const [deployingStatusText, setDeployingStatusText] = useState('');
+
+    // Accordion Course Flow State (Collapsible Units with Prominent Typography)
+    const [expandedUnitIndices, setExpandedUnitIndices] = useState(new Set([0]));
+    const [previewExpandedUnitIndices, setPreviewExpandedUnitIndices] = useState(new Set([0]));
+
+    // Dual-Tab Theory Studio State (Editor vs Live Lesson Preview)
+    const [wizardTheoryActiveTab, setWizardTheoryActiveTab] = useState('editor'); // 'editor' | 'preview'
+
+    // Bloom's Taxonomy & Scaffolding Diversification
+    const [moduleBloomsTarget, setModuleBloomsTarget] = useState('mix');
+    const [moduleScaffoldTarget, setModuleScaffoldTarget] = useState('progressive');
+
+    const toggleUnitExpanded = (uIdx) => {
+        setExpandedUnitIndices(prev => {
+            const next = new Set(prev);
+            if (next.has(uIdx)) next.delete(uIdx);
+            else next.add(uIdx);
+            return next;
+        });
+    };
+
+    const togglePreviewUnitExpanded = (uIdx) => {
+        setPreviewExpandedUnitIndices(prev => {
+            const next = new Set(prev);
+            if (next.has(uIdx)) next.delete(uIdx);
+            else next.add(uIdx);
+            return next;
+        });
+    };
+
     // Wizard Unit Pre-Lab Theory Inline Editing State
     const [wizardTheoryUnitIdx, setWizardTheoryUnitIdx] = useState(null);
     const [wizardTheoryForm, setWizardTheoryForm] = useState({
@@ -476,7 +509,9 @@ export default function TrainingModuleWizard({
                 exerciseType: batchExerciseType,
                 language: moduleForm.language || 'python',
                 classLevel: moduleForm.classLevel || 11,
-                board: moduleForm.boardAligned || 'CBSE'
+                board: moduleForm.boardAligned || 'CBSE',
+                bloomsLevel: moduleBloomsTarget || 'mix',
+                scaffoldLevel: moduleScaffoldTarget || 'progressive'
             }, wizardInlineAiProvider);
 
             if (res.data?.success && Array.isArray(res.data.data?.exercises) && res.data.data.exercises.length > 0) {
@@ -486,8 +521,8 @@ export default function TrainingModuleWizard({
                     description: ex.description || '',
                     exerciseType: ex.exerciseType || 'coding',
                     difficulty: ex.difficulty || 'beginner',
-                    scaffoldLevel: ex.scaffoldLevel || 'guided',
-                    bloomsLevel: ex.bloomsLevel || 'apply',
+                    scaffoldLevel: ex.scaffoldLevel || moduleScaffoldTarget || 'guided',
+                    bloomsLevel: ex.bloomsLevel || moduleBloomsTarget || 'apply',
                     learningObjective: ex.learningObjective || '',
                     xpReward: ex.xpReward || 20,
                     timeLimit: ex.timeLimit || 5,
@@ -539,7 +574,9 @@ export default function TrainingModuleWizard({
                 exerciseType: batchExerciseType,
                 language: moduleForm.language || 'python',
                 classLevel: moduleForm.classLevel || 11,
-                board: moduleForm.boardAligned || 'CBSE'
+                board: moduleForm.boardAligned || 'CBSE',
+                bloomsLevel: moduleBloomsTarget || 'mix',
+                scaffoldLevel: moduleScaffoldTarget || 'progressive'
             }, wizardInlineAiProvider);
 
             if (res.data?.success && Array.isArray(res.data.data?.exercises) && res.data.data.exercises.length > 0) {
@@ -602,6 +639,8 @@ export default function TrainingModuleWizard({
                 language: langToUse,
                 classLevel: moduleForm.classLevel || 11,
                 board: moduleForm.boardAligned || 'CBSE',
+                bloomsLevel: moduleBloomsTarget || 'mix',
+                scaffoldLevel: moduleScaffoldTarget || 'progressive',
                 totalUnits: (Array.isArray(keyTopics) && keyTopics.length > 2) ? keyTopics.length : 6
             }, step1AiProvider);
 
@@ -1452,10 +1491,68 @@ export default function TrainingModuleWizard({
             caseStudyData: currentType === 'case_study' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.caseStudyData,
             arData: currentType === 'assertion_reason' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.arData,
             traceData: currentType === 'code_trace' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.traceData,
-            debugData: currentType === 'code_debug' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.debugData
+debugData: currentType === 'code_debug' && typeof aiEx.testCases === 'object' ? aiEx.testCases : prev.debugData
         }));
         setIsEditingExercise(true);
     };
+
+    const [isSavingDraft, setIsSavingDraft] = useState(false);
+
+    // Initial Fetch (If editing)
+    useEffect(() => {
+        if (isOpen && initialData && initialData.id) {
+            // Check if user has an auto-saved draft for this module
+            const savedDraftStr = localStorage.getItem('ulrms_training_wizard_draft');
+            if (savedDraftStr) {
+                try {
+                    const parsed = JSON.parse(savedDraftStr);
+                    if (parsed.moduleId === initialData.id && parsed.timestamp) {
+                        const ageHrs = (Date.now() - parsed.timestamp) / (1000 * 60 * 60);
+                        if (ageHrs < 24) {
+                            toast(
+                                (t) => (
+                                    <div className="flex flex-col gap-2 text-sm">
+                                        <div className="font-bold flex items-center gap-2">
+                                            <Save className="w-4 h-4 text-indigo-500" />
+                                            Found an auto-saved draft!
+                                        </div>
+                                        <p className="text-slate-600 dark:text-slate-300 text-xs">
+                                            You have unsaved changes from {new Date(parsed.timestamp).toLocaleTimeString()}. Do you want to restore them?
+                                        </p>
+                                        <div className="flex justify-end gap-2 mt-1">
+                                            <button 
+                                                onClick={() => {
+                                                    loadStateFromLocalDraft(parsed);
+                                                    toast.dismiss(t.id);
+                                                    toast.success('Draft restored!');
+                                                }}
+                                                className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs hover:bg-indigo-500"
+                                            >
+                                                Restore Draft
+                                            </button>
+                                            <button 
+                                                onClick={() => {
+                                                    localStorage.removeItem('ulrms_training_wizard_draft');
+                                                    toast.dismiss(t.id);
+                                                }}
+                                                className="bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg font-bold text-xs"
+                                            >
+                                                Discard
+                                            </button>
+                                        </div>
+                                    </div>
+                                ),
+                                { duration: 15000, position: 'top-center' }
+                            );
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to parse wizard draft', e);
+                }
+            }
+        }
+    }, [isOpen, initialData]);
+
 
     // Final Create & Deploy Handler
     const handleFinalDeploy = async (shouldPublishNow = false) => {
@@ -1465,10 +1562,16 @@ export default function TrainingModuleWizard({
             return;
         }
 
+        const isPublishing = Boolean(shouldPublishNow);
         setIsSubmitting(true);
+        if (!isPublishing) {
+            setIsSavingDraft(true);
+        }
+        setDeployProgressStage(1);
+        setDeployingStatusText(isPublishing ? 'Packaging curriculum blueprint & progressive mastery gates...' : 'Saving draft configuration...');
+
         try {
             // 1. Create or Update Module
-            const isPublishing = Boolean(shouldPublishNow);
             const createPayload = {
                 ...moduleForm,
                 isPublished: isPublishing, // Strictly false when saving as draft!
@@ -1533,6 +1636,9 @@ export default function TrainingModuleWizard({
 
                 updatedUnitsWithRealIds[uIdx] = { ...u, id: createdUnitId };
 
+                setDeployProgressStage(2);
+                setDeployingStatusText(`Grounding Unit ${uIdx + 1} Pre-Lab Theory & interactive mini-checks...`);
+
                 // Save Pre-Lab Theory & Checkpoints if available
                 const theoryToSave = u.theoryData || (u.theory ? {
                     summary: u.description || `Key concepts of ${u.title}`,
@@ -1558,6 +1664,8 @@ export default function TrainingModuleWizard({
 
                 // Create Exercises for this unit
                 if (u.exercises && u.exercises.length > 0 && createdUnitId && isRealDbUuid(createdUnitId)) {
+                    setDeployProgressStage(3);
+                    setDeployingStatusText(`Compiling Unit ${uIdx + 1} coding sandboxes, test cases & unit tests...`);
                     for (let eIdx = 0; eIdx < u.exercises.length; eIdx++) {
                         const ex = u.exercises[eIdx];
                         const fullDescription = ex.theory
@@ -1592,6 +1700,9 @@ export default function TrainingModuleWizard({
             // Sync local state with genuine DB IDs
             setUnits(updatedUnitsWithRealIds);
 
+            setDeployProgressStage(4);
+            setDeployingStatusText(isPublishing ? 'Publishing to active class rosters & finalizing live deployment...' : 'Finalizing curriculum draft & syncing to database...');
+
             // 3. Ensure module is published ONLY if isPublishing is true
             if (isPublishing) {
                 try {
@@ -1624,6 +1735,7 @@ export default function TrainingModuleWizard({
             toast.error(err.response?.data?.message || err.message || 'Failed to create training module');
         } finally {
             setIsSubmitting(false);
+            setIsSavingDraft(false);
         }
     };
 
@@ -2057,6 +2169,54 @@ export default function TrainingModuleWizard({
                                         value={moduleForm.classLevel}
                                         onChange={e => setModuleForm(f => ({ ...f, classLevel: parseInt(e.target.value) || 11 }))}
                                     />
+                                </div>
+                            </div>
+
+                            {/* Bloom's Taxonomy & Scaffolding Diversification */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40">
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                            <Award className="w-3.5 h-3.5 text-indigo-500" /> Target Bloom's Taxonomy Level
+                                        </label>
+                                        <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold">Labs & Tests</span>
+                                    </div>
+                                    <select
+                                        value={moduleBloomsTarget}
+                                        onChange={e => setModuleBloomsTarget(e.target.value)}
+                                        className="input text-xs font-semibold"
+                                    >
+                                        <option value="mix">🎯 Adaptive Mix (Remember ➔ Create)</option>
+                                        <option value="understand">💡 Understand & Explain Concepts</option>
+                                        <option value="apply">⚡ Apply & Implement Algorithms</option>
+                                        <option value="analyze">🔍 Analyze, Trace & Debug Code</option>
+                                        <option value="evaluate">⚖️ Evaluate Edge Cases & Performance</option>
+                                        <option value="create">🏗️ Create Full System Architectures</option>
+                                    </select>
+                                    <p className="text-[10px] text-slate-400 mt-1">
+                                        Dictates cognitive depth for generated exercises, back-of-chapter questions, and summative tests.
+                                    </p>
+                                </div>
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                            <Layers className="w-3.5 h-3.5 text-purple-500" /> Scaffolding Progression
+                                        </label>
+                                        <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold">Adaptive Hints</span>
+                                    </div>
+                                    <select
+                                        value={moduleScaffoldTarget}
+                                        onChange={e => setModuleScaffoldTarget(e.target.value)}
+                                        className="input text-xs font-semibold"
+                                    >
+                                        <option value="progressive">📈 Progressive (Guided ➔ Semi ➔ Mastery)</option>
+                                        <option value="guided">🛡️ Fully Guided (Rich Stubs & Step Hints)</option>
+                                        <option value="semi-independent">🧭 Semi-Independent (Spec & Docstrings)</option>
+                                        <option value="independent">🚀 Independent (Blank Canvas & Strict Specs)</option>
+                                    </select>
+                                    <p className="text-[10px] text-slate-400 mt-1">
+                                        Controls initial starter code density and automated hint level in student sandbox runners.
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -3290,165 +3450,216 @@ export default function TrainingModuleWizard({
                                 );
                             })()}
 
-                            {/* Detailed Unit-by-Unit Review Cards */}
+                            {/* Detailed Unit-by-Unit Review Cards (Accordion Style) */}
                             <div className="space-y-4">
-                                <div className="flex items-center justify-between">
+                                <div className="flex items-center justify-between flex-wrap gap-2">
                                     <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                                         <Layers className="w-4 h-4 text-indigo-500" />
                                         Curriculum Units & Practice Breakdown ({units.length})
                                     </h4>
-                                    <button
-                                        type="button"
-                                        onClick={() => setCurrentStep(2)}
-                                        className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1"
-                                    >
-                                        <Edit3 className="w-3.5 h-3.5" /> Edit Units & Structure
-                                    </button>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (previewExpandedUnitIndices.size === units.length) {
+                                                    setPreviewExpandedUnitIndices(new Set());
+                                                } else {
+                                                    setPreviewExpandedUnitIndices(new Set(units.map((_, i) => i)));
+                                                }
+                                            }}
+                                            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline px-2 py-1"
+                                        >
+                                            {previewExpandedUnitIndices.size === units.length ? 'Collapse All Units' : 'Expand All Units'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCurrentStep(2)}
+                                            className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1"
+                                        >
+                                            <Edit3 className="w-3.5 h-3.5" /> Edit Units & Structure
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {units.map((u, uIdx) => {
+                                    const isExpanded = previewExpandedUnitIndices.has(uIdx);
                                     const uTopics = extractTopicsFromUnit(u);
                                     const uExercises = u.exercises || [];
+                                    const practiceEx = uExercises.filter(e => !e.isReviewExercise);
+                                    const testEx = uExercises.filter(e => e.isReviewExercise);
                                     const theoryData = u.theoryData || (u.theory ? { summary: u.description, content: u.theory } : null);
 
                                     return (
                                         <div
                                             key={u.id || uIdx}
-                                            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs space-y-4 hover:border-slate-300 dark:hover:border-slate-700 transition"
+                                            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden transition"
                                         >
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div>
-                                                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                                                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                                                            Unit {u.unitNumber || uIdx + 1}
-                                                        </span>
-                                                        <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
-                                                            <Clock className="w-3 h-3" /> {u.expectedHours || 4} hrs
-                                                        </span>
-                                                        <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                                            <Award className="w-3 h-3" /> {u.unlockThreshold || 80}% Gate
-                                                        </span>
+                                            {/* Unit Accordion Header */}
+                                            <div
+                                                onClick={() => togglePreviewUnitExpanded(uIdx)}
+                                                className="p-4 flex items-center justify-between gap-3 cursor-pointer bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100/70 dark:hover:bg-slate-800/70 transition select-none"
+                                            >
+                                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                    <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-xs">
+                                                        {uIdx + 1}
                                                     </div>
-                                                    <h5 className="text-base font-bold text-slate-900 dark:text-white">
-                                                        {u.title}
-                                                    </h5>
-                                                    {u.description && (
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                                            {u.description}
-                                                        </p>
-                                                    )}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="text-base font-black tracking-tight text-slate-900 dark:text-white truncate">
+                                                                {u.title}
+                                                            </span>
+                                                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
+                                                                ⏱️ {u.expectedHours || 4} hrs
+                                                            </span>
+                                                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60">
+                                                                🔒 Gate: ≥{u.unlockThreshold || 80}%
+                                                            </span>
+                                                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                                                ⚡ {practiceEx.length} Labs • 📝 {testEx.length} Tests
+                                                            </span>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center gap-2 shrink-0">
+
+                                                <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
                                                     <button
                                                         type="button"
                                                         onClick={() => { setSelectedUnitIdx(uIdx); setCurrentStep(3); }}
                                                         className="btn btn-secondary text-xs py-1.5 px-3 font-semibold flex items-center gap-1"
                                                     >
-                                                        <Code2 className="w-3 h-3" /> {uExercises.length} Exercises
+                                                        <Code2 className="w-3 h-3" /> Edit Labs ({uExercises.length})
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => togglePreviewUnitExpanded(uIdx)}
+                                                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition"
+                                                    >
+                                                        {isExpanded ? <ChevronUp className="w-5 h-5 text-indigo-500" /> : <ChevronDown className="w-5 h-5" />}
                                                     </button>
                                                 </div>
                                             </div>
 
-                                            {/* Unit Reading Topics */}
-                                            {uTopics.length > 0 && (
-                                                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-1.5">
-                                                    <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 mr-1">
-                                                        <BookOpen className="w-3 h-3 text-indigo-500" /> Key Topics:
-                                                    </span>
-                                                    {uTopics.map((top, ti) => (
-                                                        <span
-                                                            key={ti}
-                                                            className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700"
-                                                        >
-                                                            {top}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
+                                            {/* Unit Accordion Body */}
+                                            {isExpanded && (
+                                                <div className="p-5 space-y-4 border-t border-slate-200 dark:border-slate-800">
+                                                    {u.description && (
+                                                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                                            {u.description}
+                                                        </p>
+                                                    )}
 
-                                            {/* Pre-Lab Theory Preview Snippet */}
-                                            {theoryData && (theoryData.content || theoryData.summary) && (
-                                                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/70 dark:border-slate-800 text-xs space-y-1.5">
-                                                    <div className="font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                                                        <span className="flex items-center gap-1.5">
-                                                            <FileText className="w-3.5 h-3.5 text-indigo-500" /> Pre-Lab Theory & Learning Content
-                                                        </span>
-                                                        {theoryData.miniCheckpoints?.length > 0 && (
-                                                            <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-semibold">
-                                                                {theoryData.miniCheckpoints.length} Checkpoint Qs
+                                                    {/* Unit Reading Topics */}
+                                                    {uTopics.length > 0 && (
+                                                        <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 flex flex-wrap items-center gap-1.5">
+                                                            <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 mr-1">
+                                                                <BookOpen className="w-3 h-3 text-indigo-500" /> Key Topics:
                                                             </span>
+                                                            {uTopics.map((top, ti) => (
+                                                                <span
+                                                                    key={ti}
+                                                                    className="text-[10px] bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700"
+                                                                >
+                                                                    {top}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Stage 1: Pre-Lab Theory & Learning Content */}
+                                                    {theoryData && (theoryData.content || theoryData.summary) && (
+                                                        <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-xl border border-indigo-200/70 dark:border-indigo-800 text-xs space-y-2">
+                                                            <div className="font-bold text-indigo-950 dark:text-indigo-200 flex items-center justify-between">
+                                                                <span className="flex items-center gap-1.5 font-bold">
+                                                                    <BookOpen className="w-4 h-4 text-indigo-600" /> Stage 1: Pre-Lab Theory & Foundational Notes
+                                                                </span>
+                                                                {theoryData.miniCheckpoints?.length > 0 && (
+                                                                    <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded font-semibold">
+                                                                        {theoryData.miniCheckpoints.length} Checkpoint Qs
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-[11px] text-indigo-800/90 dark:text-indigo-300/80 line-clamp-2 leading-relaxed">
+                                                                {theoryData.summary || theoryData.content?.slice(0, 180)}...
+                                                            </p>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Stage 2: Formative Practice Labs */}
+                                                    <div className="space-y-2 pt-1">
+                                                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                                                            <span>Stage 2: Formative Practice Labs ({practiceEx.length})</span>
+                                                        </div>
+                                                        {practiceEx.length === 0 ? (
+                                                            <div className="text-center py-2.5 bg-amber-500/5 rounded-xl border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400 font-medium">
+                                                                ⚠️ No practice labs configured yet.
+                                                            </div>
+                                                        ) : (
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                                {practiceEx.map((ex, eIdx) => (
+                                                                    <div
+                                                                        key={ex.id || eIdx}
+                                                                        className="p-2.5 rounded-xl bg-slate-50/70 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2"
+                                                                    >
+                                                                        <div className="min-w-0">
+                                                                            <div className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">
+                                                                                {eIdx + 1}. {ex.title}
+                                                                            </div>
+                                                                            <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400">
+                                                                                <span className="capitalize font-semibold text-indigo-600 dark:text-indigo-400">{ex.exerciseType || 'coding'}</span>
+                                                                                <span>•</span>
+                                                                                <span className="capitalize">{ex.difficulty || 'beginner'}</span>
+                                                                                <span>•</span>
+                                                                                <span>{ex.xpReward || 15} XP</span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
+                                                                            {ex.bloomsLevel || 'apply'}
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
                                                         )}
                                                     </div>
-                                                    <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-2">
-                                                        {theoryData.summary || theoryData.content?.slice(0, 180)}...
-                                                    </p>
+
+                                                    {/* Stage 3: Summative Unit Tests */}
+                                                    <div className="space-y-2 pt-1">
+                                                        <div className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider flex items-center justify-between">
+                                                            <span>Stage 3: Summative Unit Tests & Mastery Gates ({testEx.length})</span>
+                                                        </div>
+                                                        {testEx.length === 0 ? (
+                                                            <div className="text-center py-2.5 bg-purple-500/5 rounded-xl border border-purple-500/20 text-xs text-purple-700 dark:text-purple-400 font-medium">
+                                                                ℹ️ No summative tests configured. Exercises act as open practice.
+                                                            </div>
+                                                        ) : (
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                                {testEx.map((tx, tIdx) => (
+                                                                    <div
+                                                                        key={tx.id || tIdx}
+                                                                        className="p-2.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 flex items-center justify-between gap-2"
+                                                                    >
+                                                                        <div className="min-w-0">
+                                                                            <div className="font-bold text-xs text-purple-950 dark:text-purple-200 truncate">
+                                                                                📝 {tx.title}
+                                                                            </div>
+                                                                            <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-purple-600 dark:text-purple-300">
+                                                                                <span className="font-semibold">Summative Unit Test</span>
+                                                                                <span>•</span>
+                                                                                <span>{tx.xpReward || 50} XP</span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200 shrink-0">
+                                                                            {tx.bloomsLevel || 'evaluate'}
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )}
-
-                                            {/* Exercises inside Unit */}
-                                            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                                                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
-                                                    <span>Challenges & Problem Sets ({uExercises.length})</span>
-                                                </div>
-                                                {uExercises.length === 0 ? (
-                                                    <div className="text-center py-3 bg-amber-500/5 rounded-xl border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400 font-medium">
-                                                        ⚠️ No exercises added to this unit yet. (Click to generate or add in Step 3)
-                                                    </div>
-                                                ) : (
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                        {uExercises.map((ex, eIdx) => (
-                                                            <div
-                                                                key={ex.id || eIdx}
-                                                                className="p-2.5 rounded-xl bg-slate-50/70 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2"
-                                                            >
-                                                                <div className="min-w-0">
-                                                                    <div className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">
-                                                                        {eIdx + 1}. {ex.title}
-                                                                    </div>
-                                                                    <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400">
-                                                                        <span className="capitalize font-semibold text-indigo-600 dark:text-indigo-400">{ex.exerciseType || 'coding'}</span>
-                                                                        <span>•</span>
-                                                                        <span className="capitalize">{ex.difficulty || 'beginner'}</span>
-                                                                        <span>•</span>
-                                                                        <span>{ex.xpReward || 15} XP</span>
-                                                                    </div>
-                                                                </div>
-                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
-                                                                    {ex.bloomsLevel || 'apply'}
-                                                                </span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
                                         </div>
                                     );
                                 })}
-                            </div>
-
-                            {/* CTA Banner at end of Preview */}
-                            <div className="p-4 bg-gradient-to-r from-slate-100 to-indigo-50/60 dark:from-slate-800 dark:to-indigo-950/40 rounded-2xl border border-indigo-200/60 dark:border-indigo-900/60 flex items-center justify-between gap-4">
-                                <div>
-                                    <h5 className="font-bold text-sm text-slate-900 dark:text-white">Ready with this Curriculum?</h5>
-                                    <p className="text-xs text-slate-500">Save as an unpublished draft or proceed to assign target classes.</p>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <button
-                                        type="button"
-                                        onClick={() => handleFinalDeploy(false)}
-                                        disabled={isSubmitting}
-                                        className="btn btn-secondary text-xs font-bold"
-                                    >
-                                        💾 Save as Draft
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setCurrentStep(6)}
-                                        className="btn btn-primary text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/20"
-                                    >
-                                        Next: Deploy & Assign <ArrowRight className="w-4 h-4" />
-                                    </button>
-                                </div>
                             </div>
                         </div>
                     )}
@@ -3592,10 +3803,17 @@ export default function TrainingModuleWizard({
                                         type="button"
                                         onClick={() => handleFinalDeploy(false)}
                                         disabled={isSubmitting}
-                                        className="btn btn-secondary text-xs font-bold"
+                                        className="btn btn-secondary text-xs font-bold flex items-center gap-1.5"
                                         title="Save your progress as a draft without assigning or publishing"
                                     >
-                                        💾 Save as Draft
+                                        {isSavingDraft ? (
+                                            <>
+                                                <div className="w-3.5 h-3.5 border-2 border-slate-600 dark:border-slate-300 border-t-transparent rounded-full animate-spin" />
+                                                <span>Saving Draft...</span>
+                                            </>
+                                        ) : (
+                                            <>💾 Save as Draft</>
+                                        )}
                                     </button>
                                 )}
 
@@ -3626,11 +3844,19 @@ export default function TrainingModuleWizard({
                                 ) : (
                                     <div className="flex items-center gap-2">
                                         <button
+                                            type="button"
                                             onClick={() => handleFinalDeploy(false)}
                                             disabled={isSubmitting}
-                                            className="btn btn-secondary text-xs font-bold"
+                                            className="btn btn-secondary text-xs font-bold flex items-center gap-1.5"
                                         >
-                                            💾 Save as Draft
+                                            {isSavingDraft ? (
+                                                <>
+                                                    <div className="w-3.5 h-3.5 border-2 border-slate-600 dark:border-slate-300 border-t-transparent rounded-full animate-spin" />
+                                                    <span>Saving Draft...</span>
+                                                </>
+                                            ) : (
+                                                <>💾 Save as Draft</>
+                                            )}
                                         </button>
                                         <button
                                             onClick={() => handleFinalDeploy(true)}
@@ -3646,6 +3872,80 @@ export default function TrainingModuleWizard({
                     )}
                 </div>
             </div>
+
+            {/* Themed Publishing & Deploying Animation Overlay */}
+            {isSubmitting && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200 p-4">
+                    {/* Ambient Glowing Orbs */}
+                    <div className="absolute w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl -top-20 -left-20 animate-pulse pointer-events-none" />
+                    <div className="absolute w-96 h-96 bg-purple-500/20 rounded-full blur-3xl -bottom-20 -right-20 animate-pulse pointer-events-none" style={{ animationDelay: '1s' }} />
+
+                    {/* Central Processing Card */}
+                    <div className="bg-slate-900/90 border border-slate-700/60 rounded-3xl p-8 max-w-lg w-full shadow-2xl relative overflow-hidden flex flex-col items-center text-center">
+                        {/* Spinning Gradient Ring */}
+                        <div className="relative w-20 h-20 mb-5 flex items-center justify-center">
+                            <div className="absolute inset-0 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin" />
+                            <div className="absolute inset-2 rounded-full border-4 border-purple-500/20 border-b-purple-500 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '2s' }} />
+                            <Sparkles className="w-8 h-8 text-indigo-400 animate-pulse" />
+                        </div>
+
+                        <h3 className="text-xl font-black text-white tracking-tight mb-1">
+                            {isSavingDraft 
+                                ? 'Saving Course Draft & Blueprint' 
+                                : (deployProgressStage === 4 ? 'Finalizing Live Course Deployment' : 'Architecting & Publishing Course')}
+                        </h3>
+                        <p className="text-xs text-slate-400 max-w-sm mb-6 leading-relaxed">
+                            {deployingStatusText || (isSavingDraft ? 'Saving curriculum units, theory and exercises to draft...' : 'Packaging curriculum blueprint, theory lessons & interactive sandboxes...')}
+                        </p>
+
+                        {/* Shimmer Progress Bar */}
+                        <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden mb-6 relative">
+                            <div
+                                className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-400 transition-all duration-500 ease-out"
+                                style={{
+                                    width: deployProgressStage === 1 ? '25%' : deployProgressStage === 2 ? '50%' : deployProgressStage === 3 ? '75%' : '95%'
+                                }}
+                            />
+                        </div>
+
+                        {/* Stages Checklist */}
+                        <div className="w-full space-y-2.5 text-left text-xs">
+                            {[
+                                { stage: 1, label: 'Course Blueprint & Pedagogical Rules' },
+                                { stage: 2, label: 'Curriculum Units & Pre-Lab Theory' },
+                                { stage: 3, label: 'Interactive Practice Labs & Unit Tests' },
+                                { stage: 4, label: isSavingDraft ? 'Database Sync & Draft Preservation' : 'Live Class Rosters & Mastery Gates' }
+                            ].map((s) => {
+                                const isDone = deployProgressStage > s.stage;
+                                const isCurrent = deployProgressStage === s.stage;
+                                return (
+                                    <div
+                                        key={s.stage}
+                                        className={`flex items-center gap-3 p-2.5 rounded-xl border transition ${
+                                            isCurrent
+                                                ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300 font-bold'
+                                                : isDone
+                                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 font-semibold'
+                                                : 'bg-slate-800/40 border-slate-800 text-slate-500'
+                                        }`}
+                                    >
+                                        {isDone ? (
+                                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                                        ) : isCurrent ? (
+                                            <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin shrink-0" />
+                                        ) : (
+                                            <div className="w-2 h-2 rounded-full bg-slate-600 mx-1 shrink-0" />
+                                        )}
+                                        <span className="flex-1">{s.label}</span>
+                                        {isDone && <span className="text-[10px] text-emerald-400 font-bold">READY</span>}
+                                        {isCurrent && <span className="text-[10px] text-indigo-400 font-bold animate-pulse">PROCESSING</span>}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

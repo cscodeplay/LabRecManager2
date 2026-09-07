@@ -2369,16 +2369,18 @@ Output MUST be ONLY valid JSON matching this schema:
                 ? (i === 1 ? 'mcq' : (i === 2 ? 'code_debug' : 'coding'))
                 : (exerciseType || 'coding');
 
+            const isLast = (i === targetCount - 1) && targetCount > 2;
             generatedExercises.push(this.createAcademicExerciseForTopic({
                 topic: currentTopic,
                 unitTitle,
                 language,
                 exerciseType: exType,
-                difficulty: 'beginner',
-                scaffoldLevel: 'guided',
-                bloomsLevel: 'apply',
+                difficulty: isLast ? 'advanced' : (i === 0 ? 'beginner' : 'intermediate'),
+                scaffoldLevel: scaffoldLevel || 'progressive',
+                bloomsLevel: bloomsLevel || 'mix',
                 index: i,
-                documentText
+                documentText,
+                isReviewExercise: isLast
             }));
         }
 
@@ -2395,49 +2397,500 @@ Output MUST be ONLY valid JSON matching this schema:
         language = 'python',
         exerciseType = 'coding',
         difficulty = 'intermediate',
-        scaffoldLevel = 'guided',
-        bloomsLevel = 'apply',
+        scaffoldLevel = 'progressive',
+        bloomsLevel = 'mix',
         index = 0,
-        documentText = ''
+        documentText = '',
+        isReviewExercise = false
     }) {
         const strTopic = typeof topic === 'string' ? topic : (topic?.title || topic?.name || topic?.topic || 'Core Concept');
         const strUnit = typeof unitTitle === 'string' ? unitTitle : (unitTitle?.title || 'Applied Unit');
         const strDoc = typeof documentText === 'string' ? documentText : '';
-        const textSample = `${strTopic} ${strUnit} ${strDoc}`.toLowerCase();
         const cleanTopic = this.cleanTitle(strTopic);
 
-        if (language === 'sql') {
+        // Resolve pedagogical Bloom's & Scaffolding levels
+        let effectiveBlooms = bloomsLevel;
+        if (bloomsLevel === 'mix' || !bloomsLevel) {
+            if (isReviewExercise) {
+                effectiveBlooms = index % 2 === 0 ? 'evaluate' : 'create';
+            } else {
+                const levels = ['understand', 'apply', 'analyze', 'evaluate'];
+                effectiveBlooms = levels[index % levels.length];
+            }
+        }
+
+        let effectiveScaffold = scaffoldLevel;
+        if (scaffoldLevel === 'progressive' || !scaffoldLevel) {
+            if (isReviewExercise) {
+                effectiveScaffold = 'independent';
+            } else {
+                const scaffolds = ['guided', 'guided', 'semi_independent', 'independent'];
+                effectiveScaffold = scaffolds[index % scaffolds.length];
+            }
+        }
+
+        let effectiveDifficulty = difficulty;
+        if (isReviewExercise) {
+            effectiveDifficulty = 'advanced';
+        }
+
+        // --- DOMAIN DETECTION PRIORITY ---
+        // 1. Check SQL
+        const isSql = language === 'sql' || /\b(sql|database|rdbms|relational|select|table|schema|ddl|dml)\b/i.test(strTopic) || /\b(sql|database|rdbms)\b/i.test(strUnit);
+        
+        // 2. Check NumPy / Multidimensional Arrays (Prioritize before generic lists/tuples!)
+        const isNumpy = !isSql && (
+            /\b(numpy|ndarray|np\b|arrays?|matrix|matrices|broadcasting|vectoriz|dimension|shape|slice|reshape|axis|arange|linspace)\b/i.test(strTopic) ||
+            /\b(numpy|ndarray|matrix|vectoriz|broadcasting)\b/i.test(strUnit) ||
+            (/\b(numpy|ndarray)\b/i.test(strDoc) && !/\b(tuple|dictionary|sql)\b/i.test(strTopic))
+        );
+
+        // 3. Check Pandas
+        const isPandas = !isSql && !isNumpy && /\b(pandas|dataframe|series|\bdf\b|dataset)\b/i.test(`${strTopic} ${strUnit}`);
+
+        // 4. Check Explicit Tuple (ONLY when topic specifically indicates tuple)
+        const isTuple = !isSql && !isNumpy && !isPandas && (/\b(tuple|tuples|immutab)\b/i.test(strTopic) || (/\b(tuple|tuples)\b/i.test(strUnit) && !/numpy|array/i.test(strTopic)));
+
+        // 5. Check Explicit Dictionary
+        const isDict = !isSql && !isNumpy && !isPandas && !isTuple && (/\b(dict|dictionary|dictionaries|key[- ]value|hash\s*map|frequency)\b/i.test(strTopic) || /\b(dict|dictionary)\b/i.test(strUnit));
+
+        // =========================================================================
+        // DOMAIN: SQL (DIVERSE MULTI-MODAL PEDAGOGY: CODING, MCQ, CLOZE, DEBUG)
+        // =========================================================================
+        if (isSql) {
+            // Determine desired exercise type
+            let chosenType = exerciseType;
+            if (!chosenType || chosenType === 'mixed') {
+                const typeRotation = ['coding', 'mcq', 'fill_blank', 'code_debug'];
+                chosenType = typeRotation[index % typeRotation.length];
+            }
+            if (isReviewExercise) {
+                chosenType = index % 2 === 0 ? 'coding' : 'code_debug';
+            }
+
+            const sqlTemplates = [
+                // Template 0: Filtered Projection Query [Coding Lab, Apply, Guided]
+                {
+                    type: 'coding',
+                    blooms: 'apply',
+                    scaffold: 'guided',
+                    title: `${cleanTopic}: Filtered Projection Query`,
+                    description: `## 🎯 Problem Statement\n\nWrite an SQL query to retrieve records from the \`Student\` table satisfying specific criteria for **${cleanTopic}**.\n\n### Schema Table: \`Student\`\n| Column | Type | Constraints |\n| :--- | :--- | :--- |\n| \`RollNo\` | \`INT\` | \`PRIMARY KEY\` |\n| \`Name\` | \`VARCHAR(50)\` | \`NOT NULL\` |\n| \`Stream\` | \`VARCHAR(30)\` | \`NOT NULL\` |\n| \`Marks\` | \`DECIMAL(5,2)\` | \`CHECK (Marks >= 0)\` |\n\n### Requirements:\n- Project \`RollNo\`, \`Name\`, and \`Marks\` for students with \`Marks >= 75\`.\n- Order the result by \`Marks\` in descending order.`,
+                    starterCode: `-- Write SQL query for ${cleanTopic}\nSELECT * FROM Student;\n`,
+                    solutionCode: `SELECT RollNo, Name, Marks FROM Student WHERE Marks >= 75 ORDER BY Marks DESC;\n`,
+                    testCases: [{ input: 'SELECT RollNo, Name, Marks FROM Student WHERE Marks >= 75 ORDER BY Marks DESC;', expectedOutput: 'Query executed successfully', isHidden: false }],
+                    hints: ['Use SELECT RollNo, Name, Marks FROM Student', 'Add WHERE Marks >= 75', 'Add ORDER BY Marks DESC;']
+                },
+                // Template 1: Output Prediction & Execution MCQ [MCQ, Analyze, Semi-Independent]
+                {
+                    type: 'mcq',
+                    blooms: 'analyze',
+                    scaffold: 'semi_independent',
+                    title: `${cleanTopic}: Query Output Prediction MCQ`,
+                    description: `## 📝 Output Prediction Challenge\n\nCarefully trace the SQL command and identify the exact count or record set produced.\n\n### Sample Relation: \`Employee\`\n| EmpId | Name | Dept | Salary |\n| :--- | :--- | :--- | :--- |\n| 101 | Ananya | IT | 65000 |\n| 102 | Rohan | HR | 48000 |\n| 103 | Priya | IT | 72000 |\n| 104 | Vikram | IT | 55000 |\n| 105 | Sneha | Marketing | 51000 |\n\n### Executed Query:\n\`\`\`sql\nSELECT COUNT(DISTINCT Dept) FROM Employee WHERE Salary > 50000;\n\`\`\`\n\nWhat is the exact result of the above query?`,
+                    starterCode: null,
+                    solutionCode: null,
+                    testCases: {
+                        question: 'What is the output of: SELECT COUNT(DISTINCT Dept) FROM Employee WHERE Salary > 50000;?',
+                        options: ['2 (IT and Marketing)', '3 (IT, HR, and Marketing)', '4', '1'],
+                        correctOption: 0,
+                        explanation: 'Employees with Salary > 50000 are Ananya (IT), Priya (IT), Vikram (IT), and Sneha (Marketing). Distinct departments among these are IT and Marketing, giving a count of 2.'
+                    },
+                    hints: ['Filter rows where Salary > 50000 first', 'Identify unique Dept values from the filtered rows', 'COUNT(DISTINCT ...) counts distinct department names.']
+                },
+                // Template 2: Aggregation Syntax Cloze [Fill in Blank, Apply, Guided]
+                {
+                    type: 'fill_blank',
+                    blooms: 'apply',
+                    scaffold: 'guided',
+                    title: `${cleanTopic}: Aggregation Syntax Cloze`,
+                    description: `## 🧩 Fill in the Missing SQL Clauses\n\nComplete the query below to calculate the total salary per department for departments having more than 1 employee.\n\n### Incomplete Query:\n\`SELECT Dept, SUM(Salary) [[FROM]] Employee [[GROUP BY]] Dept [[HAVING]] COUNT(*) > 1;\``,
+                    starterCode: 'SELECT Dept, SUM(Salary) [[FROM]] Employee [[GROUP BY]] Dept [[HAVING]] COUNT(*) > 1;',
+                    solutionCode: 'SELECT Dept, SUM(Salary) FROM Employee GROUP BY Dept HAVING COUNT(*) > 1;',
+                    testCases: {
+                        template: 'SELECT Dept, SUM(Salary) [[FROM]] Employee [[GROUP BY]] Dept [[HAVING]] COUNT(*) > 1;',
+                        blanks: [
+                            { index: 0, correct: 'FROM', hint: 'Table specification keyword' },
+                            { index: 1, correct: 'GROUP BY', hint: 'Clause to group rows by Dept' },
+                            { index: 2, correct: 'HAVING', hint: 'Filter condition for grouped rows' }
+                        ]
+                    },
+                    hints: ['Remember: GROUP BY groups rows before HAVING filters them', 'HAVING is used instead of WHERE when filtering aggregates.']
+                },
+                // Template 3: CBSE Error Debugging & Bug Hunt [Code Debug, Analyze, Semi-Independent]
+                {
+                    type: 'code_debug',
+                    blooms: 'analyze',
+                    scaffold: 'semi_independent',
+                    title: `${cleanTopic}: CBSE SQL Error Debugging Lab`,
+                    description: `## 🐞 CBSE SQL Syntax Error Debugging\n\nA student submitted the following SQL query to retrieve departments where the average salary exceeds 60,000, but MySQL reported an execution error:\n\n### Buggy Query:\n\`\`\`sql\nSELECT Dept, AVG(Salary)\nFROM Employee\nWHERE AVG(Salary) > 60000\nGROUP BY Dept;\n\`\`\`\n\n### Task:\nIdentify the error, explain why MySQL rejected it, and provide the corrected query.`,
+                    starterCode: `-- Correct the query below:\nSELECT Dept, AVG(Salary)\nFROM Employee\nGROUP BY Dept\nHAVING AVG(Salary) > 60000;\n`,
+                    solutionCode: `SELECT Dept, AVG(Salary) FROM Employee GROUP BY Dept HAVING AVG(Salary) > 60000;\n`,
+                    testCases: {
+                        buggyCode: `SELECT Dept, AVG(Salary)\nFROM Employee\nWHERE AVG(Salary) > 60000\nGROUP BY Dept;`,
+                        errorLine: 3,
+                        errorExplanation: 'Aggregate functions like AVG(Salary) cannot be used in a WHERE clause. Filter conditions on aggregates must be placed in a HAVING clause after GROUP BY.',
+                        correctedCode: `SELECT Dept, AVG(Salary)\nFROM Employee\nGROUP BY Dept\nHAVING AVG(Salary) > 60000;`
+                    },
+                    hints: ['Aggregate functions cannot appear in the WHERE clause.', 'Replace WHERE with HAVING and place it AFTER the GROUP BY clause.']
+                },
+                // Template 4: Relational DDL & Integrity Constraints [Coding Lab, Create, Guided]
+                {
+                    type: 'coding',
+                    blooms: 'create',
+                    scaffold: 'guided',
+                    title: `${cleanTopic}: Relational Table DDL & Constraints`,
+                    description: `## 🎯 Problem Statement\n\nWrite an SQL \`CREATE TABLE\` statement for **${cleanTopic}** defining table \`Department\` with strict integrity constraints.\n\n### Specifications:\n- \`DeptId INT PRIMARY KEY\`\n- \`DeptName VARCHAR(40) NOT NULL UNIQUE\`\n- \`Location VARCHAR(50) DEFAULT 'Main Campus'\`\n- \`Budget DECIMAL(10,2) CHECK (Budget > 0)\``,
+                    starterCode: `-- Create Department Table with constraints\nCREATE TABLE Department (\n    DeptId INT PRIMARY KEY,\n    DeptName VARCHAR(40) NOT NULL UNIQUE,\n    Location VARCHAR(50) DEFAULT 'Main Campus',\n    Budget DECIMAL(10,2) CHECK (Budget > 0)\n);\n`,
+                    solutionCode: `CREATE TABLE Department (\n    DeptId INT PRIMARY KEY,\n    DeptName VARCHAR(40) NOT NULL UNIQUE,\n    Location VARCHAR(50) DEFAULT 'Main Campus',\n    Budget DECIMAL(10,2) CHECK (Budget > 0)\n);\n`,
+                    testCases: [{ input: 'CREATE TABLE Department (DeptId INT PRIMARY KEY, DeptName VARCHAR(40) NOT NULL UNIQUE, Location VARCHAR(50) DEFAULT \'Main Campus\', Budget DECIMAL(10,2) CHECK (Budget > 0));', expectedOutput: 'Table created successfully', isHidden: false }],
+                    hints: ['Specify column name followed by data type and constraint keyword.', 'Use PRIMARY KEY for DeptId and UNIQUE NOT NULL for DeptName.']
+                },
+                // Template 5: Multi-Table Equi-Join Query [Coding Lab, Apply, Semi-Independent]
+                {
+                    type: 'coding',
+                    blooms: 'apply',
+                    scaffold: 'semi_independent',
+                    title: `${cleanTopic}: Two-Table Equi-Join Query`,
+                    description: `## 🎯 Problem Statement\n\nWrite an SQL query to join the \`Student\` and \`Marks\` tables to retrieve student marks along with student names.\n\n### Schema Relations:\n- \`Student(RollNo, Name, Class)\`\n- \`Marks(RollNo, Subject, Score)\`\n\n### Requirements:\n- Join on \`Student.RollNo = Marks.RollNo\`.\n- Project \`Student.RollNo\`, \`Student.Name\`, \`Marks.Subject\`, and \`Marks.Score\`.\n- Filter for \`Marks.Subject = 'Computer Science'\`.\n- Order by \`Marks.Score DESC\`.`,
+                    starterCode: `-- Write two-table JOIN query\nSELECT s.RollNo, s.Name, m.Subject, m.Score\nFROM Student s\nINNER JOIN Marks m ON s.RollNo = m.RollNo\nWHERE m.Subject = 'Computer Science'\nORDER BY m.Score DESC;\n`,
+                    solutionCode: `SELECT s.RollNo, s.Name, m.Subject, m.Score FROM Student s INNER JOIN Marks m ON s.RollNo = m.RollNo WHERE m.Subject = 'Computer Science' ORDER BY m.Score DESC;\n`,
+                    testCases: [{ input: "SELECT s.RollNo, s.Name, m.Subject, m.Score FROM Student s INNER JOIN Marks m ON s.RollNo = m.RollNo WHERE m.Subject = 'Computer Science' ORDER BY m.Score DESC;", expectedOutput: 'Query executed successfully', isHidden: false }],
+                    hints: ['Use table aliases: Student s, Marks m', 'Join on s.RollNo = m.RollNo', 'Add WHERE m.Subject = \'Computer Science\'']
+                },
+                // Template 6: Summative Capstone Unit Test [Coding Lab, Evaluate, Independent]
+                {
+                    type: 'coding',
+                    blooms: 'evaluate',
+                    scaffold: 'independent',
+                    title: `${cleanTopic}: Comprehensive SQL Mastery Assessment`,
+                    description: `## 🎯 Summative Assessment Problem Statement\n\nWrite an advanced SQL analytical query for **${cleanTopic}**.\n\n### Requirements:\n1. Retrieve the \`Dept\` and average \`Salary\` (rounded to 2 decimals) from table \`Employee\`.\n2. Exclude any employees in \`Operations\` department.\n3. Include only departments having more than 2 eligible employees.\n4. Order the resulting rows by calculated average salary descending.`,
+                    starterCode: `-- Summative Unit Test: Write complete query without hints\n`,
+                    solutionCode: `SELECT Dept, ROUND(AVG(Salary), 2) AS AvgSal FROM Employee WHERE Dept != 'Operations' GROUP BY Dept HAVING COUNT(*) > 2 ORDER BY AvgSal DESC;\n`,
+                    testCases: [{ input: "SELECT Dept, ROUND(AVG(Salary), 2) AS AvgSal FROM Employee WHERE Dept != 'Operations' GROUP BY Dept HAVING COUNT(*) > 2 ORDER BY AvgSal DESC;", expectedOutput: 'Query executed successfully', isHidden: false }],
+                    hints: ['Combine WHERE, GROUP BY, HAVING, and ORDER BY in the correct syntactic order.']
+                }
+            ];
+
+            // Match by requested exerciseType, or fallback to cycling
+            let chosen = sqlTemplates.find(t => t.type === chosenType);
+            if (!chosen) {
+                chosen = sqlTemplates[index % sqlTemplates.length];
+            }
+            if (isReviewExercise) {
+                chosen = sqlTemplates[6]; // Capstone
+            }
+
             return {
-                title: `${cleanTopic} Relational Query Lab`,
-                description: `## 🎯 Problem Statement\n\nWrite an SQL query to demonstrate **${cleanTopic}** based on the relational schema.\n\n### Schema Table: \`Student\`\n| Column | Type | Constraints |\n| :--- | :--- | :--- |\n| \`RollNo\` | \`INT\` | \`PRIMARY KEY\` |\n| \`Name\` | \`VARCHAR(50)\` | \`NOT NULL\` |\n| \`Marks\` | \`DECIMAL(5,2)\` | \`CHECK (Marks >= 0)\` |\n\n### Requirements:\n- Write a query fulfilling the ${cleanTopic} specifications.\n- Ensure all keywords conform to standard SQL syntax.`,
-                exerciseType: 'coding',
-                difficulty,
-                scaffoldLevel,
-                bloomsLevel,
-                learningObjective: `Execute standard SQL queries for ${cleanTopic}.`,
-                xpReward: 25,
-                timeLimit: 5,
-                starterCode: `-- Write SQL query for ${cleanTopic}\nSELECT * FROM Student;\n`,
-                solutionCode: `SELECT RollNo, Name, Marks FROM Student WHERE Marks >= 75 ORDER BY Marks DESC;\n`,
-                testCases: [
-                    { input: 'SELECT RollNo, Name, Marks FROM Student WHERE Marks >= 75;', expectedOutput: 'Query executed successfully', isHidden: false }
-                ],
-                hints: ['Review SQL keywords: SELECT, FROM, WHERE, ORDER BY.']
+                title: isReviewExercise ? `Unit Test: ${chosen.title}` : chosen.title,
+                description: chosen.description,
+                exerciseType: chosen.type,
+                difficulty: isReviewExercise ? 'advanced' : (effectiveDifficulty || 'intermediate'),
+                scaffoldLevel: isReviewExercise ? 'independent' : (effectiveScaffold || chosen.scaffold),
+                bloomsLevel: isReviewExercise ? 'evaluate' : (effectiveBlooms || chosen.blooms),
+                learningObjective: `Demonstrate verified ${chosen.type} competence in ${cleanTopic}.`,
+                isReviewExercise: Boolean(isReviewExercise),
+                xpReward: isReviewExercise ? 50 : (chosen.type === 'coding' ? 25 : 15),
+                timeLimit: isReviewExercise ? 10 : 5,
+                starterCode: chosen.starterCode,
+                solutionCode: chosen.solutionCode,
+                testCases: chosen.testCases,
+                hints: chosen.hints
             };
         }
 
-        // Python Exercises
-        if (exerciseType === 'mcq') {
-            if (/tuple/i.test(textSample)) {
+        // =========================================================================
+        // DOMAIN: NumPy & Multidimensional Arrays (DIVERSE TOPIC-ALIGNED MODULES)
+        // =========================================================================
+        if (isNumpy) {
+            // Determine subtopic module (0 to 6) based on topic keywords or cycling index
+            let modIdx = index % 7;
+            const topicLower = `${strTopic} ${strUnit}`.toLowerCase();
+            if (/\b(reshape|reshaping|transpose|transposing|flatten|ravel|stack|vstack|hstack|concat)\b/i.test(topicLower)) {
+                modIdx = 2;
+            } else if (/\b(slice|slicing|index|indexing|stride|sub-array|submatrix)\b/i.test(topicLower)) {
+                modIdx = 1;
+            } else if (/\b(broadcast|vectoriz|broadcasting|arithmetic|element-wise|scale|bias)\b/i.test(topicLower)) {
+                modIdx = 3;
+            } else if (/\b(stat|stats|mean|sum|std|var|axis|aggregate|aggregation|min|max|median)\b/i.test(topicLower)) {
+                modIdx = 4;
+            } else if (/\b(mask|masking|filter|filtering|boolean|where|condition|outlier|clip|nonzero)\b/i.test(topicLower)) {
+                modIdx = 5;
+            } else if (/\b(dot|matmul|linalg|matrix multiplication|product|trace|capstone|test|review|assessment)\b/i.test(topicLower)) {
+                modIdx = 6;
+            } else if (/\b(creat|creation|zeros?|ones?|arange|linspace|dimensions?|ndim|dtype|attributes?)\b|\bshape\b/i.test(topicLower)) {
+                modIdx = 0;
+            }
+
+            // MCQ for NumPy
+            if (exerciseType === 'mcq') {
+                const mcqBanks = [
+                    {
+                        title: `${cleanTopic}: Array Shape & Dimension Inspection`,
+                        snippet: `import numpy as np\narr = np.arange(1, 13).reshape(3, 4)\nprint(arr.ndim, arr.shape, arr.size)`,
+                        options: ['2 (3, 4) 12', '3 (3, 4) 12', '2 (4, 3) 12', '1 (12,) 12'],
+                        correctOption: 0,
+                        explanation: 'arr has 2 dimensions (ndim=2), a shape of 3 rows and 4 columns (3, 4), and total elements size=12.'
+                    },
+                    {
+                        title: `${cleanTopic}: Multidimensional 2D Slicing Trace`,
+                        snippet: `import numpy as np\narr = np.array([[10, 20, 30], [40, 50, 60], [70, 80, 90]])\nprint(arr[1:, :2])`,
+                        options: ['[[40 50]\n [70 80]]', '[[10 20]\n [40 50]]', '[40 50 70 80]', '[[50 60]\n [80 90]]'],
+                        correctOption: 0,
+                        explanation: 'Row slice 1: selects row index 1 ([40,50,60]) and row index 2 ([70,80,90]). Column slice :2 selects first 2 columns, yielding [[40, 50], [70, 80]].'
+                    },
+                    {
+                        title: `${cleanTopic}: Auto-Dimension Inference (-1) in Reshape`,
+                        snippet: `import numpy as np\narr = np.arange(24)\nreshaped = arr.reshape(4, -1)\nprint(reshaped.shape)`,
+                        options: ['(4, 6)', '(4, 4)', '(6, 4)', 'ValueError: -1 not allowed'],
+                        correctOption: 0,
+                        explanation: 'With total size 24 and first dimension 4, NumPy automatically calculates the second dimension as 24 / 4 = 6.'
+                    },
+                    {
+                        title: `${cleanTopic}: Vectorized Broadcasting Compatibility`,
+                        snippet: `import numpy as np\nA = np.ones((3, 1))\nB = np.ones((1, 4))\nC = A + B\nprint(C.shape)`,
+                        options: ['(3, 4)', '(3, 1)', '(1, 4)', 'ValueError: shapes (3,1) and (1,4) cannot broadcast'],
+                        correctOption: 0,
+                        explanation: 'Both dimensions of size 1 stretch to match the other array, resulting in a compatible broadcasted shape of (3, 4).'
+                    },
+                    {
+                        title: `${cleanTopic}: Axis Aggregation Distinction (axis=0 vs axis=1)`,
+                        snippet: `import numpy as np\narr = np.array([[1, 2], [3, 4]])\nprint(np.sum(arr, axis=0), np.sum(arr, axis=1))`,
+                        options: ['[4 6] [3 7]', '[3 7] [4 6]', '[10] [10]', '4 6'],
+                        correctOption: 0,
+                        explanation: 'axis=0 sums across rows (column-wise): [1+3, 2+4] = [4, 6]. axis=1 sums across columns (row-wise): [1+2, 3+4] = [3, 7].'
+                    },
+                    {
+                        title: `${cleanTopic}: Boolean Mask Indexing Output`,
+                        snippet: `import numpy as np\narr = np.array([12, 5, 18, 7, 24])\nmask = (arr > 10) & (arr < 20)\nprint(arr[mask])`,
+                        options: ['[12 18]', '[5 7 24]', '[12 5 18]', 'array([True, False, True, False, False])'],
+                        correctOption: 0,
+                        explanation: 'Elements strictly between 10 and 20 are 12 and 18. Boolean indexing extracts array([12, 18]).'
+                    },
+                    {
+                        title: `${cleanTopic}: Matrix Dot Product Inner Dimension Rule`,
+                        snippet: `import numpy as np\nA = np.ones((2, 3))\nB = np.ones((3, 4))\nprint(np.dot(A, B).shape)`,
+                        options: ['(2, 4)', '(3, 3)', '(2, 3)', 'ValueError: dimension mismatch'],
+                        correctOption: 0,
+                        explanation: 'Matrix multiplication (2, 3) @ (3, 4) matches inner dimension 3 and produces an output matrix of shape (2, 4).'
+                    }
+                ];
+                const mcq = mcqBanks[modIdx];
                 return {
-                    title: `${cleanTopic}: Output Prediction Challenge`,
+                    title: isReviewExercise ? `Unit Test: ${mcq.title}` : mcq.title,
+                    description: `Evaluate the code snippet evaluating **${cleanTopic}** and predict the exact output.`,
+                    exerciseType: 'mcq',
+                    difficulty: effectiveDifficulty,
+                    scaffoldLevel: effectiveScaffold,
+                    bloomsLevel: effectiveBlooms,
+                    learningObjective: `Accurately trace NumPy array operations for ${cleanTopic}.`,
+                    isReviewExercise: Boolean(isReviewExercise),
+                    xpReward: isReviewExercise ? 30 : 20,
+                    timeLimit: 4,
+                    starterCode: '',
+                    solutionCode: '',
+                    testCases: {
+                        question: 'What will be printed when the following code executes?',
+                        codeSnippet: mcq.snippet,
+                        options: mcq.options,
+                        correctOption: mcq.correctOption,
+                        explanation: mcq.explanation
+                    },
+                    hints: ['Review NumPy indexing, slicing, and broadcasting rules carefully.']
+                };
+            }
+
+            // Code Debug for NumPy
+            if (exerciseType === 'code_debug') {
+                const debugBanks = [
+                    {
+                        title: `Debug: Fix np.zeros Shape Argument Tuple`,
+                        buggy: `import numpy as np\n\ndef create_grid(rows, cols):\n    # Fix error: shape must be a tuple\n    return np.zeros(rows, cols)\n`,
+                        fixed: `import numpy as np\n\ndef create_grid(rows, cols):\n    return np.zeros((rows, cols))\n`,
+                        errorLine: 5,
+                        errorDesc: 'TypeError: data type not understood. np.zeros expects shape as a tuple or integer, not separate arguments.',
+                        explanation: 'np.zeros takes shape as a tuple: np.zeros((rows, cols)). Passing rows, cols directly treats the second argument as dtype.'
+                    },
+                    {
+                        title: `Debug: Fix 2D Array Slicing Syntax`,
+                        buggy: `import numpy as np\n\ndef extract_top_left(arr):\n    # Fix slice error: multidimensional array indexing\n    return arr[:2][:2]\n`,
+                        fixed: `import numpy as np\n\ndef extract_top_left(arr):\n    return arr[:2, :2]\n`,
+                        errorLine: 5,
+                        errorDesc: 'arr[:2][:2] slices rows twice rather than rows and columns simultaneously.',
+                        explanation: 'In NumPy, multidimensional slicing requires comma separation: arr[rows_slice, cols_slice].'
+                    },
+                    {
+                        title: `Debug: Fix Reshape Incompatible Dimension Mismatch`,
+                        buggy: `import numpy as np\n\ndef reshape_sequence(arr):\n    # Array has 6 elements; fix invalid shape (2, 4)\n    return arr.reshape(2, 4)\n`,
+                        fixed: `import numpy as np\n\ndef reshape_sequence(arr):\n    return arr.reshape(2, 3)\n`,
+                        errorLine: 5,
+                        errorDesc: 'ValueError: cannot reshape array of size 6 into shape (2,4)',
+                        explanation: 'The product of new dimensions (2*3=6) must equal total elements (6).'
+                    },
+                    {
+                        title: `Debug: Fix Bitwise vs Logical Operator in Boolean Mask`,
+                        buggy: `import numpy as np\n\ndef filter_range(arr, low, high):\n    # Fix error: Python 'and' does not vectorize over arrays\n    return arr[(arr >= low) and (arr <= high)]\n`,
+                        fixed: `import numpy as np\n\ndef filter_range(arr, low, high):\n    return arr[(arr >= low) & (arr <= high)]\n`,
+                        errorLine: 5,
+                        errorDesc: 'ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()',
+                        explanation: 'NumPy arrays require bitwise operator & (wrapped in parentheses) for element-wise boolean operations, not Python logical "and".'
+                    },
+                    {
+                        title: `Debug: Fix Axis Dimension Out of Bounds`,
+                        buggy: `import numpy as np\n\ndef calculate_column_sums(matrix):\n    # Fix axis error for 2D array\n    return np.sum(matrix, axis=2)\n`,
+                        fixed: `import numpy as np\n\ndef calculate_column_sums(matrix):\n    return np.sum(matrix, axis=0)\n`,
+                        errorLine: 5,
+                        errorDesc: 'AxisError: axis 2 is out of bounds for array of dimension 2',
+                        explanation: '2D arrays have axis 0 (rows/columns-down) and axis 1 (columns/row-across). Axis 2 does not exist.'
+                    }
+                ];
+                const dbg = debugBanks[modIdx % debugBanks.length];
+                return {
+                    title: isReviewExercise ? `Unit Test Debug: ${dbg.title}` : dbg.title,
+                    description: `Identify and correct the bug in the following NumPy code evaluating **${cleanTopic}**.`,
+                    exerciseType: 'code_debug',
+                    difficulty: effectiveDifficulty,
+                    scaffoldLevel: effectiveScaffold,
+                    bloomsLevel: effectiveBlooms,
+                    learningObjective: `Diagnose and rectify runtime and syntax errors in NumPy.`,
+                    isReviewExercise: Boolean(isReviewExercise),
+                    xpReward: isReviewExercise ? 40 : 25,
+                    timeLimit: isReviewExercise ? 8 : 5,
+                    starterCode: dbg.buggy,
+                    solutionCode: dbg.fixed,
+                    testCases: {
+                        buggyCode: dbg.buggy,
+                        errors: [{ line: dbg.errorLine, description: dbg.errorDesc, correctedLine: dbg.fixed }],
+                        solutionCode: dbg.fixed,
+                        explanation: dbg.explanation
+                    },
+                    hints: ['Read error description and check NumPy API conventions.']
+                };
+            }
+
+            // Coding Exercises for NumPy (7 DISTINCT TOPIC MODULES)
+            const numpyCodingModules = [
+                // Module 0: Array Creation & Attributes
+                {
+                    title: `NumPy Array Creation, Attributes & Type Inspection`,
+                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`create_custom_ndarray(start, stop, step, target_shape)\` that:\n1. Creates a 1D NumPy array with sequence elements from \`start\` to \`stop\` (exclusive) with interval \`step\` using \`np.arange\`.\n2. Reshapes the array into \`target_shape\`.\n3. Returns a dictionary containing summary metadata:\n   - \`"array"\`: The array converted to a Python list using \`.tolist()\`\n   - \`"ndim"\`: Integer dimension count (\`arr.ndim\`)\n   - \`"shape"\`: List of dimensions (\`list(arr.shape)\`)\n   - \`"size"\`: Total number of elements (\`int(arr.size)\`)\n\n### Requirements:\n- Function name: \`create_custom_ndarray(start, stop, step, target_shape)\`\n- Use NumPy array creation and attribute inspection methods.`,
+                    starterCode: `import numpy as np\n\ndef create_custom_ndarray(start, stop, step, target_shape):\n    """\n    Create an ndarray from start to stop with step, reshape to target_shape,\n    and return dictionary with array, ndim, shape, and size.\n    """\n    # TODO: Implement using NumPy\n    pass\n`,
+                    solutionCode: `import numpy as np\n\ndef create_custom_ndarray(start, stop, step, target_shape):\n    arr = np.arange(start, stop, step).reshape(target_shape)\n    return {\n        "array": arr.tolist(),\n        "ndim": int(arr.ndim),\n        "shape": list(arr.shape),\n        "size": int(arr.size)\n    }\n`,
+                    testCases: [
+                        { input: 'create_custom_ndarray(0, 12, 1, (3, 4))', expectedOutput: '{"array": [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]], "ndim": 2, "shape": [3, 4], "size": 12}', isHidden: false },
+                        { input: 'create_custom_ndarray(1, 10, 2, (1, 5))', expectedOutput: '{"array": [[1, 3, 5, 7, 9]], "ndim": 2, "shape": [1, 5], "size": 5}', isHidden: true }
+                    ],
+                    hints: ['Use np.arange(start, stop, step).reshape(target_shape).', 'Inspect arr.ndim, arr.shape, arr.size.']
+                },
+                // Module 1: 2D Indexing & Slicing
+                {
+                    title: `NumPy Multidimensional Array Slicing & Submatrix Extraction`,
+                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`extract_submatrix_quadrants(matrix_list, r_start, r_end, c_start, c_end)\` that converts a nested 2D list into a NumPy array, extracts the 2D submatrix bounded by row indices \`[r_start:r_end]\` and column indices \`[c_start:c_end]\`, and returns a dictionary with:\n- \`"submatrix"\`: Sliced submatrix as a list (\`.tolist()\`)\n- \`"diagonal"\`: Main diagonal elements of this submatrix as a list (using \`np.diag()\`)\n\n### Requirements:\n- Function name: \`extract_submatrix_quadrants(matrix_list, r_start, r_end, c_start, c_end)\`\n- Apply NumPy 2D slicing syntax \`arr[r_start:r_end, c_start:c_end]\`.`,
+                    starterCode: `import numpy as np\n\ndef extract_submatrix_quadrants(matrix_list, r_start, r_end, c_start, c_end):\n    """\n    Slice submatrix [r_start:r_end, c_start:c_end] from 2D array and return submatrix & diagonal.\n    """\n    # TODO: Implement slice and diagonal extraction\n    pass\n`,
+                    solutionCode: `import numpy as np\n\ndef extract_submatrix_quadrants(matrix_list, r_start, r_end, c_start, c_end):\n    arr = np.array(matrix_list)\n    sub = arr[r_start:r_end, c_start:c_end]\n    diag = np.diag(sub).tolist()\n    return {\n        "submatrix": sub.tolist(),\n        "diagonal": diag\n    }\n`,
+                    testCases: [
+                        { input: 'extract_submatrix_quadrants([[1, 2, 3], [4, 5, 6], [7, 8, 9]], 0, 2, 1, 3)', expectedOutput: '{"submatrix": [[2, 3], [5, 6]], "diagonal": [2, 6]}', isHidden: false },
+                        { input: 'extract_submatrix_quadrants([[10, 20], [30, 40]], 0, 2, 0, 2)', expectedOutput: '{"submatrix": [[10, 20], [30, 40]], "diagonal": [10, 40]}', isHidden: true }
+                    ],
+                    hints: ['arr = np.array(matrix_list)', 'sub = arr[r_start:r_end, c_start:c_end]', 'np.diag(sub).tolist()']
+                },
+                // Module 2: Reshaping & Transpose
+                {
+                    title: `NumPy Array Reshaping, Transpose & Flattening`,
+                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`reshape_and_transform_matrix(sequence_list, new_shape)\` that accepts a 1D sequence, converts it into a NumPy array, reshapes it to \`new_shape\`, and returns a dictionary with:\n- \`"matrix"\`: Reshaped 2D matrix as a list\n- \`"transpose"\`: Transpose of the matrix (\`arr.T.tolist()\`)\n- \`"flattened"\`: 1D flattened representation (\`arr.flatten().tolist()\`)\n\n### Requirements:\n- Function name: \`reshape_and_transform_matrix(sequence_list, new_shape)\`\n- Demonstrate use of \`.reshape()\`, \`.T\`, and \`.flatten()\`.`,
+                    starterCode: `import numpy as np\n\ndef reshape_and_transform_matrix(sequence_list, new_shape):\n    """\n    Reshape 1D array to new_shape, compute transpose and flat representation.\n    """\n    # TODO: Implement reshape, transpose, and flatten\n    pass\n`,
+                    solutionCode: `import numpy as np\n\ndef reshape_and_transform_matrix(sequence_list, new_shape):\n    arr = np.array(sequence_list).reshape(new_shape)\n    return {\n        "matrix": arr.tolist(),\n        "transpose": arr.T.tolist(),\n        "flattened": arr.flatten().tolist()\n    }\n`,
+                    testCases: [
+                        { input: 'reshape_and_transform_matrix([1, 2, 3, 4, 5, 6], (2, 3))', expectedOutput: '{"matrix": [[1, 2, 3], [4, 5, 6]], "transpose": [[1, 4], [2, 5], [3, 6]], "flattened": [1, 2, 3, 4, 5, 6]}', isHidden: false },
+                        { input: 'reshape_and_transform_matrix([10, 20, 30, 40], (2, 2))', expectedOutput: '{"matrix": [[10, 20], [30, 40]], "transpose": [[10, 30], [20, 40]], "flattened": [10, 20, 30, 40]}', isHidden: true }
+                    ],
+                    hints: ['arr = np.array(sequence_list).reshape(new_shape)', 'Transpose is arr.T, flattened is arr.flatten().']
+                },
+                // Module 3: Vectorized Arithmetic & Broadcasting
+                {
+                    title: `NumPy Vectorized Broadcasting & Matrix Normalization`,
+                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`broadcast_array_normalization(data_matrix, bias_vector, scale_factor)\` that takes a 2D matrix of shape \`(M, N)\`, a 1D bias vector of shape \`(N,)\`, and a numeric scalar \`scale_factor\`.\n\nWithout using any Python \`for\` loops, use NumPy broadcasting to subtract \`bias_vector\` from each row of \`data_matrix\`, then multiply the result by \`scale_factor\`. Return the resulting normalized array as a list.\n\n### Requirements:\n- Function name: \`broadcast_array_normalization(data_matrix, bias_vector, scale_factor)\`\n- Strictly vectorized: No loops allowed.\n- Return: 2D list of numbers.`,
+                    starterCode: `import numpy as np\n\ndef broadcast_array_normalization(data_matrix, bias_vector, scale_factor):\n    """\n    Apply broadcasting: (data_matrix - bias_vector) * scale_factor\n    """\n    # TODO: Implement using vectorized broadcasting without loops\n    pass\n`,
+                    solutionCode: `import numpy as np\n\ndef broadcast_array_normalization(data_matrix, bias_vector, scale_factor):\n    A = np.array(data_matrix)\n    b = np.array(bias_vector)\n    result = (A - b) * scale_factor\n    return result.tolist()\n`,
+                    testCases: [
+                        { input: 'broadcast_array_normalization([[10, 20], [30, 40]], [5, 10], 2)', expectedOutput: '[[10, 20], [50, 60]]', isHidden: false },
+                        { input: 'broadcast_array_normalization([[100, 200, 300]], [50, 50, 50], 0.1)', expectedOutput: '[[5.0, 15.0, 25.0]]', isHidden: true }
+                    ],
+                    hints: ['NumPy automatically broadcasts 1D array across 2D rows when trailing dimension matches.', 'Simply compute: (np.array(data_matrix) - np.array(bias_vector)) * scale_factor.']
+                },
+                // Module 4: Statistical Metrics & Axis Operations
+                {
+                    title: `NumPy Statistical Metrics & Axis Aggregations`,
+                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`compute_axis_aggregations(data_grid)\` that accepts a 2D list of numbers and returns a dictionary with summary statistics:\n- \`"col_sums"\`: Column-wise sums (along axis 0) as a list\n- \`"row_means"\`: Row-wise arithmetic means (along axis 1) rounded to 2 decimal places as a list\n- \`"overall_std"\`: Overall standard deviation rounded to 2 decimal places\n- \`"overall_max"\`: Maximum element across the entire matrix\n\n### Requirements:\n- Function name: \`compute_axis_aggregations(data_grid)\`\n- Use \`np.sum\`, \`np.mean\`, \`np.std\`, and \`np.max\` with appropriate axis flags.`,
+                    starterCode: `import numpy as np\n\ndef compute_axis_aggregations(data_grid):\n    """\n    Compute col_sums (axis=0), row_means (axis=1), overall_std, and overall_max.\n    """\n    # TODO: Implement axis aggregations using NumPy\n    pass\n`,
+                    solutionCode: `import numpy as np\n\ndef compute_axis_aggregations(data_grid):\n    arr = np.array(data_grid)\n    col_sums = np.sum(arr, axis=0).tolist()\n    row_means = [round(float(m), 2) for m in np.mean(arr, axis=1)]\n    overall_std = round(float(np.std(arr)), 2)\n    overall_max = int(np.max(arr)) if np.issubdtype(arr.dtype, np.integer) else float(np.max(arr))\n    return {\n        "col_sums": col_sums,\n        "row_means": row_means,\n        "overall_std": overall_std,\n        "overall_max": overall_max\n    }\n`,
+                    testCases: [
+                        { input: 'compute_axis_aggregations([[10, 20], [30, 40]])', expectedOutput: '{"col_sums": [40, 60], "row_means": [15.0, 35.0], "overall_std": 11.18, "overall_max": 40}', isHidden: false },
+                        { input: 'compute_axis_aggregations([[2, 4, 6], [8, 10, 12]])', expectedOutput: '{"col_sums": [10, 14, 18], "row_means": [4.0, 10.0], "overall_std": 3.42, "overall_max": 12}', isHidden: true }
+                    ],
+                    hints: ['axis=0 calculates down columns: np.sum(arr, axis=0)', 'axis=1 calculates across rows: np.mean(arr, axis=1)']
+                },
+                // Module 5: Boolean Masking & Outlier Filtering
+                {
+                    title: `NumPy Boolean Masking & Outlier Filtering`,
+                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`filter_and_censor_outliers(numbers_list, lower_limit, upper_limit, fill_value)\` that:\n1. Converts \`numbers_list\` to a 1D NumPy array.\n2. Identifies all outlier elements where \`element < lower_limit\` OR \`element > upper_limit\`.\n3. Replaces all identified outlier elements with \`fill_value\`.\n4. Returns a dictionary:\n   - \`"cleaned_array"\`: The modified array as a Python list\n   - \`"outlier_count"\`: Total number of elements replaced (integer)\n\n### Requirements:\n- Function name: \`filter_and_censor_outliers(numbers_list, lower_limit, upper_limit, fill_value)\`\n- Use NumPy boolean indexing or \`np.where\`.`,
+                    starterCode: `import numpy as np\n\ndef filter_and_censor_outliers(numbers_list, lower_limit, upper_limit, fill_value):\n    """\n    Replace elements outside [lower_limit, upper_limit] with fill_value.\n    Returns { "cleaned_array": list, "outlier_count": int }\n    """\n    # TODO: Implement boolean mask\n    pass\n`,
+                    solutionCode: `import numpy as np\n\ndef filter_and_censor_outliers(numbers_list, lower_limit, upper_limit, fill_value):\n    arr = np.array(numbers_list)\n    mask = (arr < lower_limit) | (arr > upper_limit)\n    outlier_count = int(np.sum(mask))\n    arr[mask] = fill_value\n    return {\n        "cleaned_array": arr.tolist(),\n        "outlier_count": outlier_count\n    }\n`,
+                    testCases: [
+                        { input: 'filter_and_censor_outliers([5, 12, 105, -3, 50, 80], 0, 100, 0)', expectedOutput: '{"cleaned_array": [5, 12, 0, 0, 50, 80], "outlier_count": 2}', isHidden: false },
+                        { input: 'filter_and_censor_outliers([10, 20, 30], 15, 25, -1)', expectedOutput: '{"cleaned_array": [-1, 20, -1], "outlier_count": 2}', isHidden: true }
+                    ],
+                    hints: ['Combine conditions with bitwise | : mask = (arr < lower_limit) | (arr > upper_limit)', 'Count outliers with np.sum(mask), assign with arr[mask] = fill_value.']
+                },
+                // Module 6: Matrix Multiplication & Trace (Capstone Assessment Test)
+                {
+                    title: `NumPy Matrix Multiplication & Diagonal Trace Computation`,
+                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`matrix_multiplication_and_trace(matrix_a, matrix_b)\` that:\n1. Accepts two 2D lists \`matrix_a\` and \`matrix_b\`.\n2. Verifies inner dimensions match (number of columns in A equals number of rows in B). If they do not match, return \`None\`.\n3. Computes the matrix dot product \`C = A @ B\` using \`np.dot()\` or \`@\`.\n4. Computes the trace (sum of diagonal elements) of matrix C using \`np.trace()\`.\n5. Returns a dictionary:\n   - \`"product"\`: Resulting product matrix as a list\n   - \`"trace"\`: Numeric sum of diagonal elements\n\n### Requirements:\n- Function name: \`matrix_multiplication_and_trace(matrix_a, matrix_b)\`\n- Handle dimension validation gracefully.`,
+                    starterCode: `import numpy as np\n\ndef matrix_multiplication_and_trace(matrix_a, matrix_b):\n    """\n    Multiply matrix_a and matrix_b and calculate matrix trace.\n    Returns { "product": list, "trace": num } or None if incompatible.\n    """\n    # TODO: Implement matrix multiplication and trace\n    pass\n`,
+                    solutionCode: `import numpy as np\n\ndef matrix_multiplication_and_trace(matrix_a, matrix_b):\n    A = np.array(matrix_a)\n    B = np.array(matrix_b)\n    if A.shape[1] != B.shape[0]:\n        return None\n    prod = np.dot(A, B)\n    tr = float(np.trace(prod))\n    return {\n        "product": prod.tolist(),\n        "trace": int(tr) if tr.is_integer() else tr\n    }\n`,
+                    testCases: [
+                        { input: 'matrix_multiplication_and_trace([[1, 2], [3, 4]], [[5, 6], [7, 8]])', expectedOutput: '{"product": [[19, 22], [43, 50]], "trace": 69}', isHidden: false },
+                        { input: 'matrix_multiplication_and_trace([[1, 2]], [[3], [4]])', expectedOutput: '{"product": [[11]], "trace": 11}', isHidden: true },
+                        { input: 'matrix_multiplication_and_trace([[1, 2]], [[3, 4]])', expectedOutput: 'null', isHidden: true }
+                    ],
+                    hints: ['Check if A.shape[1] == B.shape[0]', 'Compute product = np.dot(A, B)', 'Compute trace with np.trace(product)']
+                }
+            ];
+
+            const chosen = numpyCodingModules[modIdx];
+            return {
+                title: isReviewExercise ? `Unit Test: ${chosen.title}` : chosen.title,
+                description: chosen.description,
+                exerciseType: 'coding',
+                difficulty: effectiveDifficulty,
+                scaffoldLevel: effectiveScaffold,
+                bloomsLevel: effectiveBlooms,
+                learningObjective: `Apply NumPy operations to solve ${chosen.title}.`,
+                isReviewExercise: Boolean(isReviewExercise),
+                xpReward: isReviewExercise ? 50 : 25,
+                timeLimit: isReviewExercise ? 10 : 5,
+                starterCode: chosen.starterCode,
+                solutionCode: chosen.solutionCode,
+                testCases: chosen.testCases,
+                hints: chosen.hints
+            };
+        }
+
+        // =========================================================================
+        // DOMAIN: Python Tuples (ONLY when explicitly requested)
+        // =========================================================================
+        if (isTuple) {
+            if (exerciseType === 'mcq') {
+                return {
+                    title: isReviewExercise ? `Unit Test: ${cleanTopic} Output Prediction` : `${cleanTopic}: Output Prediction Challenge`,
                     description: `Predict the output of the following Python code evaluating **${cleanTopic}**.`,
                     exerciseType: 'mcq',
-                    difficulty: 'intermediate',
-                    scaffoldLevel: 'guided',
-                    bloomsLevel: 'analyze',
+                    difficulty: effectiveDifficulty,
+                    scaffoldLevel: effectiveScaffold,
+                    bloomsLevel: effectiveBlooms,
                     learningObjective: 'Accurately predict output of tuple operations and immutability rules.',
-                    xpReward: 20,
+                    isReviewExercise: Boolean(isReviewExercise),
+                    xpReward: isReviewExercise ? 30 : 20,
                     timeLimit: 4,
                     starterCode: '',
                     solutionCode: '',
@@ -2451,112 +2904,18 @@ Output MUST be ONLY valid JSON matching this schema:
                     hints: ['Tuples support repetition (*) creating a new tuple with repeated elements. Indexing is 0-based.']
                 };
             }
-            if (/dict/i.test(textSample)) {
-                return {
-                    title: `${cleanTopic}: Dictionary Tracing Challenge`,
-                    description: `Predict the output of the following code snippet evaluating **${cleanTopic}**.`,
-                    exerciseType: 'mcq',
-                    difficulty: 'intermediate',
-                    scaffoldLevel: 'guided',
-                    bloomsLevel: 'analyze',
-                    learningObjective: 'Trace dictionary operations and update behavior.',
-                    xpReward: 20,
-                    timeLimit: 4,
-                    starterCode: '',
-                    solutionCode: '',
-                    testCases: {
-                        question: 'What will be the output of the following code?',
-                        codeSnippet: 'record = {"A": 10, "B": 20}\nrecord["A"] += 5\nrecord["C"] = record.get("C", 0) + 1\nprint(record["A"], record["C"])',
-                        options: ['15 1', '10 1', 'KeyError: "C"', '15 0'],
-                        correctOption: 0,
-                        explanation: 'record["A"] is incremented from 10 to 15. record.get("C", 0) returns default 0, which + 1 is assigned to record["C"] as 1.'
-                    },
-                    hints: ['get() safely returns default when key does not exist.']
-                };
-            }
-            return {
-                title: `${cleanTopic}: Code Tracing Challenge`,
-                description: `Evaluate the following code snippet evaluating **${cleanTopic}**.`,
-                exerciseType: 'mcq',
-                difficulty: 'intermediate',
-                scaffoldLevel: 'guided',
-                bloomsLevel: 'analyze',
-                learningObjective: `Analyze control flow and output for ${cleanTopic}.`,
-                xpReward: 20,
-                timeLimit: 4,
-                starterCode: '',
-                solutionCode: '',
-                testCases: {
-                    question: `What will be the output of the code evaluating ${cleanTopic}?`,
-                    codeSnippet: `# Evaluation of ${cleanTopic}\nx = 5\nprint(x * 2)`,
-                    options: ['10', '5', '25', 'TypeError'],
-                    correctOption: 0,
-                    explanation: `Execution evaluates standard operations according to ${language} semantics.`
-                },
-                hints: ['Trace variables step-by-step through execution.']
-            };
-        }
-
-        if (exerciseType === 'code_debug') {
-            if (/tuple/i.test(textSample)) {
-                return {
-                    title: `Debug: Fix Tuple Mutation Error in ${cleanTopic}`,
-                    description: `A student attempted to modify a tuple in place. Fix the code so it returns a new updated tuple with the modified value without raising a TypeError.`,
-                    exerciseType: 'code_debug',
-                    difficulty: 'intermediate',
-                    scaffoldLevel: 'guided',
-                    bloomsLevel: 'apply',
-                    learningObjective: 'Recognize tuple immutability and apply conversion or slicing techniques to update values.',
-                    xpReward: 25,
-                    timeLimit: 5,
-                    starterCode: `def update_tuple_element(t, index, new_value):\n    # Fix error: tuple does not support item assignment\n    t[index] = new_value\n    return t\n`,
-                    solutionCode: `def update_tuple_element(t, index, new_value):\n    temp_list = list(t)\n    temp_list[index] = new_value\n    return tuple(temp_list)\n`,
-                    testCases: {
-                        buggyCode: `def update_tuple_element(t, index, new_value):\n    t[index] = new_value\n    return t`,
-                        errors: [
-                            { line: 2, description: 'Attempted in-place item assignment on immutable tuple', correctedLine: '    temp_list = list(t); temp_list[index] = new_value; return tuple(temp_list)' }
-                        ],
-                        solutionCode: `def update_tuple_element(t, index, new_value):\n    temp_list = list(t)\n    temp_list[index] = new_value\n    return tuple(temp_list)`,
-                        explanation: 'Because tuples are immutable, convert to a list, update the element, and convert back to a tuple.'
-                    },
-                    hints: ['Convert the tuple to a mutable list first, update the element, and cast back to tuple.']
-                };
-            }
-            return {
-                title: `Debug: Fix Bug in ${cleanTopic}`,
-                description: `Identify and fix the syntax or logical bug in the following code snippet evaluating **${cleanTopic}**.`,
-                exerciseType: 'code_debug',
-                difficulty: 'intermediate',
-                scaffoldLevel: 'guided',
-                bloomsLevel: 'apply',
-                learningObjective: `Detect and rectify errors in ${cleanTopic}.`,
-                xpReward: 25,
-                timeLimit: 5,
-                starterCode: `# Identify and fix the bug in ${cleanTopic}\ndef check_boundary(val):\n    result = val\n    return reslt\n`,
-                solutionCode: `def check_boundary(val):\n    result = val\n    return result\n`,
-                testCases: {
-                    buggyCode: `def check_boundary(val):\n    result = val\n    return reslt`,
-                    errors: [{ line: 3, description: 'NameError: reslt is not defined (misspelled variable)', correctedLine: '    return result' }],
-                    solutionCode: `def check_boundary(val):\n    result = val\n    return result`,
-                    explanation: 'Variable names must match the assigned identifier.'
-                },
-                hints: ['Verify spelling of variable names on line 3.']
-            };
-        }
-
-        // Coding Exercises
-        if (/tuple/i.test(textSample)) {
             if (index % 2 === 1) {
                 return {
-                    title: `Tuple Element Verification & Unpacking`,
+                    title: isReviewExercise ? `Unit Test: Tuple Unpacking & Formatted Strings` : `Tuple Element Verification & Unpacking`,
                     description: `## 🎯 Problem Statement\n\nWrite a Python function \`unpack_student_record(record_tuple)\` that takes a tuple \`(roll_no, name, stream, marks)\` and returns a formatted string: \`"Roll: <roll_no>, Name: <name>, Marks: <marks>"\`.\n\n### Requirements:\n- Function name: \`unpack_student_record(record_tuple)\`\n- Unpack the tuple elements cleanly.`,
                     exerciseType: 'coding',
-                    difficulty,
-                    scaffoldLevel,
-                    bloomsLevel,
+                    difficulty: effectiveDifficulty,
+                    scaffoldLevel: effectiveScaffold,
+                    bloomsLevel: effectiveBlooms,
                     learningObjective: 'Unpack tuple values into distinct variables and format a string.',
-                    xpReward: 25,
-                    timeLimit: 5,
+                    isReviewExercise: Boolean(isReviewExercise),
+                    xpReward: isReviewExercise ? 50 : 25,
+                    timeLimit: isReviewExercise ? 10 : 5,
                     starterCode: `def unpack_student_record(record_tuple):\n    """\n    Unpack record_tuple (roll_no, name, stream, marks) and return formatted string.\n    """\n    # TODO: Unpack and return formatted string\n    pass\n`,
                     solutionCode: `def unpack_student_record(record_tuple):\n    roll_no, name, stream, marks = record_tuple\n    return f"Roll: {roll_no}, Name: {name}, Marks: {marks}"\n`,
                     testCases: [
@@ -2567,184 +2926,97 @@ Output MUST be ONLY valid JSON matching this schema:
                 };
             }
             return {
-                title: `Tuple Extremes and Aggregation Processing`,
-                description: `## 🎯 Problem Statement\n\nWrite a Python function \`get_tuple_statistics(data_tuple)\` that accepts a non-empty tuple of numbers and returns a new tuple containing the **minimum value**, **maximum value**, and the **sum of all elements**.\n\n### Requirements:\n- Function name: \`get_tuple_statistics(data_tuple)\`\n- Return type: Tuple of 3 elements: \`(min_val, max_val, total_sum)\`\n- Handle both integer and floating-point elements.`,
+                title: isReviewExercise ? `Unit Test: Tuple Statistics & Extremes` : `Tuple Extremes and Aggregation Processing`,
+                description: `## 🎯 Problem Statement\n\nWrite a Python function \`get_tuple_statistics(data_tuple)\` that accepts a non-empty tuple of numbers and returns a new tuple containing the **minimum value**, **maximum value**, and the **sum of all elements**.\n\n### Requirements:\n- Function name: \`get_tuple_statistics(data_tuple)\`\n- Return type: Tuple of 3 elements: \`(min_val, max_val, total_sum)\``,
                 exerciseType: 'coding',
-                difficulty,
-                scaffoldLevel,
-                bloomsLevel,
+                difficulty: effectiveDifficulty,
+                scaffoldLevel: effectiveScaffold,
+                bloomsLevel: effectiveBlooms,
                 learningObjective: 'Apply Python tuple built-in functions min(), max(), and sum() to aggregate sequence elements.',
-                xpReward: 25,
-                timeLimit: 5,
+                isReviewExercise: Boolean(isReviewExercise),
+                xpReward: isReviewExercise ? 50 : 25,
+                timeLimit: isReviewExercise ? 10 : 5,
                 starterCode: `def get_tuple_statistics(data_tuple):\n    """\n    Compute minimum, maximum, and sum of elements in a tuple.\n    Returns a tuple: (min_val, max_val, total_sum)\n    """\n    # TODO: Calculate and return (min, max, sum)\n    pass\n`,
                 solutionCode: `def get_tuple_statistics(data_tuple):\n    return (min(data_tuple), max(data_tuple), sum(data_tuple))\n`,
                 testCases: [
                     { input: 'get_tuple_statistics((10, 25, 4, 80, 15))', expectedOutput: '(4, 80, 134)', isHidden: false },
                     { input: 'get_tuple_statistics((-5, 0, 5))', expectedOutput: '(-5, 5, 0)', isHidden: true }
                 ],
-                hints: ['Use built-in functions min(data_tuple), max(data_tuple), and sum(data_tuple).', 'Return the three values bundled inside parentheses as a tuple.']
+                hints: ['Use built-in functions min(data_tuple), max(data_tuple), and sum(data_tuple).']
             };
         }
 
-        if (/(dict|key|value|mapping|frequency|word)/i.test(textSample)) {
+        // =========================================================================
+        // DOMAIN: Python Dictionaries
+        // =========================================================================
+        if (isDict) {
             if (index % 2 === 1) {
                 return {
-                    title: `Invert Dictionary Key-Value Mapping`,
+                    title: isReviewExercise ? `Unit Test: Dictionary Inversion & Unique Mapping` : `Invert Dictionary Key-Value Mapping`,
                     description: `## 🎯 Problem Statement\n\nWrite a Python function \`invert_dictionary(d)\` that swaps the keys and values of a given dictionary \`d\`. Assume all dictionary values are unique and immutable.\n\n### Requirements:\n- Function name: \`invert_dictionary(d)\`\n- Return a new dictionary with inverted pairs.`,
                     exerciseType: 'coding',
-                    difficulty,
-                    scaffoldLevel,
-                    bloomsLevel,
+                    difficulty: effectiveDifficulty,
+                    scaffoldLevel: effectiveScaffold,
+                    bloomsLevel: effectiveBlooms,
                     learningObjective: 'Iterate dictionary items and invert mapping programmatically.',
-                    xpReward: 25,
-                    timeLimit: 5,
+                    isReviewExercise: Boolean(isReviewExercise),
+                    xpReward: isReviewExercise ? 50 : 25,
+                    timeLimit: isReviewExercise ? 10 : 5,
                     starterCode: `def invert_dictionary(d):\n    """\n    Swap keys and values in dictionary d.\n    """\n    # TODO: Build and return inverted dictionary\n    pass\n`,
                     solutionCode: `def invert_dictionary(d):\n    return {v: k for k, v in d.items()}\n`,
                     testCases: [
                         { input: "invert_dictionary({'a': 1, 'b': 2})", expectedOutput: "{1: 'a', 2: 'b'}", isHidden: false },
                         { input: "invert_dictionary({'x': 10, 'y': 20})", expectedOutput: "{10: 'x', 20: 'y'}", isHidden: true }
                     ],
-                    hints: ['Iterate through d.items() to extract each key and value.', 'Construct inverted dictionary: {val: key for key, val in d.items()}.']
+                    hints: ['Iterate through d.items() to extract each key and value.']
                 };
             }
             return {
-                title: `Character Frequency Mapping in Text`,
+                title: isReviewExercise ? `Unit Test: Frequency Mapping in Text` : `Character Frequency Mapping in Text`,
                 description: `## 🎯 Problem Statement\n\nWrite a Python function \`count_character_frequencies(text_string)\` that takes a string \`text_string\` and returns a dictionary with each character as a key and its total occurrences as the value.\n\n### Requirements:\n- Function name: \`count_character_frequencies(text_string)\`\n- Preserve case sensitivity (e.g. 'A' and 'a' are distinct keys).\n- Use dictionary operations or \`.get()\` method.`,
                 exerciseType: 'coding',
-                difficulty,
-                scaffoldLevel,
-                bloomsLevel,
+                difficulty: effectiveDifficulty,
+                scaffoldLevel: effectiveScaffold,
+                bloomsLevel: effectiveBlooms,
                 learningObjective: 'Construct and populate a Python dictionary dynamically using key lookup and accumulation.',
-                xpReward: 25,
-                timeLimit: 5,
+                isReviewExercise: Boolean(isReviewExercise),
+                xpReward: isReviewExercise ? 50 : 25,
+                timeLimit: isReviewExercise ? 10 : 5,
                 starterCode: `def count_character_frequencies(text_string):\n    """\n    Count the occurrences of each character in text_string.\n    Returns a dictionary mapping characters to frequency counts.\n    """\n    # TODO: Build frequency mapping dictionary\n    pass\n`,
                 solutionCode: `def count_character_frequencies(text_string):\n    freq = {}\n    for ch in text_string:\n        freq[ch] = freq.get(ch, 0) + 1\n    return freq\n`,
                 testCases: [
                     { input: "count_character_frequencies('banana')", expectedOutput: "{'b': 1, 'a': 3, 'n': 2}", isHidden: false },
                     { input: "count_character_frequencies('apple')", expectedOutput: "{'a': 1, 'p': 2, 'l': 1, 'e': 1}", isHidden: true }
                 ],
-                hints: ['Iterate through each character of the string with a for loop.', 'Use freq[ch] = freq.get(ch, 0) + 1 to increment the count safely.']
+                hints: ['Iterate through each character of the string with a for loop.', 'Use freq[ch] = freq.get(ch, 0) + 1.']
             };
         }
 
-        // NumPy Exercises
-        if (/numpy|ndarray|\bnp\b|matrix|dimension|shape|vector|broadcasting/i.test(textSample)) {
-            if (exerciseType === 'mcq') {
-                return {
-                    title: `${cleanTopic}: NumPy Array Tracing Challenge`,
-                    description: `Predict the output of the following NumPy code evaluating 2D array slicing and reshaping.`,
-                    exerciseType: 'mcq',
-                    difficulty: 'intermediate',
-                    scaffoldLevel: 'guided',
-                    bloomsLevel: 'analyze',
-                    learningObjective: 'Accurately predict output of NumPy multidimensional array slicing and shapes.',
-                    xpReward: 20,
-                    timeLimit: 4,
-                    starterCode: '',
-                    solutionCode: '',
-                    testCases: {
-                        question: 'What will be printed by the following code?',
-                        codeSnippet: 'import numpy as np\narr = np.arange(1, 10).reshape(3, 3)\nprint(arr[1:, :2])',
-                        options: [
-                            '[[4 5]\n [7 8]]',
-                            '[[1 2]\n [4 5]]',
-                            '[4 5 7 8]',
-                            'IndexError: invalid 2D slice'
-                        ],
-                        correctOption: 0,
-                        explanation: 'np.arange(1, 10).reshape(3, 3) creates a 3x3 matrix from 1 to 9. arr[1:, :2] slices rows from index 1 to end (rows 1 and 2: values [4,5,6] and [7,8,9]) and columns 0 and 1: yielding [[4, 5], [7, 8]].'
-                    },
-                    hints: ['Row slice 1: selects row index 1 and 2.', 'Column slice :2 selects columns 0 and 1.']
-                };
-            }
-            if (exerciseType === 'code_debug') {
-                return {
-                    title: `Debug: Fix NumPy Array Reshape Dimension Mismatch`,
-                    description: `A student attempted to reshape a 1D NumPy array of size 6 into an invalid (2, 4) shape. Correct the code so that it reshapes the array into a valid 2D matrix of shape (2, 3) without raising a ValueError.`,
-                    exerciseType: 'code_debug',
-                    difficulty: 'intermediate',
-                    scaffoldLevel: 'guided',
-                    bloomsLevel: 'apply',
-                    learningObjective: 'Diagnose and resolve dimension mismatch in NumPy array reshaping.',
-                    xpReward: 25,
-                    timeLimit: 5,
-                    starterCode: `import numpy as np\n\ndef reshape_dataset(arr):\n    # Fix error: cannot reshape array of size 6 into shape (2,4)\n    return arr.reshape(2, 4)\n`,
-                    solutionCode: `import numpy as np\n\ndef reshape_dataset(arr):\n    return arr.reshape(2, 3)\n`,
-                    testCases: {
-                        buggyCode: `import numpy as np\n\ndef reshape_dataset(arr):\n    return arr.reshape(2, 4)`,
-                        errors: [
-                            { line: 4, description: 'ValueError: Total elements in new shape (2*4 = 8) does not equal array size 6', correctedLine: '    return arr.reshape(2, 3)' }
-                        ],
-                        solutionCode: `import numpy as np\n\ndef reshape_dataset(arr):\n    return arr.reshape(2, 3)`,
-                        explanation: 'In NumPy, the product of dimensions in the new shape must equal the total number of elements (arr.size).'
-                    },
-                    hints: ['Check that rows * columns equals len(arr). For size 6, valid dimensions include (2, 3) or (3, 2).']
-                };
-            }
-            if (index % 2 === 1) {
-                return {
-                    title: `NumPy Matrix Slicing and Boolean Masking`,
-                    description: `## 🎯 Problem Statement\n\nWrite a Python function \`filter_and_scale_array(data_list, threshold, factor)\` that converts a list of numbers into a NumPy array, replaces all elements less than or equal to \`threshold\` with 0, multiplies the remaining elements by \`factor\`, and returns the modified array as a standard Python list.\n\n### Requirements:\n- Function name: \`filter_and_scale_array(data_list, threshold, factor)\`\n- Use NumPy array boolean masking or vectorization.\n- Return the resulting array converted to a Python list using \`.tolist()\`.`,
-                    exerciseType: 'coding',
-                    difficulty,
-                    scaffoldLevel,
-                    bloomsLevel,
-                    learningObjective: 'Apply NumPy boolean indexing and vectorized arithmetic operations.',
-                    xpReward: 25,
-                    timeLimit: 5,
-                    starterCode: `import numpy as np\n\ndef filter_and_scale_array(data_list, threshold, factor):\n    \"\"\"\n    Filter elements <= threshold to 0, scale remaining by factor, return list.\n    \"\"\"\n    # TODO: Implement using NumPy vectorized operations\n    pass\n`,
-                    solutionCode: `import numpy as np\n\ndef filter_and_scale_array(data_list, threshold, factor):\n    arr = np.array(data_list)\n    mask = arr > threshold\n    result = np.zeros_like(arr)\n    result[mask] = arr[mask] * factor\n    return result.tolist()\n`,
-                    testCases: [
-                        { input: 'filter_and_scale_array([5, 12, 3, 20, 8], 10, 2)', expectedOutput: '[0, 24, 0, 40, 0]', isHidden: false },
-                        { input: 'filter_and_scale_array([1, 2, 3, 4], 2, 3)', expectedOutput: '[0, 0, 9, 12]', isHidden: true }
-                    ],
-                    hints: ['Create an array with arr = np.array(data_list).', 'Apply boolean mask or np.where(arr > threshold, arr * factor, 0).', 'Convert back using .tolist().']
-                };
-            }
-            return {
-                title: `NumPy Array Statistical Summary & Attributes`,
-                description: `## 🎯 Problem Statement\n\nWrite a Python function \`compute_array_statistics(numbers)\` that accepts a non-empty list of numbers, converts it into a 1D NumPy array, and returns a dictionary with summary metrics:\n- \`"count"\`: Total number of elements (integer)\n- \`"mean"\`: Arithmetic mean (float rounded to 2 decimal places)\n- \`"min"\`: Minimum element\n- \`"max"\`: Maximum element\n\n### Requirements:\n- Function name: \`compute_array_statistics(numbers)\`\n- Return dictionary: \`{"count": int, "mean": float, "min": num, "max": num}\``,
-                exerciseType: 'coding',
-                difficulty,
-                scaffoldLevel,
-                bloomsLevel,
-                learningObjective: 'Compute statistical metrics using NumPy vectorized functions.',
-                xpReward: 25,
-                timeLimit: 5,
-                starterCode: `import numpy as np\n\ndef compute_array_statistics(numbers):\n    \"\"\"\n    Compute count, mean, min, and max using NumPy.\n    \"\"\"\n    # TODO: Implement using NumPy\n    pass\n`,
-                solutionCode: `import numpy as np\n\ndef compute_array_statistics(numbers):\n    arr = np.array(numbers)\n    return {\n        "count": int(arr.size),\n        "mean": round(float(np.mean(arr)), 2),\n        "min": int(np.min(arr)) if np.issubdtype(arr.dtype, np.integer) else float(np.min(arr)),\n        "max": int(np.max(arr)) if np.issubdtype(arr.dtype, np.integer) else float(np.max(arr))\n    }\n`,
-                testCases: [
-                    { input: 'compute_array_statistics([10, 20, 30, 40, 50])', expectedOutput: '{"count": 5, "mean": 30.0, "min": 10, "max": 50}', isHidden: false },
-                    { input: 'compute_array_statistics([2, 4, 6, 8])', expectedOutput: '{"count": 4, "mean": 5.0, "min": 2, "max": 8}', isHidden: true }
-                ],
-                hints: ['Convert input list with arr = np.array(numbers).', 'Use arr.size, np.mean(arr), np.min(arr), and np.max(arr).']
-            };
-        }
-
-        // Universal Fallback for any other topic
+        // =========================================================================
+        // DOMAIN: Universal Fallback with Topic-Specific Functionality
+        // =========================================================================
         const slug = cleanTopic.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20) || 'data';
         return {
-            title: `${cleanTopic} Algorithmic Implementation`,
-            description: `## 🎯 Problem Statement\n\nWrite a Python function \`process_${slug}(input_data)\` that applies the principles of **${cleanTopic}** to process and return verified computational results.\n\n### Requirements:\n- Function name: \`process_${slug}(input_data)\`\n- Validate and process \`input_data\` according to ${cleanTopic} rules.`,
+            title: isReviewExercise ? `Unit Test: ${cleanTopic} Mastery Assessment` : `${cleanTopic} Computational Logic`,
+            description: `## 🎯 Problem Statement\n\nWrite a Python function \`process_${slug}(items)\` that implements verified data transformations demonstrating **${cleanTopic}**.\n\n### Requirements:\n- Function name: \`process_${slug}(items)\`\n- Filter out empty or null items and return a list of processed values.`,
             exerciseType: 'coding',
-            difficulty,
-            scaffoldLevel,
-            bloomsLevel,
+            difficulty: effectiveDifficulty,
+            scaffoldLevel: effectiveScaffold,
+            bloomsLevel: effectiveBlooms,
             learningObjective: `Demonstrate mastery of ${cleanTopic} algorithmic logic.`,
-            xpReward: 25,
-            timeLimit: 5,
-            starterCode: `def process_${slug}(input_data):\n    """\n    Process input_data applying ${cleanTopic} curriculum principles.\n    """\n    # TODO: Implement solution\n    pass\n`,
-            solutionCode: `def process_${slug}(input_data):\n    return input_data\n`,
+            isReviewExercise: Boolean(isReviewExercise),
+            xpReward: isReviewExercise ? 50 : 25,
+            timeLimit: isReviewExercise ? 10 : 5,
+            starterCode: `def process_${slug}(items):\n    """\n    Process items according to ${cleanTopic} specifications.\n    """\n    # TODO: Implement solution\n    pass\n`,
+            solutionCode: `def process_${slug}(items):\n    return [x for x in items if x is not None]\n`,
             testCases: [
-                { input: `process_${slug}([10, 20])`, expectedOutput: '[10, 20]', isHidden: false }
+                { input: `process_${slug}([10, 20, None, 30])`, expectedOutput: '[10, 20, 30]', isHidden: false },
+                { input: `process_${slug}(['a', None, 'b'])`, expectedOutput: "['a', 'b']", isHidden: true }
             ],
             hints: [`Analyze the structural requirements of ${cleanTopic}.`]
         };
     }
 
-    /**
-     * Clean and format title strings with proper title-casing and acronym preservation.
-     */
     cleanTitle(raw) {
         if (!raw) return '';
         const str = typeof raw === 'string' ? raw : (raw?.title || raw?.name || raw?.topic || String(raw || ''));
@@ -3393,10 +3665,23 @@ OUTPUT SCHEMA (Must be strictly valid JSON):
                 });
 
                 const cleanUnitName = this.cleanTitle(u.title);
+                let cleanDesc = u.description;
+                if (typeof cleanDesc === 'object' && cleanDesc !== null) {
+                    cleanDesc = cleanDesc.summary || cleanDesc.overview || '';
+                } else if (typeof cleanDesc === 'string' && cleanDesc.trim().startsWith('{')) {
+                    try {
+                        const parsed = JSON.parse(cleanDesc);
+                        cleanDesc = parsed.summary || parsed.overview || parsed.content?.slice(0, 200) || '';
+                    } catch (e) {}
+                }
+                if (!cleanDesc || cleanDesc.trim().length === 0) {
+                    cleanDesc = `Comprehensive concepts, textbook theory, and hands-on exercises for ${cleanUnitName}.`;
+                }
+
                 finalUnits.push({
                     unitNumber: unitIdx + 1,
                     title: cleanUnitName,
-                    description: u.description || `Comprehensive concepts, textbook theory, and hands-on exercises for ${cleanUnitName}.`,
+                    description: cleanDesc,
                     expectedHours: u.expectedHours || 4,
                     unlockThreshold: u.unlockThreshold || 80,
                     keyConcepts: Array.isArray(u.keyConcepts) && u.keyConcepts.length > 0 ? u.keyConcepts : (sectionTitles.length > 0 ? sectionTitles : [cleanUnitName]),
@@ -3688,136 +3973,121 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
     /**
      * Synthesize grounded interactive exercises using extracted back-of-chapter questions or chapter concepts.
      */
-    synthesizeGroundedExercises({ unitIdx = 0, unitTitle = '', sectionTitles = [], sliceText = '', backExercises = [], language = 'python', totalUnits = 5 }) {
+    synthesizeGroundedExercises({ 
+        unitIdx = 0, 
+        unitTitle = '', 
+        sectionTitles = [], 
+        sliceText = '', 
+        docText = '',
+        backExercises = [], 
+        language = 'python', 
+        totalUnits = 5,
+        bloomsLevel = 'mix',
+        scaffoldLevel = 'progressive'
+    }) {
+        const effectiveDoc = sliceText || docText || '';
+        if ((!backExercises || backExercises.length === 0) && effectiveDoc) {
+            backExercises = this.extractBackExercisesFromText(effectiveDoc);
+        }
+
         const isLastUnit = (unitIdx === totalUnits - 1);
         let matchingQ = [];
 
-        if (isLastUnit && backExercises.length > 0) {
-            matchingQ = backExercises.slice(0, 3);
-        } else if (backExercises.length > 0) {
+        // Match back-of-chapter questions with this unit
+        if (backExercises.length > 0) {
             const startIdx = unitIdx * 2;
             matchingQ = backExercises.slice(startIdx, startIdx + 2);
+            if (matchingQ.length === 0 && isLastUnit) {
+                matchingQ = backExercises.slice(0, 2);
+            }
         }
 
         let exercises = [];
         if (matchingQ.length > 0) {
-            exercises = matchingQ.map(q => {
-                if (q.suggestedType === 'mcq') {
-                    return {
-                        title: `Q${q.questionNumber}: Output Prediction`,
-                        description: q.questionText,
-                        exerciseType: 'mcq',
-                        difficulty: 'intermediate',
-                        scaffoldLevel: 'guided',
-                        bloomsLevel: 'analyze',
-                        learningObjective: 'Predict output of textbook code snippet accurately.',
-                        xpReward: 20,
-                        timeLimit: 4,
-                        starterCode: '',
-                        solutionCode: '',
-                        testCases: {
-                            question: q.questionText,
-                            options: ['Option A (Correct evaluation)', 'Option B', 'Option C', 'Option D'],
-                            correctOption: 0,
-                            explanation: 'Step-by-step trace of the textbook expression.'
-                        },
-                        hints: ['Evaluate operators and function calls in order of precedence.']
-                    };
-                } else if (q.suggestedType === 'code_debug') {
-                    return {
-                        title: `Q${q.questionNumber}: Error Spotting & Debugging`,
-                        description: q.questionText,
-                        exerciseType: 'code_debug',
-                        difficulty: 'intermediate',
-                        scaffoldLevel: 'guided',
-                        bloomsLevel: 'apply',
-                        learningObjective: 'Identify and fix syntax/runtime errors in code.',
-                        xpReward: 25,
-                        timeLimit: 5,
-                        starterCode: '# Identify and correct the error\n' + q.questionText,
-                        solutionCode: '# Corrected solution code\n',
-                        testCases: {
-                            buggyCode: q.questionText,
-                            errors: [{ line: 1, description: 'Fix index or syntax error', correctedLine: '' }],
-                            solutionCode: '',
-                            explanation: 'Explanation of corrected code syntax.'
-                        },
-                        hints: ['Check index boundaries, punctuation, and keyword spelling.']
-                    };
-                } else {
-                    const funcInfo = this.createAcademicExerciseForTopic({
-                        topic: q.questionText.slice(0, 40),
-                        unitTitle,
-                        language,
-                        exerciseType: 'coding',
-                        index: q.questionNumber || 0
-                    });
+            exercises = matchingQ.map((q, qIdx) => {
+                const exType = q.suggestedType || 'coding';
+                const exBlooms = bloomsLevel === 'mix' ? (exType === 'mcq' ? 'analyze' : 'apply') : bloomsLevel;
+                const exScaffold = scaffoldLevel === 'progressive' ? (exType === 'coding' ? 'semi_independent' : 'guided') : scaffoldLevel;
 
-                    return {
-                        title: `Q${q.questionNumber}: Programming Problem`,
-                        description: q.questionText,
-                        exerciseType: 'coding',
-                        difficulty: 'intermediate',
-                        scaffoldLevel: 'guided',
-                        bloomsLevel: 'apply',
-                        learningObjective: 'Write complete solution fulfilling textbook requirements.',
-                        xpReward: 30,
-                        timeLimit: 6,
-                        starterCode: funcInfo.starterCode,
-                        solutionCode: funcInfo.solutionCode,
-                        testCases: funcInfo.testCases,
-                        hints: ['Decompose the problem into input, computation, and return steps.']
-                    };
-                }
+                const baseEx = this.createAcademicExerciseForTopic({
+                    topic: q.questionText.slice(0, 50),
+                    unitTitle,
+                    language,
+                    exerciseType: exType,
+                    bloomsLevel: exBlooms,
+                    scaffoldLevel: exScaffold,
+                    index: unitIdx * 3 + qIdx,
+                    documentText: sliceText
+                });
+
+                return {
+                    ...baseEx,
+                    title: `Textbook Problem: ${baseEx.title}`,
+                    description: `### 🎯 Textbook Problem Statement\n${q.questionText}\n\n---\n${baseEx.description}`
+                };
             });
         }
 
-        // Guarantee at least 2 exercises per unit by supplementing if needed
+        // Generate challenges from unit section titles
+        const sectionsToCover = (sectionTitles && sectionTitles.length > 0) 
+            ? sectionTitles 
+            : [unitTitle, `${unitTitle} Operations`];
+
+        // Stage 2: Formative Practice Labs (cover at least 2 topics from the unit)
         if (exercises.length < 2) {
-            const primaryTopic = sectionTitles[0] || unitTitle;
-            const secondaryTopic = sectionTitles[1] || primaryTopic;
-            if (exercises.length === 0) {
-                exercises.push(
-                    this.createAcademicExerciseForTopic({
-                        topic: primaryTopic,
-                        unitTitle,
-                        language,
-                        exerciseType: 'coding',
-                        index: unitIdx * 2,
-                        documentText: sliceText
-                    }),
-                    this.createAcademicExerciseForTopic({
-                        topic: secondaryTopic,
-                        unitTitle,
-                        language,
-                        exerciseType: unitIdx % 2 === 0 ? 'mcq' : 'code_debug',
-                        index: unitIdx * 2 + 1,
-                        documentText: sliceText
-                    })
-                );
-            } else if (exercises.length === 1) {
-                exercises.push(
-                    this.createAcademicExerciseForTopic({
-                        topic: secondaryTopic,
-                        unitTitle,
-                        language,
-                        exerciseType: exercises[0].exerciseType === 'coding' ? 'mcq' : 'coding',
-                        index: unitIdx * 2 + 1,
-                        documentText: sliceText
-                    })
-                );
-            }
+            const topic1 = sectionsToCover[0] || unitTitle;
+            const topic2 = sectionsToCover[1] || sectionsToCover[0] || unitTitle;
+            
+            const scaf1 = scaffoldLevel === 'progressive' ? 'guided' : scaffoldLevel;
+            const scaf2 = scaffoldLevel === 'progressive' ? 'semi_independent' : scaffoldLevel;
+            const type2 = unitIdx % 3 === 0 ? 'mcq' : (unitIdx % 3 === 1 ? 'fill_blank' : 'code_debug');
+
+            exercises.push(
+                this.createAcademicExerciseForTopic({
+                    topic: topic1,
+                    unitTitle,
+                    language,
+                    exerciseType: 'coding',
+                    bloomsLevel: bloomsLevel === 'mix' ? 'understand' : bloomsLevel,
+                    scaffoldLevel: scaf1,
+                    index: unitIdx * 3 + 0,
+                    documentText: sliceText,
+                    isReviewExercise: false
+                }),
+                this.createAcademicExerciseForTopic({
+                    topic: topic2,
+                    unitTitle,
+                    language,
+                    exerciseType: type2,
+                    bloomsLevel: bloomsLevel === 'mix' ? 'apply' : bloomsLevel,
+                    scaffoldLevel: scaf2,
+                    index: unitIdx * 3 + 1,
+                    documentText: sliceText,
+                    isReviewExercise: false
+                })
+            );
         }
+
+        // Stage 3: Dedicated Summative Unit Test / Assessment
+        const capstoneTopic = sectionsToCover[sectionsToCover.length - 1] || unitTitle;
+        const unitTestExercise = this.createAcademicExerciseForTopic({
+            topic: `${capstoneTopic} Capstone Test`,
+            unitTitle,
+            language,
+            exerciseType: 'coding',
+            bloomsLevel: bloomsLevel === 'mix' ? 'evaluate' : bloomsLevel,
+            scaffoldLevel: 'independent',
+            difficulty: 'advanced',
+            index: unitIdx * 3 + 2,
+            documentText: sliceText,
+            isReviewExercise: true
+        });
+
+        exercises.push(unitTestExercise);
 
         return exercises;
     }
 
-    /**
-     * Parse section headings from document text to discover actual topics.
-     * Iterates line-by-line to avoid regex newline-consumption bugs.
-     * Extracts numbered sections (8.1, 7.1, 1.2.1, etc.), markdown headers, and chapter exercises.
-     * Returns array of { sectionNumber, title, startIndex, endIndex, text }
-     */
     extractTopicsFromDocumentText(documentText = '') {
         if (!documentText || typeof documentText !== 'string' || documentText.trim().length < 30) return [];
 
@@ -4028,8 +4298,8 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
      */
     extractBackExercisesFromText(documentText = '') {
         if (!documentText || typeof documentText !== 'string') return [];
-        const exIdx = documentText.search(/(?:^|\n)\s*(?:#{1,4}\s+)?(?:EXERCISES?|PROGRAMMING\s+PROBLEMS?|REVIEW\s+QUESTIONS?|PRACTICE\s+QUESTIONS?)\b/i);
-        if (exIdx === -1 || exIdx < documentText.length * 0.25) {
+        const exIdx = documentText.search(/(?:^|\n)\s*(?:#{1,4}\s+)?(?:EXERCISES?|PROGRAMMING\s+PROBLEMS?|REVIEW\s+QUESTIONS?|PRACTICE\s+(?:PROBLEMS?|QUESTIONS?)|CHECK\s+YOUR\s+PROGRESS|ASSIGNMENTS?|QUESTION\s+BANK|TRY\s+YOURSELF|LAB\s+EXERCISES?)\b/i);
+        if (exIdx === -1 || (exIdx < documentText.length * 0.15 && documentText.length > 20000)) {
             return [];
         }
 

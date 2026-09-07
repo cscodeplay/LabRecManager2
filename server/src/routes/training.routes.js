@@ -2185,6 +2185,9 @@ router.post('/ai/exercises/batch', authenticate, asyncHandler(async (req, res) =
     const safeUnitTitle = typeof payload.unitTitle === 'string' ? payload.unitTitle : '';
     const safeDocText = typeof payload.documentText === 'string' ? payload.documentText : '';
 
+    const safeBlooms = payload.bloomsLevel || 'mix';
+    const safeScaffold = payload.scaffoldLevel || 'progressive';
+
     try {
         const result = await aiService.generateTrainingExerciseBatch({
             topics: safeTopics,
@@ -2196,6 +2199,8 @@ router.post('/ai/exercises/batch', authenticate, asyncHandler(async (req, res) =
             source: payload.source || 'topics',
             documentText: safeDocText,
             exerciseType: payload.exerciseType || 'mixed',
+            bloomsLevel: safeBlooms,
+            scaffoldLevel: safeScaffold,
             provider
         });
 
@@ -2222,13 +2227,17 @@ router.post('/ai/exercises/batch', authenticate, asyncHandler(async (req, res) =
                 const exType = payload.exerciseType === 'mixed'
                     ? (i === 1 ? 'mcq' : (i === 2 ? 'code_debug' : 'coding'))
                     : (payload.exerciseType || 'coding');
+                const isLastEx = (i === targetCount - 1) && targetCount > 2;
                 fallbackExercises.push(aiService.createAcademicExerciseForTopic({
                     topic,
                     unitTitle: safeUnitTitle,
                     language: safeLang,
                     exerciseType: exType,
                     index: i,
-                    documentText: safeDocText
+                    documentText: safeDocText,
+                    bloomsLevel: safeBlooms,
+                    scaffoldLevel: safeScaffold,
+                    isReviewExercise: isLastEx
                 }));
             }
             return res.json({

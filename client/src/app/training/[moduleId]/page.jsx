@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
 import { trainingAPI } from '@/lib/api';
 import PageHeader from '@/components/PageHeader';
-import { BookOpen, CheckCircle, Lock, PlayCircle } from 'lucide-react';
+import { BookOpen, CheckCircle, Lock, PlayCircle, Clock, ArrowRight, Code2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function TrainingModulePage() {
@@ -114,78 +114,127 @@ export default function TrainingModulePage() {
                                     </div>
                                 </div>
                                 
-                                <div className="p-5">
-                                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                        {unit.exercises.map((ex, i) => {
-                                            const type = ex.exerciseType || 'coding';
-                                            const isPassed = ex.userStatus === 'passed';
-                                            const isFailed = ex.userStatus === 'failed';
-                                            const isUnvisited = !ex.userStatus || ex.userStatus === 'unvisited';
+                                <div className="p-5 space-y-4">
+                                    {/* Stage 1: Pre-Lab Foundation — Theory & Interactive Checks (Displayed before exercises) */}
+                                    <div 
+                                        onClick={() => unlocked && router.push(`/training/${moduleId}/unit/${unit.id}/theory`)}
+                                        className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 ${
+                                            !unlocked 
+                                                ? 'bg-slate-50 border-slate-200 cursor-not-allowed opacity-60' 
+                                                : 'bg-gradient-to-r from-indigo-50/70 via-purple-50/40 to-white dark:from-indigo-950/40 dark:via-purple-950/20 dark:to-slate-900 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400 hover:shadow-md cursor-pointer group'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3.5 min-w-0">
+                                            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                                                <BookOpen className="w-5 h-5" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                                                        Stage 1: Pre-Lab Foundation
+                                                    </span>
+                                                    <span className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                                                        <Clock className="w-3 h-3 text-indigo-500" /> 10 min Pre-Lab Reading & Checks
+                                                    </span>
+                                                </div>
+                                                <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5 group-hover:text-indigo-600 transition-colors">
+                                                    Interactive Concept Notes & Comprehension Checkpoints
+                                                </h4>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                                    Master essential syntax boundaries, theoretical rules, and comprehension checkpoints before starting coding sandboxes.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="shrink-0 flex items-center gap-2">
+                                            <button
+                                                disabled={!unlocked}
+                                                className="btn btn-primary text-xs py-2 px-4 rounded-xl font-bold flex items-center gap-1.5 shadow-sm shadow-indigo-500/20"
+                                            >
+                                                <span>Start Reading & Checks</span>
+                                                <ArrowRight className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    </div>
 
-                                            const typeBadge = {
-                                                mcq: { label: '📝 MCQ', bg: 'bg-amber-50 text-amber-700 border-amber-200' },
-                                                fill_blank: { label: '🧩 Cloze', bg: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
-                                                case_study: { label: '🏢 Case Study', bg: 'bg-purple-50 text-purple-700 border-purple-200' },
-                                                bug_fix: { label: '🐞 PR Bug Hunt', bg: 'bg-rose-50 text-rose-700 border-rose-200' },
-                                                coding: { label: '⚡ Coding Lab', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
-                                            }[type] || { label: '⚡ Coding Lab', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+                                    {/* Stage 2 & 3: Formative Practice Labs & Unit Tests */}
+                                    <div>
+                                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                                            <Code2 className="w-3.5 h-3.5 text-emerald-500" />
+                                            <span>Stage 2 & 3: Practice Labs & Mastery Assessments ({unit.exercises.length})</span>
+                                        </div>
+                                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {unit.exercises.map((ex, i) => {
+                                                const type = ex.exerciseType || 'coding';
+                                                const isPassed = ex.userStatus === 'passed';
+                                                const isFailed = ex.userStatus === 'failed';
+                                                const isUnvisited = !ex.userStatus || ex.userStatus === 'unvisited';
 
-                                            let cardBorder = 'bg-white border-slate-200 hover:border-indigo-500 hover:shadow-md';
-                                            if (isPassed) {
-                                                cardBorder = 'bg-emerald-50/40 border-emerald-300 hover:border-emerald-500 hover:shadow-md';
-                                            } else if (isFailed) {
-                                                cardBorder = 'bg-amber-50/40 border-amber-300 hover:border-amber-500 hover:shadow-md';
-                                            } else if (isUnvisited) {
-                                                cardBorder = 'bg-white border-rose-200 hover:border-rose-400 hover:shadow-md';
-                                            }
+                                                const typeBadge = {
+                                                    mcq: { label: '📝 MCQ', bg: 'bg-amber-50 text-amber-700 border-amber-200' },
+                                                    fill_blank: { label: '🧩 Cloze', bg: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
+                                                    case_study: { label: '🏢 Case Study', bg: 'bg-purple-50 text-purple-700 border-purple-200' },
+                                                    bug_fix: { label: '🐞 PR Bug Hunt', bg: 'bg-rose-50 text-rose-700 border-rose-200' },
+                                                    code_debug: { label: '🐞 CBSE Debug', bg: 'bg-red-50 text-red-700 border-red-200' },
+                                                    coding: { label: '⚡ Coding Lab', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+                                                }[type] || { label: '⚡ Coding Lab', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
 
-                                            return (
-                                                <button
-                                                    key={ex.id}
-                                                    disabled={!unlocked}
-                                                    onClick={() => router.push(`/training/${moduleId}/exercise/${ex.id}`)}
-                                                    className={`p-4 text-left rounded-xl border transition-all flex flex-col justify-between ${!unlocked ? 'bg-slate-50 border-slate-200 cursor-not-allowed opacity-60' : `${cardBorder} cursor-pointer group`}`}
-                                                >
-                                                    <div>
-                                                        <div className="flex justify-between items-center mb-2">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Exercise {i + 1}</span>
-                                                                {isPassed && (
-                                                                    <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full font-bold">
-                                                                        ✅ Passed
+                                                let cardBorder = 'bg-white border-slate-200 hover:border-indigo-500 hover:shadow-md';
+                                                if (isPassed) {
+                                                    cardBorder = 'bg-emerald-50/40 border-emerald-300 hover:border-emerald-500 hover:shadow-md';
+                                                } else if (isFailed) {
+                                                    cardBorder = 'bg-amber-50/40 border-amber-300 hover:border-amber-500 hover:shadow-md';
+                                                } else if (isUnvisited) {
+                                                    cardBorder = 'bg-white border-rose-200 hover:border-rose-400 hover:shadow-md';
+                                                }
+
+                                                return (
+                                                    <button
+                                                        key={ex.id}
+                                                        disabled={!unlocked}
+                                                        onClick={() => router.push(`/training/${moduleId}/exercise/${ex.id}`)}
+                                                        className={`p-4 text-left rounded-xl border transition-all flex flex-col justify-between ${!unlocked ? 'bg-slate-50 border-slate-200 cursor-not-allowed opacity-60' : `${cardBorder} cursor-pointer group`}`}
+                                                    >
+                                                        <div>
+                                                            <div className="flex justify-between items-center mb-2">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Exercise {i + 1}</span>
+                                                                    {isPassed && (
+                                                                        <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full font-bold">
+                                                                            ✅ Passed
+                                                                        </span>
+                                                                    )}
+                                                                    {isFailed && (
+                                                                        <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-bold">
+                                                                            ⚠️ Review
+                                                                        </span>
+                                                                    )}
+                                                                    {isUnvisited && (
+                                                                        <span className="text-[10px] bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                                                                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Unvisited
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${typeBadge.bg}`}>
+                                                                        {typeBadge.label}
                                                                     </span>
-                                                                )}
-                                                                {isFailed && (
-                                                                    <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-bold">
-                                                                        ⚠️ Review
-                                                                    </span>
-                                                                )}
-                                                                {isUnvisited && (
-                                                                    <span className="text-[10px] bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-                                                                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Unvisited
-                                                                    </span>
-                                                                )}
+                                                                    {ex.isReviewExercise && <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-semibold">Review</span>}
+                                                                </div>
                                                             </div>
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${typeBadge.bg}`}>
-                                                                    {typeBadge.label}
-                                                                </span>
-                                                                {ex.isReviewExercise && <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-semibold">Review</span>}
-                                                            </div>
+                                                            <h3 className="font-semibold text-slate-800 line-clamp-2 text-sm group-hover:text-indigo-600 transition-colors">
+                                                                {ex.title}
+                                                            </h3>
                                                         </div>
-                                                        <h3 className="font-semibold text-slate-800 line-clamp-2 text-sm group-hover:text-indigo-600 transition-colors">
-                                                            {ex.title}
-                                                        </h3>
-                                                    </div>
-                                                    <div className="mt-4 pt-2 border-t border-slate-100 flex justify-between items-center text-xs text-slate-500">
-                                                        <span className="capitalize text-[11px] bg-slate-100 px-2 py-0.5 rounded text-slate-600">
-                                                            {ex.scaffoldLevel?.replace('_', ' ') || ex.difficulty}
-                                                        </span>
-                                                        <span className="text-indigo-600 font-bold">+{ex.xpReward} XP</span>
-                                                    </div>
-                                                </button>
-                                            );
-                                        })}
+                                                        <div className="mt-4 pt-2 border-t border-slate-100 flex justify-between items-center text-xs text-slate-500">
+                                                            <span className="capitalize text-[11px] bg-slate-100 px-2 py-0.5 rounded text-slate-600">
+                                                                {ex.scaffoldLevel?.replace('_', ' ') || ex.difficulty}
+                                                            </span>
+                                                            <span className="text-indigo-600 font-bold">+{ex.xpReward} XP</span>
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
                             </div>

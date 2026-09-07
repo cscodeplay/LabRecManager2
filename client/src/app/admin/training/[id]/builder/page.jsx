@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
-    ArrowLeft, Plus, ChevronDown, ChevronUp, Save, EyeOff,
+    ArrowLeft, ArrowRight, Plus, ChevronDown, ChevronUp, Save, EyeOff,
     BookOpen, Layers, Target, Unlock, ShieldAlert, Award,
     Lightbulb, Trash2, Edit3, Lock, Trophy, CheckCircle,
     AlertTriangle, XCircle, Sparkles, FlaskConical, Eye,
@@ -16,6 +16,7 @@ import toast from 'react-hot-toast';
 import { formatDate } from '@/lib/dateUtils';
 import AiTrainingCopilot from '@/components/AiTrainingCopilot';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import MathRenderer from '@/components/MathRenderer';
 
 // --- Pedagogy Score Engine ---
 function computePedagogyScore(moduleData) {
@@ -229,6 +230,7 @@ export default function PedagogyBuilderPage() {
 
     // Unit Theory Modal
     const [showTheoryModal, setShowTheoryModal] = useState(false);
+    const [theoryActiveTab, setTheoryActiveTab] = useState('editor'); // 'editor' | 'preview'
     const [theoryForm, setTheoryForm] = useState({
         unitId: null,
         title: '',
@@ -266,6 +268,42 @@ export default function PedagogyBuilderPage() {
     // Inline AI Theory Generation State (Theory Modal)
     const [inlineAiTheoryPrompt, setInlineAiTheoryPrompt] = useState('');
     const [inlineAiTheoryLoading, setInlineAiTheoryLoading] = useState(false);
+    const [expandedUnitTheoryIds, setExpandedUnitTheoryIds] = useState({});
+
+    // Safe parser for unit theory and JSON-stringified descriptions
+    const parseUnitTheoryDetails = (unit) => {
+        if (!unit) return { summary: '', content: '', keyConcepts: [], miniCheckpoints: [], cbseTips: [] };
+        let summary = unit.description || '';
+        let content = unit.theory || '';
+        let keyConcepts = Array.isArray(unit.keyConcepts) ? unit.keyConcepts : [];
+        let miniCheckpoints = Array.isArray(unit.miniCheckpoints) ? unit.miniCheckpoints : [];
+        let cbseTips = Array.isArray(unit.cbseTips) ? unit.cbseTips : [];
+
+        // Check if description is JSON string
+        if (typeof summary === 'string' && summary.trim().startsWith('{')) {
+            try {
+                const parsed = JSON.parse(summary);
+                if (parsed.summary) summary = parsed.summary;
+                if (parsed.content && !content) content = parsed.content;
+                if (Array.isArray(parsed.keyConcepts) && keyConcepts.length === 0) keyConcepts = parsed.keyConcepts;
+                if (Array.isArray(parsed.miniCheckpoints) && miniCheckpoints.length === 0) miniCheckpoints = parsed.miniCheckpoints;
+                if (Array.isArray(parsed.cbseTips) && cbseTips.length === 0) cbseTips = parsed.cbseTips;
+            } catch (e) {}
+        }
+
+        // Check if theory is JSON string
+        if (typeof content === 'string' && content.trim().startsWith('{')) {
+            try {
+                const parsed = JSON.parse(content);
+                if (parsed.content) content = parsed.content;
+                if (parsed.summary && !summary) summary = parsed.summary;
+                if (Array.isArray(parsed.miniCheckpoints) && miniCheckpoints.length === 0) miniCheckpoints = parsed.miniCheckpoints;
+                if (Array.isArray(parsed.cbseTips) && cbseTips.length === 0) cbseTips = parsed.cbseTips;
+            } catch (e) {}
+        }
+
+        return { summary, content, keyConcepts, miniCheckpoints, cbseTips };
+    };
 
     // Edit Course Meta Modal
     const [showEditModuleModal, setShowEditModuleModal] = useState(false);
@@ -770,6 +808,7 @@ export default function PedagogyBuilderPage() {
                 miniCheckpoints: normalizedCheckpoints,
                 cbseTips: Array.isArray(data.cbseTips) ? data.cbseTips : []
             });
+            setTheoryActiveTab('editor');
             setShowTheoryModal(true);
         } catch (err) {
             console.error(err);
@@ -966,25 +1005,38 @@ export default function PedagogyBuilderPage() {
                                 </p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                             <button 
                                 onClick={() => { closeAllModals(); setAiCopilotTab('outline'); setShowAiCopilot(true); }}
-                                className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white font-bold text-sm shadow-md shadow-indigo-500/25 flex items-center gap-1.5"
+                                className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white font-bold text-sm shadow-md shadow-indigo-500/25 p-2.5 rounded-xl flex items-center justify-center transition"
+                                title="AI LMS Copilot"
+                                aria-label="AI LMS Copilot"
                             >
-                                <Sparkles className="w-4 h-4" /> ✨ AI LMS Copilot
+                                <Sparkles className="w-4 h-4 animate-pulse" />
                             </button>
-                            <button onClick={handleOpenEditModule} className="btn btn-secondary text-sm flex items-center gap-1.5">
-                                <Edit3 className="w-4 h-4 text-slate-500" /> Edit Course
+                            <button
+                                onClick={handleOpenEditModule}
+                                className="btn btn-secondary text-sm p-2.5 rounded-xl flex items-center justify-center"
+                                title="Edit Course Meta"
+                                aria-label="Edit Course Meta"
+                            >
+                                <Edit3 className="w-4 h-4 text-slate-500" />
                             </button>
                             <button 
                                 onClick={() => { closeAllModals(); setShowDeleteModuleModal(true); }}
-                                className="btn btn-secondary text-sm flex items-center gap-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-900/50"
+                                className="btn btn-secondary text-sm p-2.5 rounded-xl flex items-center justify-center text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border-rose-200 dark:border-rose-900/50"
                                 title="Delete Course Module"
+                                aria-label="Delete Course Module"
                             >
-                                <Trash2 className="w-4 h-4 text-rose-500" /> Delete
+                                <Trash2 className="w-4 h-4 text-rose-500" />
                             </button>
-                            <button onClick={() => { closeAllModals(); setShowConfigModal(true); }} className="btn btn-secondary text-sm">
-                                <Settings className="w-4 h-4" /> Configure UI
+                            <button
+                                onClick={() => { closeAllModals(); setShowConfigModal(true); }}
+                                className="btn btn-secondary text-sm p-2.5 rounded-xl flex items-center justify-center"
+                                title="Configure UI & Pedagogy Settings"
+                                aria-label="Configure UI & Pedagogy Settings"
+                            >
+                                <Settings className="w-4 h-4 text-slate-500" />
                             </button>
                             <button
                                 onClick={async () => {
@@ -994,15 +1046,27 @@ export default function PedagogyBuilderPage() {
                                         loadData();
                                     } catch { toast.error('Failed to toggle publish'); }
                                 }}
-                                className={`btn text-sm ${moduleData.isPublished ? 'btn-secondary' : 'bg-emerald-600 hover:bg-emerald-500 text-white border-none'}`}
+                                className={`btn text-sm p-2.5 rounded-xl flex items-center justify-center ${moduleData.isPublished ? 'btn-secondary text-slate-600' : 'bg-emerald-600 hover:bg-emerald-500 text-white border-none'}`}
+                                title={moduleData.isPublished ? 'Unpublish Course' : 'Publish Course'}
+                                aria-label={moduleData.isPublished ? 'Unpublish Course' : 'Publish Course'}
                             >
-                                <Globe className="w-4 h-4" /> {moduleData.isPublished ? 'Unpublish' : 'Publish'}
+                                <Globe className="w-4 h-4" />
                             </button>
-                            <button onClick={() => { closeAllModals(); setShowAssignModal(true); }} className="btn bg-gradient-to-r from-primary-600 to-primary-500 text-white shadow-lg shadow-primary-500/25 hover:shadow-xl text-sm">
-                                <Send className="w-4 h-4" /> Assign to Class
+                            <button
+                                onClick={() => { closeAllModals(); setShowAssignModal(true); }}
+                                className="btn bg-gradient-to-r from-primary-600 to-primary-500 text-white shadow-lg shadow-primary-500/25 hover:shadow-xl text-sm p-2.5 rounded-xl flex items-center justify-center"
+                                title="Assign to Class"
+                                aria-label="Assign to Class"
+                            >
+                                <Send className="w-4 h-4" />
                             </button>
-                            <button onClick={handleOpenCreateUnit} className="btn btn-primary text-sm">
-                                <Plus className="w-4 h-4" /> Add Unit
+                            <button
+                                onClick={handleOpenCreateUnit}
+                                className="btn btn-primary text-sm p-2.5 rounded-xl flex items-center justify-center font-bold"
+                                title="Add Unit"
+                                aria-label="Add Unit"
+                            >
+                                <Plus className="w-4 h-4" />
                             </button>
                         </div>
                     </div>
@@ -1101,139 +1165,368 @@ export default function PedagogyBuilderPage() {
                     </button>
                 </div>
 
-                {/* Column 2: Active Unit Exercise Studio */}
+                {/* Column 2: Active Unit Studio (Theory First -> Practice Labs -> Unit Tests) */}
                 <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950">
                     {activeUnit ? (
                         <div className="max-w-4xl mx-auto space-y-6">
                             {/* Unit Overview Card */}
-                            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xs font-semibold text-primary-600 dark:text-primary-400 uppercase tracking-wider">Unit {activeUnit.unitNumber}</span>
-                                            {activeUnit.unlockThreshold > 0 && (
-                                                <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-full font-bold">
-                                                    Mastery Gate: {activeUnit.unlockThreshold}%
-                                                </span>
-                                            )}
-                                        </div>
-                                        <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{activeUnit.title?.replace(/^(?:unit\s+\d+[:\s-]*)+/i, '')}</h2>
-                                        {activeUnit.description && (
-                                            <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">{activeUnit.description}</p>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        <button
-                                            onClick={() => handleOpenEditUnit(activeUnit)}
-                                            className="btn btn-secondary text-xs py-2 px-3 rounded-xl flex items-center gap-1 font-bold"
-                                            title="Edit Unit Title / Description"
-                                        >
-                                            <Edit3 className="w-3.5 h-3.5" /> Edit Unit
-                                        </button>
-                                        <button
-                                            onClick={() => handleOpenEditTheory(activeUnit)}
-                                            className="btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 dark:text-indigo-300 text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 font-bold border border-indigo-200 dark:border-indigo-800"
-                                            title="Edit Pre-Lab Concept Notes & Mini-Checkpoints"
-                                        >
-                                            <BookOpen className="w-3.5 h-3.5 text-indigo-500" /> Theory & Checks
-                                        </button>
-                                        <button
-                                            onClick={() => handleDeleteUnit(activeUnit.id)}
-                                            className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-slate-200 dark:border-slate-800 transition"
-                                            title="Delete Unit"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                        <button
-                                            onClick={handleOpenCreateExercise}
-                                            className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white font-bold text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 shadow-sm"
-                                        >
-                                            <Sparkles className="w-3.5 h-3.5" /> AI Challenge Studio
-                                        </button>
-                                        <button onClick={handleOpenCreateExercise} className="btn btn-primary text-xs py-2 px-3.5 rounded-xl flex items-center gap-1.5 font-bold">
-                                            <Plus className="w-3.5 h-3.5" /> Add Exercise
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
+                            {(() => {
+                                const { summary, content, keyConcepts, miniCheckpoints, cbseTips } = parseUnitTheoryDetails(activeUnit);
+                                const isTheoryExpanded = Boolean(expandedUnitTheoryIds[activeUnit.id]);
+                                const hasReading = Boolean(content && content.trim().length > 0);
 
-                            {/* Exercises List in Active Unit */}
-                            <div className="space-y-3">
-                                {activeUnit.exercises?.length === 0 ? (
-                                    <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-8">
-                                        <Code2 className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-                                        <h4 className="font-bold text-slate-700 dark:text-slate-300 text-sm">No Exercises in this Unit</h4>
-                                        <p className="text-xs text-slate-400 mt-1">Use the buttons above to craft exercises across all 5 question types or synthesize them with AI.</p>
-                                    </div>
-                                ) : (
-                                    activeUnit.exercises?.map((ex, idx) => {
-                                        const typeBadges = {
-                                            coding: { label: '⚡ Coding Lab', bg: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' },
-                                            mcq: { label: '📝 Output MCQ', bg: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
-                                            fill_blank: { label: '🧩 Syntax Cloze', bg: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300' },
-                                            bug_fix: { label: '🐞 Bug Hunt', bg: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' },
-                                            case_study: { label: '🏢 Case Study', bg: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' },
-                                            assertion_reason: { label: '⚖️ Assertion-Reason', bg: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300' },
-                                            code_trace: { label: '🔍 Dry-Run Trace', bg: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300' },
-                                            code_debug: { label: '🐞 CBSE Error Debug', bg: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' },
-                                        };
-                                        const badge = typeBadges[ex.exerciseType] || typeBadges.coding;
-
-                                        return (
-                                            <div
-                                                key={ex.id}
-                                                onClick={() => handleOpenEditExercise(ex)}
-                                                className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 shadow-sm flex items-center justify-between gap-4 cursor-pointer transition group"
-                                            >
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 font-bold text-xs text-slate-500 flex items-center justify-center shrink-0">
-                                                        {idx + 1}
-                                                    </div>
-                                                    <div className="min-w-0">
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <h5 className="font-bold text-sm text-slate-900 dark:text-white truncate group-hover:text-indigo-600 transition">{ex.title}</h5>
-                                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badge.bg}`}>
-                                                                {badge.label}
+                                return (
+                                    <>
+                                        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs font-semibold text-primary-600 dark:text-primary-400 uppercase tracking-wider">Unit {activeUnit.unitNumber}</span>
+                                                        {activeUnit.unlockThreshold > 0 && (
+                                                            <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-full font-bold">
+                                                                Mastery Gate: {activeUnit.unlockThreshold}%
                                                             </span>
-                                                            <span className="text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded capitalize">
-                                                                {ex.scaffoldLevel}
-                                                            </span>
-                                                        </div>
-                                                        <p className="text-xs text-slate-400 truncate mt-1">{ex.description}</p>
+                                                        )}
                                                     </div>
+                                                    <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{activeUnit.title?.replace(/^(?:unit\s+\d+[:\s-]*)+/i, '')}</h2>
+                                                    {summary && (
+                                                        <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">{summary}</p>
+                                                    )}
                                                 </div>
-
-                                                <div className="flex items-center gap-2 shrink-0">
-                                                    <span className="text-xs font-bold text-amber-500 flex items-center gap-1 mr-2">
-                                                        <Award className="w-3.5 h-3.5" /> +{ex.xpReward || 10} XP
-                                                    </span>
+                                                <div className="flex items-center gap-1.5 shrink-0">
                                                     <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleOpenEditExercise(ex);
-                                                        }}
-                                                        className="btn btn-secondary text-xs py-1.5 px-3 rounded-xl flex items-center gap-1 font-semibold"
+                                                        onClick={() => handleOpenEditUnit(activeUnit)}
+                                                        className="btn btn-secondary text-xs p-2.5 rounded-xl flex items-center justify-center font-bold"
+                                                        title="Edit Unit Details"
+                                                        aria-label="Edit Unit Details"
                                                     >
-                                                        <Edit3 className="w-3.5 h-3.5" /> Edit
+                                                        <Edit3 className="w-4 h-4 text-slate-500" />
                                                     </button>
                                                     <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDeleteExercise(ex.id);
-                                                        }}
-                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
-                                                        title="Delete Exercise"
+                                                        onClick={() => handleOpenEditTheory(activeUnit)}
+                                                        className="btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 dark:text-indigo-300 text-xs p-2.5 rounded-xl flex items-center justify-center font-bold border border-indigo-200 dark:border-indigo-800"
+                                                        title="Pre-Lab Theory & Interactive Checkpoints Studio"
+                                                        aria-label="Pre-Lab Theory & Interactive Checkpoints Studio"
                                                     >
-                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                        <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteUnit(activeUnit.id)}
+                                                        className="p-2.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-slate-200 dark:border-slate-800 transition flex items-center justify-center"
+                                                        title="Delete Unit"
+                                                        aria-label="Delete Unit"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={handleOpenCreateExercise}
+                                                        className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white font-bold text-xs p-2.5 rounded-xl flex items-center justify-center shadow-sm"
+                                                        title="AI Challenge Studio"
+                                                        aria-label="AI Challenge Studio"
+                                                    >
+                                                        <Sparkles className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={handleOpenCreateExercise}
+                                                        className="btn btn-primary text-xs p-2.5 rounded-xl flex items-center justify-center font-bold"
+                                                        title="Add Exercise Manually"
+                                                        aria-label="Add Exercise Manually"
+                                                    >
+                                                        <Plus className="w-4 h-4" />
                                                     </button>
                                                 </div>
                                             </div>
-                                        );
-                                    })
-                                )}
-                            </div>
+                                        </div>
+
+                                        {/* Stage 1: Pre-Lab Foundation & Concept Theory Card (Flexible Full-Width Reading & Checkpoints) */}
+                                        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-indigo-200/80 dark:border-indigo-900/60 shadow-sm space-y-4 w-full">
+                                            <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0">
+                                                        <BookOpen className="w-5 h-5" />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                                                                Stage 1: Pre-Lab Foundation
+                                                            </span>
+                                                            <span className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                                                                <Clock className="w-3.5 h-3.5 text-indigo-500" /> 10 min Pre-Lab Reading
+                                                            </span>
+                                                            {miniCheckpoints.length > 0 && (
+                                                                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                                                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> {miniCheckpoints.length} Mini-Checkpoints
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <h4 className="text-base font-bold text-slate-900 dark:text-white mt-1">
+                                                            {hasReading ? 'Interactive Concept Notes & Comprehension Checkpoints' : 'Pre-Lab Theory & Learning Content'}
+                                                        </h4>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {hasReading && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setExpandedUnitTheoryIds(prev => ({ ...prev, [activeUnit.id]: !isTheoryExpanded }))}
+                                                            className="btn btn-secondary text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 font-bold"
+                                                        >
+                                                            {isTheoryExpanded ? '▲ Collapse Notes' : '▼ Read Full Notes Inline'}
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => handleOpenEditTheory(activeUnit)}
+                                                        className="btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 dark:text-indigo-300 text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 font-bold border border-indigo-200 dark:border-indigo-800"
+                                                        title="Open Full Lesson & Notes Studio"
+                                                    >
+                                                        <BookOpen className="w-3.5 h-3.5 text-indigo-500" />
+                                                        {hasReading ? 'Studio' : '+ Add Notes'}
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Key Concepts Badges */}
+                                            {keyConcepts.length > 0 && (
+                                                <div className="flex items-center gap-2 flex-wrap pt-1">
+                                                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Key Focus:</span>
+                                                    {keyConcepts.slice(0, 6).map((kc, kIdx) => (
+                                                        <span key={kIdx} className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium px-2.5 py-1 rounded-lg border border-slate-200/60 dark:border-slate-700/60">
+                                                            {kc}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {/* Inline Lesson Content (Flexible Full-Width) */}
+                                            {hasReading ? (
+                                                isTheoryExpanded ? (
+                                                    <div className="w-full p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/80 dark:border-slate-800 animate-in fade-in duration-200 space-y-4">
+                                                        <div className="prose prose-sm dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 leading-relaxed font-sans">
+                                                            <MathRenderer content={content} />
+                                                        </div>
+                                                        {cbseTips.length > 0 && (
+                                                            <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs space-y-1.5">
+                                                                <span className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                                                                    💡 CBSE High-Yield Exam Tips:
+                                                                </span>
+                                                                <ul className="list-disc list-inside text-amber-800 dark:text-amber-300 space-y-1">
+                                                                    {cbseTips.map((tip, tIdx) => (
+                                                                        <li key={tIdx}>{tip}</li>
+                                                                    ))}
+                                                                </ul>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-full p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/70 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 leading-relaxed flex items-center justify-between gap-4">
+                                                        <div className="line-clamp-2 flex-1 font-medium">
+                                                            {summary || content.slice(0, 180)}...
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setExpandedUnitTheoryIds(prev => ({ ...prev, [activeUnit.id]: true }))}
+                                                            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 flex items-center gap-1"
+                                                        >
+                                                            <span>Read More</span>
+                                                            <ArrowRight className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                )
+                                            ) : (
+                                                <p className="text-xs text-slate-400 italic">
+                                                    No pre-lab theory notes added yet. Ground student concepts before labs by clicking "+ Add Notes".
+                                                </p>
+                                            )}
+                                        </div>
+                                    </>
+                                );
+                            })()}
+
+                            {/* Stage 2: Formative Practice Labs */}
+                            {(() => {
+                                const allExercises = activeUnit.exercises || [];
+                                const practiceExercises = allExercises.filter(e => !e.isReviewExercise);
+                                const testExercises = allExercises.filter(e => e.isReviewExercise);
+
+                                const typeBadges = {
+                                    coding: { label: '⚡ Coding Lab', bg: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' },
+                                    mcq: { label: '📝 Output MCQ', bg: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
+                                    fill_blank: { label: '🧩 Syntax Cloze', bg: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300' },
+                                    bug_fix: { label: '🐞 Bug Hunt', bg: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' },
+                                    case_study: { label: '🏢 Case Study', bg: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' },
+                                    assertion_reason: { label: '⚖️ Assertion-Reason', bg: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300' },
+                                    code_trace: { label: '🔍 Dry-Run Trace', bg: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300' },
+                                    code_debug: { label: '🐞 CBSE Error Debug', bg: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' },
+                                };
+
+                                return (
+                                    <div className="space-y-6">
+                                        {/* Practice Labs Section */}
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <Code2 className="w-4 h-4 text-emerald-500" />
+                                                    Stage 2: Formative Practice Labs ({practiceExercises.length})
+                                                </span>
+                                                <button
+                                                    onClick={handleOpenCreateExercise}
+                                                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                                                >
+                                                    <Plus className="w-3 h-3" /> Add Challenge
+                                                </button>
+                                            </div>
+
+                                            {practiceExercises.length === 0 ? (
+                                                <div className="text-center py-8 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-6">
+                                                    <Code2 className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                                                    <h4 className="font-bold text-slate-700 dark:text-slate-300 text-xs">No Practice Labs in this Unit</h4>
+                                                    <p className="text-[11px] text-slate-400 mt-1">Add coding sandboxes or synthesize them with AI.</p>
+                                                </div>
+                                            ) : (
+                                                practiceExercises.map((ex, idx) => {
+                                                    const badge = typeBadges[ex.exerciseType] || typeBadges.coding;
+                                                    return (
+                                                        <div
+                                                            key={ex.id}
+                                                            onClick={() => handleOpenEditExercise(ex)}
+                                                            className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 shadow-sm flex items-center justify-between gap-4 cursor-pointer transition group"
+                                                        >
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 font-bold text-xs text-slate-500 flex items-center justify-center shrink-0">
+                                                                    {idx + 1}
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <h5 className="font-bold text-sm text-slate-900 dark:text-white truncate group-hover:text-indigo-600 transition">{ex.title}</h5>
+                                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badge.bg}`}>
+                                                                            {badge.label}
+                                                                        </span>
+                                                                        <span className="text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded capitalize">
+                                                                            {ex.scaffoldLevel}
+                                                                        </span>
+                                                                        {ex.bloomsLevel && (
+                                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 uppercase">
+                                                                                {ex.bloomsLevel}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <p className="text-xs text-slate-400 truncate mt-1">{ex.description}</p>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                                <span className="text-xs font-bold text-amber-500 flex items-center gap-1 mr-2">
+                                                                    <Award className="w-3.5 h-3.5" /> +{ex.xpReward || 10} XP
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleOpenEditExercise(ex);
+                                                                    }}
+                                                                    className="btn btn-secondary text-xs p-2 rounded-xl flex items-center justify-center font-semibold"
+                                                                    title="Edit Exercise Challenge"
+                                                                    aria-label="Edit Exercise Challenge"
+                                                                >
+                                                                    <Edit3 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDeleteExercise(ex.id);
+                                                                    }}
+                                                                    className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-slate-200 dark:border-slate-800 transition flex items-center justify-center"
+                                                                    title="Delete Exercise Challenge"
+                                                                    aria-label="Delete Exercise Challenge"
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+
+                                        {/* Summative Unit Tests Section */}
+                                        <div className="space-y-3 pt-2">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <Award className="w-4 h-4 text-purple-600" />
+                                                    Stage 3: Summative Unit Tests & Mastery Gates ({testExercises.length})
+                                                </span>
+                                            </div>
+
+                                            {testExercises.length === 0 ? (
+                                                <div className="p-4 rounded-2xl bg-purple-50/40 dark:bg-purple-950/20 border border-dashed border-purple-200 dark:border-purple-800/60 text-center">
+                                                    <p className="text-xs text-purple-700/80 dark:text-purple-300/80 italic">
+                                                        No summative test configured for this unit. (Mark 'isReviewExercise: true' to enforce mastery evaluation)
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                testExercises.map((tx, tIdx) => (
+                                                    <div
+                                                        key={tx.id}
+                                                        onClick={() => handleOpenEditExercise(tx)}
+                                                        className="p-4 bg-purple-50/50 dark:bg-purple-950/30 rounded-2xl border border-purple-200 dark:border-purple-800 hover:border-purple-400 shadow-sm flex items-center justify-between gap-4 cursor-pointer transition group"
+                                                    >
+                                                        <div className="flex items-center gap-3 min-w-0">
+                                                            <div className="w-7 h-7 rounded-lg bg-purple-600 font-bold text-xs text-white flex items-center justify-center shrink-0">
+                                                                T{tIdx + 1}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <h5 className="font-bold text-sm text-purple-950 dark:text-purple-100 truncate group-hover:text-purple-700 transition">
+                                                                        📝 {tx.title}
+                                                                    </h5>
+                                                                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200">
+                                                                        Summative Test
+                                                                    </span>
+                                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 uppercase">
+                                                                        {tx.bloomsLevel || 'evaluate'}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-xs text-purple-700/70 dark:text-purple-300/70 truncate mt-1">{tx.description}</p>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-1.5 shrink-0">
+                                                            <span className="text-xs font-bold text-amber-500 flex items-center gap-1 mr-2">
+                                                                <Award className="w-3.5 h-3.5" /> +{tx.xpReward || 50} XP
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleOpenEditExercise(tx);
+                                                                }}
+                                                                className="btn btn-secondary text-xs p-2 rounded-xl flex items-center justify-center font-semibold"
+                                                                title="Edit Unit Test"
+                                                                aria-label="Edit Unit Test"
+                                                            >
+                                                                <Edit3 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDeleteExercise(tx.id);
+                                                                }}
+                                                                className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-slate-200 dark:border-slate-800 transition flex items-center justify-center"
+                                                                title="Delete Unit Test"
+                                                                aria-label="Delete Unit Test"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     ) : (
                         <div className="text-center py-20 text-slate-400">
@@ -2039,9 +2332,9 @@ export default function PedagogyBuilderPage() {
             {/* Unit Pre-Lab Theory & Mini-Checkpoints Modal */}
             {showTheoryModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                         {/* Modal Header */}
-                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-indigo-50/50 dark:bg-indigo-950/20">
+                        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-indigo-50/50 dark:bg-indigo-950/20 flex-wrap gap-2">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-lg shadow-indigo-600/20">
                                     <BookOpen className="w-5 h-5" />
@@ -2055,249 +2348,395 @@ export default function PedagogyBuilderPage() {
                                     </p>
                                 </div>
                             </div>
-                            <button
-                                onClick={() => setShowTheoryModal(false)}
-                                className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-600 transition"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {/* Tab Switcher */}
+                                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                                    <button
+                                        type="button"
+                                        onClick={() => setTheoryActiveTab('editor')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                                            theoryActiveTab === 'editor'
+                                                ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                                : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                    >
+                                        <Edit3 className="w-3.5 h-3.5" /> ✏️ Lesson Editor
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTheoryActiveTab('preview')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                                            theoryActiveTab === 'preview'
+                                                ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                                : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                    >
+                                        <Eye className="w-3.5 h-3.5" /> 👁️ Live Lesson Preview
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={() => setShowTheoryModal(false)}
+                                    className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-600 transition"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Modal Body */}
                         <div className="p-6 overflow-y-auto space-y-5 flex-1">
-                            {/* Inline AI Theory Synthesizer Bar */}
-                            <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 space-y-2.5">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">
-                                        <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
-                                        <span>AI Pre-Lab Notes & Checkpoints Synthesizer</span>
-                                    </div>
-                                    <span className="text-[10px] text-slate-500 font-medium">Auto-populates Markdown, Checkpoints & CBSE Tips</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="text"
-                                        value={inlineAiTheoryPrompt}
-                                        onChange={e => setInlineAiTheoryPrompt(e.target.value)}
-                                        placeholder={`Enter unit concept or CBSE chapter (e.g. '${theoryForm.title || "Control Structures & Loop Invariants"}')...`}
-                                        className="input text-xs flex-1 py-2 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800"
-                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineAiGenerateTheory(); } }}
-                                    />
-                                    <button
-                                        type="button"
-                                        disabled={inlineAiTheoryLoading}
-                                        onClick={handleInlineAiGenerateTheory}
-                                        className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shrink-0 flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 transition"
-                                    >
-                                        {inlineAiTheoryLoading ? (
-                                            <>
-                                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                <span>Synthesizing...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Sparkles className="w-3.5 h-3.5" />
-                                                <span>✨ Auto-Fill Theory</span>
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 block">
-                                    Unit Concept Summary
-                                </label>
-                                <input
-                                    type="text"
-                                    value={theoryForm.summary}
-                                    onChange={e => setTheoryForm(f => ({ ...f, summary: e.target.value }))}
-                                    className="input text-xs"
-                                    placeholder="Brief 1-2 sentence core concept takeaway..."
-                                />
-                            </div>
-
-                            <div>
-                                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 block">
-                                    Full Theory & Concept Markdown Notes
-                                </label>
-                                <textarea
-                                    value={theoryForm.content}
-                                    onChange={e => setTheoryForm(f => ({ ...f, content: e.target.value }))}
-                                    className="input h-48 font-mono text-xs"
-                                    placeholder="## 📘 Concept Heading&#10;&#10;Explain syntax, memory layout, and operational rules here..."
-                                />
-                            </div>
-
-                            {/* Mini-Checkpoints Section */}
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                                        Interactive Mini-Checkpoints ({theoryForm.miniCheckpoints.length})
-                                    </label>
-                                    <button
-                                        type="button"
-                                        onClick={() => setTheoryForm(f => ({
-                                            ...f,
-                                            miniCheckpoints: [
-                                                ...f.miniCheckpoints,
-                                                {
-                                                    id: `cp_${Date.now()}`,
-                                                    question: '',
-                                                    codeSnippet: '',
-                                                    options: ['', '', '', ''],
-                                                    correctOption: 0,
-                                                    explanation: ''
-                                                }
-                                            ]
-                                        }))}
-                                        className="btn btn-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 font-semibold"
-                                    >
-                                        <Plus className="w-3.5 h-3.5" /> Add Mini-Checkpoint
-                                    </button>
-                                </div>
-
-                                {theoryForm.miniCheckpoints.map((cp, cpIdx) => (
-                                    <div key={cp.id || cpIdx} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-3">
+                            {theoryActiveTab === 'editor' ? (
+                                <div className="space-y-5">
+                                    {/* Inline AI Theory Synthesizer Bar */}
+                                    <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 space-y-2.5">
                                         <div className="flex items-center justify-between">
-                                            <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                                                Mini-Checkpoint #{cpIdx + 1}
-                                            </span>
+                                            <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                                                <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
+                                                <span>AI Pre-Lab Notes & Checkpoints Synthesizer</span>
+                                            </div>
+                                            <span className="text-[10px] text-slate-500 font-medium">Auto-populates Markdown, Checkpoints & CBSE Tips</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="text"
+                                                value={inlineAiTheoryPrompt}
+                                                onChange={e => setInlineAiTheoryPrompt(e.target.value)}
+                                                placeholder={`Enter unit concept or CBSE chapter (e.g. '${theoryForm.title || "Control Structures & Loop Invariants"}')...`}
+                                                className="input text-xs flex-1 py-2 bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800"
+                                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineAiGenerateTheory(); } }}
+                                            />
+                                            <button
+                                                type="button"
+                                                disabled={inlineAiTheoryLoading}
+                                                onClick={handleInlineAiGenerateTheory}
+                                                className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2 px-4 rounded-xl shrink-0 flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 transition"
+                                            >
+                                                {inlineAiTheoryLoading ? (
+                                                    <>
+                                                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                        <span>Synthesizing...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Sparkles className="w-3.5 h-3.5" />
+                                                        <span>✨ Auto-Fill Theory</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 block">
+                                            Unit Concept Summary
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={theoryForm.summary}
+                                            onChange={e => setTheoryForm(f => ({ ...f, summary: e.target.value }))}
+                                            className="input text-xs"
+                                            placeholder="Brief 1-2 sentence core concept takeaway..."
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 block">
+                                            Full Theory & Concept Markdown Notes
+                                        </label>
+                                        <textarea
+                                            value={theoryForm.content}
+                                            onChange={e => setTheoryForm(f => ({ ...f, content: e.target.value }))}
+                                            className="input h-48 font-mono text-xs"
+                                            placeholder="## 📘 Concept Heading&#10;&#10;Explain syntax, memory layout, and operational rules here..."
+                                        />
+                                    </div>
+
+                                    {/* Mini-Checkpoints Section */}
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                Interactive Mini-Checkpoints ({theoryForm.miniCheckpoints.length})
+                                            </label>
                                             <button
                                                 type="button"
                                                 onClick={() => setTheoryForm(f => ({
                                                     ...f,
-                                                    miniCheckpoints: f.miniCheckpoints.filter((_, i) => i !== cpIdx)
+                                                    miniCheckpoints: [
+                                                        ...f.miniCheckpoints,
+                                                        {
+                                                            id: `cp_${Date.now()}`,
+                                                            question: '',
+                                                            codeSnippet: '',
+                                                            options: ['', '', '', ''],
+                                                            correctOption: 0,
+                                                            explanation: ''
+                                                        }
+                                                    ]
                                                 }))}
-                                                className="text-rose-500 hover:text-rose-600 text-xs flex items-center gap-1"
+                                                className="btn btn-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 font-semibold"
                                             >
-                                                <Trash2 className="w-3 h-3" /> Remove
+                                                <Plus className="w-3.5 h-3.5" /> Add Mini-Checkpoint
                                             </button>
                                         </div>
 
-                                        <input
-                                            type="text"
-                                            value={cp.question}
-                                            onChange={e => {
-                                                const val = e.target.value;
-                                                setTheoryForm(f => {
-                                                    const cps = [...f.miniCheckpoints];
-                                                    cps[cpIdx] = { ...cps[cpIdx], question: val };
-                                                    return { ...f, miniCheckpoints: cps };
-                                                });
-                                            }}
-                                            placeholder="Question prompt..."
-                                            className="input text-xs"
-                                        />
-
-                                        <textarea
-                                            value={cp.codeSnippet || ''}
-                                            onChange={e => {
-                                                const val = e.target.value;
-                                                setTheoryForm(f => {
-                                                    const cps = [...f.miniCheckpoints];
-                                                    cps[cpIdx] = { ...cps[cpIdx], codeSnippet: val };
-                                                    return { ...f, miniCheckpoints: cps };
-                                                });
-                                            }}
-                                            placeholder="Optional code snippet..."
-                                            className="input h-16 font-mono text-xs"
-                                        />
-
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {(cp.options || ['', '', '', '']).map((opt, oIdx) => (
-                                                <div key={oIdx} className="flex items-center gap-2">
-                                                    <input
-                                                        type="radio"
-                                                        name={`correct_${cp.id || cpIdx}`}
-                                                        checked={cp.correctOption === oIdx}
-                                                        onChange={() => {
-                                                            setTheoryForm(f => {
-                                                                const cps = [...f.miniCheckpoints];
-                                                                cps[cpIdx] = { ...cps[cpIdx], correctOption: oIdx };
-                                                                return { ...f, miniCheckpoints: cps };
-                                                            });
-                                                        }}
-                                                        className="accent-indigo-600 shrink-0"
-                                                    />
-                                                    <input
-                                                        type="text"
-                                                        value={opt}
-                                                        onChange={e => {
-                                                            const val = e.target.value;
-                                                            setTheoryForm(f => {
-                                                                const cps = [...f.miniCheckpoints];
-                                                                const opts = [...(cps[cpIdx].options || [])];
-                                                                opts[oIdx] = val;
-                                                                cps[cpIdx] = { ...cps[cpIdx], options: opts };
-                                                                return { ...f, miniCheckpoints: cps };
-                                                            });
-                                                        }}
-                                                        placeholder={`Option ${String.fromCharCode(65 + oIdx)}`}
-                                                        className="input text-xs py-1"
-                                                    />
+                                        {theoryForm.miniCheckpoints.map((cp, cpIdx) => (
+                                            <div key={cp.id || cpIdx} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                                                        Mini-Checkpoint #{cpIdx + 1}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setTheoryForm(f => ({
+                                                            ...f,
+                                                            miniCheckpoints: f.miniCheckpoints.filter((_, i) => i !== cpIdx)
+                                                        }))}
+                                                        className="text-rose-500 hover:text-rose-600 text-xs flex items-center gap-1"
+                                                    >
+                                                        <Trash2 className="w-3 h-3" /> Remove
+                                                    </button>
                                                 </div>
-                                            ))}
+
+                                                <input
+                                                    type="text"
+                                                    value={cp.question}
+                                                    onChange={e => {
+                                                        const val = e.target.value;
+                                                        setTheoryForm(f => {
+                                                            const cps = [...f.miniCheckpoints];
+                                                            cps[cpIdx] = { ...cps[cpIdx], question: val };
+                                                            return { ...f, miniCheckpoints: cps };
+                                                        });
+                                                    }}
+                                                    placeholder="Question prompt..."
+                                                    className="input text-xs"
+                                                />
+
+                                                <textarea
+                                                    value={cp.codeSnippet || ''}
+                                                    onChange={e => {
+                                                        const val = e.target.value;
+                                                        setTheoryForm(f => {
+                                                            const cps = [...f.miniCheckpoints];
+                                                            cps[cpIdx] = { ...cps[cpIdx], codeSnippet: val };
+                                                            return { ...f, miniCheckpoints: cps };
+                                                        });
+                                                    }}
+                                                    placeholder="Optional code snippet..."
+                                                    className="input h-16 font-mono text-xs"
+                                                />
+
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {(cp.options || ['', '', '', '']).map((opt, oIdx) => (
+                                                        <div key={oIdx} className="flex items-center gap-2">
+                                                            <input
+                                                                type="radio"
+                                                                name={`correct_${cp.id || cpIdx}`}
+                                                                checked={cp.correctOption === oIdx}
+                                                                onChange={() => {
+                                                                    setTheoryForm(f => {
+                                                                        const cps = [...f.miniCheckpoints];
+                                                                        cps[cpIdx] = { ...cps[cpIdx], correctOption: oIdx };
+                                                                        return { ...f, miniCheckpoints: cps };
+                                                                    });
+                                                                }}
+                                                                className="accent-indigo-600 shrink-0"
+                                                            />
+                                                            <input
+                                                                type="text"
+                                                                value={opt}
+                                                                onChange={e => {
+                                                                    const val = e.target.value;
+                                                                    setTheoryForm(f => {
+                                                                        const cps = [...f.miniCheckpoints];
+                                                                        const opts = [...(cps[cpIdx].options || [])];
+                                                                        opts[oIdx] = val;
+                                                                        cps[cpIdx] = { ...cps[cpIdx], options: opts };
+                                                                        return { ...f, miniCheckpoints: cps };
+                                                                    });
+                                                                }}
+                                                                placeholder={`Option ${String.fromCharCode(65 + oIdx)}`}
+                                                                className="input text-xs py-1"
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                <input
+                                                    type="text"
+                                                    value={cp.explanation || ''}
+                                                    onChange={e => {
+                                                        const val = e.target.value;
+                                                        setTheoryForm(f => {
+                                                            const cps = [...f.miniCheckpoints];
+                                                            cps[cpIdx] = { ...cps[cpIdx], explanation: val };
+                                                            return { ...f, miniCheckpoints: cps };
+                                                        });
+                                                    }}
+                                                    placeholder="Explanation for students after answering..."
+                                                    className="input text-xs"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* CBSE Tips Section */}
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                CBSE Exam Tips & Pitfalls ({theoryForm.cbseTips.length})
+                                            </label>
+                                            <button
+                                                type="button"
+                                                onClick={() => setTheoryForm(f => ({ ...f, cbseTips: [...f.cbseTips, ''] }))}
+                                                className="btn btn-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 font-semibold"
+                                            >
+                                                <Plus className="w-3.5 h-3.5" /> Add CBSE Tip
+                                            </button>
                                         </div>
-
-                                        <input
-                                            type="text"
-                                            value={cp.explanation || ''}
-                                            onChange={e => {
-                                                const val = e.target.value;
-                                                setTheoryForm(f => {
-                                                    const cps = [...f.miniCheckpoints];
-                                                    cps[cpIdx] = { ...cps[cpIdx], explanation: val };
-                                                    return { ...f, miniCheckpoints: cps };
-                                                });
-                                            }}
-                                            placeholder="Explanation for students after answering..."
-                                            className="input text-xs"
-                                        />
+                                        {theoryForm.cbseTips.map((tip, tIdx) => (
+                                            <div key={tIdx} className="flex items-center gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={tip}
+                                                    onChange={e => {
+                                                        const val = e.target.value;
+                                                        setTheoryForm(f => {
+                                                            const tips = [...f.cbseTips];
+                                                            tips[tIdx] = val;
+                                                            return { ...f, cbseTips: tips };
+                                                        });
+                                                    }}
+                                                    placeholder="e.g., Common exam trap: mutable default arguments in Python"
+                                                    className="input text-xs py-1.5 flex-1"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setTheoryForm(f => ({ ...f, cbseTips: f.cbseTips.filter((_, i) => i !== tIdx) }))}
+                                                    className="text-rose-500 hover:text-rose-600 p-1.5"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
-
-                            {/* CBSE Tips Section */}
-                            <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                                        CBSE Exam Tips & Pitfalls ({theoryForm.cbseTips.length})
-                                    </label>
-                                    <button
-                                        type="button"
-                                        onClick={() => setTheoryForm(f => ({ ...f, cbseTips: [...f.cbseTips, ''] }))}
-                                        className="btn btn-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1 font-semibold"
-                                    >
-                                        <Plus className="w-3.5 h-3.5" /> Add CBSE Tip
-                                    </button>
                                 </div>
-                                {theoryForm.cbseTips.map((tip, tIdx) => (
-                                    <div key={tIdx} className="flex items-center gap-2">
-                                        <input
-                                            type="text"
-                                            value={tip}
-                                            onChange={e => {
-                                                const val = e.target.value;
-                                                setTheoryForm(f => {
-                                                    const tips = [...f.cbseTips];
-                                                    tips[tIdx] = val;
-                                                    return { ...f, cbseTips: tips };
-                                                });
-                                            }}
-                                            placeholder="e.g., Common exam trap: mutable default arguments in Python"
-                                            className="input text-xs py-1.5 flex-1"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setTheoryForm(f => ({ ...f, cbseTips: f.cbseTips.filter((_, i) => i !== tIdx) }))}
-                                            className="text-rose-500 hover:text-rose-600 p-1.5"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
+                            ) : (
+                                /* Live Lesson Preview Mode */
+                                <div className="space-y-6">
+                                    {/* Hero Banner */}
+                                    <div className="p-6 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent border border-indigo-200/80 dark:border-indigo-800/80 space-y-3">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-lg bg-indigo-600 text-white shadow-xs">
+                                                Stage 1: Pre-Lab Foundation
+                                            </span>
+                                            <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-white/80 dark:bg-slate-800/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
+                                                <Clock className="w-3 h-3 text-indigo-500" /> 10 min Pre-Lab Reading
+                                            </span>
+                                            <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-white/80 dark:bg-slate-800/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                                                <CheckCircle className="w-3 h-3 text-emerald-500" /> {theoryForm.miniCheckpoints?.length || 0} Checkpoints
+                                            </span>
+                                        </div>
+                                        <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+                                            {theoryForm.title || 'Unit Pre-Lab Lesson'}
+                                        </h3>
+                                        {theoryForm.summary && (
+                                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+                                                {theoryForm.summary}
+                                            </p>
+                                        )}
                                     </div>
-                                ))}
-                            </div>
+
+                                    {/* Formatted Markdown Content */}
+                                    <div className="p-6 bg-slate-50/70 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                                        <MathRenderer
+                                            content={theoryForm.content || '*No theory content written yet. Switch to the Editor tab to write notes or click Auto-Fill Theory.*'}
+                                            className="prose dark:prose-invert max-w-none text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-sans"
+                                        />
+                                    </div>
+
+                                    {/* CBSE Exam Tips Alert Box */}
+                                    {theoryForm.cbseTips?.length > 0 && (
+                                        <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 space-y-2">
+                                            <h4 className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                                                💡 High-Yield CBSE Exam Tips & Traps
+                                            </h4>
+                                            <ul className="space-y-1.5 text-xs text-amber-800 dark:text-amber-300">
+                                                {theoryForm.cbseTips.map((tip, tIdx) => (
+                                                    <li key={tIdx} className="flex items-start gap-2">
+                                                        <span className="text-amber-500 font-bold">•</span>
+                                                        <span>{tip}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+
+                                    {/* Interactive Mini-Checkpoints Preview */}
+                                    {theoryForm.miniCheckpoints?.length > 0 && (
+                                        <div className="space-y-3 pt-2">
+                                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                                <CheckSquare className="w-4 h-4 text-indigo-500" />
+                                                Interactive Comprehension Checkpoints ({theoryForm.miniCheckpoints.length})
+                                            </h4>
+                                            <div className="grid grid-cols-1 gap-3">
+                                                {theoryForm.miniCheckpoints.map((cp, cIdx) => (
+                                                    <div key={cp.id || cIdx} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3 shadow-xs">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="w-6 h-6 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center justify-center">
+                                                                Q{cIdx + 1}
+                                                            </span>
+                                                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                                                {cp.question || 'Untitled Checkpoint Question'}
+                                                            </span>
+                                                        </div>
+
+                                                        {cp.codeSnippet && (
+                                                            <pre className="p-3 bg-slate-950 text-slate-200 rounded-xl text-xs font-mono overflow-x-auto">
+                                                                {cp.codeSnippet}
+                                                            </pre>
+                                                        )}
+
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                                                            {(cp.options || []).map((opt, oIdx) => {
+                                                                const isCorrect = cp.correctOption === oIdx;
+                                                                return (
+                                                                    <div
+                                                                        key={oIdx}
+                                                                        className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+                                                                            isCorrect
+                                                                                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 shadow-2xs'
+                                                                                : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                                                                        }`}
+                                                                    >
+                                                                        <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                                                            isCorrect ? 'bg-emerald-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600'
+                                                                        }`}>
+                                                                            {isCorrect ? '✓' : String.fromCharCode(65 + oIdx)}
+                                                                        </span>
+                                                                        <span className="flex-1">{opt || `Option ${String.fromCharCode(65 + oIdx)}`}</span>
+                                                                        {isCorrect && (
+                                                                            <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400">
+                                                                                Correct
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+
+                                                        {cp.explanation && (
+                                                            <div className="p-2.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 text-[11px] text-indigo-800 dark:text-indigo-300">
+                                                                💡 <span className="font-bold">Explanation:</span> {cp.explanation}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Modal Footer */}
