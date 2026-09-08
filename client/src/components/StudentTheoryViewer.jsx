@@ -307,7 +307,16 @@ export default function StudentTheoryViewer({
                             {/* Dynamic Scene Visualizer */}
                             <div className="py-6 flex-1 flex items-center justify-center">
                                 {animStages[currentFrame]?.renderScene ? (
-                                    <div dangerouslySetInnerHTML={{ __html: animStages[currentFrame].renderScene() }} />
+                                    <div dangerouslySetInnerHTML={{ 
+                                        __html: typeof animStages[currentFrame].renderScene === 'function' 
+                                            ? animStages[currentFrame].renderScene() 
+                                            : animStages[currentFrame].renderScene 
+                                    }} />
+                                ) : (animStages[currentFrame]?.svgGraphic || animStages[currentFrame]?.svg) ? (
+                                    <div 
+                                        className="w-full flex justify-center max-w-xl"
+                                        dangerouslySetInnerHTML={{ __html: animStages[currentFrame].svgGraphic || animStages[currentFrame].svg }} 
+                                    />
                                 ) : (
                                     <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 text-center max-w-lg space-y-2">
                                         <div className="text-3xl">{animStages[currentFrame]?.icon || '⚡'}</div>
@@ -675,31 +684,149 @@ export default function StudentTheoryViewer({
  * for ANY subject if unit object lacks pre-generated JSON schema fields.
  */
 function extractOrSynthesizeVisualPayload(unit, rawContent, language) {
+    const title = unit?.title || 'Concept Theory';
+    const textSample = (title + ' ' + rawContent).toLowerCase();
+
     // If unit already has explicit AI generated fields, use them!
     if (unit?.animStages && unit?.conceptMindMap && unit?.steps) {
         return {
-            domain: unit.domain || 'Computer Science',
+            domain: unit.domain || (/\b(physics|magnetic|lorentz|biot|ampere|solenoid|quantum|current)\b/i.test(textSample) ? 'Physics & Electromagnetism' : 'Computer Science'),
             coreIntuition: unit.coreIntuition || unit.summary,
             animStages: unit.animStages,
             steps: unit.steps,
-            blueprintSubtitle: unit.blueprintSubtitle || 'Syntactic Order of Evaluation',
-            blueprint: unit.syntaxAnatomy || [],
+            blueprintSubtitle: unit.blueprintSubtitle || (/\b(physics|magnetic|lorentz|biot|ampere|solenoid)\b/i.test(textSample) ? 'Mathematical Derivation & Vector Hierarchy' : 'Syntactic Order of Evaluation'),
+            blueprint: unit.syntaxAnatomy || unit.blueprint || [],
             mindmap: unit.conceptMindMap,
-            traps: unit.commonMistakes?.[0] || {
+            traps: Array.isArray(unit.commonMistakes) ? unit.commonMistakes[0] : (unit.commonMistakes || {
                 wrongTitle: 'Common Pitfall',
                 wrongCode: '# Suboptimal or buggy usage',
-                whyFails: 'Violates syntax or constraints.',
+                whyFails: 'Violates constraints.',
                 rightTitle: 'Recommended Approach',
                 rightCode: '# Correct usage',
-                whyWorks: 'Ensures correctness and performance.'
+                whyWorks: 'Ensures correctness.'
+            })
+        };
+    }
+
+    // 1. Physics: Magnetic Field & Electromagnetism Domain
+    if (/\b(magnetic|magnetism|lorentz|biot[\s-]?savart|ampere|solenoid|toroid|galvanometer|cyclotron|tesla|gauss)\b/i.test(textSample)) {
+        return {
+            domain: 'Physics & Electromagnetism (Class 12 CBSE)',
+            coreIntuition: 'A moving electric charge creates a <strong>Magnetic Field ($\\vec{B}$)</strong> and experiences a transverse <strong>Lorentz Force $\\vec{F}_m = q(\\vec{v} \\times \\vec{B})$</strong>. Because the force is strictly orthogonal to velocity ($\\vec{F} \\perp \\vec{v}$), the magnetic field does <span class="text-emerald-400 font-bold underline">ZERO WORK</span> on the particle ($W = 0$). Speed and kinetic energy remain completely invariant while the trajectory bends into a circle or helix.',
+            animStages: [
+                {
+                    title: 'Stage 1: Charge Enters Transverse Field (v ⟂ B)',
+                    subtitle: 'Positive charge enters uniform magnetic field directed into page (⊗)',
+                    icon: '🧲',
+                    narration: 'A positively charged particle (+q) enters a region of uniform magnetic field B directed perpendicular to velocity. At entrance, velocity is purely horizontal.',
+                    renderScene: () => `
+                        <div class="w-full flex flex-col md:flex-row items-center justify-center gap-6">
+                            <div class="p-4 rounded-xl bg-slate-950 border-2 border-indigo-500 shadow-xl space-y-2 w-72">
+                                <div class="flex justify-between items-center text-xs font-mono text-indigo-300 border-b border-slate-800 pb-1">
+                                    <span>Field: Uniform B</span><span class="text-cyan-400 font-bold">⊗ Into Page</span>
+                                </div>
+                                <div class="p-3 bg-slate-900 rounded font-mono text-xs flex items-center justify-between">
+                                    <span class="text-amber-400 font-bold">Charge (+q)</span>
+                                    <span class="text-emerald-400">v → (Horizontal)</span>
+                                </div>
+                                <div class="text-[11px] text-slate-400">Magnetic Field Vector: <span class="text-indigo-300 font-mono">B = -B k̂</span></div>
+                            </div>
+                            <div class="text-2xl text-indigo-400">➔</div>
+                            <div class="p-4 rounded-xl bg-slate-950/80 border border-slate-800 text-center w-52 text-xs text-slate-300">
+                                <span class="text-xs font-bold text-amber-300">Entrance Boundary</span>
+                                <div class="mt-1 font-mono text-emerald-400">θ = 90° (Maximum Force)</div>
+                            </div>
+                        </div>
+                    `
+                },
+                {
+                    title: 'Stage 2: Orthogonal Lorentz Force Deflection (F = q(v × B))',
+                    subtitle: 'Right-Hand Palm / Fleming Rule creates perpendicular upward force',
+                    icon: '⚡',
+                    narration: 'By Fleming\'s Left Hand Rule, the cross product (v × B) generates an instantaneous upward normal force. Since F ⟂ v, the force cannot speed up the charge.',
+                    renderScene: () => `
+                        <div class="w-full flex items-center justify-center gap-4">
+                            <div class="p-4 rounded-xl bg-slate-950 border-2 border-purple-500 shadow-xl w-64 text-center space-y-2">
+                                <div class="text-xs font-bold text-purple-400 font-mono">Lorentz Force Vector</div>
+                                <div class="p-2 bg-purple-950/40 rounded font-mono text-xs text-emerald-300">F⃗ = q(v⃗ × B⃗)</div>
+                                <div class="text-[11px] text-slate-400">Direction: <span class="text-purple-300 font-bold">+ĵ (Upward Normal)</span></div>
+                            </div>
+                            <div class="text-2xl text-purple-400">➔</div>
+                            <div class="p-4 rounded-xl bg-indigo-950/40 border border-indigo-500 text-center w-56">
+                                <span class="text-xs font-bold text-indigo-300">Orthogonal Constraint</span>
+                                <div class="mt-1 text-xs font-mono text-emerald-400 font-bold">F⃗ · v⃗ = 0 (No work!)</div>
+                            </div>
+                        </div>
+                    `
+                },
+                {
+                    title: 'Stage 3: Centripetal Orbit Formation (r = mv / qB)',
+                    subtitle: 'Continuous perpendicular acceleration forces closed circular trajectory',
+                    icon: '🔄',
+                    narration: 'The constant-magnitude magnetic force acts purely as a centripetal force: mv²/r = qvB. The particle locks into a circular orbit of radius r = mv / qB.',
+                    renderScene: () => `
+                        <div class="w-full flex items-center justify-center gap-4">
+                            <div class="p-4 rounded-xl bg-slate-950 border-2 border-emerald-500 shadow-xl w-72 text-center space-y-2">
+                                <div class="text-xs font-bold text-emerald-400">Centripetal Balance</div>
+                                <div class="p-2 bg-slate-900 rounded font-mono text-xs text-cyan-300 font-bold">r = mv / (qB)</div>
+                                <div class="text-[11px] text-slate-400 flex justify-between px-2">
+                                    <span>Time Period:</span><span class="text-amber-300 font-mono">T = 2πm / (qB)</span>
+                                </div>
+                            </div>
+                        </div>
+                    `
+                },
+                {
+                    title: 'Stage 4: Invariant Kinetic Energy & Frequency Independence',
+                    subtitle: 'Cyclotron frequency ν is completely independent of particle speed or radius',
+                    icon: '🎯',
+                    narration: 'Because the magnetic field does zero work, speed v is unchanged. Remarkably, the revolution frequency ν = qB / (2πm) is constant regardless of particle speed!',
+                    renderScene: () => `
+                        <div class="w-full flex items-center justify-center gap-4">
+                            <div class="p-4 rounded-xl bg-emerald-950/50 border-2 border-emerald-500 shadow-xl text-center w-80 space-y-2">
+                                <div class="text-xs font-bold text-emerald-300">Conservation Principle Verified</div>
+                                <div class="p-2 bg-slate-900 rounded font-mono text-xs text-white">ΔK = 0 J (Kinetic Energy Invariant)</div>
+                                <div class="text-[11px] text-slate-300">Cyclotron Resonance: <span class="text-cyan-400 font-mono font-bold">ν = qB / (2πm)</span></div>
+                            </div>
+                        </div>
+                    `
+                }
+            ],
+            steps: [
+                { num: 1, title: 'Vector Alignment & Field Parameters', badge: 'Setup Phase', desc: 'Identify particle charge q, velocity v, and magnetic induction B.', snippet: 'B_vec = np.array([0, 0, -B_field])\nv_vec = np.array([v_initial, 0, 0])' },
+                { num: 2, title: 'Lorentz Force Cross Product', badge: 'Force Phase', desc: 'Evaluate F = q(v x B). Force is orthogonal to both v and B.', snippet: 'F_mag = q * np.cross(v_vec, B_vec)  # Direction along +y' },
+                { num: 3, title: 'Centripetal Acceleration & Orbital Radius', badge: 'Dynamics Phase', desc: 'Equate magnetic force to centripetal force: qvB = mv²/r.', snippet: 'radius = (mass * velocity) / (charge * B_field)' },
+                { num: 4, title: 'Cyclotron Frequency & Time Period', badge: 'Invariance Phase', desc: 'Calculate periodic time T = 2πm / qB. Note that T is independent of v!', snippet: 'T_period = (2 * np.pi * mass) / (charge * B_field)' }
+            ],
+            blueprint: [
+                { token: 'F⃗_m', role: 'Magnetic Lorentz Force (N, strictly perpendicular to v⃗)' },
+                { token: 'q', role: 'Electric Charge (C, sign determines clockwise vs counter-clockwise)' },
+                { token: 'v⃗', role: 'Velocity vector (m/s, angle θ relative to B determines orbit vs helix)' },
+                { token: 'B⃗', role: 'Magnetic flux density (Tesla, 1 T = 10⁴ Gauss)' },
+                { token: '× (cross)', role: 'Vector cross product (yields sin θ factor; F = 0 when v ∥ B)' }
+            ],
+            mindmap: {
+                icon: '🧲',
+                label: 'Magnetic Effects of Current & Magnetic Field',
+                branches: [
+                    { title: '🏛️ Governing Field Laws', nodes: ['Oersted Discovery (Current produces B)', 'Biot-Savart Law (dB ∝ I dl sinθ / r²)', 'Ampere Circuital Law (∮ B·dl = μ₀ I)'] },
+                    { title: '⚡ Moving Charge Dynamics', nodes: ['Lorentz Force F = q(E + v × B)', 'Transverse circular orbit (r = mv/qB)', 'Helical trajectory (pitch p = v_par * T)', 'Velocity Selector (v = E/B)'] },
+                    { title: '🧲 Current Distributions & Devices', nodes: ['Circular Coil Center (B = μ₀I / 2R)', 'Straight Wire (B = μ₀I / 2πr)', 'Long Solenoid (B = μ₀ n I)', 'Moving Coil Galvanometer (τ = NIAB)'] },
+                    { title: '⚠️ CBSE High-Yield Traps', nodes: ['Work done by static B is ALWAYS zero', 'Stationary charges experience ZERO magnetic force', 'Magnetic field lines form continuous closed loops', 'Doubling N doubles galvanometer resistance!'] }
+                ]
+            },
+            traps: {
+                wrongTitle: 'Assuming Magnetic Field Does Work or Increases Particle Speed',
+                wrongCode: 'Work = F * d = (q v B) * d  # ❌ INCORRECT! Magnetic field cannot speed up charge',
+                whyFails: 'Because F⃗ ⟂ v⃗ at all instants, Power P = F⃗ · v⃗ = 0. Therefore work done is strictly ZERO.',
+                rightTitle: 'Orthogonal Acceleration & Kinetic Energy Invariance',
+                rightCode: 'dW = F⃗ · dr⃗ = F⃗ · (v⃗ dt) = 0  =>  ΔK = 0, Speed v is strictly constant! (✅ Correct)',
+                whyWorks: 'The magnetic force is purely centripetal. It alters the direction of momentum without altering kinetic energy.'
             }
         };
     }
 
-    const title = unit?.title || 'Concept Theory';
-    const textSample = (title + ' ' + rawContent).toLowerCase();
-
-    // 1. SQL / Databases Domain
+    // 2. SQL / Databases Domain
     if (language === 'sql' || /\b(sql|database|relation|\btable\b|rdbms|cardinality|degree|primary\s+key)\b/i.test(textSample)) {
         return {
             domain: 'Database Management (SQL)',
