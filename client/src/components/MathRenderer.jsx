@@ -11,19 +11,20 @@ import katex from 'katex';
  * - Chemistry formulas: `$\text{H}_2\text{O}$`, `$\text{CaCO}_3 \rightarrow \text{CaO} + \text{CO}_2$`
  * - Physics equations: `$\vec{F} = m\vec{a}$`, `$E = mc^2$`, `$\lambda = \frac{h}{p}$`
  * - Combinatorics & Calculus: `$nCr = \frac{n!}{r!(n-r)!}$`, `$\int_{a}^{b} f(x)dx$`
- * - Markdown: Headings, Bold, Italic, Code Blocks, Inline Code, Lists, Blockquotes
+ * - Markdown: Headings, Tables, Bold, Italic, Code Blocks, Inline Code, Lists, Callouts, Blockquotes
  */
 export default function MathRenderer({
     content = '',
     className = '',
     inline = false,
-    textClassName = ''
+    textClassName = '',
+    size = 'base' // 'sm' | 'base' | 'lg' | 'xl'
 }) {
     const renderedElements = useMemo(() => {
         if (!content || typeof content !== 'string') return null;
 
-        return parseContent(content, textClassName);
-    }, [content, textClassName]);
+        return parseContent(content, textClassName, size);
+    }, [content, textClassName, size]);
 
     if (!content) return null;
 
@@ -49,7 +50,7 @@ function renderKatexToString(mathStr, displayMode = false) {
             strict: false,
             trust: true,
             macros: {
-                "\\ce": "\\text{#1}" // Basic chemistry fallback macro
+                "\\ce": "\\text{#1}"
             }
         });
     } catch (err) {
@@ -68,7 +69,7 @@ function escapeHtml(str) {
 /**
  * Parses markdown blocks and LaTeX formulas into React elements.
  */
-function parseContent(text, textClassName = '') {
+function parseContent(text, textClassName = '', size = 'base') {
     // 1. First tokenize code blocks (```...```) and block math ($$...$$ or \[...\])
     const blockRegex = /(?:```([a-zA-Z0-9_-]*)\n([\s\S]*?)```)|(?:\$\$([\s\S]*?)\$\$)|(?:\\\[([\s\S]*?)\\\])/g;
     const blocks = [];
@@ -113,13 +114,14 @@ function parseContent(text, textClassName = '') {
     return blocks.map((block, bIdx) => {
         if (block.type === 'code_block') {
             return (
-                <div key={`cb-${bIdx}`} className="my-3 rounded-xl overflow-hidden border border-slate-700 bg-slate-950 shadow-inner">
+                <div key={`cb-${bIdx}`} className="my-3.5 rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950 shadow-md">
                     {block.language && (
-                        <div className="px-3 py-1 bg-slate-900 border-b border-slate-800 text-[10px] font-mono font-semibold text-slate-400 uppercase tracking-wider">
-                            {block.language}
+                        <div className="px-4 py-1.5 bg-slate-900 border-b border-slate-800 text-[11px] font-mono font-bold text-indigo-400 uppercase tracking-wider flex items-center justify-between">
+                            <span>{block.language}</span>
+                            <span className="text-[10px] text-slate-500 font-sans normal-case">Code snippet</span>
                         </div>
                     )}
-                    <pre className="p-3.5 text-xs font-mono text-cyan-300 overflow-x-auto leading-relaxed">
+                    <pre className="p-4 text-xs sm:text-[13px] font-mono text-cyan-300 overflow-x-auto leading-relaxed">
                         <code>{block.content}</code>
                     </pre>
                 </div>
@@ -131,32 +133,74 @@ function parseContent(text, textClassName = '') {
             return (
                 <div
                     key={`mb-${bIdx}`}
-                    className="my-3.5 px-3 py-2 bg-slate-900/60 dark:bg-slate-900/90 border border-indigo-500/20 rounded-xl overflow-x-auto text-center"
+                    className="my-4 px-4 py-3 bg-slate-900/60 dark:bg-slate-900/90 border border-indigo-500/20 rounded-2xl overflow-x-auto text-center shadow-inner"
                     dangerouslySetInnerHTML={{ __html: mathHtml }}
                 />
             );
         }
 
-        // Standard text with paragraphs, headings, bullet lists, and inline math
-        return renderTextParagraphs(block.content, `txt-${bIdx}`, textClassName);
+        // Standard text with paragraphs, tables, headings, bullet lists, and inline math
+        return renderTextParagraphs(block.content, `txt-${bIdx}`, textClassName, size);
     });
 }
 
 /**
- * Handles line-by-line markdown (headings, lists, blockquotes, paragraphs) with inline math.
+ * Handles line-by-line markdown (headings, tables, lists, callouts, paragraphs) with inline math.
  */
-function renderTextParagraphs(textChunk, keyPrefix, textClassName = '') {
+function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = 'base') {
     const lines = textChunk.split('\n');
     const elements = [];
     let currentParagraph = [];
+
+    // Font size scaling classes
+    const sizeConfig = {
+        sm: {
+            p: 'text-sm leading-relaxed',
+            h1: 'text-lg sm:text-xl font-black text-slate-900 dark:text-white mt-4 mb-2',
+            h2: 'text-base sm:text-lg font-bold text-slate-900 dark:text-white mt-3.5 mb-1.5 pb-1 border-b border-slate-200 dark:border-slate-800',
+            h3: 'text-sm font-bold text-indigo-700 dark:text-indigo-300 mt-3 mb-1',
+            li: 'text-xs leading-relaxed my-0.5',
+            table: 'text-xs',
+            tableHead: 'text-[10px]'
+        },
+        base: {
+            p: 'text-base sm:text-[16.5px] leading-relaxed',
+            h1: 'text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-5 mb-2.5',
+            h2: 'text-lg sm:text-xl font-bold text-slate-900 dark:text-white mt-4 mb-2 pb-1.5 border-b border-slate-200 dark:border-slate-800',
+            h3: 'text-base font-bold text-indigo-700 dark:text-indigo-300 mt-3.5 mb-1.5',
+            li: 'text-sm sm:text-[15px] leading-relaxed my-1',
+            table: 'text-xs sm:text-sm',
+            tableHead: 'text-xs'
+        },
+        lg: {
+            p: 'text-lg sm:text-[18px] leading-relaxed',
+            h1: 'text-2xl sm:text-3xl font-black text-slate-900 dark:text-white mt-6 mb-3',
+            h2: 'text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mt-5 mb-2 pb-2 border-b border-slate-200 dark:border-slate-800',
+            h3: 'text-lg font-bold text-indigo-700 dark:text-indigo-300 mt-4 mb-2',
+            li: 'text-base sm:text-[17px] leading-relaxed my-1.5',
+            table: 'text-sm',
+            tableHead: 'text-xs font-black'
+        },
+        xl: {
+            p: 'text-xl leading-relaxed',
+            h1: 'text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mt-7 mb-4',
+            h2: 'text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white mt-6 mb-3 pb-2 border-b border-slate-200 dark:border-slate-800',
+            h3: 'text-xl font-bold text-indigo-700 dark:text-indigo-300 mt-5 mb-2.5',
+            li: 'text-lg leading-relaxed my-2',
+            table: 'text-base',
+            tableHead: 'text-sm font-black'
+        }
+    };
+
+    const s = sizeConfig[size] || sizeConfig.base;
 
     const flushParagraph = (pKey) => {
         if (currentParagraph.length > 0) {
             const joinedText = currentParagraph.join(' ');
             if (joinedText.trim()) {
                 elements.push(
-                    <p key={pKey} className={`my-1.5 leading-relaxed ${textClassName}`}>
-                        {renderInlineFormattedText(joinedText)}
+                    <p key={pKey} className={`my-2 ${s.p} text-slate-800 dark:text-slate-200 ${textClassName}`}>
+                        {renderInlineFormattedText(joinedText, size)}
                     </p>
                 );
             }
@@ -164,83 +208,202 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '') {
         }
     };
 
-    lines.forEach((line, lineIdx) => {
+    let i = 0;
+    while (i < lines.length) {
+        const line = lines[i];
         const trimmed = line.trim();
 
         if (!trimmed) {
-            flushParagraph(`${keyPrefix}-p-${lineIdx}`);
-            return;
+            flushParagraph(`${keyPrefix}-p-${i}`);
+            i++;
+            continue;
         }
 
-        // Headings
+        // 1. Detect Markdown Table (| Col 1 | Col 2 |)
+        if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+            // Check if next line is a delimiter row (| --- | --- |)
+            const nextLine = (lines[i + 1] || '').trim();
+            if (nextLine.startsWith('|') && nextLine.includes('---')) {
+                flushParagraph(`${keyPrefix}-p-before-table-${i}`);
+
+                const headerLine = trimmed;
+                const headerCells = headerLine.split('|').map(c => c.trim()).filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
+                
+                i += 2; // skip header and delimiter
+
+                const rows = [];
+                while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+                    const rowCells = lines[i].trim().split('|').map(c => c.trim()).filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
+                    if (rowCells.length > 0) {
+                        rows.push(rowCells);
+                    }
+                    i++;
+                }
+
+                elements.push(
+                    <div key={`${keyPrefix}-tbl-${i}`} className="my-4 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto">
+                        <table className={`w-full text-left ${s.table}`}>
+                            <thead className={`bg-slate-100 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider ${s.tableHead}`}>
+                                <tr>
+                                    {headerCells.map((h, hIdx) => (
+                                        <th key={hIdx} className="p-3.5 border-b border-slate-200 dark:border-slate-700">
+                                            {renderInlineFormattedText(h, size)}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800/70 bg-white dark:bg-slate-900/60">
+                                {rows.map((row, rIdx) => (
+                                    <tr key={rIdx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                                        {row.map((cell, cIdx) => (
+                                            <td key={cIdx} className="p-3.5 text-slate-800 dark:text-slate-200">
+                                                {renderInlineFormattedText(cell, size)}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                );
+                continue;
+            }
+        }
+
+        // 2. Headings
         if (trimmed.startsWith('### ')) {
-            flushParagraph(`${keyPrefix}-p-before-h3-${lineIdx}`);
+            flushParagraph(`${keyPrefix}-p-before-h3-${i}`);
             elements.push(
-                <h3 key={`${keyPrefix}-h3-${lineIdx}`} className="text-sm font-bold text-slate-900 dark:text-white mt-4 mb-2 flex items-center gap-1.5">
-                    {renderInlineFormattedText(trimmed.slice(4))}
+                <h3 key={`${keyPrefix}-h3-${i}`} className={`${s.h3} flex items-center gap-2`}>
+                    {renderInlineFormattedText(trimmed.slice(4), size)}
                 </h3>
             );
-            return;
+            i++;
+            continue;
         }
 
         if (trimmed.startsWith('## ')) {
-            flushParagraph(`${keyPrefix}-p-before-h2-${lineIdx}`);
+            flushParagraph(`${keyPrefix}-p-before-h2-${i}`);
             elements.push(
-                <h2 key={`${keyPrefix}-h2-${lineIdx}`} className="text-base font-bold text-slate-900 dark:text-white mt-4 mb-2 flex items-center gap-2">
-                    {renderInlineFormattedText(trimmed.slice(3))}
+                <h2 key={`${keyPrefix}-h2-${i}`} className={`${s.h2} flex items-center gap-2`}>
+                    {renderInlineFormattedText(trimmed.slice(3), size)}
                 </h2>
             );
-            return;
+            i++;
+            continue;
         }
 
         if (trimmed.startsWith('# ')) {
-            flushParagraph(`${keyPrefix}-p-before-h1-${lineIdx}`);
+            flushParagraph(`${keyPrefix}-p-before-h1-${i}`);
             elements.push(
-                <h1 key={`${keyPrefix}-h1-${lineIdx}`} className="text-lg font-extrabold text-slate-900 dark:text-white mt-5 mb-2.5">
-                    {renderInlineFormattedText(trimmed.slice(2))}
+                <h1 key={`${keyPrefix}-h1-${i}`} className={s.h1}>
+                    {renderInlineFormattedText(trimmed.slice(2), size)}
                 </h1>
             );
-            return;
+            i++;
+            continue;
         }
 
-        // Blockquotes
-        if (trimmed.startsWith('> ')) {
-            flushParagraph(`${keyPrefix}-p-before-quote-${lineIdx}`);
+        // 3. Callout Alerts (> [!NOTE], > [!TIP], > [!WARNING], > [!CAUTION])
+        if (trimmed.startsWith('> [!')) {
+            flushParagraph(`${keyPrefix}-p-before-callout-${i}`);
+            const alertTypeMatch = trimmed.match(/^>\s*\[!([A-Z]+)\]\s*(.*)$/i);
+            const alertType = (alertTypeMatch ? alertTypeMatch[1] : 'NOTE').toUpperCase();
+            let alertContent = (alertTypeMatch && alertTypeMatch[2]) ? alertTypeMatch[2] : '';
+
+            // Consume any subsequent blockquote lines
+            i++;
+            while (i < lines.length && lines[i].trim().startsWith('>')) {
+                alertContent += ' ' + lines[i].trim().replace(/^>\s*/, '');
+                i++;
+            }
+
+            const alertStyles = {
+                NOTE: {
+                    border: 'border-indigo-500/50 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-900 dark:text-indigo-200',
+                    icon: 'ℹ️',
+                    label: 'Note'
+                },
+                TIP: {
+                    border: 'border-emerald-500/50 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200',
+                    icon: '💡',
+                    label: 'Pro Tip'
+                },
+                WARNING: {
+                    border: 'border-amber-500/50 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200',
+                    icon: '⚠️',
+                    label: 'Warning'
+                },
+                CAUTION: {
+                    border: 'border-rose-500/50 bg-rose-50 dark:bg-rose-950/30 text-rose-900 dark:text-rose-200',
+                    icon: '🚨',
+                    label: 'Caution'
+                },
+                IMPORTANT: {
+                    border: 'border-purple-500/50 bg-purple-50 dark:bg-purple-950/30 text-purple-900 dark:text-purple-200',
+                    icon: '📌',
+                    label: 'Important'
+                }
+            };
+
+            const style = alertStyles[alertType] || alertStyles.NOTE;
+
             elements.push(
-                <blockquote key={`${keyPrefix}-quote-${lineIdx}`} className="my-2 border-l-4 border-indigo-500 bg-indigo-500/10 dark:bg-indigo-950/40 px-3.5 py-2 rounded-r-lg text-xs italic text-indigo-900 dark:text-indigo-200">
-                    {renderInlineFormattedText(trimmed.slice(2))}
+                <div key={`${keyPrefix}-alert-${i}`} className={`my-3.5 p-4 rounded-2xl border ${style.border} shadow-sm space-y-1.5`}>
+                    <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider">
+                        <span>{style.icon}</span>
+                        <span>{style.label}</span>
+                    </div>
+                    <div className={`text-xs sm:text-sm leading-relaxed font-normal`}>
+                        {renderInlineFormattedText(alertContent, size)}
+                    </div>
+                </div>
+            );
+            continue;
+        }
+
+        // Standard blockquotes
+        if (trimmed.startsWith('> ')) {
+            flushParagraph(`${keyPrefix}-p-before-quote-${i}`);
+            elements.push(
+                <blockquote key={`${keyPrefix}-quote-${i}`} className="my-2.5 border-l-4 border-indigo-500 bg-indigo-500/10 dark:bg-indigo-950/40 px-4 py-2.5 rounded-r-xl text-xs sm:text-sm italic text-indigo-900 dark:text-indigo-200">
+                    {renderInlineFormattedText(trimmed.slice(2), size)}
                 </blockquote>
             );
-            return;
+            i++;
+            continue;
         }
 
         // Bullet lists (- or * )
         if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-            flushParagraph(`${keyPrefix}-p-before-li-${lineIdx}`);
+            flushParagraph(`${keyPrefix}-p-before-li-${i}`);
             elements.push(
-                <li key={`${keyPrefix}-li-${lineIdx}`} className={`ml-4 list-disc text-xs leading-relaxed my-0.5 ${textClassName}`}>
-                    {renderInlineFormattedText(trimmed.slice(2))}
+                <li key={`${keyPrefix}-li-${i}`} className={`ml-4 list-disc ${s.li} text-slate-800 dark:text-slate-200 ${textClassName}`}>
+                    {renderInlineFormattedText(trimmed.slice(2), size)}
                 </li>
             );
-            return;
+            i++;
+            continue;
         }
 
         // Numbered lists (1. 2. etc.)
         const numMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
         if (numMatch) {
-            flushParagraph(`${keyPrefix}-p-before-num-${lineIdx}`);
+            flushParagraph(`${keyPrefix}-p-before-num-${i}`);
             elements.push(
-                <div key={`${keyPrefix}-num-${lineIdx}`} className={`ml-3 flex items-start gap-2 text-xs leading-relaxed my-0.5 ${textClassName}`}>
-                    <span className="font-bold text-indigo-500 shrink-0">{numMatch[1]}.</span>
-                    <span>{renderInlineFormattedText(numMatch[2])}</span>
+                <div key={`${keyPrefix}-num-${i}`} className={`ml-3 flex items-start gap-2.5 ${s.li} text-slate-800 dark:text-slate-200 ${textClassName}`}>
+                    <span className="font-extrabold text-indigo-500 shrink-0">{numMatch[1]}.</span>
+                    <span>{renderInlineFormattedText(numMatch[2], size)}</span>
                 </div>
             );
-            return;
+            i++;
+            continue;
         }
 
         // Regular line content
         currentParagraph.push(line);
-    });
+        i++;
+    }
 
     flushParagraph(`${keyPrefix}-p-final`);
     return elements;
@@ -253,7 +416,7 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '') {
  * 3. Bold `**...**`
  * 4. Italic `*...*`
  */
-function renderInlineFormattedText(rawText) {
+function renderInlineFormattedText(rawText, size = 'base') {
     if (!rawText) return null;
 
     // Tokenize inline code (`...`) and inline math ($...$ or \(...\))
@@ -300,7 +463,7 @@ function renderInlineFormattedText(rawText) {
             return (
                 <code
                     key={`ic-${tIdx}`}
-                    className="px-1.5 py-0.5 mx-0.5 bg-slate-800 text-cyan-300 font-mono text-[11px] rounded border border-slate-700 font-medium select-all"
+                    className="px-2 py-0.5 mx-0.5 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-cyan-300 font-mono text-[12px] sm:text-[13px] rounded-lg border border-slate-300/80 dark:border-slate-700 font-semibold select-all"
                 >
                     {token.content}
                 </code>
@@ -312,7 +475,7 @@ function renderInlineFormattedText(rawText) {
             return (
                 <span
                     key={`im-${tIdx}`}
-                    className="inline-math px-0.5 select-all"
+                    className="inline-math px-1 select-all"
                     dangerouslySetInnerHTML={{ __html: mathHtml }}
                 />
             );
@@ -334,7 +497,7 @@ function renderSimpleTypography(text, keyPrefix) {
     return parts.map((part, pIdx) => {
         if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
             return (
-                <strong key={`${keyPrefix}-b-${pIdx}`} className="font-bold text-slate-900 dark:text-slate-100">
+                <strong key={`${keyPrefix}-b-${pIdx}`} className="font-extrabold text-slate-900 dark:text-white">
                     {part.slice(2, -2)}
                 </strong>
             );
@@ -345,7 +508,7 @@ function renderSimpleTypography(text, keyPrefix) {
         return italicParts.map((subPart, sIdx) => {
             if (subPart.startsWith('*') && subPart.endsWith('*') && subPart.length >= 3) {
                 return (
-                    <em key={`${keyPrefix}-i-${pIdx}-${sIdx}`} className="italic">
+                    <em key={`${keyPrefix}-i-${pIdx}-${sIdx}`} className="italic text-slate-800 dark:text-slate-200">
                         {subPart.slice(1, -1)}
                     </em>
                 );

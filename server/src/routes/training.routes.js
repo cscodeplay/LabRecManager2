@@ -700,6 +700,11 @@ router.get('/units/:id/theory', authenticate, asyncHandler(async (req, res) => {
                 theoryData.keyConcepts = Array.isArray(parsed.keyConcepts) ? parsed.keyConcepts : [];
                 theoryData.miniCheckpoints = Array.isArray(parsed.miniCheckpoints) ? parsed.miniCheckpoints : [];
                 theoryData.cbseTips = Array.isArray(parsed.cbseTips) ? parsed.cbseTips : [];
+                theoryData.animStages = Array.isArray(parsed.animStages) ? parsed.animStages : null;
+                theoryData.conceptMindMap = (parsed.conceptMindMap && typeof parsed.conceptMindMap === 'object') ? parsed.conceptMindMap : null;
+                theoryData.steps = Array.isArray(parsed.steps) ? parsed.steps : null;
+                theoryData.syntaxAnatomy = Array.isArray(parsed.syntaxAnatomy) ? parsed.syntaxAnatomy : null;
+                theoryData.commonMistakes = Array.isArray(parsed.commonMistakes) ? parsed.commonMistakes : null;
             }
         } catch (e) {
             theoryData.content = unit.description;
@@ -732,17 +737,34 @@ router.put('/units/:id/theory', authenticate, authorize('admin', 'principal', 'i
     if (!isUUID(id)) {
         return res.status(400).json({ success: false, message: 'Invalid unit ID' });
     }
-    const { summary, content, readingContent, miniCheckpoints, cbseTips, keyConcepts } = req.body;
+    const { 
+        summary, content, readingContent, miniCheckpoints, cbseTips, keyConcepts,
+        animStages, conceptMindMap, steps, syntaxAnatomy, commonMistakes 
+    } = req.body;
 
     const existingUnit = await prisma.trainingUnit.findUnique({ where: { id } });
     if (!existingUnit) return res.status(404).json({ success: false, message: 'Unit not found' });
 
+    let existingPayload = {};
+    if (existingUnit.description) {
+        try {
+            const p = JSON.parse(existingUnit.description);
+            if (p && typeof p === 'object') existingPayload = p;
+        } catch (e) {}
+    }
+
     const payload = {
+        ...existingPayload,
         summary: summary || '',
         content: content || readingContent || '',
-        keyConcepts: Array.isArray(keyConcepts) ? keyConcepts : [],
-        miniCheckpoints: Array.isArray(miniCheckpoints) ? miniCheckpoints : [],
-        cbseTips: Array.isArray(cbseTips) ? cbseTips : []
+        keyConcepts: Array.isArray(keyConcepts) ? keyConcepts : (existingPayload.keyConcepts || []),
+        miniCheckpoints: Array.isArray(miniCheckpoints) ? miniCheckpoints : (existingPayload.miniCheckpoints || []),
+        cbseTips: Array.isArray(cbseTips) ? cbseTips : (existingPayload.cbseTips || []),
+        ...(Array.isArray(animStages) ? { animStages } : {}),
+        ...(conceptMindMap && typeof conceptMindMap === 'object' ? { conceptMindMap } : {}),
+        ...(Array.isArray(steps) ? { steps } : {}),
+        ...(Array.isArray(syntaxAnatomy) ? { syntaxAnatomy } : {}),
+        ...(Array.isArray(commonMistakes) ? { commonMistakes } : {})
     };
 
     const updatedUnit = await prisma.trainingUnit.update({

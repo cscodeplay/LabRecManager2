@@ -17,6 +17,7 @@ import { formatDate } from '@/lib/dateUtils';
 import AiTrainingCopilot from '@/components/AiTrainingCopilot';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import MathRenderer from '@/components/MathRenderer';
+import StudentTheoryViewer from '@/components/StudentTheoryViewer';
 
 // --- Pedagogy Score Engine ---
 function computePedagogyScore(moduleData) {
@@ -806,7 +807,12 @@ export default function PedagogyBuilderPage() {
                 summary: data.summary || '',
                 content: data.content || '',
                 miniCheckpoints: normalizedCheckpoints,
-                cbseTips: Array.isArray(data.cbseTips) ? data.cbseTips : []
+                cbseTips: Array.isArray(data.cbseTips) ? data.cbseTips : [],
+                animStages: data.animStages || null,
+                conceptMindMap: data.conceptMindMap || null,
+                steps: data.steps || null,
+                syntaxAnatomy: data.syntaxAnatomy || null,
+                commonMistakes: data.commonMistakes || null
             });
             setTheoryActiveTab('editor');
             setShowTheoryModal(true);
@@ -823,7 +829,12 @@ export default function PedagogyBuilderPage() {
                 summary: theoryForm.summary,
                 content: theoryForm.content,
                 miniCheckpoints: theoryForm.miniCheckpoints,
-                cbseTips: theoryForm.cbseTips
+                cbseTips: theoryForm.cbseTips,
+                animStages: theoryForm.animStages,
+                conceptMindMap: theoryForm.conceptMindMap,
+                steps: theoryForm.steps,
+                syntaxAnatomy: theoryForm.syntaxAnatomy,
+                commonMistakes: theoryForm.commonMistakes
             });
             toast.success('📖 Unit Pre-Lab Theory & Checkpoints saved!');
             setShowTheoryModal(false);
@@ -1300,22 +1311,8 @@ export default function PedagogyBuilderPage() {
                                             {/* Inline Lesson Content (Flexible Full-Width) */}
                                             {hasReading ? (
                                                 isTheoryExpanded ? (
-                                                    <div className="w-full p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/80 dark:border-slate-800 animate-in fade-in duration-200 space-y-4">
-                                                        <div className="prose prose-sm dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 leading-relaxed font-sans">
-                                                            <MathRenderer content={content} />
-                                                        </div>
-                                                        {cbseTips.length > 0 && (
-                                                            <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs space-y-1.5">
-                                                                <span className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                                                                    💡 CBSE High-Yield Exam Tips:
-                                                                </span>
-                                                                <ul className="list-disc list-inside text-amber-800 dark:text-amber-300 space-y-1">
-                                                                    {cbseTips.map((tip, tIdx) => (
-                                                                        <li key={tIdx}>{tip}</li>
-                                                                    ))}
-                                                                </ul>
-                                                            </div>
-                                                        )}
+                                                    <div className="w-full p-2 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/80 dark:border-slate-800 animate-in fade-in duration-200">
+                                                        <StudentTheoryViewer unit={activeUnit} content={content} compact={true} />
                                                     </div>
                                                 ) : (
                                                     <div className="w-full p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/70 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 leading-relaxed flex items-center justify-between gap-4">
@@ -2647,94 +2644,10 @@ export default function PedagogyBuilderPage() {
                                         )}
                                     </div>
 
-                                    {/* Formatted Markdown Content */}
-                                    <div className="p-6 bg-slate-50/70 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-                                        <MathRenderer
-                                            content={theoryForm.content || '*No theory content written yet. Switch to the Editor tab to write notes or click Auto-Fill Theory.*'}
-                                            className="prose dark:prose-invert max-w-none text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-sans"
-                                        />
+                                    {/* Live Full-Fidelity Student View */}
+                                    <div className="w-full">
+                                        <StudentTheoryViewer unit={theoryForm} content={theoryForm.content} compact={true} />
                                     </div>
-
-                                    {/* CBSE Exam Tips Alert Box */}
-                                    {theoryForm.cbseTips?.length > 0 && (
-                                        <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 space-y-2">
-                                            <h4 className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                                                💡 High-Yield CBSE Exam Tips & Traps
-                                            </h4>
-                                            <ul className="space-y-1.5 text-xs text-amber-800 dark:text-amber-300">
-                                                {theoryForm.cbseTips.map((tip, tIdx) => (
-                                                    <li key={tIdx} className="flex items-start gap-2">
-                                                        <span className="text-amber-500 font-bold">•</span>
-                                                        <span>{tip}</span>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </div>
-                                    )}
-
-                                    {/* Interactive Mini-Checkpoints Preview */}
-                                    {theoryForm.miniCheckpoints?.length > 0 && (
-                                        <div className="space-y-3 pt-2">
-                                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                                <CheckSquare className="w-4 h-4 text-indigo-500" />
-                                                Interactive Comprehension Checkpoints ({theoryForm.miniCheckpoints.length})
-                                            </h4>
-                                            <div className="grid grid-cols-1 gap-3">
-                                                {theoryForm.miniCheckpoints.map((cp, cIdx) => (
-                                                    <div key={cp.id || cIdx} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3 shadow-xs">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="w-6 h-6 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center justify-center">
-                                                                Q{cIdx + 1}
-                                                            </span>
-                                                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                                                                {cp.question || 'Untitled Checkpoint Question'}
-                                                            </span>
-                                                        </div>
-
-                                                        {cp.codeSnippet && (
-                                                            <pre className="p-3 bg-slate-950 text-slate-200 rounded-xl text-xs font-mono overflow-x-auto">
-                                                                {cp.codeSnippet}
-                                                            </pre>
-                                                        )}
-
-                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                                                            {(cp.options || []).map((opt, oIdx) => {
-                                                                const isCorrect = cp.correctOption === oIdx;
-                                                                return (
-                                                                    <div
-                                                                        key={oIdx}
-                                                                        className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
-                                                                            isCorrect
-                                                                                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 shadow-2xs'
-                                                                                : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                                                                        }`}
-                                                                    >
-                                                                        <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                                                                            isCorrect ? 'bg-emerald-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600'
-                                                                        }`}>
-                                                                            {isCorrect ? '✓' : String.fromCharCode(65 + oIdx)}
-                                                                        </span>
-                                                                        <span className="flex-1">{opt || `Option ${String.fromCharCode(65 + oIdx)}`}</span>
-                                                                        {isCorrect && (
-                                                                            <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400">
-                                                                                Correct
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-
-                                                        {cp.explanation && (
-                                                            <div className="p-2.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 text-[11px] text-indigo-800 dark:text-indigo-300">
-                                                                💡 <span className="font-bold">Explanation:</span> {cp.explanation}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
                             )}
                         </div>

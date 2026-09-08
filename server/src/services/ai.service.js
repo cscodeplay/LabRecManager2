@@ -1628,6 +1628,52 @@ REQUIREMENTS:
      }
    ]
 7. "cbseTips": Array of 2-3 common CBSE board exam traps, pitfalls, and previous year exam tips for this concept.
+8. "animStages": Array of 3-4 sequential animation stages for an interactive visual simulator (Visual-First Concrete-Representational-Abstract framework). Every process in CS, Physics, Chemistry, Biology, or Mathematics follows a State-Transition Metamodel (Initial State -> Trigger/Action -> State Transformation -> Final Stabilized State).
+   Title format MUST follow: "Stage [N]: [Specific Entity] [Active Verb] ([Governing Law/Condition])".
+   [
+     {
+       "title": "Stage 1: [Specific Entity] [Active Verb]",
+       "subtitle": "Brief subtitle explaining the physical/logical state change",
+       "icon": "⚡",
+       "narration": "1-2 sentence director commentary of what is happening under the hood."
+     }
+   ]
+9. "conceptMindMap": A cognitive retention tree structure with 4 key thematic branches:
+   {
+     "label": "Core Concept Name",
+     "icon": "🧠",
+     "branches": [
+       { "title": "Definition & Purpose", "nodes": ["Key point 1", "Key point 2"] },
+       { "title": "Under the Hood Mechanism", "nodes": ["Internal step 1", "Internal step 2"] },
+       { "title": "Applications & Pros", "nodes": ["Primary use case", "Advantage"] },
+       { "title": "Limitations & Pitfalls", "nodes": ["Constraint or trap"] }
+     ]
+   }
+10. "steps": Array of 3-4 chronological execution stages:
+   [
+     {
+       "num": 1,
+       "title": "Step title",
+       "badge": "TRIGGER / EXECUTE / STORE",
+       "desc": "Explanation of what occurs in this step",
+       "snippet": "Short exact code or formula snippet"
+     }
+   ]
+11. "syntaxAnatomy": Array of 3-5 token breakdowns explaining keywords/parameters:
+   [
+     { "token": "KEYWORD", "role": "Precise role and purpose of this token" }
+   ]
+12. "commonMistakes": Array of 1-2 comparison items for traps vs best practice:
+   [
+     {
+       "wrongTitle": "Common Misconception or Bug",
+       "wrongCode": "# Flawed code or faulty mental model",
+       "whyFails": "Why this fails or produces bugs",
+       "rightTitle": "Recommended Best Practice",
+       "rightCode": "# Correct code or model",
+       "whyWorks": "Why this approach is safe, performant, and correct"
+     }
+   ]
 
 Output MUST be ONLY valid JSON matching this schema:
 {
@@ -1649,7 +1695,44 @@ Output MUST be ONLY valid JSON matching this schema:
   "quickCheckQuestion": {
     "question": "What happens when...?",
     "answer": "Explanation of expected behavior..."
-  }
+  },
+  "animStages": [
+    {
+      "title": "Stage 1: Initialization",
+      "subtitle": "State setup",
+      "icon": "⚡",
+      "narration": "System initializes state."
+    }
+  ],
+  "conceptMindMap": {
+    "label": "Concept",
+    "icon": "🧠",
+    "branches": [
+      { "title": "Definition", "nodes": ["Point A", "Point B"] }
+    ]
+  },
+  "steps": [
+    {
+      "num": 1,
+      "title": "Step 1",
+      "badge": "START",
+      "desc": "Initial step description",
+      "snippet": "code_here"
+    }
+  ],
+  "syntaxAnatomy": [
+    { "token": "TOKEN", "role": "Role description" }
+  ],
+  "commonMistakes": [
+    {
+      "wrongTitle": "Mistake",
+      "wrongCode": "wrong_code",
+      "whyFails": "Why it fails",
+      "rightTitle": "Solution",
+      "rightCode": "correct_code",
+      "whyWorks": "Why it works"
+    }
+  ]
 }`;
 
         // 1. Try Gemini first (Default provider)
@@ -1749,7 +1832,87 @@ Output MUST be ONLY valid JSON matching this schema:
             quickCheckQuestion: {
                 question: `What is the core benefit of utilizing ${topic}?`,
                 answer: `It enables structured, maintainable, and high-performance execution.`
-            }
+            },
+            animStages: [
+                {
+                    title: `Stage 1: Initialize Context for ${topic}`,
+                    subtitle: 'Allocating runtime memory and establishing base state',
+                    icon: '📦',
+                    narration: `The runtime environment prepares the execution stack and registers the identifiers for ${topic}.`
+                },
+                {
+                    title: `Stage 2: Evaluate Transformation Rules`,
+                    subtitle: 'Applying control logic or mathematical constraints',
+                    icon: '⚙️',
+                    narration: 'Expressions are evaluated following standard precedence and boundary validation.'
+                },
+                {
+                    title: `Stage 3: Produce Verified Output State`,
+                    subtitle: 'Returning result or updating data store',
+                    icon: '🎯',
+                    narration: 'Computation completes safely without unhandled side-effects.'
+                }
+            ],
+            conceptMindMap: {
+                label: topic,
+                icon: '🧠',
+                branches: [
+                    {
+                        title: 'Definition & Core Role',
+                        nodes: [`Foundational concept in ${language}`, 'Structural component for reliable programs']
+                    },
+                    {
+                        title: 'Execution Mechanics',
+                        nodes: ['Sequential state evaluation', 'Deterministic input-to-output mapping']
+                    },
+                    {
+                        title: 'Key Advantages',
+                        nodes: ['Code reuse and readability', 'Optimized memory management']
+                    },
+                    {
+                        title: 'CBSE / Production Traps',
+                        nodes: ['Off-by-one errors or unbound variables', 'Missing validation for edge case inputs']
+                    }
+                ]
+            },
+            steps: [
+                {
+                    num: 1,
+                    title: 'Declare & Configure',
+                    badge: 'SETUP',
+                    desc: `Initialize variables or connection parameters required for ${topic}.`,
+                    snippet: `# Initialize state\ncontext = {"ready": True}`
+                },
+                {
+                    num: 2,
+                    title: 'Execute Core Logic',
+                    badge: 'PROCESS',
+                    desc: 'Perform the calculation, query, or data transformation.',
+                    snippet: `result = demonstrate_${topic.toLowerCase().replace(/[^a-z0-9]/g, '_')}()`
+                },
+                {
+                    num: 3,
+                    title: 'Validate Output',
+                    badge: 'VERIFY',
+                    desc: 'Check invariants, assert output ranges, and clean up resources.',
+                    snippet: `assert result is True, "Validation failed"`
+                }
+            ],
+            syntaxAnatomy: [
+                { token: 'def / keyword', role: 'Declares executable structure or operational keyword' },
+                { token: 'parameters', role: 'Input values passed into the operation' },
+                { token: 'return / result', role: 'Yields computed value back to calling scope' }
+            ],
+            commonMistakes: [
+                {
+                    wrongTitle: `Assuming ${topic} handles missing inputs automatically`,
+                    wrongCode: `# Unsafe access\nvalue = data["key"]`,
+                    whyFails: 'Raises an exception when the expected key or state is absent.',
+                    rightTitle: 'Defensive validation or safe retrieval',
+                    rightCode: `# Safe access\nvalue = data.get("key", default_val)`,
+                    whyWorks: 'Prevents runtime crashes and guarantees deterministic behavior.'
+                }
+            ]
         };
     }
 
