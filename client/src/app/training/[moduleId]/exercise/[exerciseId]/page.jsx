@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import Editor from '@monaco-editor/react';
 import MathRenderer from '@/components/MathRenderer';
 import CodeEditorWithConfig from '@/components/CodeEditorWithConfig';
+import TrainingLiveBanner from '@/components/TrainingLiveBanner';
 
 // Helper to detect input() occurrences and prompts in Python code
 function parseInputOccurrences(codeText) {
@@ -64,6 +65,8 @@ export default function ExerciseEditorPage() {
     const [advanceCountdown, setAdvanceCountdown] = useState(null);
     const [isUnitMastered, setIsUnitMastered] = useState(false);
     const [unitMasteries, setUnitMasteries] = useState([]);
+    const [assignmentInfo, setAssignmentInfo] = useState(null);
+    const [lectureInfo, setLectureInfo] = useState(null);
 
     // Check whether a unit is unlocked based on prerequisite mastery or unlock threshold
     const isUnitUnlocked = useCallback((unitIdx) => {
@@ -286,6 +289,12 @@ export default function ExerciseEditorPage() {
                 if (Array.isArray(modRes?.data?.data?.unitMasteries)) {
                     setUnitMasteries(modRes.data.data.unitMasteries);
                 }
+                if (modRes?.data?.data?.assignmentInfo) {
+                    setAssignmentInfo(modRes.data.data.assignmentInfo);
+                }
+                if (modRes?.data?.data?.lectureInfo) {
+                    setLectureInfo(modRes.data.data.lectureInfo);
+                }
 
                 const exType = ex.exerciseType || 'coding';
 
@@ -491,7 +500,7 @@ export default function ExerciseEditorPage() {
     }
 
     return (
-        <div className="h-screen flex flex-col bg-slate-900 border-t-4 border-indigo-500 overflow-hidden">
+        <div className="dark h-screen flex flex-col bg-slate-900 border-t-4 border-indigo-500 overflow-hidden text-slate-100">
             {/* Top Navigation Bar */}
             <div className="h-14 bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 flex items-center justify-between px-3 md:px-4 z-40 shrink-0">
                 
@@ -623,6 +632,13 @@ export default function ExerciseEditorPage() {
                     </button>
                 </div>
             </div>
+
+            {/* Live Due Date Countdown & Live Lecture Notification Ribbon */}
+            {(assignmentInfo?.dueDate || lectureInfo) && (
+                <div className="bg-slate-950/90 border-b border-slate-800 px-4 py-1.5 flex items-center justify-between text-xs z-30 shrink-0">
+                    <TrainingLiveBanner assignmentInfo={assignmentInfo} lectureInfo={lectureInfo} compact={true} className="w-full justify-between" />
+                </div>
+            )}
 
             {/* Locked Unit Notice Banner */}
             {isActiveUnitLocked && (
@@ -812,8 +828,8 @@ export default function ExerciseEditorPage() {
                             <h2 className="text-sm font-bold text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                 <CheckSquare className="w-4 h-4" /> Code Tracing & Output Predictor
                             </h2>
-                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
-                                <MathRenderer content={exercise.description} textClassName="text-slate-300" />
+                            <div className="text-xs text-slate-100 leading-relaxed space-y-2">
+                                <MathRenderer content={exercise.description} textClassName="text-slate-100" />
                             </div>
                         </div>
 
@@ -841,7 +857,7 @@ export default function ExerciseEditorPage() {
                                         {exercise.hints.map((h, hIdx) => (
                                             <div key={hIdx} className="flex items-start gap-1.5">
                                                 <span className="shrink-0">💡</span>
-                                                <span className="flex-1"><MathRenderer content={h} inline /></span>
+                                                <span className="flex-1"><MathRenderer content={h} inline textClassName="text-amber-200" /></span>
                                             </div>
                                         ))}
                                     </div>
@@ -864,7 +880,7 @@ export default function ExerciseEditorPage() {
                                     const isCorrect = result && result.correctOption === idx;
                                     const isWrongPick = result && isSelected && !result.passed;
 
-                                    let cardStyle = "bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-200";
+                                    let cardStyle = "bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-100";
                                     if (isSelected && !testResults) {
                                         cardStyle = "bg-indigo-950/60 border-indigo-500 text-white ring-1 ring-indigo-500 shadow-md shadow-indigo-500/10";
                                     } else if (result) {
@@ -887,7 +903,7 @@ export default function ExerciseEditorPage() {
                                             }`}>
                                                 {String.fromCharCode(65 + idx)}
                                             </span>
-                                            <span className="text-xs flex-1 leading-relaxed"><MathRenderer content={opt} inline /></span>
+                                            <span className="text-xs flex-1 leading-relaxed text-slate-100"><MathRenderer content={opt} inline textClassName="text-slate-100" /></span>
                                             {result && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
                                             {result && isWrongPick && <XCircle className="w-5 h-5 text-red-400 shrink-0" />}
                                         </button>
@@ -958,8 +974,8 @@ export default function ExerciseEditorPage() {
                             <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                 <FileText className="w-4 h-4" /> Syntax & Logic Cloze
                             </h2>
-                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
-                                <MathRenderer content={exercise.description} textClassName="text-slate-300" />
+                            <div className="text-xs text-slate-100 leading-relaxed space-y-2">
+                                <MathRenderer content={exercise.description} textClassName="text-slate-100" />
                             </div>
                         </div>
 
@@ -977,7 +993,7 @@ export default function ExerciseEditorPage() {
                                         {exercise.hints.map((h, hIdx) => (
                                             <div key={hIdx} className="flex items-start gap-1.5">
                                                 <span className="shrink-0">💡</span>
-                                                <span className="flex-1"><MathRenderer content={h} inline /></span>
+                                                <span className="flex-1"><MathRenderer content={h} inline textClassName="text-cyan-200" /></span>
                                             </div>
                                         ))}
                                     </div>
@@ -1075,8 +1091,8 @@ export default function ExerciseEditorPage() {
                             <h2 className="text-sm font-bold text-white mt-2 mb-2">
                                 {exercise.testCases?.scenarioTitle || exercise.title}
                             </h2>
-                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed bg-slate-900/80 p-4 rounded-xl border border-slate-700/80">
-                                <MathRenderer content={exercise.testCases?.scenarioContext || exercise.description} textClassName="text-slate-300" />
+                            <div className="text-xs text-slate-100 leading-relaxed bg-slate-900/80 p-4 rounded-xl border border-slate-700/80 space-y-2">
+                                <MathRenderer content={exercise.testCases?.scenarioContext || exercise.description} textClassName="text-slate-100" />
                             </div>
                         </div>
 
@@ -1094,7 +1110,7 @@ export default function ExerciseEditorPage() {
                                         {exercise.hints.map((h, hIdx) => (
                                             <div key={hIdx} className="flex items-start gap-1.5">
                                                 <span className="shrink-0">💡</span>
-                                                <span className="flex-1"><MathRenderer content={h} inline /></span>
+                                                <span className="flex-1"><MathRenderer content={h} inline textClassName="text-purple-200" /></span>
                                             </div>
                                         ))}
                                     </div>
@@ -1133,7 +1149,7 @@ export default function ExerciseEditorPage() {
                                                 const isCorrect = qResult && qResult.correctOption === oIdx;
                                                 const isWrong = qResult && isSelected && !qResult.isCorrect;
 
-                                                let btnColor = "bg-slate-950 border-slate-800 hover:border-slate-700 text-slate-300";
+                                                let btnColor = "bg-slate-950 border-slate-800 hover:border-slate-700 text-slate-100";
                                                 if (isSelected && !testResults) {
                                                     btnColor = "bg-purple-950/60 border-purple-500 text-white ring-1 ring-purple-500";
                                                 } else if (qResult) {
@@ -1151,7 +1167,7 @@ export default function ExerciseEditorPage() {
                                                         className={`w-full text-left p-3 rounded-lg border text-xs flex items-start gap-2.5 transition ${btnColor}`}
                                                     >
                                                         <span className="font-bold text-[11px] text-slate-400 shrink-0">{String.fromCharCode(65 + oIdx)}.</span>
-                                                        <span className="leading-relaxed flex-1">{opt}</span>
+                                                        <span className="leading-relaxed flex-1 text-slate-100">{opt}</span>
                                                         {qResult && isCorrect && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
                                                         {qResult && isWrong && <XCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
                                                     </button>
@@ -1195,8 +1211,8 @@ export default function ExerciseEditorPage() {
                             <h2 className="text-sm font-bold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                 <Compass className="w-4 h-4" /> CBSE Assertion & Reason
                             </h2>
-                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
-                                <MathRenderer content={exercise.description} textClassName="text-slate-300" />
+                            <div className="text-xs text-slate-100 leading-relaxed space-y-2">
+                                <MathRenderer content={exercise.description} textClassName="text-slate-100" />
                             </div>
                         </div>
 
@@ -1214,8 +1230,8 @@ export default function ExerciseEditorPage() {
                                 <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
                                     <Sparkles className="w-3.5 h-3.5" /> Conceptual Explanation:
                                 </span>
-                                <div className="text-xs text-slate-300 leading-relaxed">
-                                    <MathRenderer content={submittedData.results[0].explanation} textClassName="text-slate-300" />
+                                <div className="text-xs text-slate-200 leading-relaxed">
+                                    <MathRenderer content={submittedData.results[0].explanation} textClassName="text-slate-200" />
                                 </div>
                             </div>
                         )}
@@ -1259,7 +1275,7 @@ export default function ExerciseEditorPage() {
                                 const isSelected = selectedMcqOption === opt.id;
                                 const result = submittedData?.results?.[0];
                                 const isTargetCorrect = result?.correctOption === opt.id;
-                                let style = 'bg-slate-800/60 border-slate-700 hover:border-indigo-500 text-slate-300';
+                                let style = 'bg-slate-800/60 border-slate-700 hover:border-indigo-500 text-slate-100';
 
                                 if (result) {
                                     if (isTargetCorrect) {
@@ -1313,8 +1329,8 @@ export default function ExerciseEditorPage() {
                             <h2 className="text-sm font-bold text-teal-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                 <ListOrdered className="w-4 h-4" /> CBSE Dry-Run Trace Table
                             </h2>
-                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
-                                <MathRenderer content={exercise.description} textClassName="text-slate-300" />
+                            <div className="text-xs text-slate-100 leading-relaxed space-y-2">
+                                <MathRenderer content={exercise.description} textClassName="text-slate-100" />
                             </div>
                         </div>
 
@@ -1433,8 +1449,8 @@ export default function ExerciseEditorPage() {
                             <h2 className="text-sm font-bold text-rose-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                 <AlertTriangle className="w-4 h-4" /> CBSE Error Spotting & Debugging
                             </h2>
-                            <div className="prose prose-invert prose-xs text-slate-300 leading-relaxed">
-                                <MathRenderer content={exercise.description} textClassName="text-slate-300" />
+                            <div className="text-xs text-slate-100 leading-relaxed space-y-2">
+                                <MathRenderer content={exercise.description} textClassName="text-slate-100" />
                             </div>
                         </div>
 
@@ -1450,8 +1466,8 @@ export default function ExerciseEditorPage() {
                         {submittedData?.results?.[0]?.explanation && (
                             <div className="p-4 bg-slate-900 border border-slate-700 rounded-2xl space-y-2">
                                 <span className="text-xs font-bold text-emerald-400">CBSE Solution Note:</span>
-                                <div className="text-xs text-slate-300 leading-relaxed">
-                                    <MathRenderer content={submittedData.results[0].explanation} textClassName="text-slate-300" />
+                                <div className="text-xs text-slate-200 leading-relaxed">
+                                    <MathRenderer content={submittedData.results[0].explanation} textClassName="text-slate-200" />
                                 </div>
                             </div>
                         )}
@@ -1539,18 +1555,18 @@ export default function ExerciseEditorPage() {
                                     <h2 className="text-sm font-bold text-white mb-2 flex items-center gap-1.5">
                                         🎯 Problem Statement
                                     </h2>
-                                    <div className="text-xs">
+                                    <div className="text-xs text-slate-100 leading-relaxed">
                                         <MathRenderer 
                                             content={exercise.description.split('## 🎯 Problem Statement')[1]?.trim() || ''} 
-                                            textClassName="text-slate-300"
+                                            textClassName="text-slate-100"
                                         />
                                     </div>
                                 </>
                             ) : (
                                 <>
                                     <h2 className="text-sm font-bold text-white mb-3">Problem Statement</h2>
-                                    <div className="text-xs text-slate-300">
-                                        <MathRenderer content={exercise.description} textClassName="text-slate-300" />
+                                    <div className="text-xs text-slate-100 leading-relaxed">
+                                        <MathRenderer content={exercise.description} textClassName="text-slate-100" />
                                     </div>
                                 </>
                             )}

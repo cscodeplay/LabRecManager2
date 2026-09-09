@@ -7,6 +7,7 @@ import { trainingAPI } from '@/lib/api';
 import PageHeader from '@/components/PageHeader';
 import { BookOpen, CheckCircle, Lock, PlayCircle, Clock, ArrowRight, Code2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import TrainingLiveBanner from '@/components/TrainingLiveBanner';
 
 export default function TrainingModulePage() {
     const { moduleId } = useParams();
@@ -16,6 +17,8 @@ export default function TrainingModulePage() {
     const [module, setModule] = useState(null);
     const [progress, setProgress] = useState(null);
     const [masteries, setMasteries] = useState([]);
+    const [assignmentInfo, setAssignmentInfo] = useState(null);
+    const [lectureInfo, setLectureInfo] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -27,6 +30,8 @@ export default function TrainingModulePage() {
                 setModule(res.data.data.module);
                 setProgress(res.data.data.progress);
                 setMasteries(res.data.data.unitMasteries || []);
+                setAssignmentInfo(res.data.data.assignmentInfo || null);
+                setLectureInfo(res.data.data.lectureInfo || null);
             } catch (err) {
                 toast.error('Failed to load training module');
                 console.error(err);
@@ -53,6 +58,9 @@ export default function TrainingModulePage() {
             <PageHeader title={module.title} backLink="/assigned-work" />
             
             <main className="max-w-5xl mx-auto px-4 py-8">
+                {/* Live Countdown & Live Lecture Notification Banner */}
+                <TrainingLiveBanner assignmentInfo={assignmentInfo} lectureInfo={lectureInfo} className="mb-6" />
+
                 {/* Header Card */}
                 <div className="bg-white rounded-xl shadow-sm p-6 mb-8 border border-slate-200">
                     <div className="flex justify-between items-start">

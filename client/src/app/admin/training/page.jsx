@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     Plus, BookOpen, GraduationCap, ChevronRight, Edit3, Trash2, 
-    BookCheck, AlertCircle, Sparkles, MoveRight, Layers, Award
+    BookCheck, AlertCircle, Sparkles, MoveRight, Layers, Award,
+    LayoutGrid, List, Users, UserCheck
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { trainingAPI, classesAPI } from '@/lib/api';
@@ -12,6 +13,7 @@ import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import TrainingModuleWizard from '@/components/TrainingModuleWizard';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import ModuleAssignmentModal from '@/components/ModuleAssignmentModal';
 
 export default function AdminTrainingModules() {
     const router = useRouter();
@@ -23,6 +25,8 @@ export default function AdminTrainingModules() {
     const [showWizard, setShowWizard] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [editingModule, setEditingModule] = useState(null);
+    const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
+    const [assignmentModalModule, setAssignmentModalModule] = useState(null);
     const [deleteModalState, setDeleteModalState] = useState({
         isOpen: false,
         moduleId: null,
@@ -122,7 +126,26 @@ export default function AdminTrainingModules() {
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
             <PageHeader title="Training Module Builder" titleHindi="प्रशिक्षण मॉड्यूल निर्माता">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <button 
+                            type="button" 
+                            onClick={() => setViewMode('grid')} 
+                            className={`p-1.5 rounded-lg transition ${viewMode === 'grid' ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs font-semibold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`} 
+                            title="Grid View"
+                        >
+                            <LayoutGrid className="w-4 h-4" />
+                        </button>
+                        <button 
+                            type="button" 
+                            onClick={() => setViewMode('list')} 
+                            className={`p-1.5 rounded-lg transition ${viewMode === 'list' ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs font-semibold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`} 
+                            title="List View"
+                        >
+                            <List className="w-4 h-4" />
+                        </button>
+                    </div>
+
                     <button 
                         onClick={() => setShowWizard(true)} 
                         className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold shadow-lg shadow-indigo-600/20 text-xs py-2 px-4 rounded-xl flex items-center gap-2 transition"
@@ -156,92 +179,229 @@ export default function AdminTrainingModules() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {modules.length === 0 && !loading && (
-                        <div className="col-span-full py-16 flex flex-col items-center justify-center text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-dashed rounded-3xl p-8">
-                            <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center mb-4 text-indigo-500">
-                                <GraduationCap className="w-8 h-8" />
-                            </div>
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">No Training Modules Yet</h3>
-                            <p className="text-slate-500 dark:text-slate-400 max-w-sm mt-1 text-xs">
-                                Create your first pedagogy-aligned course using the step-by-step wizard or AI curriculum synthesizer.
-                            </p>
-                            <button onClick={() => setShowWizard(true)} className="mt-5 btn btn-primary text-xs font-bold py-2.5 px-6 rounded-2xl">
-                                <Sparkles className="w-4 h-4" /> Create First Module
-                            </button>
+                {modules.length === 0 && !loading && (
+                    <div className="py-16 flex flex-col items-center justify-center text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-dashed rounded-3xl p-8">
+                        <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center mb-4 text-indigo-500">
+                            <GraduationCap className="w-8 h-8" />
                         </div>
-                    )}
-                    
-                    {modules.map(mod => (
-                        <div 
-                            key={mod.id} 
-                            className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group flex flex-col justify-between" 
-                            onClick={() => router.push(`/admin/training/${mod.id}/builder`)}
-                        >
-                            <div>
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold uppercase tracking-wider ${
-                                        mod.language === 'python' ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300' : 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300'
-                                    }`}>
-                                        {mod.language}
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        {!mod.isPublished ? (
-                                            <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
-                                                Draft
-                                            </span>
-                                        ) : (
-                                            <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                                                <BookCheck className="w-3 h-3" /> Published
-                                            </span>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">No Training Modules Yet</h3>
+                        <p className="text-slate-500 dark:text-slate-400 max-w-sm mt-1 text-xs">
+                            Create your first pedagogy-aligned course using the step-by-step wizard or AI curriculum synthesizer.
+                        </p>
+                        <button onClick={() => setShowWizard(true)} className="mt-5 btn btn-primary text-xs font-bold py-2.5 px-6 rounded-2xl">
+                            <Sparkles className="w-4 h-4" /> Create First Module
+                        </button>
+                    </div>
+                )}
+
+                {/* Grid View */}
+                {viewMode === 'grid' && modules.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {modules.map(mod => {
+                            const targetCount = (mod.assignments || []).reduce((acc, a) => acc + (a.targets?.length || 0), 0);
+                            return (
+                                <div 
+                                    key={mod.id} 
+                                    className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group flex flex-col justify-between" 
+                                    onClick={() => router.push(`/admin/training/${mod.id}/builder`)}
+                                >
+                                    <div>
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold uppercase tracking-wider ${
+                                                mod.language === 'python' ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300' : 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300'
+                                            }`}>
+                                                {mod.language}
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                                {!mod.isPublished ? (
+                                                    <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                                        Draft
+                                                    </span>
+                                                ) : (
+                                                    <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                                        <BookCheck className="w-3 h-3" /> Published
+                                                    </span>
+                                                )}
+                                                {/* Assigned Entities Icon-Only Button */}
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setAssignmentModalModule(mod);
+                                                    }}
+                                                    className={`p-1.5 rounded-lg transition ${
+                                                        targetCount > 0 
+                                                            ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800' 
+                                                            : 'p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition'
+                                                    }`}
+                                                    title={targetCount > 0 ? `Assigned to ${targetCount} classes/groups/students (Click to view/edit)` : 'Assign to Classes / Groups / Students'}
+                                                >
+                                                    {targetCount > 0 ? <UserCheck className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleOpenEditModule(e, mod)}
+                                                    className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                                    title="Edit Course Settings"
+                                                >
+                                                    <Edit3 className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleDeleteModule(e, mod.id, mod.title)}
+                                                    className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                                    title="Delete Course Module"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <h3 className="text-base font-bold text-slate-900 dark:text-white line-clamp-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">
+                                            {mod.title}
+                                        </h3>
+                                        {mod.boardAligned && (
+                                            <p className="text-xs text-slate-500 font-medium mt-1">
+                                                {mod.boardAligned} mapped • Class {mod.classLevel}
+                                            </p>
                                         )}
-                                        <button
-                                            type="button"
-                                            onClick={(e) => handleOpenEditModule(e, mod)}
-                                            className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                                            title="Edit Course Settings"
-                                        >
-                                            <Edit3 className="w-3.5 h-3.5" />
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={(e) => handleDeleteModule(e, mod.id, mod.title)}
-                                            className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                                            title="Delete Course Module"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
+                                    </div>
+                                    
+                                    <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                        <div className="flex gap-4">
+                                            <div>
+                                                <div className="text-lg font-bold text-slate-800 dark:text-slate-200">{mod._count?.units || mod.totalUnits || 0}</div>
+                                                <div className="text-[10px] text-slate-400 uppercase font-semibold">Units</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-lg font-bold text-slate-800 dark:text-slate-200">{mod.totalExercises || 0}</div>
+                                                <div className="text-[10px] text-slate-400 uppercase font-semibold">Exercises</div>
+                                            </div>
+                                        </div>
+                                        <div className="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-800 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950 flex items-center justify-center transition-colors">
+                                            <MoveRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600" />
+                                        </div>
                                     </div>
                                 </div>
-                                
-                                <h3 className="text-base font-bold text-slate-900 dark:text-white line-clamp-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">
-                                    {mod.title}
-                                </h3>
-                                {mod.boardAligned && (
-                                    <p className="text-xs text-slate-500 font-medium mt-1">
-                                        {mod.boardAligned} mapped • Class {mod.classLevel}
-                                    </p>
-                                )}
-                            </div>
-                            
-                            <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                                <div className="flex gap-4">
-                                    <div>
-                                        <div className="text-lg font-bold text-slate-800 dark:text-slate-200">{mod._count?.units || mod.totalUnits || 0}</div>
-                                        <div className="text-[10px] text-slate-400 uppercase font-semibold">Units</div>
-                                    </div>
-                                    <div>
-                                        <div className="text-lg font-bold text-slate-800 dark:text-slate-200">{mod.totalExercises || 0}</div>
-                                        <div className="text-[10px] text-slate-400 uppercase font-semibold">Exercises</div>
-                                    </div>
-                                </div>
-                                <div className="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-800 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950 flex items-center justify-center transition-colors">
-                                    <MoveRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600" />
-                                </div>
-                            </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* List View */}
+                {viewMode === 'list' && modules.length > 0 && (
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
+                                        <th className="py-3.5 px-5">Course Module</th>
+                                        <th className="py-3.5 px-3">Subject / Lang</th>
+                                        <th className="py-3.5 px-3">Board & Level</th>
+                                        <th className="py-3.5 px-3 text-center">Units</th>
+                                        <th className="py-3.5 px-3 text-center">Exercises</th>
+                                        <th className="py-3.5 px-3 text-center">Status</th>
+                                        <th className="py-3.5 px-3 text-center">Assigned</th>
+                                        <th className="py-3.5 px-5 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                                    {modules.map(mod => {
+                                        const targetCount = (mod.assignments || []).reduce((acc, a) => acc + (a.targets?.length || 0), 0);
+                                        return (
+                                            <tr 
+                                                key={mod.id}
+                                                onClick={() => router.push(`/admin/training/${mod.id}/builder`)}
+                                                className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 cursor-pointer transition group"
+                                            >
+                                                <td className="py-3.5 px-5">
+                                                    <div className="font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition text-sm">
+                                                        {mod.title}
+                                                    </div>
+                                                    {mod.titleHindi && (
+                                                        <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                                                            {mod.titleHindi}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="py-3.5 px-3">
+                                                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider ${
+                                                        mod.language === 'python' ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300' : 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300'
+                                                    }`}>
+                                                        {mod.language}
+                                                    </span>
+                                                </td>
+                                                <td className="py-3.5 px-3 font-medium text-slate-600 dark:text-slate-300">
+                                                    {mod.boardAligned || 'CBSE'} • Class {mod.classLevel || 11}
+                                                </td>
+                                                <td className="py-3.5 px-3 text-center font-bold text-slate-800 dark:text-slate-200">
+                                                    {mod._count?.units || mod.totalUnits || 0}
+                                                </td>
+                                                <td className="py-3.5 px-3 text-center font-bold text-slate-800 dark:text-slate-200">
+                                                    {mod.totalExercises || 0}
+                                                </td>
+                                                <td className="py-3.5 px-3 text-center">
+                                                    {!mod.isPublished ? (
+                                                        <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                                            Draft
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                                            <BookCheck className="w-3 h-3" /> Published
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                {/* Assigned Entities Icon-Only Button */}
+                                                <td className="py-3.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setAssignmentModalModule(mod)}
+                                                        className={`p-2 rounded-xl transition inline-flex items-center justify-center ${
+                                                            targetCount > 0 
+                                                                ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 shadow-xs' 
+                                                                : 'bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                                                        }`}
+                                                        title={targetCount > 0 ? `Assigned to ${targetCount} classes/groups/students (Click to view/edit)` : 'Assign to Classes / Groups / Students'}
+                                                    >
+                                                        {targetCount > 0 ? <UserCheck className="w-4 h-4" /> : <Users className="w-4 h-4" />}
+                                                    </button>
+                                                </td>
+                                                <td className="py-3.5 px-5 text-right" onClick={(e) => e.stopPropagation()}>
+                                                    <div className="flex items-center justify-end gap-1.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => handleOpenEditModule(e, mod)}
+                                                            className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                                            title="Edit Course Settings"
+                                                        >
+                                                            <Edit3 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => handleDeleteModule(e, mod.id, mod.title)}
+                                                            className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                                            title="Delete Course Module"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => router.push(`/admin/training/${mod.id}/builder`)}
+                                                            className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition ml-1"
+                                                            title="Open Course Builder"
+                                                        >
+                                                            <MoveRight className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
-                    ))}
-                </div>
+                    </div>
+                )}
             </main>
 
             {/* Quick Edit Module Metadata Modal */}
@@ -360,6 +520,17 @@ export default function AdminTrainingModules() {
                 confirmText="Delete Module"
                 type="danger"
                 loading={deleteModalState.isDeleting}
+            />
+
+            {/* View / Edit Module Assignment Modal */}
+            <ModuleAssignmentModal
+                isOpen={Boolean(assignmentModalModule)}
+                module={assignmentModalModule}
+                onClose={() => setAssignmentModalModule(null)}
+                onSuccess={() => {
+                    setAssignmentModalModule(null);
+                    loadData();
+                }}
             />
         </div>
     );

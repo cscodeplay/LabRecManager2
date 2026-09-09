@@ -23,17 +23,17 @@ export default function MathRenderer({
     const renderedElements = useMemo(() => {
         if (!content || typeof content !== 'string') return null;
 
-        return parseContent(content, textClassName, size);
-    }, [content, textClassName, size]);
+        return parseContent(content, textClassName, size, inline);
+    }, [content, textClassName, size, inline]);
 
     if (!content) return null;
 
     if (inline) {
-        return <span className={`math-renderer-inline ${className}`}>{renderedElements}</span>;
+        return <span className={`math-renderer-inline ${textClassName} ${className}`}>{renderedElements}</span>;
     }
 
     return (
-        <div className={`math-renderer ${className}`}>
+        <div className={`math-renderer ${textClassName} ${className}`}>
             {renderedElements}
         </div>
     );
@@ -69,7 +69,11 @@ function escapeHtml(str) {
 /**
  * Parses markdown blocks and LaTeX formulas into React elements.
  */
-function parseContent(text, textClassName = '', size = 'base') {
+function parseContent(text, textClassName = '', size = 'base', inline = false) {
+    if (inline) {
+        return renderInlineFormattedText(text, size, textClassName);
+    }
+
     // 1. First tokenize code blocks (```...```) and block math ($$...$$ or \[...\])
     const blockRegex = /(?:```([a-zA-Z0-9_-]*)\n([\s\S]*?)```)|(?:\$\$([\s\S]*?)\$\$)|(?:\\\[([\s\S]*?)\\\])/g;
     const blocks = [];
@@ -199,8 +203,8 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
             const joinedText = currentParagraph.join(' ');
             if (joinedText.trim()) {
                 elements.push(
-                    <p key={pKey} className={`my-2 ${s.p} text-slate-800 dark:text-slate-200 ${textClassName}`}>
-                        {renderInlineFormattedText(joinedText, size)}
+                    <p key={pKey} className={`my-2 ${s.p} ${textClassName || 'text-slate-800 dark:text-slate-200'}`}>
+                        {renderInlineFormattedText(joinedText, size, textClassName)}
                     </p>
                 );
             }
