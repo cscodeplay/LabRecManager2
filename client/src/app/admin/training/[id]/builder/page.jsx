@@ -8,7 +8,7 @@ import {
     Lightbulb, Trash2, Edit3, Lock, Trophy, CheckCircle,
     AlertTriangle, XCircle, Sparkles, FlaskConical, Eye,
     GripVertical, Send, Users, Calendar, Globe, Settings, Clock,
-    CheckSquare, FileText, Code2, RefreshCw, X
+    CheckSquare, FileText, Code2, RefreshCw, X, UserCheck, GraduationCap
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api, { trainingAPI, classesAPI } from '@/lib/api';
@@ -18,6 +18,7 @@ import AiTrainingCopilot from '@/components/AiTrainingCopilot';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import MathRenderer from '@/components/MathRenderer';
 import StudentTheoryViewer from '@/components/StudentTheoryViewer';
+import ModuleAssignmentModal from '@/components/ModuleAssignmentModal';
 
 // --- Pedagogy Score Engine ---
 function computePedagogyScore(moduleData) {
@@ -1014,6 +1015,74 @@ export default function PedagogyBuilderPage() {
                                 <p className="text-xs text-slate-500 font-medium mt-0.5">
                                     Pedagogy Builder • {moduleData.language} • {moduleData.boardAligned || 'Custom'} Class {moduleData.classLevel || '—'}
                                 </p>
+                                {/* Assigned Entities Summary */}
+                                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                    <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                                        <Users className="w-3 h-3 text-indigo-500" /> Assigned:
+                                    </span>
+                                    {(() => {
+                                        const assignedClasses = [];
+                                        const assignedGroups = [];
+                                        const assignedStudents = [];
+                                        const seenC = new Set();
+                                        const seenG = new Set();
+                                        const seenS = new Set();
+
+                                        (existingAssignments || []).forEach(a => {
+                                            (a.targets || []).forEach(t => {
+                                                if (t.targetType === 'class' && (t.className || t.targetClassId) && !seenC.has(t.className || t.targetClassId)) {
+                                                    const name = t.className || classes.find(c => c.id === t.targetClassId)?.name || 'Class';
+                                                    seenC.add(t.className || t.targetClassId);
+                                                    assignedClasses.push(name);
+                                                }
+                                                if (t.targetType === 'group' && (t.groupName || t.targetGroupId) && !seenG.has(t.groupName || t.targetGroupId)) {
+                                                    const name = t.groupName || 'Group';
+                                                    seenG.add(t.groupName || t.targetGroupId);
+                                                    assignedGroups.push(name);
+                                                }
+                                                if (t.targetType === 'student' && (t.studentName || t.targetStudentId) && !seenS.has(t.studentName || t.targetStudentId)) {
+                                                    const name = t.studentName || 'Student';
+                                                    seenS.add(t.studentName || t.targetStudentId);
+                                                    assignedStudents.push(name);
+                                                }
+                                            });
+                                        });
+
+                                        const hasAny = assignedClasses.length > 0 || assignedGroups.length > 0 || assignedStudents.length > 0;
+
+                                        return (
+                                            <>
+                                                {assignedClasses.map((c, i) => (
+                                                    <span key={`bc-${i}`} className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                                                        <GraduationCap className="w-2.5 h-2.5 text-blue-500" />
+                                                        {c}
+                                                    </span>
+                                                ))}
+                                                {assignedGroups.map((g, i) => (
+                                                    <span key={`bg-${i}`} className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                                        <Users className="w-2.5 h-2.5 text-purple-500" />
+                                                        {g}
+                                                    </span>
+                                                ))}
+                                                {assignedStudents.map((s, i) => (
+                                                    <span key={`bs-${i}`} className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                        <UserCheck className="w-2.5 h-2.5 text-emerald-500" />
+                                                        {s}
+                                                    </span>
+                                                ))}
+                                                {!hasAny && (
+                                                    <span className="text-[10px] text-slate-400 italic">Not assigned yet</span>
+                                                )}
+                                                <button 
+                                                    onClick={() => { closeAllModals(); setShowAssignModal(true); }}
+                                                    className="text-[10px] text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-bold ml-1 underline cursor-pointer"
+                                                >
+                                                    Manage
+                                                </button>
+                                            </>
+                                        );
+                                    })()}
+                                </div>
                             </div>
                         </div>
                         <div className="flex items-center gap-1.5">
@@ -2155,116 +2224,17 @@ export default function PedagogyBuilderPage() {
                 </div>
             )}
 
-            {/* ====== ASSIGN TO CLASS/GROUP MODAL ====== */}
+            {/* ====== ASSIGN TO CLASS/GROUP/STUDENT MODAL ====== */}
             {showAssignModal && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full shadow-xl border border-slate-200 dark:border-slate-800 max-h-[85vh] flex flex-col">
-                        <div className="p-5 border-b border-slate-100 dark:border-slate-800 shrink-0">
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                <Send className="w-5 h-5 text-primary-500" /> Assign Training to Students
-                            </h3>
-                            <p className="text-xs text-slate-500 mt-1">Select classes or groups to assign this training module. A deadline can be set to track completion.</p>
-                        </div>
-                        <div className="p-5 space-y-4 overflow-y-auto">
-                            {/* Select Classes */}
-                            <div>
-                                <label className="label flex items-center gap-2">
-                                    <Users className="w-4 h-4 text-primary-500" /> Assign to Classes
-                                </label>
-                                <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                                    {classes.length === 0 ? (
-                                        <p className="text-xs text-slate-400">No classes found. Create classes first.</p>
-                                    ) : classes.map(cls => (
-                                        <label key={cls.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition">
-                                            <input type="checkbox" className="rounded border-slate-300"
-                                                checked={selectedClasses.includes(cls.id)}
-                                                onChange={e => {
-                                                    if (e.target.checked) setSelectedClasses(p => [...p, cls.id]);
-                                                    else setSelectedClasses(p => p.filter(c => c !== cls.id));
-                                                }} />
-                                            <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{cls.name}</span>
-                                            {cls._count?.enrollments != null && (
-                                                <span className="text-[10px] text-slate-400 ml-auto">{cls._count.enrollments} students</span>
-                                            )}
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Deadline */}
-                            <div>
-                                <label className="label flex items-center gap-2">
-                                    <Calendar className="w-4 h-4 text-amber-500" /> Deadline (Optional)
-                                </label>
-                                <input type="datetime-local" className="input"
-                                    value={assignDeadline}
-                                    onChange={e => setAssignDeadline(e.target.value)} />
-                            </div>
-
-                            {/* Notes */}
-                            <div>
-                                <label className="label">Instructor Notes</label>
-                                <textarea className="input h-16 text-sm" value={assignNotes}
-                                    onChange={e => setAssignNotes(e.target.value)}
-                                    placeholder="Optional: special instructions for students..." />
-                            </div>
-
-                            {/* Existing Assignments */}
-                            {existingAssignments.length > 0 && (
-                                <div className="border-t border-slate-100 dark:border-slate-800 pt-4">
-                                    <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Already Assigned To</h4>
-                                    <div className="space-y-1.5">
-                                        {existingAssignments.map(a => (
-                                            <div key={a.id} className="flex items-center justify-between text-xs bg-slate-50 dark:bg-slate-800 rounded-lg p-2">
-                                                <div className="flex flex-wrap gap-1">
-                                                    {a.targets?.map((t, i) => (
-                                                        <span key={i} className={`badge ${t.targetType === 'class' ? 'badge-primary' : 'badge-warning'}`}>
-                                                            {t.className || t.groupName || t.targetType}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                                <span className="text-slate-400 shrink-0 ml-2">
-                                                    {a.due_date ? `Due: ${formatDate(a.due_date)}` : 'No deadline'}
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex gap-3 shrink-0">
-                            <button onClick={() => setShowAssignModal(false)} className="btn btn-secondary flex-1">Cancel</button>
-                            <button
-                                onClick={async () => {
-                                    if (selectedClasses.length === 0 && selectedGroups.length === 0) {
-                                        toast.error('Select at least one class or group');
-                                        return;
-                                    }
-                                    try {
-                                        await trainingAPI.assignModule(id, {
-                                            classIds: selectedClasses,
-                                            groupIds: selectedGroups,
-                                            deadline: assignDeadline || undefined,
-                                            notes: assignNotes || undefined,
-                                        });
-                                        toast.success('Module assigned to selected classes!');
-                                        setShowAssignModal(false);
-                                        setSelectedClasses([]);
-                                        setSelectedGroups([]);
-                                        setAssignDeadline('');
-                                        setAssignNotes('');
-                                        loadData();
-                                    } catch (err) {
-                                        toast.error(err.response?.data?.message || 'Failed to assign');
-                                    }
-                                }}
-                                className="btn btn-primary flex-1"
-                            >
-                                <Send className="w-4 h-4" /> Assign Module
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <ModuleAssignmentModal
+                    isOpen={showAssignModal}
+                    module={moduleData}
+                    onClose={() => setShowAssignModal(false)}
+                    onSuccess={() => {
+                        setShowAssignModal(false);
+                        loadData();
+                    }}
+                />
             )}
 
             {/* ====== CONFIG MODAL ====== */}

@@ -688,6 +688,15 @@ export const trainingAPI = {
         headers: { 'Content-Type': 'multipart/form-data' }
     }),
     aiExerciseBatch: (payload, provider = 'gemini') => api.post('/training/ai/exercises/batch', { payload, provider }),
+
+    // Student Workspace File System
+    getWorkspaceFiles: () => api.get('/training/workspace/files'),
+    getWorkspaceFileContent: (filename) => api.get(`/training/workspace/files/${encodeURIComponent(filename)}`),
+    resetWorkspace: () => api.post('/training/workspace/reset'),
+    uploadWorkspaceFile: (formData) => api.post('/training/workspace/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    }),
+    writeWorkspaceFile: (name, content) => api.post('/training/workspace/upload', { name, content }),
 };
 
 // AI Generator API

@@ -9,13 +9,15 @@ import {
     Plus, Trash2, RotateCcw, ListOrdered, FileText, Sparkles,
     CheckSquare, HelpCircle, Code2, BookOpen, AlertTriangle, Send, Award,
     PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Flame, RefreshCw, 
-    Check, Undo2, Lock, CheckCircle, ArrowRight, X, Compass, Clock, ChevronRight
+    Check, Undo2, Lock, CheckCircle, ArrowRight, X, Compass, Clock, ChevronRight,
+    FolderArchive
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Editor from '@monaco-editor/react';
 import MathRenderer from '@/components/MathRenderer';
 import CodeEditorWithConfig from '@/components/CodeEditorWithConfig';
 import TrainingLiveBanner from '@/components/TrainingLiveBanner';
+import StudentWorkspaceModal from '@/components/StudentWorkspaceModal';
 
 // Helper to detect input() occurrences and prompts in Python code
 function parseInputOccurrences(codeText) {
@@ -100,6 +102,7 @@ export default function ExerciseEditorPage() {
     const [showSocraticDrawer, setShowSocraticDrawer] = useState(false);
     const [socraticLoading, setSocraticLoading] = useState(false);
     const [socraticAdvice, setSocraticAdvice] = useState(null);
+    const [showWorkspaceModal, setShowWorkspaceModal] = useState(false);
 
     // Multi-modal state variables
     const [selectedMcqOption, setSelectedMcqOption] = useState(null);
@@ -574,6 +577,16 @@ export default function ExerciseEditorPage() {
                             <span className="hidden sm:inline">Unit Theory</span>
                         </button>
                     )}
+
+                    {/* Student Workspace Files */}
+                    <button
+                        onClick={() => setShowWorkspaceModal(true)}
+                        className="btn bg-teal-950/80 hover:bg-teal-900 border border-teal-500/30 text-teal-300 hover:text-teal-200 py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5 rounded-xl transition"
+                        title="View isolated files in your personal workspace (open(), pickle, sqlite3)"
+                    >
+                        <FolderArchive className="w-3.5 h-3.5 text-teal-400" />
+                        <span className="hidden sm:inline">Files</span>
+                    </button>
 
                     {/* Reset Code */}
                     {(exerciseType === 'coding' || exerciseType === 'bug_fix') && (
@@ -1927,6 +1940,12 @@ export default function ExerciseEditorPage() {
                     </div>
                 </div>
             )}
+
+            {/* Student Isolated Workspace Files Modal */}
+            <StudentWorkspaceModal
+                isOpen={showWorkspaceModal}
+                onClose={() => setShowWorkspaceModal(false)}
+            />
         </div>
     );
 }

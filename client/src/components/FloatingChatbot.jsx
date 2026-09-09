@@ -4987,6 +4987,345 @@ function TrainingActionCard({ action }) {
     );
 }
 
+/* ─── Training Assignment Action Card (Confirm Method) ─── */
+function TrainingAssignmentActionCard({ action }) {
+    const [isConfirmed, setIsConfirmed] = useState(action?.isConfirmed || false);
+    const [isCancelled, setIsCancelled] = useState(action?.isCancelled || false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [loading, setLoading] = useState(false);
+
+    const [moduleId, setModuleId] = useState(action?.moduleId || '');
+    const [moduleTitle, setModuleTitle] = useState(action?.moduleTitle || '');
+    const [availableModules, setAvailableModules] = useState(action?.availableModules || []);
+    
+    const [classIds, setClassIds] = useState(action?.classIds || []);
+    const [groupIds, setGroupIds] = useState(action?.groupIds || []);
+    const [studentIds, setStudentIds] = useState(action?.studentIds || []);
+
+    const [availableClasses, setAvailableClasses] = useState(action?.availableClasses || []);
+    const [availableGroups, setAvailableGroups] = useState(action?.availableGroups || []);
+    const [availableStudents, setAvailableStudents] = useState(action?.availableStudents || []);
+
+    const [deadline, setDeadline] = useState(action?.deadline ? new Date(action.deadline).toISOString().slice(0, 16) : '');
+    const [notes, setNotes] = useState(action?.notes || '');
+
+    useEffect(() => {
+        if (action) {
+            setModuleId(action.moduleId || '');
+            setModuleTitle(action.moduleTitle || '');
+            setAvailableModules(action.availableModules || []);
+            setClassIds(action.classIds || []);
+            setGroupIds(action.groupIds || []);
+            setStudentIds(action.studentIds || []);
+            setAvailableClasses(action.availableClasses || []);
+            setAvailableGroups(action.availableGroups || []);
+            setAvailableStudents(action.availableStudents || []);
+            if (action.deadline) {
+                setDeadline(new Date(action.deadline).toISOString().slice(0, 16));
+            }
+            setNotes(action.notes || '');
+            setIsConfirmed(action.isConfirmed || false);
+            setIsCancelled(action.isCancelled || false);
+        }
+    }, [action]);
+
+    const handleConfirm = async () => {
+        if (!moduleId) {
+            toast.error('Please select a training module to assign');
+            return;
+        }
+        if (classIds.length === 0 && groupIds.length === 0 && studentIds.length === 0) {
+            toast.error('Please select at least one class, group, or student');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const res = await trainingAPI.assignModule(moduleId, {
+                classIds,
+                groupIds,
+                studentIds,
+                deadline: deadline || undefined,
+                notes: notes || undefined
+            });
+
+            if (res.data?.success) {
+                setIsConfirmed(true);
+                setIsEditing(false);
+                toast.success(`Module "${moduleTitle}" assigned successfully!`);
+            } else {
+                toast.error(res.data?.message || 'Failed to assign module');
+            }
+        } catch (err) {
+            console.error('Error assigning training module:', err);
+            toast.error(err.response?.data?.message || err.message || 'Error assigning module');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isCancelled) {
+        return (
+            <div className="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 text-xs flex items-center justify-between">
+                <span className="flex items-center gap-1.5"><XCircle className="w-4 h-4 text-slate-400" /> Training module assignment proposal discarded</span>
+                <button onClick={() => setIsCancelled(false)} className="text-indigo-600 hover:underline font-medium">Restore</button>
+            </div>
+        );
+    }
+
+    const assignedClassObjs = availableClasses.filter(c => classIds.includes(c.id));
+    const assignedGroupObjs = availableGroups.filter(g => groupIds.includes(g.id));
+    const assignedStudentObjs = availableStudents.filter(s => studentIds.includes(s.id));
+
+    return (
+        <div className="mt-3 rounded-xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/50 shadow-sm overflow-hidden text-xs">
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <Send className="w-4 h-4" />
+                    <span className="font-semibold text-[13px]">
+                        {isConfirmed ? 'Training Module Assigned' : 'Draft Assignment Proposal'}
+                    </span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30">
+                    Card Confirm
+                </span>
+            </div>
+
+            {/* Body */}
+            <div className="p-3.5 space-y-3">
+                {isEditing ? (
+                    <div className="space-y-2.5">
+                        {/* Course Selector */}
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Training Module *</label>
+                            {availableModules.length > 0 ? (
+                                <select
+                                    value={moduleId}
+                                    onChange={(e) => {
+                                        setModuleId(e.target.value);
+                                        const found = availableModules.find(m => m.id === e.target.value);
+                                        if (found) setModuleTitle(found.title);
+                                    }}
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none bg-white"
+                                >
+                                    {availableModules.map(m => (
+                                        <option key={m.id} value={m.id}>{m.title} ({m.language})</option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <input
+                                    type="text"
+                                    value={moduleTitle}
+                                    disabled
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-slate-50"
+                                />
+                            )}
+                        </div>
+
+                        {/* Classes Selection */}
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-1">Target Classes</label>
+                            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1.5 bg-slate-50 rounded-lg border border-slate-200">
+                                {availableClasses.map(cls => {
+                                    const isSel = classIds.includes(cls.id);
+                                    return (
+                                        <button
+                                            key={cls.id}
+                                            type="button"
+                                            onClick={() => {
+                                                if (isSel) setClassIds(prev => prev.filter(id => id !== cls.id));
+                                                else setClassIds(prev => [...prev, cls.id]);
+                                            }}
+                                            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border transition ${
+                                                isSel ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
+                                            }`}
+                                        >
+                                            <GraduationCap className="w-3 h-3" />
+                                            <span>{cls.name}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Groups Selection */}
+                        {availableGroups.length > 0 && (
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-600 mb-1">Target Groups</label>
+                                <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto p-1.5 bg-slate-50 rounded-lg border border-slate-200">
+                                    {availableGroups.map(grp => {
+                                        const isSel = groupIds.includes(grp.id);
+                                        return (
+                                            <button
+                                                key={grp.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    if (isSel) setGroupIds(prev => prev.filter(id => id !== grp.id));
+                                                    else setGroupIds(prev => [...prev, grp.id]);
+                                                }}
+                                                className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border transition ${
+                                                    isSel ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-slate-600 border-slate-300 hover:border-purple-400'
+                                                }`}
+                                            >
+                                                <Users className="w-3 h-3" />
+                                                <span>{grp.name}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Deadline */}
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Deadline (Optional)</label>
+                            <input
+                                type="datetime-local"
+                                value={deadline}
+                                onChange={(e) => setDeadline(e.target.value)}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                            />
+                        </div>
+
+                        {/* Notes */}
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Instructions / Notes</label>
+                            <textarea
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                                rows={2}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none resize-none"
+                                placeholder="Instructions for students..."
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(false)}
+                                className="px-2.5 py-1 rounded-md text-slate-600 hover:bg-slate-100 font-medium"
+                            >
+                                Done Editing
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <span className="text-[10px] uppercase font-bold text-slate-400">Assigned Course</span>
+                                <div className="font-bold text-sm text-slate-900 flex items-center gap-1.5 mt-0.5">
+                                    <span>{moduleTitle}</span>
+                                </div>
+                            </div>
+                            {!isConfirmed && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditing(true)}
+                                    className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition"
+                                    title="Edit Targets & Deadline"
+                                >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Targets Chips */}
+                        <div className="bg-slate-100/70 p-2.5 rounded-lg space-y-1.5">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                                Target Recipients
+                            </span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                {assignedClassObjs.map((c, i) => (
+                                    <span key={`c-${i}`} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                                        <GraduationCap className="w-3 h-3 text-blue-500" />
+                                        {c.name}
+                                    </span>
+                                ))}
+                                {assignedGroupObjs.map((g, i) => (
+                                    <span key={`g-${i}`} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                        <Users className="w-3 h-3 text-purple-500" />
+                                        {g.name}
+                                    </span>
+                                ))}
+                                {assignedStudentObjs.map((s, i) => (
+                                    <span key={`s-${i}`} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <UserCheck className="w-3 h-3 text-emerald-500" />
+                                        {s.name}
+                                    </span>
+                                ))}
+                                {assignedClassObjs.length === 0 && assignedGroupObjs.length === 0 && assignedStudentObjs.length === 0 && (
+                                    <span className="text-[11px] text-amber-600 italic">No targets selected (Click Edit)</span>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Deadline & Notes */}
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Deadline</span>
+                                <span className="font-semibold text-slate-700 text-[11px]">
+                                    {deadline ? new Date(deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'No deadline'}
+                                </span>
+                            </div>
+                            <div className="bg-slate-100/70 p-2 rounded-lg">
+                                <span className="text-[10px] text-slate-500 block">Instructions</span>
+                                <span className="text-[11px] text-slate-600 line-clamp-1">{notes || 'Standard completion'}</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Confirmed State */}
+                {isConfirmed && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-in fade-in">
+                        <div className="flex items-center gap-2 text-emerald-800 font-bold">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>Training Module Assigned Successfully!</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-700">
+                            The targets have been enrolled. Students will see the course in their LMS dashboard with progress tracking enabled.
+                        </p>
+                        <div className="pt-1 flex items-center gap-2">
+                            <a
+                                href={`/training/${moduleId}`}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-800 hover:text-indigo-900 bg-indigo-100/80 hover:bg-indigo-200 px-2.5 py-1 rounded-lg transition"
+                            >
+                                <BookOpen className="w-3 h-3" /> View Course Overview
+                            </a>
+                        </div>
+                    </div>
+                )}
+
+                {/* Footer Action Buttons */}
+                {!isConfirmed && !isEditing && (
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                        <button
+                            type="button"
+                            onClick={() => setIsCancelled(true)}
+                            title="Cancel / Discard Proposal"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            disabled={loading}
+                            title="Confirm & Assign Training Module"
+                            className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-indigo-500/20 transition disabled:opacity-50 text-xs"
+                        >
+                            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            <span>Confirm & Assign Module</span>
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 /* ─── Class Creation Action Card ─── */
 function ClassActionCard({ action }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -7385,6 +7724,7 @@ export default function FloatingChatbot() {
                         ticketAction: d.ticketAction,
                         procurementAction: d.procurementAction,
                         trainingAction: d.trainingAction,
+                        trainingAssignmentAction: d.trainingAssignmentAction,
                         timetableAction: d.timetableAction,
                         periodTimingAction: d.periodTimingAction,
                         shiftAction: d.shiftAction,
@@ -7798,6 +8138,7 @@ export default function FloatingChatbot() {
                                     {msg.ticketAction && <TicketActionCard action={msg.ticketAction} />}
                                     {msg.procurementAction && <ProcurementActionCard action={msg.procurementAction} />}
                                     {msg.trainingAction && <TrainingActionCard action={msg.trainingAction} />}
+                                    {msg.trainingAssignmentAction && <TrainingAssignmentActionCard action={msg.trainingAssignmentAction} />}
                                     {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
                                     {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
                                     {msg.shiftAction && <ShiftActionCard action={msg.shiftAction} />}

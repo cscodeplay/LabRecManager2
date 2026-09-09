@@ -7,12 +7,14 @@ import { trainingAPI, classesAPI } from '@/lib/api';
 import PageHeader from '@/components/PageHeader';
 import { 
     GraduationCap, Clock, Award, ChevronRight, BookOpen, 
-    AlertCircle, Plus, Sparkles, Edit3, Trash2, BookCheck, ShieldCheck, Zap
+    AlertCircle, Plus, Sparkles, Edit3, Trash2, BookCheck, ShieldCheck, Zap,
+    Users, UserCheck, UserPlus
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import TrainingModuleWizard from '@/components/TrainingModuleWizard';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import ModuleAssignmentModal from '@/components/ModuleAssignmentModal';
 
 export default function TrainingModulesPage() {
     const router = useRouter();
@@ -21,6 +23,7 @@ export default function TrainingModulesPage() {
     const [classes, setClasses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showWizard, setShowWizard] = useState(false);
+    const [assigningModule, setAssigningModule] = useState(null);
     const [deleteModalState, setDeleteModalState] = useState({
         isOpen: false,
         moduleId: null,
@@ -177,91 +180,154 @@ export default function TrainingModulesPage() {
                 </div>
             ) : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {modules.map((mod) => (
-                        <div 
-                            key={mod.id}
-                            className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all group flex flex-col justify-between"
-                        >
-                            <div>
-                                <div className="h-3 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600" />
-                                
-                                <div className="p-6">
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                                            <BookOpen className="w-6 h-6" />
+                    {modules.map((mod) => {
+                        const assignedClasses = [];
+                        const assignedGroups = [];
+                        const assignedStudents = [];
+                        const seenC = new Set();
+                        const seenG = new Set();
+                        const seenS = new Set();
+
+                        (mod.assignments || []).forEach(a => {
+                            (a.targets || []).forEach(t => {
+                                if (t.targetType === 'class' && t.className && !seenC.has(t.className)) {
+                                    seenC.add(t.className);
+                                    assignedClasses.push(t.className);
+                                }
+                                if (t.targetType === 'group' && t.groupName && !seenG.has(t.groupName)) {
+                                    seenG.add(t.groupName);
+                                    assignedGroups.push(t.groupName);
+                                }
+                                if (t.targetType === 'student' && t.studentName && !seenS.has(t.studentName)) {
+                                    seenS.add(t.studentName);
+                                    assignedStudents.push(t.studentName);
+                                }
+                            });
+                        });
+
+                        const hasAssignments = assignedClasses.length > 0 || assignedGroups.length > 0 || assignedStudents.length > 0;
+
+                        return (
+                            <div 
+                                key={mod.id}
+                                className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all group flex flex-col justify-between"
+                            >
+                                <div>
+                                    <div className="h-3 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600" />
+                                    
+                                    <div className="p-6">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                                                <BookOpen className="w-6 h-6" />
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-full capitalize">
+                                                    {mod.language}
+                                                </span>
+                                                {isInstructorOrAdmin && (
+                                                    mod.isPublished ? (
+                                                        <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold rounded-full">
+                                                            Published
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] font-bold rounded-full">
+                                                            Draft
+                                                        </span>
+                                                    )
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-full capitalize">
-                                                {mod.language}
-                                            </span>
-                                            {isInstructorOrAdmin && (
-                                                mod.isPublished ? (
-                                                    <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold rounded-full">
-                                                        Published
-                                                    </span>
-                                                ) : (
-                                                    <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] font-bold rounded-full">
-                                                        Draft
-                                                    </span>
-                                                )
+
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1.5 line-clamp-2">
+                                            {mod.title}
+                                        </h3>
+                                        {mod.titleHindi && (
+                                            <p className="text-xs text-slate-400 font-medium mb-2">{mod.titleHindi}</p>
+                                        )}
+                                        
+                                        {mod.description && (
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 leading-relaxed">
+                                                {mod.description}
+                                            </p>
+                                        )}
+
+                                        {/* Assigned Entities Badges */}
+                                        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center gap-1.5">
+                                            {hasAssignments ? (
+                                                <>
+                                                    {assignedClasses.map((cls, i) => (
+                                                        <span key={`c-${i}`} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                                            <GraduationCap className="w-3 h-3 text-blue-500" />
+                                                            {cls}
+                                                        </span>
+                                                    ))}
+                                                    {assignedGroups.map((grp, i) => (
+                                                        <span key={`g-${i}`} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                                            <Users className="w-3 h-3 text-purple-500" />
+                                                            {grp}
+                                                        </span>
+                                                    ))}
+                                                    {assignedStudents.map((std, i) => (
+                                                        <span key={`s-${i}`} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                                            <UserCheck className="w-3 h-3 text-emerald-500" />
+                                                            {std}
+                                                        </span>
+                                                    ))}
+                                                </>
+                                            ) : (
+                                                <span className="text-[11px] text-slate-400 italic">Unassigned</span>
                                             )}
                                         </div>
                                     </div>
-
-                                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1.5 line-clamp-2">
-                                        {mod.title}
-                                    </h3>
-                                    {mod.titleHindi && (
-                                        <p className="text-xs text-slate-400 font-medium mb-2">{mod.titleHindi}</p>
-                                    )}
-                                    
-                                    {mod.description && (
-                                        <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 leading-relaxed">
-                                            {mod.description}
-                                        </p>
-                                    )}
                                 </div>
-                            </div>
 
-                            <div className="p-6 pt-0">
-                                <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                                    <div className="flex items-center gap-4 text-xs font-semibold text-slate-500">
-                                        <span>{mod.totalUnits || mod._count?.units || 0} Units</span>
-                                        <span>•</span>
-                                        <span>{mod.totalExercises || 0} Exercises</span>
-                                    </div>
+                                <div className="p-6 pt-0">
+                                    <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                        <div className="flex items-center gap-4 text-xs font-semibold text-slate-500">
+                                            <span>{mod.totalUnits || mod._count?.units || 0} Units</span>
+                                            <span>•</span>
+                                            <span>{mod.totalExercises || 0} Exercises</span>
+                                        </div>
 
-                                    <div className="flex items-center gap-2">
-                                        {isInstructorOrAdmin && (
-                                            <>
-                                                <button
-                                                    onClick={() => router.push(`/admin/training/${mod.id}/builder`)}
-                                                    className="p-2 text-slate-400 hover:text-indigo-600 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-950 transition"
-                                                    title="Edit in Pedagogy Builder"
-                                                >
-                                                    <Edit3 className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => handleDeleteClick(e, mod)}
-                                                    className="p-2 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                                                    title="Delete Course Module"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </>
-                                        )}
-                                        <Link
-                                            href={`/training/${mod.id}`}
-                                            className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-1.5 px-3.5 rounded-xl flex items-center gap-1 shadow-sm"
-                                        >
-                                            <span>Enter Course</span>
-                                            <ChevronRight className="w-4 h-4" />
-                                        </Link>
+                                        <div className="flex items-center gap-2">
+                                            {isInstructorOrAdmin && (
+                                                <>
+                                                    <button
+                                                        onClick={() => setAssigningModule(mod)}
+                                                        className="p-2 text-slate-400 hover:text-blue-600 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-950 transition"
+                                                        title="Assign or Edit Target Classes/Groups/Students"
+                                                    >
+                                                        <UserPlus className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => router.push(`/admin/training/${mod.id}/builder`)}
+                                                        className="p-2 text-slate-400 hover:text-indigo-600 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-950 transition"
+                                                        title="Edit in Pedagogy Builder"
+                                                    >
+                                                        <Edit3 className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => handleDeleteClick(e, mod)}
+                                                        className="p-2 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                                        title="Delete Course Module"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </>
+                                            )}
+                                            <Link
+                                                href={`/training/${mod.id}`}
+                                                className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-1.5 px-3.5 rounded-xl flex items-center gap-1 shadow-sm"
+                                            >
+                                                <span>Enter Course</span>
+                                                <ChevronRight className="w-4 h-4" />
+                                            </Link>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
 
@@ -272,6 +338,19 @@ export default function TrainingModulesPage() {
                 availableClasses={classes}
                 onSuccess={() => fetchModules()}
             />
+
+            {/* Module Assignment Modal */}
+            {assigningModule && (
+                <ModuleAssignmentModal
+                    isOpen={!!assigningModule}
+                    module={assigningModule}
+                    onClose={() => setAssigningModule(null)}
+                    onSuccess={() => {
+                        setAssigningModule(null);
+                        fetchModules();
+                    }}
+                />
+            )}
 
             {/* Delete Confirmation Dialog */}
             <ConfirmDialog

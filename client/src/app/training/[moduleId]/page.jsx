@@ -5,9 +5,13 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
 import { trainingAPI } from '@/lib/api';
 import PageHeader from '@/components/PageHeader';
-import { BookOpen, CheckCircle, Lock, PlayCircle, Clock, ArrowRight, Code2 } from 'lucide-react';
+import { 
+    BookOpen, CheckCircle, Lock, PlayCircle, Clock, ArrowRight, Code2,
+    Users, GraduationCap, UserCheck, Edit3 
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import TrainingLiveBanner from '@/components/TrainingLiveBanner';
+import ModuleAssignmentModal from '@/components/ModuleAssignmentModal';
 
 export default function TrainingModulePage() {
     const { moduleId } = useParams();
@@ -17,29 +21,33 @@ export default function TrainingModulePage() {
     const [module, setModule] = useState(null);
     const [progress, setProgress] = useState(null);
     const [masteries, setMasteries] = useState([]);
+    const [assignments, setAssignments] = useState([]);
+    const [showAssignModal, setShowAssignModal] = useState(false);
     const [assignmentInfo, setAssignmentInfo] = useState(null);
     const [lectureInfo, setLectureInfo] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    const isInstructorOrAdmin = ['admin', 'principal', 'instructor', 'lab_assistant'].includes(user?.role);
+
+    const fetchModule = async () => {
+        try {
+            const res = await trainingAPI.getModuleDetails(moduleId);
+            setModule(res.data.data.module);
+            setProgress(res.data.data.progress);
+            setMasteries(res.data.data.unitMasteries || []);
+            setAssignments(res.data.data.assignments || []);
+            setAssignmentInfo(res.data.data.assignmentInfo || null);
+            setLectureInfo(res.data.data.lectureInfo || null);
+        } catch (err) {
+            toast.error('Failed to load training module');
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (!isAuthenticated) return;
-        
-        const fetchModule = async () => {
-            try {
-                const res = await trainingAPI.getModuleDetails(moduleId);
-                setModule(res.data.data.module);
-                setProgress(res.data.data.progress);
-                setMasteries(res.data.data.unitMasteries || []);
-                setAssignmentInfo(res.data.data.assignmentInfo || null);
-                setLectureInfo(res.data.data.lectureInfo || null);
-            } catch (err) {
-                toast.error('Failed to load training module');
-                console.error(err);
-            } finally {
-                setLoading(false);
-            }
-        };
-
         fetchModule();
     }, [moduleId, isAuthenticated]);
 
@@ -53,6 +61,32 @@ export default function TrainingModulePage() {
         return isMastered(prevUnitId);
     };
 
+    const assignedClasses = [];
+    const assignedGroups = [];
+    const assignedStudents = [];
+    const seenClass = new Set();
+    const seenGroup = new Set();
+    const seenStudent = new Set();
+
+    (assignments || []).forEach(a => {
+        (a.targets || []).forEach(t => {
+            if (t.targetType === 'class' && t.className && !seenClass.has(t.className)) {
+                seenClass.add(t.className);
+                assignedClasses.push(t.className);
+            }
+            if (t.targetType === 'group' && t.groupName && !seenGroup.has(t.groupName)) {
+                seenGroup.add(t.groupName);
+                assignedGroups.push(t.groupName);
+            }
+            if (t.targetType === 'student' && t.studentName && !seenStudent.has(t.studentName)) {
+                seenStudent.add(t.studentName);
+                assignedStudents.push(t.studentName);
+            }
+        });
+    });
+
+    const hasAnyAssignments = assignedClasses.length > 0 || assignedGroups.length > 0 || assignedStudents.length > 0;
+
     return (
         <div className="min-h-screen bg-slate-50">
             <PageHeader title={module.title} backLink="/assigned-work" />
@@ -64,18 +98,62 @@ export default function TrainingModulePage() {
                 {/* Header Card */}
                 <div className="bg-white rounded-xl shadow-sm p-6 mb-8 border border-slate-200">
                     <div className="flex justify-between items-start">
-                        <div>
+                        <div className="flex-1 pr-4">
                             <h1 className="text-2xl font-bold text-slate-900">{module.title}</h1>
                             <p className="text-slate-600 mt-2">{module.description}</p>
-                            <div className="flex gap-4 mt-4 text-sm text-slate-500">
+                            <div className="flex flex-wrap gap-4 mt-4 text-sm text-slate-500">
                                 <span>{module.units.length} Units</span>
                                 <span>Language: {module.language}</span>
                                 {progress?.totalXP !== undefined && (
                                     <span className="text-amber-600 font-bold">{progress.totalXP} XP Earned</span>
                                 )}
                             </div>
+
+                            {/* Assigned Entities Section */}
+                            <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex items-center flex-wrap gap-2">
+                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500 mr-1 flex items-center gap-1.5">
+                                        <Users className="w-3.5 h-3.5 text-indigo-500" /> Assigned To:
+                                    </span>
+                                    {hasAnyAssignments ? (
+                                        <>
+                                            {assignedClasses.map((cls, idx) => (
+                                                <span key={`cls-${idx}`} className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                                                    <GraduationCap className="w-3 h-3 text-blue-500" />
+                                                    {cls}
+                                                </span>
+                                            ))}
+                                            {assignedGroups.map((grp, idx) => (
+                                                <span key={`grp-${idx}`} className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                                    <Users className="w-3 h-3 text-purple-500" />
+                                                    {grp}
+                                                </span>
+                                            ))}
+                                            {assignedStudents.map((std, idx) => (
+                                                <span key={`std-${idx}`} className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                    <UserCheck className="w-3 h-3 text-emerald-500" />
+                                                    {std}
+                                                </span>
+                                            ))}
+                                        </>
+                                    ) : (
+                                        <span className="text-xs text-slate-400 italic">
+                                            Not assigned to any class, group, or student yet
+                                        </span>
+                                    )}
+                                </div>
+                                {isInstructorOrAdmin && (
+                                    <button
+                                        onClick={() => setShowAssignModal(true)}
+                                        className="btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs py-1.5 px-3 rounded-lg font-semibold flex items-center gap-1.5 transition border border-indigo-200 shadow-xs"
+                                    >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                        <span>{hasAnyAssignments ? 'Edit Assignments' : 'Assign Module'}</span>
+                                    </button>
+                                )}
+                            </div>
                         </div>
-                        <div className="bg-emerald-50 rounded-full p-4">
+                        <div className="bg-emerald-50 rounded-full p-4 shrink-0">
                             <BookOpen className="w-8 h-8 text-emerald-600" />
                         </div>
                     </div>
@@ -250,6 +328,19 @@ export default function TrainingModulePage() {
                     })}
                 </div>
             </main>
+
+            {/* Module Assignment Modal */}
+            {showAssignModal && (
+                <ModuleAssignmentModal
+                    isOpen={showAssignModal}
+                    module={module}
+                    onClose={() => setShowAssignModal(false)}
+                    onSuccess={() => {
+                        setShowAssignModal(false);
+                        fetchModule();
+                    }}
+                />
+            )}
         </div>
     );
 }
