@@ -227,82 +227,152 @@ export default function UsersPage() {
 
                 {/* Users Table */}
                 <div className="card overflow-hidden">
-                    <table className="w-full">
-                        <thead className="bg-slate-50 border-b border-slate-100">
-                            <tr>
-                                <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Name</th>
-                                <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Email</th>
-                                <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Role</th>
-                                <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">ID</th>
-                                <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Status</th>
-                                <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {users.map((u) => (
-                                <tr key={u.id} className="hover:bg-slate-50 transition">
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-medium">
-                                                {u.firstName?.[0]}{u.lastName?.[0]}
-                                            </div>
-                                            <div>
-                                                <p className="font-medium text-slate-900">
-                                                    {u.firstName} {u.lastName}
-                                                </p>
-                                                {u.firstNameHindi && (
-                                                    <p className="text-sm text-slate-500">{u.firstNameHindi} {u.lastNameHindi}</p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-slate-600">{u.email}</td>
-                                    <td className="px-6 py-4">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleBadge(u.role)}`}>
-                                            {u.role.replace('_', ' ')}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-slate-600 font-mono text-sm">
-                                        {u.studentId || u.admissionNumber || u.employeeId || '-'}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <span className={`flex items-center gap-1 text-sm ${u.isActive ? 'text-emerald-600' : 'text-red-500'}`}>
-                                            <span className={`w-2 h-2 rounded-full ${u.isActive ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
-                                            {u.isActive ? 'Active' : 'Inactive'}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-1">
-                                            {u.role === 'student' && (
-                                                <button
-                                                    onClick={() => handleGeneratePin(u)}
-                                                    disabled={generatingPin === u.id}
-                                                    className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
-                                                    title="Generate PIN"
-                                                >
-                                                    <KeyRound className="w-4 h-4" />
-                                                </button>
-                                            )}
-                                            <button
-                                                onClick={() => handleToggleActive(u)}
-                                                className={`p-1.5 rounded ${u.isActive ? 'text-slate-500 hover:bg-slate-50' : 'text-emerald-600 hover:bg-emerald-50'}`}
-                                                title={u.isActive ? 'Deactivate' : 'Activate'}
-                                            >
-                                                {u.isActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteUser(u)}
-                                                className="p-1.5 text-red-500 hover:bg-red-50 rounded"
-                                                title="Delete user"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    </td>
+                    {/* Desktop Table */}
+                    <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full min-w-[650px]">
+                            <thead className="bg-slate-50 border-b border-slate-100">
+                                <tr>
+                                    <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Name</th>
+                                    <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Email</th>
+                                    <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Role</th>
+                                    <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">ID</th>
+                                    <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Status</th>
+                                    <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">Actions</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {users.map((u) => (
+                                    <tr key={u.id} className="hover:bg-slate-50 transition">
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-medium">
+                                                    {u.firstName?.[0]}{u.lastName?.[0]}
+                                                </div>
+                                                <div>
+                                                    <p className="font-medium text-slate-900">
+                                                        {u.firstName} {u.lastName}
+                                                    </p>
+                                                    {u.firstNameHindi && (
+                                                        <p className="text-sm text-slate-500">{u.firstNameHindi} {u.lastNameHindi}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-600">{u.email}</td>
+                                        <td className="px-6 py-4">
+                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleBadge(u.role)}`}>
+                                                {u.role.replace('_', ' ')}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-600 font-mono text-sm">
+                                            {u.studentId || u.admissionNumber || u.employeeId || '-'}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className={`flex items-center gap-1 text-sm ${u.isActive ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                <span className={`w-2 h-2 rounded-full ${u.isActive ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                                                {u.isActive ? 'Active' : 'Inactive'}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-1">
+                                                {u.role === 'student' && (
+                                                    <button
+                                                        onClick={() => handleGeneratePin(u)}
+                                                        disabled={generatingPin === u.id}
+                                                        className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
+                                                        title="Generate PIN"
+                                                    >
+                                                        <KeyRound className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => handleToggleActive(u)}
+                                                    className={`p-1.5 rounded ${u.isActive ? 'text-slate-500 hover:bg-slate-50' : 'text-emerald-600 hover:bg-emerald-50'}`}
+                                                    title={u.isActive ? 'Deactivate' : 'Activate'}
+                                                >
+                                                    {u.isActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteUser(u)}
+                                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                                                    title="Delete user"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Mobile User Cards */}
+                    <div className="md:hidden divide-y divide-slate-100">
+                        {users.map((u) => (
+                            <div key={`mob-${u.id}`} className="p-4 hover:bg-slate-50 transition bg-white">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-medium shrink-0">
+                                            {u.firstName?.[0]}{u.lastName?.[0]}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="font-semibold text-slate-900 truncate">
+                                                {u.firstName} {u.lastName}
+                                            </p>
+                                            {u.firstNameHindi && (
+                                                <p className="text-xs text-slate-500 truncate">{u.firstNameHindi} {u.lastNameHindi}</p>
+                                            )}
+                                            <p className="text-xs text-slate-500 truncate mt-0.5">{u.email}</p>
+                                        </div>
+                                    </div>
+                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${getRoleBadge(u.role)}`}>
+                                        {u.role.replace('_', ' ')}
+                                    </span>
+                                </div>
+
+                                <div className="flex items-center justify-between text-xs text-slate-500 mt-3 pt-2.5 border-t border-slate-100">
+                                    <div>
+                                        <span className="text-slate-400">ID: </span>
+                                        <span className="font-mono text-slate-700">{u.studentId || u.admissionNumber || u.employeeId || '-'}</span>
+                                    </div>
+                                    <span className={`flex items-center gap-1.5 font-medium ${u.isActive ? 'text-emerald-600' : 'text-red-500'}`}>
+                                        <span className={`w-2 h-2 rounded-full ${u.isActive ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                                        {u.isActive ? 'Active' : 'Inactive'}
+                                    </span>
+                                </div>
+
+                                {/* Touch Actions Bar */}
+                                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100">
+                                    {u.role === 'student' && (
+                                        <button
+                                            onClick={() => handleGeneratePin(u)}
+                                            disabled={generatingPin === u.id}
+                                            className="flex-1 py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 flex items-center justify-center gap-1.5 transition"
+                                        >
+                                            <KeyRound className="w-3.5 h-3.5" /> PIN
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => handleToggleActive(u)}
+                                        className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+                                            u.isActive ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                        }`}
+                                    >
+                                        {u.isActive ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+                                        {u.isActive ? 'Deactivate' : 'Activate'}
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteUser(u)}
+                                        className="py-1.5 px-3 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 flex items-center justify-center gap-1.5 transition"
+                                        title="Delete user"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                     {users.length === 0 && (
                         <div className="p-12 text-center text-slate-500">
                             No users found matching your criteria

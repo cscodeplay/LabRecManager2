@@ -61,6 +61,7 @@ export default function DocumentsPage() {
     const [activeTab, setActiveTab] = useState('my'); // 'my', 'shared', or 'trash'
     const [sortField, setSortField] = useState('createdAt'); // 'name', 'fileType', 'fileSize', 'createdAt'
     const [sortDirection, setSortDirection] = useState('desc'); // 'asc' or 'desc'
+    const [expandedMobileDocId, setExpandedMobileDocId] = useState(null);
 
     // Upload modal state
     const [showUpload, setShowUpload] = useState(false);
@@ -1277,73 +1278,121 @@ export default function DocumentsPage() {
                         </div>
                     ) : (
                         <div className="card overflow-hidden">
-                            <table className="w-full">
-                                <thead className="bg-red-50 border-b border-red-200">
-                                    <tr>
-                                        <th className="w-10 p-3">
-                                            <input
-                                                type="checkbox"
-                                                onChange={handleSelectAll}
-                                                checked={isAllSelected()}
-                                                className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                                            />
-                                        </th>
-                                        <th className="text-left p-3 text-sm font-semibold text-slate-700">Name</th>
-                                        <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden md:table-cell">Type</th>
-                                        <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden md:table-cell">Size</th>
-                                        <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden lg:table-cell">Deleted</th>
-                                        <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden lg:table-cell">Deleted By</th>
-                                        <th className="text-left p-3 text-sm font-semibold text-slate-700">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {trashDocuments.map(doc => (
-                                        <tr key={doc.id} className={`border-b border-slate-100 hover:bg-slate-50 group ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}>
-                                            <td className="p-3">
+                            {/* Desktop Table */}
+                            <div className="hidden md:block overflow-x-auto">
+                                <table className="w-full min-w-[650px]">
+                                    <thead className="bg-red-50 border-b border-red-200">
+                                        <tr>
+                                            <th className="w-10 p-3">
                                                 <input
                                                     type="checkbox"
-                                                    checked={selectedDocs.has(doc.id)}
-                                                    onChange={() => toggleDocSelection(doc.id)}
+                                                    onChange={handleSelectAll}
+                                                    checked={isAllSelected()}
                                                     className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                                                 />
-                                            </td>
-                                            <td className="p-3">
-                                                <div className="flex items-center gap-3">
-                                                    <span className="text-xl opacity-50">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
-                                                    <div>
-                                                        <p className="font-medium text-slate-700">{doc.name}</p>
-                                                        {doc.description && <p className="text-xs text-slate-500 truncate max-w-xs">{doc.description}</p>}
+                                            </th>
+                                            <th className="text-left p-3 text-sm font-semibold text-slate-700">Name</th>
+                                            <th className="text-left p-3 text-sm font-semibold text-slate-700">Type</th>
+                                            <th className="text-left p-3 text-sm font-semibold text-slate-700">Size</th>
+                                            <th className="text-left p-3 text-sm font-semibold text-slate-700">Deleted</th>
+                                            <th className="text-left p-3 text-sm font-semibold text-slate-700">Deleted By</th>
+                                            <th className="text-left p-3 text-sm font-semibold text-slate-700">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {trashDocuments.map(doc => (
+                                            <tr key={doc.id} className={`border-b border-slate-100 hover:bg-slate-50 group ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}>
+                                                <td className="p-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedDocs.has(doc.id)}
+                                                        onChange={() => toggleDocSelection(doc.id)}
+                                                        className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                                    />
+                                                </td>
+                                                <td className="p-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-xl opacity-50">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                        <div>
+                                                            <p className="font-medium text-slate-700">{doc.name}</p>
+                                                            {doc.description && <p className="text-xs text-slate-500 truncate max-w-xs">{doc.description}</p>}
+                                                        </div>
                                                     </div>
+                                                </td>
+                                                <td className="p-3 text-sm text-slate-600">{doc.fileType?.toUpperCase()}</td>
+                                                <td className="p-3 text-sm text-slate-600">{doc.fileSizeFormatted || ''}</td>
+                                                <td className="p-3 text-sm text-slate-500">{formatDate(doc.deletedAt)}</td>
+                                                <td className="p-3 text-sm text-slate-600">
+                                                    {doc.deletedBy ? `${doc.deletedBy.firstName} ${doc.deletedBy.lastName}` : '-'}
+                                                </td>
+                                                <td className="p-3">
+                                                    <div className="flex gap-1">
+                                                        <button
+                                                            onClick={() => handleRestore(doc)}
+                                                            className="p-1.5 text-green-600 hover:bg-green-50 rounded"
+                                                            title="Restore"
+                                                        >
+                                                            <RotateCcw className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handlePermanentDelete(doc)}
+                                                            className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                                                            title="Delete Permanently"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Mobile Responsive Cards */}
+                            <div className="md:hidden divide-y divide-slate-100">
+                                {trashDocuments.map(doc => (
+                                    <div key={`mob-trash-${doc.id}`} className={`p-4 ${selectedDocs.has(doc.id) ? 'bg-red-50/50' : 'bg-white'}`}>
+                                        <div className="flex items-start gap-3">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedDocs.has(doc.id)}
+                                                onChange={() => toggleDocSelection(doc.id)}
+                                                className="mt-1 rounded border-slate-300 text-primary-600 focus:ring-primary-500 shrink-0"
+                                            />
+                                            <span className="text-2xl opacity-60 shrink-0">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="font-semibold text-slate-900 truncate">{doc.name}</p>
+                                                <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 flex-wrap">
+                                                    <span className="font-mono uppercase bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{doc.fileType}</span>
+                                                    <span>{doc.fileSizeFormatted || ''}</span>
+                                                    <span>•</span>
+                                                    <span>Deleted {formatDate(doc.deletedAt)}</span>
                                                 </div>
-                                            </td>
-                                            <td className="p-3 text-sm text-slate-600 hidden md:table-cell">{doc.fileType?.toUpperCase()}</td>
-                                            <td className="p-3 text-sm text-slate-600 hidden md:table-cell">{doc.fileSizeFormatted || ''}</td>
-                                            <td className="p-3 text-sm text-slate-500 hidden lg:table-cell">{formatDate(doc.deletedAt)}</td>
-                                            <td className="p-3 text-sm text-slate-600 hidden lg:table-cell">
-                                                {doc.deletedBy ? `${doc.deletedBy.firstName} ${doc.deletedBy.lastName}` : '-'}
-                                            </td>
-                                            <td className="p-3">
-                                                <div className="flex gap-1">
+                                                {doc.deletedBy && (
+                                                    <p className="text-xs text-slate-500 mt-1">
+                                                        By: {doc.deletedBy.firstName} {doc.deletedBy.lastName}
+                                                    </p>
+                                                )}
+                                                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100">
                                                     <button
                                                         onClick={() => handleRestore(doc)}
-                                                        className="p-1.5 text-green-600 hover:bg-green-50 rounded"
-                                                        title="Restore"
+                                                        className="flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center justify-center gap-1.5"
                                                     >
-                                                        <RotateCcw className="w-4 h-4" />
+                                                        <RotateCcw className="w-3.5 h-3.5" /> Restore
                                                     </button>
                                                     <button
                                                         onClick={() => handlePermanentDelete(doc)}
-                                                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                                                        title="Delete Permanently"
+                                                        className="flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 flex items-center justify-center gap-1.5"
                                                     >
-                                                        <Trash2 className="w-4 h-4" />
+                                                        <Trash2 className="w-3.5 h-3.5" /> Delete Forever
                                                     </button>
                                                 </div>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )
                 ) : filteredDocuments.length === 0 && (activeTab !== 'my' || folders.length === 0) ? (
@@ -1519,224 +1568,401 @@ export default function DocumentsPage() {
                     </div>
                 ) : (
                     <div className="card overflow-hidden">
-                        <table className="w-full">
-                            <thead className="bg-slate-50 border-b border-slate-200">
-                                <tr>
-                                    <th className="w-10 p-3">
-                                        <input
-                                            type="checkbox"
-                                            onChange={handleSelectAll}
-                                            checked={isAllSelected()}
-                                            className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                                        />
-                                    </th>
-                                    <th
-                                        onClick={() => handleSort('name')}
-                                        className="text-left p-3 text-sm font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 select-none"
-                                    >
-                                        Name<SortIndicator field="name" />
-                                    </th>
-                                    <th
-                                        onClick={() => handleSort('fileType')}
-                                        className="text-left p-3 text-sm font-semibold text-slate-700 hidden md:table-cell cursor-pointer hover:bg-slate-100 select-none"
-                                    >
-                                        Type<SortIndicator field="fileType" />
-                                    </th>
-                                    <th
-                                        onClick={() => handleSort('fileSize')}
-                                        className="text-left p-3 text-sm font-semibold text-slate-700 hidden md:table-cell cursor-pointer hover:bg-slate-100 select-none"
-                                    >
-                                        Size<SortIndicator field="fileSize" />
-                                    </th>
-                                    {activeTab === 'my' ? (
-                                        <>
-                                            <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden lg:table-cell">Category</th>
-                                            <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden lg:table-cell">Shared With</th>
-                                        </>
-                                    ) : (
-                                        <th className="text-left p-3 text-sm font-semibold text-slate-700 hidden lg:table-cell">Shared By</th>
-                                    )}
-                                    <th
-                                        onClick={() => handleSort('createdAt')}
-                                        className="text-left p-3 text-sm font-semibold text-slate-700 hidden lg:table-cell cursor-pointer hover:bg-slate-100 select-none"
-                                    >
-                                        {activeTab === 'my' ? 'Uploaded' : 'Shared On'}<SortIndicator field="createdAt" />
-                                    </th>
-                                    <th className="text-left p-3 text-sm font-semibold text-slate-700">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {activeTab === 'my' && folders.map(folder => (
-                                    <tr key={folder.id}
-                                        className={`border-b border-slate-100 hover:bg-slate-50 cursor-pointer group ${selectedFolders.has(folder.id) ? 'bg-primary-50' : ''}`}
-                                    >
-                                        <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                        {/* Desktop Table */}
+                        <div className="hidden md:block overflow-x-auto">
+                            <table className="w-full min-w-[700px]">
+                                <thead className="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                        <th className="w-10 p-3">
                                             <input
                                                 type="checkbox"
-                                                checked={selectedFolders.has(folder.id)}
-                                                onChange={() => toggleFolderSelection(folder.id)}
+                                                onChange={handleSelectAll}
+                                                checked={isAllSelected()}
                                                 className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                                             />
-                                        </td>
-                                        <td className="p-3" onClick={() => handleFolderClick(folder)}>
-                                            <div className="flex items-center gap-3">
-                                                <Folder className="w-6 h-6 text-yellow-400 fill-yellow-100" />
-                                                <div>
-                                                    <p className="font-medium text-slate-900 group-hover:text-primary-600 transition-colors">{folder.name}</p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="p-3 text-sm text-slate-600 hidden md:table-cell">Folder</td>
-                                        <td className="p-3 text-sm text-slate-600 hidden md:table-cell">{folder.totalSizeFormatted || '-'}</td>
-                                        {activeTab === 'my' && (
+                                        </th>
+                                        <th
+                                            onClick={() => handleSort('name')}
+                                            className="text-left p-3 text-sm font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 select-none"
+                                        >
+                                            Name<SortIndicator field="name" />
+                                        </th>
+                                        <th
+                                            onClick={() => handleSort('fileType')}
+                                            className="text-left p-3 text-sm font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 select-none"
+                                        >
+                                            Type<SortIndicator field="fileType" />
+                                        </th>
+                                        <th
+                                            onClick={() => handleSort('fileSize')}
+                                            className="text-left p-3 text-sm font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 select-none"
+                                        >
+                                            Size<SortIndicator field="fileSize" />
+                                        </th>
+                                        {activeTab === 'my' ? (
                                             <>
-                                                <td className="p-3 hidden lg:table-cell">
-                                                    <span className="px-2 py-1 text-xs font-medium bg-slate-100 text-slate-600 rounded-full">
-                                                        Folder
-                                                    </span>
-                                                </td>
-                                                <td className="p-3 hidden lg:table-cell">
-                                                    {folder.shareInfo && folder.shareInfo.length > 0 ? (
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); setShareInfoModal(folder); }}
-                                                            className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 px-2 py-1 rounded transition"
-                                                        >
-                                                            <Users className="w-3 h-3" />
-                                                            {folder.shareInfo.length}
-                                                        </button>
-                                                    ) : (
-                                                        <span className="text-xs text-slate-400">—</span>
-                                                    )}
-                                                </td>
+                                                <th className="text-left p-3 text-sm font-semibold text-slate-700">Category</th>
+                                                <th className="text-left p-3 text-sm font-semibold text-slate-700">Shared With</th>
                                             </>
+                                        ) : (
+                                            <th className="text-left p-3 text-sm font-semibold text-slate-700">Shared By</th>
                                         )}
-                                        <td className="p-3 text-sm text-slate-600 hidden lg:table-cell">{formatDate(folder.createdAt)}</td>
-                                        <td className="p-3">
-                                            <div className="flex gap-1">
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handlePreviewFolder(folder); }}
-                                                    className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"
-                                                    title="View Contents"
-                                                >
-                                                    <Eye className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleShareFolder(folder); }}
-                                                    className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded"
-                                                    title="Share"
-                                                >
-                                                    <Share2 className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleOpenFolderMoveDialog(folder); }}
-                                                    className="p-1.5 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded"
-                                                    title="Move"
-                                                >
-                                                    <FolderInput className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder); }}
-                                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </td>
+                                        <th
+                                            onClick={() => handleSort('createdAt')}
+                                            className="text-left p-3 text-sm font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 select-none"
+                                        >
+                                            {activeTab === 'my' ? 'Uploaded' : 'Shared On'}<SortIndicator field="createdAt" />
+                                        </th>
+                                        <th className="text-left p-3 text-sm font-semibold text-slate-700">Actions</th>
                                     </tr>
-                                ))}
-
-                                {sortedDocuments.map(item => {
-                                    const doc = activeTab === 'my' ? item : item.document;
-                                    const shareInfo = activeTab === 'shared' ? item : null;
-                                    if (!doc) return null;
-                                    return (
-                                        <tr key={doc.id + (shareInfo?.shareId || '')} className={`border-b border-slate-100 hover:bg-slate-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}>
+                                </thead>
+                                <tbody>
+                                    {activeTab === 'my' && folders.map(folder => (
+                                        <tr key={folder.id}
+                                            className={`border-b border-slate-100 hover:bg-slate-50 cursor-pointer group ${selectedFolders.has(folder.id) ? 'bg-primary-50' : ''}`}
+                                        >
                                             <td className="p-3" onClick={(e) => e.stopPropagation()}>
                                                 <input
                                                     type="checkbox"
-                                                    checked={selectedDocs.has(doc.id)}
-                                                    onChange={() => toggleDocSelection(doc.id)}
+                                                    checked={selectedFolders.has(folder.id)}
+                                                    onChange={() => toggleFolderSelection(folder.id)}
                                                     className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                                                 />
                                             </td>
-                                            <td className="p-3">
+                                            <td className="p-3" onClick={() => handleFolderClick(folder)}>
                                                 <div className="flex items-center gap-3">
-                                                    <span className="text-xl">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                    <Folder className="w-6 h-6 text-yellow-400 fill-yellow-100" />
                                                     <div>
-                                                        <p className="font-medium text-slate-900">{doc.name}</p>
-                                                        {doc.description && <p className="text-xs text-slate-500 truncate max-w-xs">{doc.description}</p>}
+                                                        <p className="font-medium text-slate-900 group-hover:text-primary-600 transition-colors">{folder.name}</p>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="p-3 text-sm text-slate-600 hidden md:table-cell">{doc.fileType?.toUpperCase()}</td>
-                                            <td className="p-3 text-sm text-slate-600 hidden md:table-cell">{doc.fileSizeFormatted || ''}</td>
-                                            {activeTab === 'my' ? (
+                                            <td className="p-3 text-sm text-slate-600">Folder</td>
+                                            <td className="p-3 text-sm text-slate-600">{folder.totalSizeFormatted || '-'}</td>
+                                            {activeTab === 'my' && (
                                                 <>
-                                                    <td className="p-3 hidden lg:table-cell">
-                                                        {doc.category && <span className="px-2 py-0.5 text-xs rounded-full bg-primary-100 text-primary-700 capitalize">{doc.category}</span>}
+                                                    <td className="p-3">
+                                                        <span className="px-2 py-1 text-xs font-medium bg-slate-100 text-slate-600 rounded-full">
+                                                            Folder
+                                                        </span>
                                                     </td>
-                                                    <td className="p-3 hidden lg:table-cell">
-                                                        {doc.shareCount > 0 ? (
+                                                    <td className="p-3">
+                                                        {folder.shareInfo && folder.shareInfo.length > 0 ? (
                                                             <button
-                                                                onClick={() => setShareInfoModal(doc)}
+                                                                onClick={(e) => { e.stopPropagation(); setShareInfoModal(folder); }}
                                                                 className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 px-2 py-1 rounded transition"
                                                             >
                                                                 <Users className="w-3 h-3" />
-                                                                {doc.shareCount}
+                                                                {folder.shareInfo.length}
                                                             </button>
                                                         ) : (
                                                             <span className="text-xs text-slate-400">—</span>
                                                         )}
                                                     </td>
                                                 </>
-                                            ) : (
-                                                <td className="p-3 text-sm text-slate-600 hidden lg:table-cell">
-                                                    {shareInfo?.sharedBy?.firstName} {shareInfo?.sharedBy?.lastName}
-                                                </td>
                                             )}
-                                            <td className="p-3 text-sm text-slate-500 hidden lg:table-cell">{formatDate(shareInfo ? shareInfo.sharedAt : doc.createdAt)}</td>
+                                            <td className="p-3 text-sm text-slate-600">{formatDate(folder.createdAt)}</td>
                                             <td className="p-3">
                                                 <div className="flex gap-1">
-                                                    <button onClick={() => setViewingDoc(shareInfo ? { ...doc, sharePermission: shareInfo.permission } : doc)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded" title="View">
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handlePreviewFolder(folder); }}
+                                                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"
+                                                        title="View Contents"
+                                                    >
                                                         <Eye className="w-4 h-4" />
                                                     </button>
-                                                    {activeTab === 'my' && canUpload && (
-                                                        <>
-                                                            <button onClick={() => handleEdit(doc)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit">
-                                                                <Edit2 className="w-4 h-4" />
-                                                            </button>
-                                                            <button onClick={() => handleOpenMoveDialog(doc)} className="p-1.5 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded" title="Move">
-                                                                <FolderInput className="w-4 h-4" />
-                                                            </button>
-                                                            <button onClick={() => handleShare(doc)} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded" title="Share">
-                                                                <Share2 className="w-4 h-4" />
-                                                            </button>
-                                                            <button onClick={() => setDeleteDialog({ open: true, doc })} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                            {['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(doc.fileType?.toLowerCase()) && (
-                                                                <button onClick={() => handleExtractAI(doc)} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded" title="Extract AI Inventory">
-                                                                    <Wand2 className="w-4 h-4" />
-                                                                </button>
-                                                            )}
-                                                            <button onClick={() => handleOpenAnalytics(doc)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Analytics">
-                                                                <BarChart2 className="w-4 h-4" />
-                                                            </button>
-                                                        </>
-                                                    )}
-                                                    {activeTab === 'shared' && shareInfo?.permission !== 'view' && (
-                                                        <a href={doc.url} download={doc.fileName || doc.name} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded" title="Download">
-                                                            <Download className="w-4 h-4" />
-                                                        </a>
-                                                    )}
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleShareFolder(folder); }}
+                                                        className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded"
+                                                        title="Share"
+                                                    >
+                                                        <Share2 className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleOpenFolderMoveDialog(folder); }}
+                                                        className="p-1.5 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded"
+                                                        title="Move"
+                                                    >
+                                                        <FolderInput className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder); }}
+                                                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                                    ))}
+
+                                    {sortedDocuments.map(item => {
+                                        const doc = activeTab === 'my' ? item : item.document;
+                                        const shareInfo = activeTab === 'shared' ? item : null;
+                                        if (!doc) return null;
+                                        return (
+                                            <tr key={doc.id + (shareInfo?.shareId || '')} className={`border-b border-slate-100 hover:bg-slate-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}>
+                                                <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedDocs.has(doc.id)}
+                                                        onChange={() => toggleDocSelection(doc.id)}
+                                                        className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                                    />
+                                                </td>
+                                                <td className="p-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-xl">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                        <div>
+                                                            <p className="font-medium text-slate-900">{doc.name}</p>
+                                                            {doc.description && <p className="text-xs text-slate-500 truncate max-w-xs">{doc.description}</p>}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="p-3 text-sm text-slate-600">{doc.fileType?.toUpperCase()}</td>
+                                                <td className="p-3 text-sm text-slate-600">{doc.fileSizeFormatted || ''}</td>
+                                                {activeTab === 'my' ? (
+                                                    <>
+                                                        <td className="p-3">
+                                                            {doc.category && <span className="px-2 py-0.5 text-xs rounded-full bg-primary-100 text-primary-700 capitalize">{doc.category}</span>}
+                                                        </td>
+                                                        <td className="p-3">
+                                                            {doc.shareCount > 0 ? (
+                                                                <button
+                                                                    onClick={() => setShareInfoModal(doc)}
+                                                                    className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 px-2 py-1 rounded transition"
+                                                                >
+                                                                    <Users className="w-3 h-3" />
+                                                                    {doc.shareCount}
+                                                                </button>
+                                                            ) : (
+                                                                <span className="text-xs text-slate-400">—</span>
+                                                            )}
+                                                        </td>
+                                                    </>
+                                                ) : (
+                                                    <td className="p-3 text-sm text-slate-600">
+                                                        {shareInfo?.sharedBy?.firstName} {shareInfo?.sharedBy?.lastName}
+                                                    </td>
+                                                )}
+                                                <td className="p-3 text-sm text-slate-500">{formatDate(shareInfo ? shareInfo.sharedAt : doc.createdAt)}</td>
+                                                <td className="p-3">
+                                                    <div className="flex gap-1">
+                                                        <button onClick={() => setViewingDoc(shareInfo ? { ...doc, sharePermission: shareInfo.permission } : doc)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded" title="View">
+                                                            <Eye className="w-4 h-4" />
+                                                        </button>
+                                                        {activeTab === 'my' && canUpload && (
+                                                            <>
+                                                                <button onClick={() => handleEdit(doc)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit">
+                                                                    <Edit2 className="w-4 h-4" />
+                                                                </button>
+                                                                <button onClick={() => handleOpenMoveDialog(doc)} className="p-1.5 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded" title="Move">
+                                                                    <FolderInput className="w-4 h-4" />
+                                                                </button>
+                                                                <button onClick={() => handleShare(doc)} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded" title="Share">
+                                                                    <Share2 className="w-4 h-4" />
+                                                                </button>
+                                                                <button onClick={() => setDeleteDialog({ open: true, doc })} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                                {['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(doc.fileType?.toLowerCase()) && (
+                                                                    <button onClick={() => handleExtractAI(doc)} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded" title="Extract AI Inventory">
+                                                                        <Wand2 className="w-4 h-4" />
+                                                                    </button>
+                                                                )}
+                                                                <button onClick={() => handleOpenAnalytics(doc)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Analytics">
+                                                                    <BarChart2 className="w-4 h-4" />
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                        {activeTab === 'shared' && shareInfo?.permission !== 'view' && (
+                                                            <a href={doc.url} download={doc.fileName || doc.name} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded" title="Download">
+                                                                <Download className="w-4 h-4" />
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Mobile Collapsible Records View */}
+                        <div className="md:hidden divide-y divide-slate-100">
+                            {/* Folders (Mobile Collapsible Records) */}
+                            {activeTab === 'my' && folders.map(folder => {
+                                const isExpanded = expandedMobileDocId === `folder-${folder.id}`;
+                                return (
+                                    <div key={`mob-folder-${folder.id}`} className={`p-4 bg-white hover:bg-slate-50 transition ${selectedFolders.has(folder.id) ? 'bg-primary-50/60' : ''}`}>
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="flex items-start gap-3 flex-1 min-w-0" onClick={() => handleFolderClick(folder)}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedFolders.has(folder.id)}
+                                                    onChange={() => toggleFolderSelection(folder.id)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="mt-1 rounded border-slate-300 text-primary-600 focus:ring-primary-500 shrink-0"
+                                                />
+                                                <Folder className="w-8 h-8 text-yellow-500 fill-yellow-100 shrink-0 mt-0.5" />
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="font-semibold text-slate-900 truncate">{folder.name}</p>
+                                                    <p className="text-xs text-slate-500 mt-0.5">
+                                                        {folder.documentCount || 0} files • {folder.totalSizeFormatted || '-'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => setExpandedMobileDocId(isExpanded ? null : `folder-${folder.id}`)}
+                                                className={`py-1.5 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1 transition ${isExpanded ? 'bg-primary-100 text-primary-700' : 'bg-slate-100 text-slate-700'}`}
+                                            >
+                                                Options
+                                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                            </button>
+                                        </div>
+
+                                        {/* Collapsible Action Tray */}
+                                        {isExpanded && (
+                                            <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2">
+                                                <button
+                                                    onClick={() => handlePreviewFolder(folder)}
+                                                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                                >
+                                                    <Eye className="w-3.5 h-3.5" /> View Contents
+                                                </button>
+                                                <button
+                                                    onClick={() => handleShareFolder(folder)}
+                                                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                                >
+                                                    <Share2 className="w-3.5 h-3.5" /> Share
+                                                </button>
+                                                <button
+                                                    onClick={() => handleOpenFolderMoveDialog(folder)}
+                                                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-medium bg-orange-50 text-orange-700 hover:bg-orange-100"
+                                                >
+                                                    <FolderInput className="w-3.5 h-3.5" /> Move
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteFolder(folder)}
+                                                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-medium bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+
+                            {/* Documents (Mobile Collapsible Records) */}
+                            {sortedDocuments.map(item => {
+                                const doc = activeTab === 'my' ? item : item.document;
+                                const shareInfo = activeTab === 'shared' ? item : null;
+                                if (!doc) return null;
+                                const isExpanded = expandedMobileDocId === `doc-${doc.id}`;
+
+                                return (
+                                    <div key={`mob-doc-${doc.id}`} className={`p-4 bg-white hover:bg-slate-50 transition ${selectedDocs.has(doc.id) ? 'bg-primary-50/60' : ''}`}>
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedDocs.has(doc.id)}
+                                                    onChange={() => toggleDocSelection(doc.id)}
+                                                    className="mt-1 rounded border-slate-300 text-primary-600 focus:ring-primary-500 shrink-0"
+                                                />
+                                                <span className="text-2xl shrink-0">{FILE_ICONS[doc.fileType] || FILE_ICONS.file}</span>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="font-semibold text-slate-900 truncate" title={doc.name}>{doc.name}</p>
+                                                    <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 flex-wrap">
+                                                        <span className="font-mono uppercase bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{doc.fileType}</span>
+                                                        <span>{doc.fileSizeFormatted || ''}</span>
+                                                        <span>•</span>
+                                                        <span>{formatDate(shareInfo ? shareInfo.sharedAt : doc.createdAt)}</span>
+                                                    </div>
+                                                    {doc.description && <p className="text-xs text-slate-500 truncate mt-1">{doc.description}</p>}
+                                                </div>
+                                            </div>
+
+                                            <button
+                                                onClick={() => setExpandedMobileDocId(isExpanded ? null : `doc-${doc.id}`)}
+                                                className={`py-1.5 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1 transition shrink-0 ${isExpanded ? 'bg-primary-100 text-primary-700' : 'bg-slate-100 text-slate-700'}`}
+                                            >
+                                                Options
+                                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                            </button>
+                                        </div>
+
+                                        {/* Collapsible Action Tray */}
+                                        {isExpanded && (
+                                            <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-2">
+                                                <button
+                                                    onClick={() => setViewingDoc(shareInfo ? { ...doc, sharePermission: shareInfo.permission } : doc)}
+                                                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex-1 min-w-[90px]"
+                                                >
+                                                    <Eye className="w-3.5 h-3.5" /> View
+                                                </button>
+                                                {activeTab === 'my' && canUpload && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleEdit(doc)}
+                                                            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 flex-1 min-w-[90px]"
+                                                        >
+                                                            <Edit2 className="w-3.5 h-3.5" /> Edit
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleOpenMoveDialog(doc)}
+                                                            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-orange-50 text-orange-700 hover:bg-orange-100 flex-1 min-w-[90px]"
+                                                        >
+                                                            <FolderInput className="w-3.5 h-3.5" /> Move
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleShare(doc)}
+                                                            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex-1 min-w-[90px]"
+                                                        >
+                                                            <Share2 className="w-3.5 h-3.5" /> Share
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setDeleteDialog({ open: true, doc })}
+                                                            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 flex-1 min-w-[90px]"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" /> Delete
+                                                        </button>
+                                                        {['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(doc.fileType?.toLowerCase()) && (
+                                                            <button
+                                                                onClick={() => handleExtractAI(doc)}
+                                                                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100 flex-1 min-w-[90px]"
+                                                            >
+                                                                <Wand2 className="w-3.5 h-3.5" /> AI Extract
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            onClick={() => handleOpenAnalytics(doc)}
+                                                            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 flex-1 min-w-[90px]"
+                                                        >
+                                                            <BarChart2 className="w-3.5 h-3.5" /> Analytics
+                                                        </button>
+                                                    </>
+                                                )}
+                                                {activeTab === 'shared' && shareInfo?.permission !== 'view' && (
+                                                    <a
+                                                        href={doc.url}
+                                                        download={doc.fileName || doc.name}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-primary-50 text-primary-700 hover:bg-primary-100 flex-1 min-w-[90px]"
+                                                    >
+                                                        <Download className="w-3.5 h-3.5" /> Download
+                                                    </a>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
                 )
             }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, Mic, Keyboard } from 'lucide-react';
+import { Menu, Mic, Keyboard, Search } from 'lucide-react';
 import Sidebar from './Sidebar';
 import NotificationBell from './NotificationBell';
 import ProfileDropdown from './ProfileDropdown';
@@ -97,6 +97,21 @@ export default function AppLayout({ children }) {
                                 <Menu className="w-5 h-5 text-slate-600" />
                             </button>
 
+                            {/* Global Search Button (Mobile, iPad & Desktop) */}
+                            <button
+                                type="button"
+                                onClick={() => window.dispatchEvent(new CustomEvent('open-global-search'))}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 border border-slate-200 text-xs font-medium transition shadow-sm group cursor-pointer"
+                                title="Global Search (⌘K or tap)"
+                                aria-label="Global Search"
+                            >
+                                <Search className="w-3.5 h-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
+                                <span className="hidden sm:inline text-slate-500 group-hover:text-indigo-600">Search...</span>
+                                <kbd className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-white border border-slate-200 text-[10px] font-mono text-slate-400 font-bold shadow-2xs">
+                                    <span className="text-xs">⌘</span>K
+                                </kbd>
+                            </button>
+
                             {/* Global Voice Assistant Mic Button */}
                             <button
                                 type="button"
@@ -139,6 +154,17 @@ export default function AppLayout({ children }) {
                     {children}
                 </main>
             </div>
+
+            {/* Mobile & iPad Floating Search Shortcut Button */}
+            <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('open-global-search'))}
+                className="md:hidden fixed bottom-6 left-5 z-40 w-11 h-11 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center hover:scale-105 active:scale-95 transition-all border border-white/20 cursor-pointer"
+                title="Search anything (tap to open)"
+                aria-label="Quick Search"
+            >
+                <Search className="w-5 h-5" />
+            </button>
 
             {/* Keyboard-Invoked Global Search Dialog (⌘K / Ctrl+K) */}
             <GlobalSearch />

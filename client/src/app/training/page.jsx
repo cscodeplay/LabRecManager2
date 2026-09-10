@@ -190,17 +190,20 @@ export default function TrainingModulesPage() {
 
                         (mod.assignments || []).forEach(a => {
                             (a.targets || []).forEach(t => {
-                                if (t.targetType === 'class' && t.className && !seenC.has(t.className)) {
-                                    seenC.add(t.className);
-                                    assignedClasses.push(t.className);
+                                const cName = t.className || (t.targetClassId && classes.find(c => c.id === t.targetClassId)?.name) || (t.targetClassId ? 'Class' : null);
+                                if (t.targetType === 'class' && cName && !seenC.has(cName)) {
+                                    seenC.add(cName);
+                                    assignedClasses.push(cName);
                                 }
-                                if (t.targetType === 'group' && t.groupName && !seenG.has(t.groupName)) {
-                                    seenG.add(t.groupName);
-                                    assignedGroups.push(t.groupName);
+                                const gName = t.groupName || (t.targetGroupId ? 'Group' : null);
+                                if (t.targetType === 'group' && gName && !seenG.has(gName)) {
+                                    seenG.add(gName);
+                                    assignedGroups.push(gName);
                                 }
-                                if (t.targetType === 'student' && t.studentName && !seenS.has(t.studentName)) {
-                                    seenS.add(t.studentName);
-                                    assignedStudents.push(t.studentName);
+                                const sName = t.studentName || (t.targetStudentId ? 'Student' : null);
+                                if (t.targetType === 'student' && sName && !seenS.has(sName)) {
+                                    seenS.add(sName);
+                                    assignedStudents.push(sName);
                                 }
                             });
                         });

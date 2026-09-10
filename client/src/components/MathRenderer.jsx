@@ -201,10 +201,13 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
     const flushParagraph = (pKey) => {
         if (currentParagraph.length > 0) {
             const joinedText = currentParagraph.join(' ');
-            if (joinedText.trim()) {
+            let cleanText = joinedText.trim();
+            // Clean any stray markdown hash prefixes that slipped into paragraph lines
+            cleanText = cleanText.replace(/^(#{1,6})\s*/, '');
+            if (cleanText) {
                 elements.push(
                     <p key={pKey} className={`my-2 ${s.p} ${textClassName || 'text-slate-800 dark:text-slate-200'}`}>
-                        {renderInlineFormattedText(joinedText, size, textClassName)}
+                        {renderInlineFormattedText(cleanText, size, textClassName)}
                     </p>
                 );
             }
@@ -219,6 +222,16 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
 
         if (!trimmed) {
             flushParagraph(`${keyPrefix}-p-${i}`);
+            i++;
+            continue;
+        }
+
+        // Horizontal dividers (---, ***, ___)
+        if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+            flushParagraph(`${keyPrefix}-p-before-hr-${i}`);
+            elements.push(
+                <hr key={`${keyPrefix}-hr-${i}`} className="my-5 border-t border-slate-200 dark:border-slate-800" />
+            );
             i++;
             continue;
         }
@@ -274,36 +287,39 @@ function renderTextParagraphs(textChunk, keyPrefix, textClassName = '', size = '
             }
         }
 
-        // 2. Headings
-        if (trimmed.startsWith('### ')) {
-            flushParagraph(`${keyPrefix}-p-before-h3-${i}`);
-            elements.push(
-                <h3 key={`${keyPrefix}-h3-${i}`} className={`${s.h3} flex items-center gap-2`}>
-                    {renderInlineFormattedText(trimmed.slice(4), size)}
-                </h3>
-            );
-            i++;
-            continue;
-        }
+        // 2. Headings (supports # through ###### with or without space)
+        const headingMatch = trimmed.match(/^(#{1,6})\s*(.+)$/);
+        if (headingMatch) {
+            const level = headingMatch[1].length;
+            const headingContent = headingMatch[2].trim();
+            flushParagraph(`${keyPrefix}-p-before-h${level}-${i}`);
 
-        if (trimmed.startsWith('## ')) {
-            flushParagraph(`${keyPrefix}-p-before-h2-${i}`);
-            elements.push(
-                <h2 key={`${keyPrefix}-h2-${i}`} className={`${s.h2} flex items-center gap-2`}>
-                    {renderInlineFormattedText(trimmed.slice(3), size)}
-                </h2>
-            );
-            i++;
-            continue;
-        }
-
-        if (trimmed.startsWith('# ')) {
-            flushParagraph(`${keyPrefix}-p-before-h1-${i}`);
-            elements.push(
-                <h1 key={`${keyPrefix}-h1-${i}`} className={s.h1}>
-                    {renderInlineFormattedText(trimmed.slice(2), size)}
-                </h1>
-            );
+            if (level === 1) {
+                elements.push(
+                    <h1 key={`${keyPrefix}-h1-${i}`} className={s.h1}>
+                        {renderInlineFormattedText(headingContent, size)}
+                    </h1>
+                );
+            } else if (level === 2) {
+                elements.push(
+                    <h2 key={`${keyPrefix}-h2-${i}`} className={`${s.h2} flex items-center gap-2`}>
+                        {renderInlineFormattedText(headingContent, size)}
+                    </h2>
+                );
+            } else if (level === 3) {
+                elements.push(
+                    <h3 key={`${keyPrefix}-h3-${i}`} className={`${s.h3} flex items-center gap-2`}>
+                        {renderInlineFormattedText(headingContent, size)}
+                    </h3>
+                );
+            } else {
+                elements.push(
+                    <h4 key={`${keyPrefix}-h${level}-${i}`} className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200 mt-3.5 mb-1.5 flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                        {renderInlineFormattedText(headingContent, size)}
+                    </h4>
+                );
+            }
             i++;
             continue;
         }

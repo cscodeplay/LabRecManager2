@@ -13,6 +13,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const { spawnSync } = require('child_process');
 const aiService = require('../services/ai.service');
+const workspaceService = require('../services/workspace.service');
 const multer = require('multer');
 const { PDFParse } = require('pdf-parse');
 const upload = multer({
@@ -70,7 +71,20 @@ async function evaluateStudentCodeWithAI(code, problemStatement, failedCases) {
 /**
  * Helper to run Python/SQL code with local sandbox and Wandbox fallback
  */
-async function executePythonCode(code, input = '', language = 'python') {
+/**
+ * Helper to run Python/SQL code with local sandbox and Wandbox fallback
+ */
+async function executePythonCode(code, input = '', language = 'python', studentId = null) {
+    let workspaceDir = process.cwd();
+    if (studentId) {
+        try {
+            workspaceDir = workspaceService.getStudentWorkspaceDir(studentId);
+            await workspaceService.syncStudentDocumentFiles(studentId);
+        } catch (wsErr) {
+            console.warn('[Training Sandbox] Student workspace setup warning:', wsErr.message);
+        }
+    }
+
     const isSql = language === 'sql' || (
         !code.includes('def ') && !code.includes('import ') && !code.includes('print(') &&
         /\b(SELECT|CREATE\s+TABLE|INSERT\s+INTO|UPDATE|DELETE|ALTER\s+TABLE|pragma_table_info)\b/i.test(code)
@@ -80,8 +94,9 @@ async function executePythonCode(code, input = '', language = 'python') {
         const isSetupSql = input && /^\s*(CREATE|INSERT|DROP|ALTER|PRAGMA\s+foreign_keys)\b/i.test(input) && !/pragma_table_info/i.test(input);
         const fullSql = isSetupSql ? `${input}\n${code}` : (code + (input ? `\n${input}` : ''));
         const pySqlRunner = `
-import sqlite3, sys
-con = sqlite3.connect(':memory:')
+import sqlite3, sys, os
+db_path = 'student_workspace.db' if os.path.exists('student_workspace.db') else ':memory:'
+con = sqlite3.connect(db_path)
 cur = con.cursor()
 sql_script = sys.stdin.read()
 for raw_stmt in sql_script.strip().split(';'):
@@ -101,7 +116,8 @@ con.close()
             const proc = spawnSync('python3', ['-c', pySqlRunner], {
                 input: fullSql,
                 encoding: 'utf8',
-                timeout: 6000
+                timeout: 6000,
+                cwd: workspaceDir
             });
             if (proc.stdout !== null || proc.stderr !== null) {
                 return {
@@ -142,12 +158,13 @@ con.close()
         inputStr = String(input) + '\n';
     }
     
-    // 1. Try local python3 execution first for high speed and reliability
+    // 1. Try local python3 execution first for high speed, isolated workspace directory, and reliability
     try {
         const proc = spawnSync('python3', ['-c', code], {
             input: inputStr,
             encoding: 'utf8',
-            timeout: 6000
+            timeout: 6000,
+            cwd: workspaceDir
         });
 
         if (proc.stdout !== null || proc.stderr !== null) {
@@ -205,10 +222,49 @@ router.get('/modules', authenticate, asyncHandler(async (req, res) => {
     const modules = await prisma.trainingModule.findMany({
         where,
         include: {
-            _count: { select: { units: true } }
+            _count: { select: { units: true } },
+            assignments: {
+                include: {
+                    targets: true
+                }
+            }
         },
         orderBy: { createdAt: 'desc' }
     });
+
+    // Bulk enrich assignment targets with human-readable names
+    const allClassIds = new Set();
+    const allGroupIds = new Set();
+    const allStudentIds = new Set();
+    for (const mod of modules) {
+        for (const assign of (mod.assignments || [])) {
+            for (const t of (assign.targets || [])) {
+                if (t.targetClassId) allClassIds.add(t.targetClassId);
+                if (t.targetGroupId) allGroupIds.add(t.targetGroupId);
+                if (t.targetStudentId) allStudentIds.add(t.targetStudentId);
+            }
+        }
+    }
+
+    const [classesList, groupsList, studentsList] = await Promise.all([
+        allClassIds.size > 0 ? prisma.class.findMany({ where: { id: { in: Array.from(allClassIds) } }, select: { id: true, name: true, gradeLevel: true, section: true } }) : [],
+        allGroupIds.size > 0 ? prisma.studentGroup.findMany({ where: { id: { in: Array.from(allGroupIds) } }, select: { id: true, name: true } }) : [],
+        allStudentIds.size > 0 ? prisma.user.findMany({ where: { id: { in: Array.from(allStudentIds) } }, select: { id: true, firstName: true, lastName: true } }) : []
+    ]);
+
+    const classMap = new Map(classesList.map(c => [c.id, c.name]));
+    const groupMap = new Map(groupsList.map(g => [g.id, g.name]));
+    const studentMap = new Map(studentsList.map(s => [s.id, `${s.firstName} ${s.lastName || ''}`.trim()]));
+
+    for (const mod of modules) {
+        for (const assign of (mod.assignments || [])) {
+            for (const t of (assign.targets || [])) {
+                if (t.targetClassId) t.className = classMap.get(t.targetClassId) || 'Class';
+                if (t.targetGroupId) t.groupName = groupMap.get(t.targetGroupId) || 'Group';
+                if (t.targetStudentId) t.studentName = studentMap.get(t.targetStudentId) || 'Student';
+            }
+        }
+    }
 
     res.json({
         success: true,
@@ -266,6 +322,9 @@ router.get('/modules/:id', authenticate, asyncHandler(async (req, res) => {
     // Get student/user progress
     let progress = null;
     let unitMasteries = [];
+    let assignmentInfo = null;
+    let lectureInfo = null;
+    let assignments = [];
     
     if (req.user?.id) {
         progress = await prisma.studentTrainingProgress.findUnique({
@@ -321,6 +380,183 @@ router.get('/modules/:id', authenticate, asyncHandler(async (req, res) => {
                 unitId: { in: unitIds }
             }
         });
+
+        // Compute assignment & due date info
+        const enrollments = await prisma.classEnrollment.findMany({
+            where: { studentId: req.user.id, status: 'active' },
+            select: { classId: true }
+        });
+        const studentClassIds = enrollments.map(e => e.classId);
+
+        const groupMembers = await prisma.groupMember.findMany({
+            where: { studentId: req.user.id },
+            select: { groupId: true }
+        });
+        const studentGroupIds = groupMembers.map(g => g.groupId);
+
+        assignments = await prisma.assignment.findMany({
+            where: { trainingModuleId: moduleId },
+            include: {
+                targets: true,
+                createdBy: { select: { id: true, firstName: true, lastName: true } }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        // Enrich targets with readable class, group, and student names
+        for (const assign of assignments) {
+            for (const target of assign.targets) {
+                if (target.targetClassId) {
+                    const cls = await prisma.class.findUnique({
+                        where: { id: target.targetClassId },
+                        select: { id: true, name: true, gradeLevel: true, section: true }
+                    });
+                    target.className = cls?.name || 'Class';
+                    target.classObj = cls;
+                }
+                if (target.targetGroupId) {
+                    const grp = await prisma.studentGroup.findUnique({
+                        where: { id: target.targetGroupId },
+                        select: { id: true, name: true }
+                    });
+                    target.groupName = grp?.name || 'Group';
+                    target.groupObj = grp;
+                }
+                if (target.targetStudentId) {
+                    const std = await prisma.user.findUnique({
+                        where: { id: target.targetStudentId },
+                        select: { id: true, firstName: true, lastName: true, email: true, admissionNumber: true }
+                    });
+                    target.student = std;
+                    target.studentName = std ? `${std.firstName} ${std.lastName || ''}`.trim() : 'Student';
+                }
+            }
+        }
+
+        for (const assign of assignments) {
+            const matchingTarget = assign.targets.find(t => 
+                t.targetStudentId === req.user.id ||
+                (t.targetClassId && studentClassIds.includes(t.targetClassId)) ||
+                (t.targetGroupId && studentGroupIds.includes(t.targetGroupId))
+            );
+
+            if (matchingTarget || assign.targets.length === 0 || isAdmin) {
+                const effectiveDueDate = matchingTarget?.dueDate || assign.due_date;
+                assignmentInfo = {
+                    assignmentId: assign.id,
+                    title: assign.title,
+                    dueDate: effectiveDueDate,
+                    targetType: matchingTarget?.targetType || 'general',
+                    notes: assign.description
+                };
+                break;
+            }
+        }
+
+        if (!assignmentInfo && assignments.length > 0) {
+            const firstAssign = assignments[0];
+            assignmentInfo = {
+                assignmentId: firstAssign.id,
+                title: firstAssign.title,
+                dueDate: firstAssign.due_date,
+                targetType: 'general',
+                notes: firstAssign.description
+            };
+        }
+
+        // Compute Live Session / Lecture Info
+        if (studentClassIds.length > 0) {
+            try {
+                const activeLecture = await prisma.lectureSession.findFirst({
+                    where: {
+                        status: 'active',
+                        lecturePlan: { classId: { in: studentClassIds } }
+                    },
+                    include: {
+                        lecturePlan: {
+                            include: {
+                                instructor: { select: { firstName: true, lastName: true } },
+                                subject: { select: { name: true } }
+                            }
+                        }
+                    }
+                });
+
+                const activeMeeting = await prisma.meeting.findFirst({
+                    where: {
+                        status: { in: ['in_progress', 'active'] },
+                        OR: [
+                            { targetClassId: { in: studentClassIds } },
+                            { targetGroupId: { in: studentGroupIds } },
+                            { targetStudentId: req.user.id }
+                        ]
+                    },
+                    include: {
+                        host: { select: { firstName: true, lastName: true } }
+                    }
+                });
+
+                if (activeLecture || activeMeeting) {
+                    lectureInfo = {
+                        isLive: true,
+                        title: activeLecture?.lecturePlan?.subject?.name || activeMeeting?.title || 'Live Classroom Session',
+                        subjectName: activeLecture?.lecturePlan?.subject?.name || null,
+                        instructorName: activeLecture 
+                            ? `${activeLecture.lecturePlan.instructor.firstName} ${activeLecture.lecturePlan.instructor.lastName || ''}`.trim()
+                            : (activeMeeting ? `${activeMeeting.host.firstName} ${activeMeeting.host.lastName || ''}`.trim() : 'Instructor'),
+                        roomCode: activeMeeting?.meetingLink || activeMeeting?.id || null,
+                        meetingId: activeMeeting?.id || null,
+                        sessionId: activeLecture?.id || null,
+                        startedAt: activeLecture?.startedAt || activeMeeting?.actualStartTime || activeMeeting?.scheduledAt
+                    };
+                } else {
+                    const now = new Date();
+                    const upcomingLecture = await prisma.lecturePlan.findFirst({
+                        where: {
+                            classId: { in: studentClassIds },
+                            scheduledDate: { gte: now }
+                        },
+                        orderBy: { scheduledDate: 'asc' },
+                        include: {
+                            instructor: { select: { firstName: true, lastName: true } },
+                            subject: { select: { name: true } }
+                        }
+                    });
+
+                    const upcomingMeeting = await prisma.meeting.findFirst({
+                        where: {
+                            status: 'scheduled',
+                            scheduledAt: { gte: now },
+                            OR: [
+                                { targetClassId: { in: studentClassIds } },
+                                { targetGroupId: { in: studentGroupIds } },
+                                { targetStudentId: req.user.id }
+                            ]
+                        },
+                        orderBy: { scheduledAt: 'asc' },
+                        include: {
+                            host: { select: { firstName: true, lastName: true } }
+                        }
+                    });
+
+                    if (upcomingLecture || upcomingMeeting) {
+                        lectureInfo = {
+                            isLive: false,
+                            title: upcomingLecture?.subject?.name || upcomingMeeting?.title || 'Next Class Lecture',
+                            subjectName: upcomingLecture?.subject?.name || null,
+                            instructorName: upcomingLecture 
+                                ? `${upcomingLecture.instructor.firstName} ${upcomingLecture.instructor.lastName || ''}`.trim()
+                                : (upcomingMeeting ? `${upcomingMeeting.host.firstName} ${upcomingMeeting.host.lastName || ''}`.trim() : 'Instructor'),
+                            scheduledAt: upcomingLecture?.scheduledDate || upcomingMeeting?.scheduledAt,
+                            durationMinutes: upcomingLecture?.scheduledDuration || upcomingMeeting?.durationMinutes || 60,
+                            roomCode: upcomingMeeting?.meetingLink || upcomingMeeting?.id || null
+                        };
+                    }
+                }
+            } catch (lectErr) {
+                console.warn('Could not fetch lecture info for student:', lectErr?.message);
+            }
+        }
     }
 
     res.json({
@@ -328,7 +564,10 @@ router.get('/modules/:id', authenticate, asyncHandler(async (req, res) => {
         data: {
             module: moduleDetails,
             progress,
-            unitMasteries
+            unitMasteries,
+            assignments,
+            assignmentInfo,
+            lectureInfo
         }
     });
 }));
@@ -1095,7 +1334,7 @@ router.post('/exercises/:id/run', authenticate, [
                 }
             }
         }
-        execution = await executePythonCode(codeToRun, stdinInput, language);
+        execution = await executePythonCode(codeToRun, stdinInput, language, req.user?.id);
     }
 
     res.json({
@@ -1306,7 +1545,7 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
         let exeSuccess = false;
         if (userFixCode) {
             try {
-                const exe = await executePythonCode(userFixCode, '', language);
+                const exe = await executePythonCode(userFixCode, '', language, studentId);
                 exeSuccess = !exe.stderr && (exe.code === 0 || exe.code === null);
             } catch (e) {}
         }
@@ -1374,7 +1613,7 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
                             }
                         }
                     }
-                    exe = await executePythonCode(codeToRun, stdinInput, language);
+                    exe = await executePythonCode(codeToRun, stdinInput, language, studentId);
                 }
                 
                 const actualRaw = exe.stdout ? exe.stdout.replace(/\r\n/g, '\n') : '';
@@ -1715,7 +1954,7 @@ router.post('/modules/:id/assign', authenticate, authorize('admin', 'principal',
     if (!isUUID(id)) {
         return res.status(400).json({ success: false, message: 'Invalid module ID' });
     }
-    const { classIds, groupIds, deadline, notes, subjectId } = req.body;
+    const { classIds, groupIds, studentIds, deadline, notes, subjectId } = req.body;
 
     const mod = await prisma.trainingModule.findUnique({ where: { id } });
     if (!mod) return res.status(404).json({ success: false, message: 'Module not found' });
@@ -1751,26 +1990,48 @@ router.post('/modules/:id/assign', authenticate, authorize('admin', 'principal',
         resolvedSubjectId = firstSubject.id;
     }
 
-    // Create an assignment record that links the training module to classes
     const dueDate = (deadline && !isNaN(new Date(deadline).getTime())) ? new Date(deadline) : null;
     const assignmentTitle = `Training: ${mod.title}`.slice(0, 250);
-    const assignment = await prisma.assignment.create({
-        data: {
-            schoolId: effectiveSchoolId,
-            createdById: req.user.id,
-            title: assignmentTitle,
-            description: notes || `Complete the training module: ${mod.title}`,
-            assignmentType: 'training_module',
-            trainingModuleId: id,
-            subjectId: resolvedSubjectId,
-            maxMarks: 100,
-            passingMarks: 60,
-            status: 'published',
-            due_date: dueDate,
-        }
+
+    let assignment = await prisma.assignment.findFirst({
+        where: { trainingModuleId: id }
     });
 
-    // Create AssignmentTarget records for each class
+    if (assignment) {
+        // Update existing assignment
+        assignment = await prisma.assignment.update({
+            where: { id: assignment.id },
+            data: {
+                title: assignmentTitle,
+                description: notes || assignment.description || `Complete the training module: ${mod.title}`,
+                due_date: dueDate,
+                status: 'published'
+            }
+        });
+        // Clear previous targets to allow clean re-assignment/edit
+        await prisma.assignmentTarget.deleteMany({
+            where: { assignmentId: assignment.id }
+        });
+    } else {
+        // Create new assignment
+        assignment = await prisma.assignment.create({
+            data: {
+                schoolId: effectiveSchoolId,
+                createdById: req.user.id,
+                title: assignmentTitle,
+                description: notes || `Complete the training module: ${mod.title}`,
+                assignmentType: 'training_module',
+                trainingModuleId: id,
+                subjectId: resolvedSubjectId,
+                maxMarks: 100,
+                passingMarks: 60,
+                status: 'published',
+                due_date: dueDate,
+            }
+        });
+    }
+
+    // Create AssignmentTarget records for classes, groups, and students
     const targets = [];
     if (Array.isArray(classIds) && classIds.length > 0) {
         for (const classId of classIds) {
@@ -1789,7 +2050,6 @@ router.post('/modules/:id/assign', authenticate, authorize('admin', 'principal',
         }
     }
 
-    // Create AssignmentTarget records for each group
     if (Array.isArray(groupIds) && groupIds.length > 0) {
         for (const groupId of groupIds) {
             if (isUUID(groupId)) {
@@ -1798,6 +2058,23 @@ router.post('/modules/:id/assign', authenticate, authorize('admin', 'principal',
                         assignmentId: assignment.id,
                         targetType: 'group',
                         targetGroupId: groupId,
+                        assignedById: req.user.id,
+                        dueDate,
+                        specialInstructions: notes || null
+                    }
+                }));
+            }
+        }
+    }
+
+    if (Array.isArray(studentIds) && studentIds.length > 0) {
+        for (const studentId of studentIds) {
+            if (isUUID(studentId)) {
+                targets.push(prisma.assignmentTarget.create({
+                    data: {
+                        assignmentId: assignment.id,
+                        targetType: 'student',
+                        targetStudentId: studentId,
                         assignedById: req.user.id,
                         dueDate,
                         specialInstructions: notes || null
@@ -1820,7 +2097,7 @@ router.post('/modules/:id/assign', authenticate, authorize('admin', 'principal',
 
 /**
  * @route   GET /api/training/modules/:id/assignments
- * @desc    Get all assignments (class/group allocations) for a module
+ * @desc    Get all assignments (class/group/student allocations) for a module
  * @access  Private (Admin/Instructor)
  */
 router.get('/modules/:id/assignments', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
@@ -1838,16 +2115,24 @@ router.get('/modules/:id/assignments', authenticate, authorize('admin', 'princip
         orderBy: { createdAt: 'desc' }
     });
 
-    // Enrich targets with class/group names
+    // Enrich targets with class, group, and student details
     for (const assignment of assignments) {
         for (const target of assignment.targets) {
             if (target.targetClassId) {
                 const cls = await prisma.class.findUnique({ where: { id: target.targetClassId }, select: { name: true } });
-                target.className = cls?.name || 'Unknown';
+                target.className = cls?.name || 'Unknown Class';
             }
             if (target.targetGroupId) {
                 const grp = await prisma.studentGroup.findUnique({ where: { id: target.targetGroupId }, select: { name: true } });
-                target.groupName = grp?.name || 'Unknown';
+                target.groupName = grp?.name || 'Unknown Group';
+            }
+            if (target.targetStudentId) {
+                const std = await prisma.user.findUnique({
+                    where: { id: target.targetStudentId },
+                    select: { id: true, firstName: true, lastName: true, email: true, rollNumber: true }
+                });
+                target.student = std;
+                target.studentName = std ? `${std.firstName} ${std.lastName || ''}`.trim() : 'Unknown Student';
             }
         }
     }
@@ -1885,6 +2170,66 @@ router.get('/modules/:id/progress', authenticate, authorize('admin', 'principal'
             unitMasteries
         }
     });
+}));
+
+// ==========================================
+// STUDENT ISOLATED WORKSPACE FILE SYSTEM APIS
+// ==========================================
+
+/**
+ * @route   GET /api/training/workspace/files
+ * @desc    Get all files in the authenticated student's isolated workspace
+ * @access  Private
+ */
+router.get('/workspace/files', authenticate, asyncHandler(async (req, res) => {
+    const studentId = req.user.id;
+    await workspaceService.syncStudentDocumentFiles(studentId);
+    const files = workspaceService.listWorkspaceFiles(studentId);
+    res.json({ success: true, data: { files } });
+}));
+
+/**
+ * @route   GET /api/training/workspace/files/:filename
+ * @desc    Read content of a workspace file
+ * @access  Private
+ */
+router.get('/workspace/files/:filename', authenticate, asyncHandler(async (req, res) => {
+    const studentId = req.user.id;
+    const { filename } = req.params;
+    try {
+        const fileData = workspaceService.readWorkspaceFile(studentId, filename);
+        res.json({ success: true, data: fileData });
+    } catch (err) {
+        res.status(404).json({ success: false, message: err.message });
+    }
+}));
+
+/**
+ * @route   POST /api/training/workspace/reset
+ * @desc    Reset/clear files in student workspace
+ * @access  Private
+ */
+router.post('/workspace/reset', authenticate, asyncHandler(async (req, res) => {
+    const studentId = req.user.id;
+    workspaceService.resetWorkspace(studentId);
+    res.json({ success: true, message: 'Workspace reset successfully' });
+}));
+
+/**
+ * @route   POST /api/training/workspace/upload
+ * @desc    Upload or write a custom file to student workspace
+ * @access  Private
+ */
+router.post('/workspace/upload', authenticate, upload.single('file'), asyncHandler(async (req, res) => {
+    const studentId = req.user.id;
+    if (req.file) {
+        const saved = workspaceService.writeWorkspaceFile(studentId, req.file.originalname, req.file.buffer);
+        return res.json({ success: true, data: saved });
+    } else if (req.body.name && req.body.content) {
+        const saved = workspaceService.writeWorkspaceFile(studentId, req.body.name, req.body.content);
+        return res.json({ success: true, data: saved });
+    }
+    res.status(400).json({ success: false, message: 'No file or content provided' });
 }));
 
 // ==========================================

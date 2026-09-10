@@ -399,103 +399,185 @@ export default function RecordingsPage() {
                 ) : (
                     /* List View */
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                        <table className="w-full">
-                            <thead className="bg-slate-50 border-b border-slate-200">
-                                <tr>
-                                    <th className="px-6 py-3 w-12 text-left">
-                                        <input
-                                            type="checkbox"
-                                            checked={filteredRecordings.length > 0 && selectedRecordings.size === filteredRecordings.length}
-                                            onChange={toggleSelectAll}
-                                            className="w-4 h-4 rounded border-slate-300 text-primary-500 focus:ring-primary-500"
-                                        />
-                                    </th>
-                                    <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Recording</th>
-                                    <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Duration</th>
-                                    <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Size</th>
-                                    <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Date</th>
-                                    <th className="text-right px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200">
-                                {filteredRecordings.map((recording) => (
-                                    <tr key={recording.id} className="hover:bg-slate-50">
-                                        <td className="px-6 py-4">
+                        {/* Desktop Table */}
+                        <div className="hidden md:block overflow-x-auto">
+                            <table className="w-full min-w-[650px]">
+                                <thead className="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                        <th className="px-6 py-3 w-12 text-left">
                                             <input
                                                 type="checkbox"
-                                                checked={selectedRecordings.has(recording.id)}
-                                                onChange={() => toggleSelection(recording.id)}
+                                                checked={filteredRecordings.length > 0 && selectedRecordings.size === filteredRecordings.length}
+                                                onChange={toggleSelectAll}
                                                 className="w-4 h-4 rounded border-slate-300 text-primary-500 focus:ring-primary-500"
                                             />
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-16 h-10 rounded bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                                                    {recording.thumbnailUrl ? (
-                                                        <img src={recording.thumbnailUrl} alt="" className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <Video className="w-5 h-5 text-slate-400" />
-                                                    )}
-                                                </div>
-                                                <div>
-                                                    <p className="font-medium text-slate-900">{recording.title}</p>
-                                                    {recording.description && (
-                                                        <p className="text-sm text-slate-500 truncate max-w-xs">{recording.description}</p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-slate-600">{formatDuration(recording.duration)}</td>
-                                        <td className="px-6 py-4 text-sm text-slate-600">{formatFileSize(recording.fileSize)}</td>
-                                        <td className="px-6 py-4 text-sm text-slate-600">{formatDate(recording.createdAt)}</td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <Link
-                                                    href={`/recordings/watch/${recording.shareToken}`}
-                                                    className="p-2 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-xl transition"
-                                                    title="Play"
-                                                >
-                                                    <Play className="w-5 h-5" />
-                                                </Link>
-                                                <button
-                                                    onClick={() => handleCopyLink(recording)}
-                                                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition"
-                                                    title="Copy share link"
-                                                >
-                                                    {copiedId === recording.id ? <Check className="w-5 h-5 text-green-500" /> : <Link2 className="w-5 h-5" />}
-                                                </button>
-                                                <a
-                                                    href={recording.cloudinaryUrl}
-                                                    download
-                                                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition"
-                                                    title="Download"
-                                                >
-                                                    <Download className="w-5 h-5" />
-                                                </a>
-                                                {isInstructor && (
-                                                    <button
-                                                        onClick={() => handleOpenShare(recording.id)}
-                                                        className="p-2 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-xl transition"
-                                                        title="Share"
-                                                    >
-                                                        <Share2 className="w-5 h-5" />
-                                                    </button>
-                                                )}
-                                                {isInstructor && (
-                                                    <button
-                                                        onClick={() => setDeleteConfirm(recording.id)}
-                                                        className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition"
-                                                        title="Delete"
-                                                    >
-                                                        <Trash2 className="w-5 h-5" />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </td>
+                                        </th>
+                                        <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Recording</th>
+                                        <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Duration</th>
+                                        <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Size</th>
+                                        <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Date</th>
+                                        <th className="text-right px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200">
+                                    {filteredRecordings.map((recording) => (
+                                        <tr key={recording.id} className="hover:bg-slate-50">
+                                            <td className="px-6 py-4">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedRecordings.has(recording.id)}
+                                                    onChange={() => toggleSelection(recording.id)}
+                                                    className="w-4 h-4 rounded border-slate-300 text-primary-500 focus:ring-primary-500"
+                                                />
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-16 h-10 rounded bg-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                        {recording.thumbnailUrl ? (
+                                                            <img src={recording.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <Video className="w-5 h-5 text-slate-400" />
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-medium text-slate-900">{recording.title}</p>
+                                                        {recording.description && (
+                                                            <p className="text-sm text-slate-500 truncate max-w-xs">{recording.description}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-slate-600">{formatDuration(recording.duration)}</td>
+                                            <td className="px-6 py-4 text-sm text-slate-600">{formatFileSize(recording.fileSize)}</td>
+                                            <td className="px-6 py-4 text-sm text-slate-600">{formatDate(recording.createdAt)}</td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <Link
+                                                        href={`/recordings/watch/${recording.shareToken}`}
+                                                        className="p-2 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-xl transition"
+                                                        title="Play"
+                                                    >
+                                                        <Play className="w-5 h-5" />
+                                                    </Link>
+                                                    <button
+                                                        onClick={() => handleCopyLink(recording)}
+                                                        className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition"
+                                                        title="Copy share link"
+                                                    >
+                                                        {copiedId === recording.id ? <Check className="w-5 h-5 text-green-500" /> : <Link2 className="w-5 h-5" />}
+                                                    </button>
+                                                    <a
+                                                        href={recording.cloudinaryUrl}
+                                                        download
+                                                        className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition"
+                                                        title="Download"
+                                                    >
+                                                        <Download className="w-5 h-5" />
+                                                    </a>
+                                                    {isInstructor && (
+                                                        <button
+                                                            onClick={() => handleOpenShare(recording.id)}
+                                                            className="p-2 bg-primary-50 hover:bg-primary-100 text-primary-600 rounded-xl transition"
+                                                            title="Share"
+                                                        >
+                                                            <Share2 className="w-5 h-5" />
+                                                        </button>
+                                                    )}
+                                                    {isInstructor && (
+                                                        <button
+                                                            onClick={() => setDeleteConfirm(recording.id)}
+                                                            className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition"
+                                                            title="Delete"
+                                                        >
+                                                            <Trash2 className="w-5 h-5" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Mobile Responsive Cards */}
+                        <div className="md:hidden divide-y divide-slate-100">
+                            {filteredRecordings.map((recording) => (
+                                <div key={`mob-rec-${recording.id}`} className="p-4 bg-white hover:bg-slate-50 transition">
+                                    <div className="flex items-start gap-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedRecordings.has(recording.id)}
+                                            onChange={() => toggleSelection(recording.id)}
+                                            className="w-4 h-4 mt-1 rounded border-slate-300 text-primary-500 focus:ring-primary-500 shrink-0"
+                                        />
+                                        <div className="w-16 h-12 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
+                                            {recording.thumbnailUrl ? (
+                                                <img src={recording.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                                <Video className="w-6 h-6 text-slate-400" />
+                                            )}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="font-semibold text-slate-900 truncate">{recording.title}</p>
+                                            {recording.description && (
+                                                <p className="text-xs text-slate-500 truncate mt-0.5">{recording.description}</p>
+                                            )}
+                                            <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 flex-wrap">
+                                                <span>{formatDuration(recording.duration)}</span>
+                                                <span>•</span>
+                                                <span>{formatFileSize(recording.fileSize)}</span>
+                                                <span>•</span>
+                                                <span>{formatDate(recording.createdAt)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Mobile Action Bar */}
+                                    <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100">
+                                        <Link
+                                            href={`/recordings/watch/${recording.shareToken}`}
+                                            className="flex-1 py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-primary-50 hover:bg-primary-100 text-primary-600 flex items-center justify-center gap-1.5 transition"
+                                        >
+                                            <Play className="w-3.5 h-3.5" /> Watch
+                                        </Link>
+                                        <button
+                                            onClick={() => handleCopyLink(recording)}
+                                            className="py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center gap-1.5 transition"
+                                            title="Copy share link"
+                                        >
+                                            {copiedId === recording.id ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Link2 className="w-3.5 h-3.5" />}
+                                        </button>
+                                        <a
+                                            href={recording.cloudinaryUrl}
+                                            download
+                                            className="py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center gap-1.5 transition"
+                                            title="Download"
+                                        >
+                                            <Download className="w-3.5 h-3.5" />
+                                        </a>
+                                        {isInstructor && (
+                                            <button
+                                                onClick={() => handleOpenShare(recording.id)}
+                                                className="py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center gap-1.5 transition"
+                                                title="Share"
+                                            >
+                                                <Share2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                        {isInstructor && (
+                                            <button
+                                                onClick={() => setDeleteConfirm(recording.id)}
+                                                className="py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center gap-1.5 transition"
+                                                title="Delete"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
             </main>

@@ -2643,6 +2643,166 @@ Return JSON ONLY in this format:
             }
         }
 
+        // Intent detection: Training Module Assignment to Class / Group / Student (e.g. "Assign training module 'GATE CS' to Class 12-A with deadline next Friday", "Assign python coding module to group 1")
+        const isTrainingAssignmentIntent = (
+            (userRole === 'admin' || userRole === 'principal' || userRole === 'instructor') &&
+            (/\b(assign|allocate|distribute)\s+(?:the\s+|a\s+)?(training\s*module|coding\s*module|training\s*course|course|module)\b/i.test(msgLower) ||
+             /\b(assign|edit\s+assignment\s+of|update\s+assignment\s+of)\s+.*(training|module|course)\b/i.test(msgLower) ||
+             /\b(training\s*module|coding\s*module|training\s*course)\s+(assignment|assign)\b/i.test(msgLower) ||
+             /\bassign\s+["'].*?["']\s+to\s+(?:class|group|student)/i.test(msgLower)) &&
+            !msgLower.includes('progress') &&
+            !msgLower.includes('show assignment')
+        );
+
+        if (isTrainingAssignmentIntent) {
+            try {
+                console.log('[ChatBot] Training Assignment intent detected:', message);
+
+                // 1. Fetch available training modules
+                const allModules = await prisma.trainingModule.findMany({
+                    where: schoolId ? { schoolId } : {},
+                    select: { id: true, title: true, language: true, isPublished: true },
+                    orderBy: { createdAt: 'desc' }
+                });
+
+                // Find best matching module
+                let matchedModule = null;
+                const quotedMatch = message.match(/['"“](.*?)['"”]/);
+                if (quotedMatch && quotedMatch[1].trim()) {
+                    const q = quotedMatch[1].trim().toLowerCase();
+                    matchedModule = allModules.find(m => m.title.toLowerCase().includes(q));
+                }
+                if (!matchedModule) {
+                    for (const mod of allModules) {
+                        const words = mod.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+                        if (words.some(w => msgLower.includes(w))) {
+                            matchedModule = mod;
+                            break;
+                        }
+                    }
+                }
+                if (!matchedModule && allModules.length > 0) {
+                    matchedModule = allModules[0];
+                }
+
+                // 2. Fetch classes, groups, and students
+                const [allClasses, allGroups, allStudents] = await Promise.all([
+                    prisma.class.findMany({
+                        where: schoolId ? { schoolId } : {},
+                        select: { id: true, name: true, gradeLevel: true, section: true }
+                    }),
+                    prisma.studentGroup.findMany({
+                        where: schoolId ? { class: { schoolId } } : {},
+                        select: { id: true, name: true, classId: true }
+                    }),
+                    prisma.user.findMany({
+                        where: { role: 'student', ...(schoolId ? { schoolId } : {}) },
+                        select: { id: true, firstName: true, lastName: true, email: true, admissionNumber: true },
+                        take: 100
+                    })
+                ]);
+
+                // Match classes in prompt
+                const matchedClassIds = [];
+                for (const cls of allClasses) {
+                    const cName = cls.name.toLowerCase();
+                    if (msgLower.includes(cName) || 
+                        (cls.gradeLevel && msgLower.includes(`class ${cls.gradeLevel}`) && (!cls.section || msgLower.includes(cls.section.toLowerCase())))) {
+                        matchedClassIds.push(cls.id);
+                    }
+                }
+
+                // Match groups in prompt
+                const matchedGroupIds = [];
+                for (const grp of allGroups) {
+                    if (msgLower.includes(grp.name.toLowerCase())) {
+                        matchedGroupIds.push(grp.id);
+                    }
+                }
+
+                // Match students in prompt
+                const matchedStudentIds = [];
+                for (const std of allStudents) {
+                    const fullName = `${std.firstName} ${std.lastName || ''}`.trim().toLowerCase();
+                    if (msgLower.includes(fullName) || (std.admissionNumber && msgLower.includes(std.admissionNumber.toLowerCase()))) {
+                        matchedStudentIds.push(std.id);
+                    }
+                }
+
+                // If nothing matched, default to first class
+                if (matchedClassIds.length === 0 && matchedGroupIds.length === 0 && matchedStudentIds.length === 0 && allClasses.length > 0) {
+                    matchedClassIds.push(allClasses[0].id);
+                }
+
+                // 3. Extract Due Date / Deadline
+                let dueDate = new Date();
+                dueDate.setDate(dueDate.getDate() + 7); // Default 7 days
+                if (msgLower.includes('tomorrow')) {
+                    dueDate = new Date();
+                    dueDate.setDate(dueDate.getDate() + 1);
+                } else if (msgLower.includes('next week') || msgLower.includes('in a week')) {
+                    dueDate = new Date();
+                    dueDate.setDate(dueDate.getDate() + 7);
+                } else if (msgLower.includes('end of month')) {
+                    dueDate = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0);
+                }
+                dueDate.setHours(23, 59, 0, 0);
+
+                const matchedClassNames = allClasses.filter(c => matchedClassIds.includes(c.id)).map(c => c.name);
+                const matchedGroupNames = allGroups.filter(g => matchedGroupIds.includes(g.id)).map(g => g.name);
+                const matchedStudentNames = allStudents.filter(s => matchedStudentIds.includes(s.id)).map(s => `${s.firstName} ${s.lastName || ''}`.trim());
+
+                const targetSummary = [
+                    ...matchedClassNames.map(n => `Class: ${n}`),
+                    ...matchedGroupNames.map(n => `Group: ${n}`),
+                    ...matchedStudentNames.map(n => `Student: ${n}`)
+                ].join(', ') || 'Select Target';
+
+                const notes = `Please complete the assigned units and exercises for "${matchedModule?.title || 'Training Module'}" before the due date.`;
+
+                const trainingAssignmentAction = {
+                    isDraft: true,
+                    isConfirmed: false,
+                    isCancelled: false,
+                    moduleId: matchedModule?.id || null,
+                    moduleTitle: matchedModule?.title || 'Training Module',
+                    availableModules: allModules.map(m => ({ id: m.id, title: m.title, language: m.language })),
+                    classIds: matchedClassIds,
+                    groupIds: matchedGroupIds,
+                    studentIds: matchedStudentIds,
+                    availableClasses: allClasses.map(c => ({ id: c.id, name: c.name })),
+                    availableGroups: allGroups.map(g => ({ id: g.id, name: g.name })),
+                    availableStudents: allStudents.map(s => ({ id: s.id, name: `${s.firstName} ${s.lastName || ''}`.trim() })),
+                    targetSummaryStr: targetSummary,
+                    deadline: dueDate.toISOString(),
+                    notes
+                };
+
+                return {
+                    message: `🎯 **Training Module Assignment Proposal Prepared! (Pending Confirmation)**\n\nI have prepared the assignment proposal for **"${trainingAssignmentAction.moduleTitle}"**.\n\n- 📚 **Course:** ${trainingAssignmentAction.moduleTitle}\n- 🎯 **Target Entity:** ${targetSummary}\n- 🗓️ **Due Date:** ${dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}\n- 📝 **Notes:** ${notes}\n\nPlease review or edit the assignment details in the confirmation card below and click **Confirm & Assign Module**:`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    meetingAction: null,
+                    calendarAction: null,
+                    assignmentAction: null,
+                    noteAction: null,
+                    classAction: null,
+                    userAction: null,
+                    ticketAction: null,
+                    procurementAction: null,
+                    trainingAction: null,
+                    trainingAssignmentAction,
+                    timetableAction: null,
+                    periodTimingAction: null,
+                    provider: 'auto'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Training assignment intent error:', err);
+            }
+        }
+
         // Intent detection: Timetable Slot Scheduling (e.g. "Create 7th lecture for mon and 9th for Tue of computer science by instructor Charanpreet Singh", "set period 2 on monday for class 12 Medical A")
         const isTimetableCreationIntent = (
             (userRole === 'admin' || userRole === 'principal' || userRole === 'instructor') &&

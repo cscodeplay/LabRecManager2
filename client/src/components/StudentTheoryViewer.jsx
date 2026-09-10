@@ -29,7 +29,7 @@ export default function StudentTheoryViewer({
     onNavigateLab = null
 }) {
     // 1. Perspective Navigation Tab State
-    const [activeTab, setActiveTab] = useState('anim');
+    const [activeTab, setActiveTab] = useState('reading');
 
     // 2. Readability Font Scaler State ('sm' | 'base' | 'lg')
     const [fontSize, setFontSize] = useState('base');
@@ -85,14 +85,14 @@ export default function StudentTheoryViewer({
         setCheckpointAnswers(prev => ({ ...prev, [checkpointId]: optionIdx }));
     };
 
-    const handleVerifyCheckpoint = (checkpoint) => {
-        const selected = checkpointAnswers[checkpoint.id];
-        if (selected === undefined || selected === null) return;
-
+    const handleVerifyCheckpoint = (checkpoint, fallbackKey) => {
+        const key = checkpoint.id !== undefined && checkpoint.id !== null ? checkpoint.id : fallbackKey;
+        const selected = checkpointAnswers[key];
+        if (selected === undefined) return;
         const isCorrect = selected === checkpoint.correctOption;
         setCheckpointChecked(prev => ({
             ...prev,
-            [checkpoint.id]: { checked: true, isCorrect }
+            [key]: { checked: true, isCorrect }
         }));
     };
 
@@ -154,13 +154,14 @@ export default function StudentTheoryViewer({
 
                 {/* Perspective Mode Switcher */}
                 <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                    {/* Animated Concept Simulator hidden per request */}
                     <button
                         type="button"
-                        onClick={() => setActiveTab('anim')}
-                        className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition shrink-0 ${activeTab === 'anim' ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/25' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'}`}
+                        onClick={() => setActiveTab('reading')}
+                        className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition shrink-0 ${activeTab === 'reading' ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/25' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'}`}
                     >
-                        <span>🎬 Animated Concept Simulator</span>
-                        <span className="px-1.5 py-0.2 rounded-md text-[9px] bg-emerald-400/20 text-emerald-300 font-black uppercase">Visual First</span>
+                        <span>📖 Deep-Dive Reading</span>
+                        <span className="px-1.5 py-0.2 rounded-md text-[9px] bg-indigo-400/20 text-indigo-300 font-bold uppercase">Comprehensive</span>
                     </button>
                     <button
                         type="button"
@@ -176,13 +177,6 @@ export default function StudentTheoryViewer({
                     >
                         <span>🧠 Concept Mind Map</span>
                         <span className="px-1.5 py-0.2 rounded-md text-[9px] bg-amber-400/20 text-amber-300 font-bold uppercase">Retention</span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab('reading')}
-                        className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition shrink-0 ${activeTab === 'reading' ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/25' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'}`}
-                    >
-                        <span>📖 Deep-Dive Reading</span>
                     </button>
                     <button
                         type="button"
@@ -566,18 +560,20 @@ export default function StudentTheoryViewer({
 
                     <div className="space-y-4">
                         {checkpoints.map((cp, idx) => {
-                            const isAnswered = checkpointAnswers[cp.id] !== undefined;
-                            const isChecked = checkpointChecked[cp.id]?.checked;
-                            const isCorrect = checkpointChecked[cp.id]?.isCorrect;
+                            const cpKey = cp.id !== undefined && cp.id !== null ? cp.id : `cp-${idx}`;
+                            const isAnswered = checkpointAnswers[cpKey] !== undefined;
+                            const isChecked = checkpointChecked[cpKey]?.checked;
+                            const isCorrect = checkpointChecked[cpKey]?.isCorrect;
+                            const questionText = cp.question || cp.prompt || cp.title || cp.text;
 
                             return (
-                                <div key={cp.id || idx} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 space-y-3">
+                                <div key={cpKey} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 space-y-3">
                                     <div className="flex items-start gap-2.5">
                                         <span className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-400 font-bold text-xs flex items-center justify-center shrink-0">
                                             {idx + 1}
                                         </span>
                                         <p className="text-sm font-semibold text-slate-900 dark:text-white flex-1">
-                                            {cp.question}
+                                            {questionText}
                                         </p>
                                     </div>
 
@@ -589,12 +585,12 @@ export default function StudentTheoryViewer({
 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                                         {cp.options?.map((opt, oIdx) => {
-                                            const isSelected = checkpointAnswers[cp.id] === oIdx;
+                                            const isSelected = checkpointAnswers[cpKey] === oIdx;
                                             return (
                                                 <button
                                                     key={oIdx}
                                                     type="button"
-                                                    onClick={() => handleSelectOption(cp.id, oIdx)}
+                                                    onClick={() => handleSelectOption(cpKey, oIdx)}
                                                     disabled={isChecked}
                                                     className={`p-3 rounded-xl text-left text-xs font-medium border transition ${isSelected ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-500 text-indigo-900 dark:text-indigo-200 font-bold' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'}`}
                                                 >
@@ -608,7 +604,7 @@ export default function StudentTheoryViewer({
                                         {!isChecked ? (
                                             <button
                                                 type="button"
-                                                onClick={() => handleVerifyCheckpoint(cp)}
+                                                onClick={() => handleVerifyCheckpoint(cp, cpKey)}
                                                 disabled={!isAnswered}
                                                 className="btn btn-primary text-xs py-1.5 px-4 disabled:opacity-50"
                                             >

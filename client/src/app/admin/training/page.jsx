@@ -198,7 +198,36 @@ export default function AdminTrainingModules() {
                 {viewMode === 'grid' && modules.length > 0 && (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {modules.map(mod => {
+                            const assignedClasses = [];
+                            const assignedGroups = [];
+                            const assignedStudents = [];
+                            const seenC = new Set();
+                            const seenG = new Set();
+                            const seenS = new Set();
+
+                            (mod.assignments || []).forEach(a => {
+                                (a.targets || []).forEach(t => {
+                                    const cName = t.className || (t.targetClassId && classes.find(c => c.id === t.targetClassId)?.name) || (t.targetClassId ? 'Class' : null);
+                                    if (t.targetType === 'class' && cName && !seenC.has(cName)) {
+                                        seenC.add(cName);
+                                        assignedClasses.push(cName);
+                                    }
+                                    const gName = t.groupName || (t.targetGroupId ? 'Group' : null);
+                                    if (t.targetType === 'group' && gName && !seenG.has(gName)) {
+                                        seenG.add(gName);
+                                        assignedGroups.push(gName);
+                                    }
+                                    const sName = t.studentName || (t.targetStudentId ? 'Student' : null);
+                                    if (t.targetType === 'student' && sName && !seenS.has(sName)) {
+                                        seenS.add(sName);
+                                        assignedStudents.push(sName);
+                                    }
+                                });
+                            });
+
                             const targetCount = (mod.assignments || []).reduce((acc, a) => acc + (a.targets?.length || 0), 0);
+                            const hasAssignments = assignedClasses.length > 0 || assignedGroups.length > 0 || assignedStudents.length > 0;
+
                             return (
                                 <div 
                                     key={mod.id} 
@@ -230,13 +259,13 @@ export default function AdminTrainingModules() {
                                                         setAssignmentModalModule(mod);
                                                     }}
                                                     className={`p-1.5 rounded-lg transition ${
-                                                        targetCount > 0 
+                                                        hasAssignments 
                                                             ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800' 
                                                             : 'p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition'
                                                     }`}
-                                                    title={targetCount > 0 ? `Assigned to ${targetCount} classes/groups/students (Click to view/edit)` : 'Assign to Classes / Groups / Students'}
+                                                    title={hasAssignments ? `Assigned to: ${assignedClasses.concat(assignedGroups).join(', ')} (Click to edit)` : 'Assign to Classes / Groups / Students'}
                                                 >
-                                                    {targetCount > 0 ? <UserCheck className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
+                                                    {hasAssignments ? <UserCheck className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
                                                 </button>
                                                 <button
                                                     type="button"
@@ -265,6 +294,34 @@ export default function AdminTrainingModules() {
                                                 {mod.boardAligned} mapped • Class {mod.classLevel}
                                             </p>
                                         )}
+
+                                        {/* Assigned Entities Badges on Card */}
+                                        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center gap-1.5">
+                                            {hasAssignments ? (
+                                                <>
+                                                    {assignedClasses.map((cls, i) => (
+                                                        <span key={`c-${i}`} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                                            <GraduationCap className="w-3 h-3 text-blue-500" />
+                                                            {cls}
+                                                        </span>
+                                                    ))}
+                                                    {assignedGroups.map((grp, i) => (
+                                                        <span key={`g-${i}`} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                                            <Users className="w-3 h-3 text-purple-500" />
+                                                            {grp}
+                                                        </span>
+                                                    ))}
+                                                    {assignedStudents.map((std, i) => (
+                                                        <span key={`s-${i}`} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                                            <UserCheck className="w-3 h-3 text-emerald-500" />
+                                                            {std}
+                                                        </span>
+                                                    ))}
+                                                </>
+                                            ) : (
+                                                <span className="text-[11px] text-slate-400 italic">Unassigned</span>
+                                            )}
+                                        </div>
                                     </div>
                                     
                                     <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
@@ -292,7 +349,7 @@ export default function AdminTrainingModules() {
                 {viewMode === 'list' && modules.length > 0 && (
                     <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left text-xs border-collapse">
+                            <table className="w-full min-w-[750px] text-left text-xs border-collapse">
                                 <thead>
                                     <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
                                         <th className="py-3.5 px-5">Course Module</th>
@@ -307,7 +364,27 @@ export default function AdminTrainingModules() {
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                                     {modules.map(mod => {
-                                        const targetCount = (mod.assignments || []).reduce((acc, a) => acc + (a.targets?.length || 0), 0);
+                                        const assignedClasses = [];
+                                        const assignedGroups = [];
+                                        const seenC = new Set();
+                                        const seenG = new Set();
+
+                                        (mod.assignments || []).forEach(a => {
+                                            (a.targets || []).forEach(t => {
+                                                const cName = t.className || (t.targetClassId && classes.find(c => c.id === t.targetClassId)?.name) || (t.targetClassId ? 'Class' : null);
+                                                if (t.targetType === 'class' && cName && !seenC.has(cName)) {
+                                                    seenC.add(cName);
+                                                    assignedClasses.push(cName);
+                                                }
+                                                const gName = t.groupName || (t.targetGroupId ? 'Group' : null);
+                                                if (t.targetType === 'group' && gName && !seenG.has(gName)) {
+                                                    seenG.add(gName);
+                                                    assignedGroups.push(gName);
+                                                }
+                                            });
+                                        });
+                                        const hasAssignments = assignedClasses.length > 0 || assignedGroups.length > 0;
+
                                         return (
                                             <tr 
                                                 key={mod.id}
@@ -351,19 +428,24 @@ export default function AdminTrainingModules() {
                                                         </span>
                                                     )}
                                                 </td>
-                                                {/* Assigned Entities Icon-Only Button */}
+                                                {/* Assigned Entities Button with Class Names */}
                                                 <td className="py-3.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                                                     <button
                                                         type="button"
                                                         onClick={() => setAssignmentModalModule(mod)}
-                                                        className={`p-2 rounded-xl transition inline-flex items-center justify-center ${
-                                                            targetCount > 0 
-                                                                ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 shadow-xs' 
-                                                                : 'bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                                                        className={`px-2.5 py-1.5 rounded-xl transition inline-flex items-center gap-1.5 ${
+                                                            hasAssignments 
+                                                                ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-semibold shadow-xs' 
+                                                                : 'bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium'
                                                         }`}
-                                                        title={targetCount > 0 ? `Assigned to ${targetCount} classes/groups/students (Click to view/edit)` : 'Assign to Classes / Groups / Students'}
+                                                        title={hasAssignments ? `Assigned to: ${assignedClasses.concat(assignedGroups).join(', ')} (Click to edit)` : 'Assign to Classes / Groups / Students'}
                                                     >
-                                                        {targetCount > 0 ? <UserCheck className="w-4 h-4" /> : <Users className="w-4 h-4" />}
+                                                        {hasAssignments ? <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> : <Users className="w-3.5 h-3.5" />}
+                                                        <span className="text-[11px] truncate max-w-[140px]">
+                                                            {hasAssignments 
+                                                                ? (assignedClasses.length > 0 ? assignedClasses.join(', ') : `${assignedGroups.length} Groups`)
+                                                                : 'Unassigned'}
+                                                        </span>
                                                     </button>
                                                 </td>
                                                 <td className="py-3.5 px-5 text-right" onClick={(e) => e.stopPropagation()}>

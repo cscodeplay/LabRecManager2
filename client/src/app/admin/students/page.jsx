@@ -453,7 +453,7 @@ export default function AdminStudentsPage() {
                     </div>
 
                     <div className="overflow-x-auto">
-                        <table className="w-full">
+                        <table className="w-full min-w-[700px]">
                             <thead className="bg-slate-50">
                                 <tr>
                                     <th className="px-4 py-3 text-left">

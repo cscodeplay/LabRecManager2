@@ -298,7 +298,8 @@ export default function AuditLogsPage() {
 
                 {/* Logs Table */}
                 <div className="card overflow-hidden">
-                    <table className="w-full">
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[650px]">
                         <thead className="bg-slate-50 border-b border-slate-200">
                             <tr>
                                 <th className="text-left py-3 px-4 font-semibold text-slate-600 text-sm">Timestamp</th>
@@ -365,6 +366,7 @@ export default function AuditLogsPage() {
                             )}
                         </tbody>
                     </table>
+                    </div>
 
                     {/* Pagination */}
                     {pagination.totalPages > 1 && (

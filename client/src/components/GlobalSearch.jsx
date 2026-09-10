@@ -91,7 +91,7 @@ export default function GlobalSearch() {
         } catch {}
     }, []);
 
-    // Global keyboard shortcut (⌘K or Ctrl+K)
+    // Global keyboard shortcut (⌘K or Ctrl+K) and Custom Event Trigger (Mobile/iPad shortcut)
     useEffect(() => {
         const handleKeyDown = (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -103,8 +103,14 @@ export default function GlobalSearch() {
             }
         };
 
+        const handleCustomOpen = () => setIsOpen(true);
+
         window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
+        window.addEventListener('open-global-search', handleCustomOpen);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('open-global-search', handleCustomOpen);
+        };
     }, [isOpen]);
 
     // Focus input when opened
