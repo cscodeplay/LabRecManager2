@@ -8,6 +8,8 @@ const { authenticate, authorize, optionalAuth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const cloudinary = require('../services/cloudinary');
 const axios = require('axios');
+const XLSX = require('xlsx');
+const { detectTableAndMapping } = require('../utils/tableSchemaDetector');
 const geminiService = require('../services/gemini.service');
 const groqService = require('../services/groq.service');
 const ocrService = require('../services/ocr.service');
@@ -662,7 +664,8 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
 
         for (const sp of searchPaths) {
             if (fs.existsSync(sp)) {
-                if (doc.mimeType) res.setHeader('Content-Type', doc.mimeType);
+                res.setHeader('Content-Type', doc.mimeType || 'application/pdf');
+                res.setHeader('Content-Disposition', 'inline');
                 return res.sendFile(sp);
             }
         }
@@ -672,13 +675,81 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
         const fileBasename = path.basename(doc.url);
         const filePath = path.join(__dirname, '../../uploads', fileBasename);
         if (fs.existsSync(filePath)) {
-            if (doc.mimeType) res.setHeader('Content-Type', doc.mimeType);
+            res.setHeader('Content-Type', doc.mimeType || 'application/pdf');
+            res.setHeader('Content-Disposition', 'inline');
             return res.sendFile(filePath);
         }
     }
 
     if (doc.url && doc.url.startsWith('http')) {
-        return res.redirect(doc.url);
+        try {
+            const response = await axios({
+                method: 'get',
+                url: doc.url,
+                responseType: 'stream',
+                timeout: 30000
+            });
+            const contentType = response.headers['content-type'] || doc.mimeType || 'application/pdf';
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Content-Disposition', 'inline');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            return response.data.pipe(res);
+        } catch (streamErr) {
+            console.warn('[DocStream] Stream proxy failed, falling back to redirect:', streamErr.message);
+            return res.redirect(doc.url);
+        }
+    }
+
+    return res.status(404).send('File not found');
+}));
+
+/**
+ * @route   GET /api/documents/stream-proxy
+ * @desc    Stream any document URL with Content-Disposition: inline to prevent browser auto-download
+ * @access  Optional Auth
+ */
+router.get('/stream-proxy', optionalAuth, asyncHandler(async (req, res) => {
+    const { url, name, mimeType } = req.query;
+    if (!url || typeof url !== 'string') {
+        return res.status(400).send('Missing url parameter');
+    }
+
+    // If local path
+    if (url.startsWith('/uploads/') || url.startsWith('/RAG/')) {
+        const fileBasename = path.basename(url);
+        const searchPaths = [
+            path.join(__dirname, '../../../uploads', fileBasename),
+            path.join(__dirname, '../../uploads', fileBasename),
+            path.join(__dirname, '../../../RAG', fileBasename),
+            path.join(__dirname, '../../RAG', fileBasename),
+            path.join(__dirname, '../../client/public/RAG', fileBasename)
+        ];
+        for (const sp of searchPaths) {
+            if (fs.existsSync(sp)) {
+                res.setHeader('Content-Type', mimeType || 'application/pdf');
+                res.setHeader('Content-Disposition', 'inline');
+                return res.sendFile(sp);
+            }
+        }
+    }
+
+    if (url.startsWith('http')) {
+        try {
+            const response = await axios({
+                method: 'get',
+                url,
+                responseType: 'stream',
+                timeout: 30000
+            });
+            const contentType = response.headers['content-type'] || mimeType || 'application/pdf';
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Content-Disposition', 'inline');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            return response.data.pipe(res);
+        } catch (err) {
+            console.warn('[StreamProxy] Failed to proxy url:', err.message);
+            return res.redirect(url);
+        }
     }
 
     return res.status(404).send('File not found');
@@ -1097,36 +1168,68 @@ router.post('/:id/extract-ai-inventory', authenticate, authorize('admin', 'princ
         return res.status(400).json({ success: false, message: 'Document has no file URL to process' });
     }
 
-    // Supported mime types for Gemini Vision: PDF and images
-    const supportedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
     const mimeType = doc.mimeType || (doc.fileType === 'pdf' ? 'application/pdf' : 'image/jpeg');
+    const isTabular = (doc.fileName && doc.fileName.match(/\.(csv|xlsx|xls)$/i)) ||
+                      ['text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(mimeType);
+    const supportedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
 
-    if (!supportedTypes.includes(mimeType)) {
-        return res.status(400).json({ success: false, message: 'Only PDF or Image documents are supported for AI extraction' });
+    if (!supportedTypes.includes(mimeType) && !isTabular) {
+        return res.status(400).json({ success: false, message: 'Only PDF, CSV, Excel, or Image documents are supported for AI analysis' });
     }
 
     try {
         // Download document buffer
-        const response = await axios.get(doc.url, { responseType: 'arraybuffer' });
-        const base64Data = Buffer.from(response.data, 'binary').toString('base64');
-
+        const response = await axios.get(doc.url, { responseType: 'arraybuffer', timeout: 30000 });
         const engine = req.query.engine || 'gemini';
         let extractedData = [];
 
-        if (engine === 'groq') {
-            extractedData = await groqService.extractInventoryFromDocument(mimeType, base64Data, doc.url);
-        } else if (engine === 'ocr') {
-            extractedData = await ocrService.extractInventoryFromDocument(mimeType, base64Data, doc.url);
+        if (isTabular) {
+            const workbook = XLSX.read(response.data, { type: 'buffer' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            extractedData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
         } else {
-            extractedData = await geminiService.extractInventoryFromDocument(mimeType, base64Data);
+            const base64Data = Buffer.from(response.data, 'binary').toString('base64');
+            if (engine === 'groq') {
+                extractedData = await groqService.extractInventoryFromDocument(mimeType, base64Data, doc.url);
+            } else if (engine === 'ocr') {
+                extractedData = await ocrService.extractInventoryFromDocument(mimeType, base64Data, doc.url);
+            } else {
+                extractedData = await geminiService.extractInventoryFromDocument(mimeType, base64Data);
+            }
         }
+
+        // Auto-analyze table and map columns
+        const headers = extractedData.length > 0 ? Object.keys(extractedData[0]).filter(k => !k.startsWith('_')) : [];
+        const detection = detectTableAndMapping(headers, extractedData.slice(0, 10));
+
+        const [classes, labs] = await Promise.all([
+            prisma.class.findMany({ where: req.user.schoolId ? { schoolId: req.user.schoolId } : {} }).catch(() => []),
+            prisma.lab.findMany({ where: req.user.schoolId ? { schoolId: req.user.schoolId } : {} }).catch(() => [])
+        ]);
+
+        const dataImportAction = {
+            actionType: detection.detectedTable === 'users' ? 'student_import' : detection.detectedTable === 'lab_items' ? 'inventory_import' : 'generic_import',
+            targetTable: detection.detectedTable,
+            targetTableName: detection.targetTableName,
+            confidence: detection.confidence,
+            columnMapping: detection.columnMapping,
+            unmappedHeaders: detection.unmappedHeaders,
+            records: extractedData,
+            classes,
+            labs,
+            sourceDocument: doc.fileName || doc.name,
+            isConfirmed: false
+        };
 
         res.json({
             success: true,
-            message: 'Extracted inventory data successfully',
+            message: `Extracted & mapped ${extractedData.length} records to ${detection.targetTableName}`,
             data: {
                 engine,
-                items: extractedData
+                items: extractedData,
+                dataImportAction,
+                ...dataImportAction
             }
         });
     } catch (error) {

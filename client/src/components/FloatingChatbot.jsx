@@ -18,6 +18,9 @@ import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
 import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI, classesAPI, timetableAPI, usersAPI, ticketsAPI, labsAPI, procurementAPI, trainingAPI, documentsAPI, foldersAPI } from '@/lib/api';
 import VoiceInputButton from './VoiceInputButton';
+import FileReferenceDropdown from './FileReferenceDropdown';
+import GenericDataImportConfirmCard from './GenericDataImportConfirmCard';
+import TrainingModuleConfirmCard from './TrainingModuleConfirmCard';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
@@ -7508,6 +7511,57 @@ export default function FloatingChatbot() {
     const inputRef = useRef(null);
     const panelRef = useRef(null);
 
+    // ── File Reference Popover State (\ trigger) ──
+    const [fileRefOpen, setFileRefOpen] = useState(false);
+    const [fileRefQuery, setFileRefQuery] = useState('');
+
+    const handleInputChange = (e) => {
+        const val = e.target.value;
+        setInput(val);
+
+        const cursorPos = e.target.selectionStart;
+        const textBefore = val.slice(0, cursorPos);
+        const lastSlash = textBefore.lastIndexOf('\\');
+
+        if (lastSlash !== -1) {
+            const queryAfter = textBefore.slice(lastSlash + 1);
+            if (!/\s/.test(queryAfter)) {
+                setFileRefQuery(queryAfter);
+                setFileRefOpen(true);
+                return;
+            }
+        }
+        setFileRefOpen(false);
+    };
+
+    const handleSelectFileRef = (file) => {
+        if (!file || !file.fileName) return;
+        const cursorPos = inputRef.current ? inputRef.current.selectionStart : input.length;
+        const textBefore = input.slice(0, cursorPos);
+        const textAfter = input.slice(cursorPos);
+        const lastSlash = textBefore.lastIndexOf('\\');
+
+        let prefix = textBefore;
+        if (lastSlash !== -1) {
+            prefix = textBefore.slice(0, lastSlash);
+        }
+
+        const inserted = `\\${file.fileName} `;
+        const full = `${prefix}${inserted}${textAfter}`;
+        setInput(full);
+        setFileRefOpen(false);
+
+        setTimeout(() => {
+            if (inputRef.current) {
+                inputRef.current.focus();
+                const pos = prefix.length + inserted.length;
+                inputRef.current.setSelectionRange(pos, pos);
+            }
+        }, 50);
+
+        toast.success(`Referenced file: \\${file.fileName}`);
+    };
+
     // ── Draggable Window State ──
     const [position, setPosition] = useState(null); // { x: number, y: number } | null
     const [isDragging, setIsDragging] = useState(false);
@@ -7715,6 +7769,10 @@ export default function FloatingChatbot() {
                         chartData: d.chartData, 
                         reportAction: d.reportAction, 
                         dataLoadingAction: d.dataLoadingAction,
+                        dataImportAction: d.dataImportAction,
+                        studentImportAction: d.studentImportAction,
+                        inventoryImportAction: d.inventoryImportAction,
+                        trainingModuleGenerateAction: d.trainingModuleGenerateAction,
                         meetingAction: d.meetingAction,
                         calendarAction: d.calendarAction,
                         assignmentAction: d.assignmentAction,
@@ -7789,15 +7847,17 @@ export default function FloatingChatbot() {
                 setUploadedDocs(prev => [...prev, docData]);
                 const isImg = docData.mimeType?.startsWith('image/') || Boolean(docData.imageUrl) || (docData.imageUrls && docData.imageUrls.length > 0);
 
-                if (docData.dataLoadingAction) {
+                if (docData.dataImportAction || docData.dataLoadingAction) {
+                    const action = docData.dataImportAction || docData.dataLoadingAction;
                     setMessages(prev => [...prev, {
                         role: 'assistant',
-                        content: `📊 **Data Extraction Complete (${files.length} file/image(s) processed):**\n\nI have extracted tabular data from your uploaded image(s). Please review the preview table below, choose the destination lab, and click **Confirm & Load** to import into the database.`,
-                        dataLoadingAction: docData.dataLoadingAction,
+                        content: `📊 **Data Extraction Complete (${files.length} file(s) processed):**\n\nI have auto-analyzed your uploaded file and detected the **${action.targetTableName || action.targetTable || 'data'}** table schema with column mapping. Please review the column mapping and data preview below, choose the destination, and click **Confirm & Import** to load into the database.`,
+                        dataImportAction: action,
+                        dataLoadingAction: action,
                         imageUrl: docData.imageUrl || null,
                         timestamp: new Date().toISOString()
                     }]);
-                    toast.success('Tabular data extracted & ready for loading!');
+                    toast.success('Tabular data analyzed & ready for import confirmation!');
                 } else {
                     setMessages(prev => [...prev, {
                         role: 'assistant',
@@ -8128,7 +8188,16 @@ export default function FloatingChatbot() {
                                     {msg.queryResult && <SQLResult sql={msg.sql} result={msg.queryResult} onRerun={() => handleRerunSQL(msg.sql)} />}
                                     {msg.chartData && <ChatChart chartData={msg.chartData} />}
                                     {msg.reportAction && <ReportActionCard action={msg.reportAction} />}
-                                    {msg.dataLoadingAction && <DataLoadingCard action={msg.dataLoadingAction} />}
+                                    {(msg.studentImportAction || msg.inventoryImportAction || msg.dataImportAction) ? (
+                                        <GenericDataImportConfirmCard action={msg.studentImportAction || msg.inventoryImportAction || msg.dataImportAction} />
+                                    ) : (
+                                        msg.dataLoadingAction && <DataLoadingCard action={msg.dataLoadingAction} />
+                                    )}
+                                    {(msg.trainingModuleGenerateAction || (msg.trainingAction?.actionType === 'training_module_create')) ? (
+                                        <TrainingModuleConfirmCard action={msg.trainingModuleGenerateAction || msg.trainingAction} />
+                                    ) : (
+                                        msg.trainingAction && <TrainingActionCard action={msg.trainingAction} />
+                                    )}
                                     {msg.meetingAction && <MeetingActionCard action={msg.meetingAction} />}
                                     {msg.calendarAction && <CalendarActionCard action={msg.calendarAction} />}
                                     {msg.assignmentAction && <AssignmentActionCard action={msg.assignmentAction} />}
@@ -8137,7 +8206,6 @@ export default function FloatingChatbot() {
                                     {msg.userAction && <UserActionCard action={msg.userAction} />}
                                     {msg.ticketAction && <TicketActionCard action={msg.ticketAction} />}
                                     {msg.procurementAction && <ProcurementActionCard action={msg.procurementAction} />}
-                                    {msg.trainingAction && <TrainingActionCard action={msg.trainingAction} />}
                                     {msg.trainingAssignmentAction && <TrainingAssignmentActionCard action={msg.trainingAssignmentAction} />}
                                     {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
                                     {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
@@ -8215,10 +8283,19 @@ export default function FloatingChatbot() {
                             </div>
 
                             {/* Input bar */}
-                            <div className="flex items-end gap-2 px-3 py-2.5 bg-white border-t border-slate-200 flex-shrink-0">
+                            <div className="flex items-end gap-2 px-3 py-2.5 bg-white border-t border-slate-200 flex-shrink-0 relative">
+                                {fileRefOpen && (
+                                    <FileReferenceDropdown
+                                        isOpen={fileRefOpen}
+                                        query={fileRefQuery}
+                                        uploadedDocs={uploadedDocs}
+                                        onSelect={handleSelectFileRef}
+                                        onClose={() => setFileRefOpen(false)}
+                                    />
+                                )}
                                 <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".txt,.csv,.json,.pdf,.md,.sql,.log,.png,.jpg,.jpeg,.webp,.bmp" />
                                 <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
-                                    className="flex-shrink-0 w-8 h-8 rounded-lg bg-violet-50 border border-violet-200 flex items-center justify-center text-violet-500 hover:bg-violet-100 transition disabled:opacity-50" title="Upload up to 5 documents or images for data collection & loading">
+                                    className="flex-shrink-0 w-8 h-8 rounded-lg bg-violet-50 border border-violet-200 flex items-center justify-center text-violet-500 hover:bg-violet-100 transition disabled:opacity-50" title="Upload documents or images for auto-table detection & loading">
                                     {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                                 </button>
                                 
@@ -8227,17 +8304,34 @@ export default function FloatingChatbot() {
                                         setInput(prev => (prev ? `${prev} ${text}` : text).trim());
                                     }}
                                     className="flex-shrink-0 w-8 h-8 rounded-lg bg-rose-50 border border-rose-200 text-rose-500 hover:bg-rose-100 transition shadow-2xs"
-                                    title="Speak voice command (e.g. 'create class 12 commerce c')"
+                                    title="Speak voice command"
                                 />
 
-                                <textarea ref={inputRef} value={input}
-                                    onChange={(e) => setInput(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                                    placeholder="Type or speak commands (e.g. 'create class 12 commerce c')..."
-                                    rows={1}
-                                    className="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[13px] resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-                                    style={{ minHeight: '36px', maxHeight: '80px' }}
-                                />
+                                <div className="flex-1 relative">
+                                    <textarea ref={inputRef} value={input}
+                                        onChange={handleInputChange}
+                                        onKeyDown={(e) => {
+                                            if (fileRefOpen && e.key === 'Escape') {
+                                                e.preventDefault();
+                                                setFileRefOpen(false);
+                                                return;
+                                            }
+                                            if (fileRefOpen && (e.key === 'Enter' || e.key === 'Tab')) {
+                                                // Handled by FileReferenceDropdown window listener
+                                                e.preventDefault();
+                                                return;
+                                            }
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
+                                                handleSend();
+                                            }
+                                        }}
+                                        placeholder="Type \ to reference file (e.g. \lab1_inventory.csv), or ask anything..."
+                                        rows={1}
+                                        className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[13px] resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                                        style={{ minHeight: '36px', maxHeight: '80px' }}
+                                    />
+                                </div>
                                 <button onClick={handleSend} disabled={!input.trim() || isLoading}
                                     className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center hover:from-indigo-600 hover:to-violet-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-indigo-500/20">
                                     {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}

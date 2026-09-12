@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { ExternalLink, FileText, Download, Maximize, Minimize } from 'lucide-react';
 import HtmlPreview from '@/components/HtmlPreview';
+import PdfViewer from '@/components/PdfViewer';
 import { documentsAPI } from '@/lib/api';
 
 const FILE_ICONS = {
@@ -90,10 +91,11 @@ export default function ViewDocumentPage() {
                         
                         if (type === 'pdf') {
                             return (
-                                <iframe
-                                    src={doc.url}
-                                    className={`w-full border-0 ${isFullscreen ? 'h-full min-h-[calc(100vh-89px)]' : 'h-[80vh]'}`}
-                                    title="PDF Preview"
+                                <PdfViewer
+                                    url={doc.url}
+                                    documentId={doc.id}
+                                    name={doc.name}
+                                    isFullscreen={isFullscreen}
                                 />
                             );
                         } else if (['ppt', 'pptx'].includes(type)) {

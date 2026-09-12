@@ -3,8 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import * as docx from 'docx-preview';
 import * as xlsx from 'xlsx';
+import PdfViewer from './PdfViewer';
 
-export default function FileViewer({ url, fileType, name }) {
+export default function FileViewer({ url, fileType, name, documentId }) {
+    if (fileType === 'pdf') {
+        return <PdfViewer url={url} name={name} documentId={documentId} />;
+    }
+
     const containerRef = useRef(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);

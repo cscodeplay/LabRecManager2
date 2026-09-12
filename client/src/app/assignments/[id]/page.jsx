@@ -11,6 +11,7 @@ import { useAuthStore } from '@/lib/store';
 import { assignmentsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import HtmlPreview from '@/components/HtmlPreview';
+import PdfViewer from '@/components/PdfViewer';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 export default function AssignmentDetailPage() {
@@ -445,6 +446,12 @@ export default function AssignmentDetailPage() {
                                 <div className="flex items-center justify-center h-full min-h-[400px] bg-white">
                                     <img src={assignment.pdfAttachmentUrl} alt="Attachment" className="max-w-full max-h-[500px] object-contain" />
                                 </div>
+                            ) : assignment.pdfAttachmentUrl.split('.').pop().toLowerCase() === 'pdf' ? (
+                                <PdfViewer
+                                    url={assignment.pdfAttachmentUrl}
+                                    name={assignment.title || 'Assignment PDF'}
+                                    isFullscreen={isPreviewFullscreen}
+                                />
                             ) : ['txt', 'html'].includes(assignment.pdfAttachmentUrl.split('.').pop().toLowerCase()) ? (
                                 <HtmlPreview url={assignment.pdfAttachmentUrl} className={isPreviewFullscreen ? 'min-h-[80vh] rounded-none border-0' : ''} />
                             ) : ['ppt', 'pptx'].includes(assignment.pdfAttachmentUrl.split('.').pop().toLowerCase()) ? (

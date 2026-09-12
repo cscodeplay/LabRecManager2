@@ -11,6 +11,9 @@ import { useAuthStore } from '@/lib/store';
 import api, { classesAPI, timetableAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import FileReferenceDropdown from '@/components/FileReferenceDropdown';
+import GenericDataImportConfirmCard from '@/components/GenericDataImportConfirmCard';
+import TrainingModuleConfirmCard from '@/components/TrainingModuleConfirmCard';
 import { formatTime } from '@/lib/dateUtils';
 
 // Markdown-like renderer for AI messages
@@ -1081,6 +1084,57 @@ export default function AIAssistantPage() {
     const fileInputRef = useRef(null);
     const inputRef = useRef(null);
 
+    // ── File Reference Popover State (\ trigger) ──
+    const [fileRefOpen, setFileRefOpen] = useState(false);
+    const [fileRefQuery, setFileRefQuery] = useState('');
+
+    const handleInputChange = (e) => {
+        const val = e.target.value;
+        setInput(val);
+
+        const cursorPos = e.target.selectionStart;
+        const textBefore = val.slice(0, cursorPos);
+        const lastSlash = textBefore.lastIndexOf('\\');
+
+        if (lastSlash !== -1) {
+            const queryAfter = textBefore.slice(lastSlash + 1);
+            if (!/\s/.test(queryAfter)) {
+                setFileRefQuery(queryAfter);
+                setFileRefOpen(true);
+                return;
+            }
+        }
+        setFileRefOpen(false);
+    };
+
+    const handleSelectFileRef = (file) => {
+        if (!file || !file.fileName) return;
+        const cursorPos = inputRef.current ? inputRef.current.selectionStart : input.length;
+        const textBefore = input.slice(0, cursorPos);
+        const textAfter = input.slice(cursorPos);
+        const lastSlash = textBefore.lastIndexOf('\\');
+
+        let prefix = textBefore;
+        if (lastSlash !== -1) {
+            prefix = textBefore.slice(0, lastSlash);
+        }
+
+        const inserted = `\\${file.fileName} `;
+        const full = `${prefix}${inserted}${textAfter}`;
+        setInput(full);
+        setFileRefOpen(false);
+
+        setTimeout(() => {
+            if (inputRef.current) {
+                inputRef.current.focus();
+                const pos = prefix.length + inserted.length;
+                inputRef.current.setSelectionRange(pos, pos);
+            }
+        }, 50);
+
+        toast.success(`Referenced file: \\${file.fileName}`);
+    };
+
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!isAuthenticated) { router.push('/login'); return; }
@@ -1099,7 +1153,7 @@ export default function AIAssistantPage() {
         if (messages.length === 0) {
             setMessages([{
                 role: 'assistant',
-                content: `👋 Hello! I'm your **AI Database Assistant**. I have full access to the school database schema and can help you:\n\n- 📊 **Query data** — "How many students are enrolled this year?"\n- 📋 **Generate reports** — "Show top 10 students by grades"\n- 🔍 **Analyze trends** — "Compare submissions per month"\n- 📄 **Read documents** — Upload any file and ask questions about it\n- 🗄️ **Explore schema** — "What tables store fee information?"\n\nJust ask anything in plain English!`,
+                content: `👋 Hello! I'm your **AI Database Assistant**. I have full access to the school database schema and can help you:\n\n- 📊 **Query data** — "How many students are enrolled this year?"\n- 📋 **Generate reports** — "Show top 10 students by grades"\n- 🔍 **Analyze trends** — "Compare submissions per month"\n- 📄 **Read documents** — Type \`\\\` to reference any document or spreadsheet\n- 🎓 **Create training modules** — Generate math & programming modules from ebooks/syllabi\n- 🗄️ **Explore schema** — "What tables store fee information?"\n\nJust ask anything in plain English!`,
                 timestamp: new Date().toISOString()
             }]);
         }
@@ -1141,6 +1195,11 @@ export default function AIAssistantPage() {
                     classAction: data.classAction,
                     timetableAction: data.timetableAction,
                     periodTimingAction: data.periodTimingAction,
+                    dataImportAction: data.dataImportAction,
+                    studentImportAction: data.studentImportAction,
+                    inventoryImportAction: data.inventoryImportAction,
+                    trainingModuleGenerateAction: data.trainingModuleGenerateAction,
+                    trainingAction: data.trainingAction,
                     timestamp: data.timestamp
                 }]);
             }
@@ -1193,13 +1252,26 @@ export default function AIAssistantPage() {
             });
 
             if (res.data.success) {
-                setUploadedDocs(prev => [...prev, res.data.data]);
-                setMessages(prev => [...prev, {
-                    role: 'assistant',
-                    content: `📄 **Document loaded:** ${res.data.data.fileName}\n\n*${res.data.data.charCount.toLocaleString()} characters extracted.* You can now ask me questions about this document.`,
-                    timestamp: new Date().toISOString()
-                }]);
-                toast.success('Document uploaded');
+                const docData = res.data.data;
+                setUploadedDocs(prev => [...prev, docData]);
+                const action = docData.dataImportAction || docData.dataLoadingAction;
+
+                if (action) {
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: `📊 **Data Table Detected & Analyzed:** ${docData.fileName}\n\nI have auto-analyzed your uploaded file and mapped it to the **${action.targetTableName || action.targetTable || 'data'}** schema. Please review the column mapping and data preview below, select your destination, and confirm to import.`,
+                        dataImportAction: action,
+                        timestamp: new Date().toISOString()
+                    }]);
+                    toast.success('Data table detected & ready for import confirmation!');
+                } else {
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: `📄 **Document loaded:** ${docData.fileName}\n\n*${docData.charCount ? docData.charCount.toLocaleString() : '0'} characters extracted.* You can now ask me questions about this document.`,
+                        timestamp: new Date().toISOString()
+                    }]);
+                    toast.success('Document uploaded');
+                }
             }
         } catch (err) {
             toast.error('Upload failed: ' + (err.response?.data?.message || err.message));
@@ -1284,6 +1356,12 @@ export default function AIAssistantPage() {
                                         {msg.classAction && <ClassActionCard action={msg.classAction} />}
                                         {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
                                         {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
+                                        {(msg.studentImportAction || msg.inventoryImportAction || msg.dataImportAction) && (
+                                            <GenericDataImportConfirmCard action={msg.studentImportAction || msg.inventoryImportAction || msg.dataImportAction} />
+                                        )}
+                                        {(msg.trainingModuleGenerateAction || (msg.trainingAction?.actionType === 'training_module_create')) && (
+                                            <TrainingModuleConfirmCard action={msg.trainingModuleGenerateAction || msg.trainingAction} />
+                                        )}
                                     </>
                                 )}
                                 {msg.queryResult && (
@@ -1348,12 +1426,33 @@ export default function AIAssistantPage() {
 
                         {/* Text input */}
                         <div className="flex-1 relative">
+                            {fileRefOpen && (
+                                <FileReferenceDropdown
+                                    isOpen={fileRefOpen}
+                                    query={fileRefQuery}
+                                    uploadedDocs={uploadedDocs}
+                                    onSelect={handleSelectFileRef}
+                                    onClose={() => setFileRefOpen(false)}
+                                />
+                            )}
                             <textarea ref={inputRef} value={input}
-                                onChange={(e) => setInput(e.target.value)}
+                                onChange={handleInputChange}
                                 onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+                                    if (fileRefOpen && e.key === 'Escape') {
+                                        e.preventDefault();
+                                        setFileRefOpen(false);
+                                        return;
+                                    }
+                                    if (fileRefOpen && (e.key === 'Enter' || e.key === 'Tab')) {
+                                        e.preventDefault();
+                                        return;
+                                    }
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleSend();
+                                    }
                                 }}
-                                placeholder="Ask anything about your data..."
+                                placeholder="Ask anything, or type \ to reference a file (e.g. \lab1_inventory.csv or \python_math_library_syllabus.pdf)..."
                                 rows={1}
                                 className="w-full px-4 py-2.5 pr-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
                                 style={{ minHeight: '44px', maxHeight: '120px' }}

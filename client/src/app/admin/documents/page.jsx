@@ -12,7 +12,9 @@ import toast from 'react-hot-toast';
 import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
 import { formatDateTime } from '@/lib/dateUtils';
 import FileViewer from '@/components/FileViewer';
+import PdfViewer from '@/components/PdfViewer';
 import HtmlPreview from '@/components/HtmlPreview';
+import GenericDataImportConfirmCard from '@/components/GenericDataImportConfirmCard';
 import QRCode from 'qrcode';
 
 const CATEGORIES = [
@@ -131,6 +133,7 @@ export default function DocumentsPage() {
     const [aiExtracting, setAiExtracting] = useState(false);
     const [aiExtractDoc, setAiExtractDoc] = useState(null);
     const [aiExtractData, setAiExtractData] = useState(null);
+    const [aiExtractAction, setAiExtractAction] = useState(null);
     const [aiEngine, setAiEngine] = useState('gemini');
 
     // Analytics
@@ -937,9 +940,12 @@ export default function DocumentsPage() {
         setAiExtractDoc(doc);
         setAiExtracting(true);
         setAiExtractData(null);
+        setAiExtractAction(null);
         try {
             const res = await api.post(`/documents/${doc.id}/extract-ai-inventory?engine=${aiEngine}`);
-            setAiExtractData(res.data.data.items);
+            const dataObj = res.data?.data || {};
+            setAiExtractData(dataObj.items || dataObj.records || []);
+            setAiExtractAction(dataObj.dataImportAction || (dataObj.records ? dataObj : null));
         } catch (err) {
             toast.error(err.response?.data?.message || 'AI Extraction failed');
         } finally {
@@ -965,9 +971,12 @@ export default function DocumentsPage() {
         if (!aiExtractDoc) return;
         setAiExtracting(true);
         setAiExtractData(null);
+        setAiExtractAction(null);
         try {
             const res = await api.post(`/documents/${aiExtractDoc.id}/extract-ai-inventory?engine=${aiEngine}`);
-            setAiExtractData(res.data.data.items);
+            const dataObj = res.data?.data || {};
+            setAiExtractData(dataObj.items || dataObj.records || []);
+            setAiExtractAction(dataObj.dataImportAction || (dataObj.records ? dataObj : null));
         } catch (err) {
             toast.error(err.response?.data?.message || 'AI Extraction failed');
         } finally {
@@ -2152,10 +2161,11 @@ export default function DocumentsPage() {
                                         return <FileViewer url={viewingDoc.url} fileType={type} name={viewingDoc.name} />;
                                     } else if (type === 'pdf') {
                                         return (
-                                            <iframe
-                                                src={viewingDoc.url}
-                                                className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
-                                                title="PDF Preview"
+                                            <PdfViewer
+                                                url={viewingDoc.url}
+                                                documentId={viewingDoc.id}
+                                                name={viewingDoc.name}
+                                                isFullscreen={isPreviewFullscreen}
                                             />
                                         );
                                     } else if (['ppt', 'pptx'].includes(type)) {
@@ -2923,8 +2933,12 @@ export default function DocumentsPage() {
                             {aiExtracting ? (
                                 <div className="flex flex-col items-center justify-center h-64 text-center">
                                     <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mb-4"></div>
-                                    <h4 className="text-lg font-medium text-slate-800">Extracting Data...</h4>
-                                    <p className="text-slate-500 mt-2 max-w-sm">Gemini AI is analyzing the document to extract computer systems, monitors, and UPS serial numbers.</p>
+                                    <h4 className="text-lg font-medium text-slate-800">Analyzing Document & Detecting Table Schema...</h4>
+                                    <p className="text-slate-500 mt-2 max-w-sm">AI is extracting tabular data, mapping database columns, and preparing the confirmation card.</p>
+                                </div>
+                            ) : aiExtractAction ? (
+                                <div className="space-y-4">
+                                    <GenericDataImportConfirmCard action={aiExtractAction} />
                                 </div>
                             ) : aiExtractData ? (
                                 <div className="space-y-4">
@@ -2965,12 +2979,17 @@ export default function DocumentsPage() {
                             ) : null}
                         </div>
 
-                        {!aiExtracting && aiExtractData && (
+                        {!aiExtracting && (aiExtractAction || aiExtractData) && (
                             <div className="p-4 border-t border-slate-200 bg-white flex justify-end gap-3 flex-shrink-0">
-                                <button onClick={() => setAiExtractDoc(null)} className="btn btn-secondary">Cancel</button>
-                                <button title="Save Inventory" onClick={handleSaveAIExtraction} className="btn btn-primary bg-purple-600 hover:bg-purple-700 flex items-center justify-center gap-2">
-                                    <Check className="w-5 h-5" />
+                                <button onClick={() => { setAiExtractDoc(null); setAiExtractAction(null); setAiExtractData(null); }} className="btn btn-secondary">
+                                    Close
                                 </button>
+                                {!aiExtractAction && aiExtractData && (
+                                    <button title="Save Inventory" onClick={handleSaveAIExtraction} className="btn btn-primary bg-purple-600 hover:bg-purple-700 flex items-center justify-center gap-2">
+                                        <Check className="w-5 h-5" />
+                                        <span>Save Items</span>
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>

@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
 import { formatDateTime } from '@/lib/dateUtils';
 import FileViewer from '@/components/FileViewer';
+import PdfViewer from '@/components/PdfViewer';
 import HtmlPreview from '@/components/HtmlPreview';
 import QRCode from 'qrcode';
 
@@ -2227,10 +2228,11 @@ export default function DocumentsPage() {
                                         return <FileViewer url={viewingDoc.url} fileType={type} name={viewingDoc.name} />;
                                     } else if (type === 'pdf') {
                                         return (
-                                            <iframe
-                                                src={viewingDoc.url}
-                                                className="w-full h-full min-h-[500px] rounded-lg border border-slate-200 bg-white"
-                                                title="PDF Preview"
+                                            <PdfViewer
+                                                url={viewingDoc.url}
+                                                documentId={viewingDoc.id}
+                                                name={viewingDoc.name}
+                                                isFullscreen={isPreviewFullscreen}
                                             />
                                         );
                                     } else if (['ppt', 'pptx'].includes(type)) {

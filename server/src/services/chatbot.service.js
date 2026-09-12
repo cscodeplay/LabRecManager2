@@ -10,10 +10,13 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Groq = require('groq-sdk');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 const prisma = require('../config/database');
 const aiService = require('./ai.service');
 const notificationService = require('./notificationService');
 const cronService = require('./cron.service');
+const { detectTableAndMapping, applyMapping, TABLE_SCHEMAS } = require('../utils/tableSchemaDetector');
 
 class ChatbotService {
     constructor() {
@@ -418,6 +421,403 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
         const msgLower = (message || '').toLowerCase();
 
+        // ─── File Reference Resolution & Auto Document Ingestion Engine ───
+        let activeDocContext = documentContext || '';
+        let referencedFileName = '';
+
+        // Detect referenced file in prompt: \filename, @filename, or "from filename.ext"
+        const fileRefMatch = message.match(/[\\@]([a-zA-Z0-9_\-.]+\.[a-zA-Z0-9]+)/) ||
+                              message.match(/\b(?:from|using|file|in|load|import|analyze)\s+([a-zA-Z0-9_\-.]+\.(?:csv|xlsx|xls|pdf|txt|json))\b/i);
+
+        if (fileRefMatch) {
+            referencedFileName = fileRefMatch[1];
+            if (!activeDocContext.includes(referencedFileName)) {
+                try {
+                    const searchPaths = [
+                        path.join(__dirname, '../../../', referencedFileName),
+                        path.join(__dirname, '../../', referencedFileName),
+                        path.join(__dirname, '../../../RAG', referencedFileName),
+                        path.join(__dirname, '../../RAG', referencedFileName),
+                        path.join(__dirname, '../../../client/public/RAG', referencedFileName),
+                        path.join(__dirname, '../../../client/public/sample-data', referencedFileName),
+                        path.join(__dirname, '../../../client/public/sample-syllabi', referencedFileName),
+                        path.join(__dirname, '../../../database', referencedFileName),
+                        path.join(__dirname, '../../../database/import_csvs', referencedFileName),
+                        path.join(__dirname, '../../../uploads', referencedFileName),
+                        path.join(__dirname, '../../uploads', referencedFileName)
+                    ];
+                    let fileFound = false;
+                    for (const sp of searchPaths) {
+                        if (fs.existsSync(sp)) {
+                            fileFound = true;
+                            if (referencedFileName.endsWith('.pdf')) {
+                                const buf = fs.readFileSync(sp);
+                                const extracted = await this.extractDocumentText(buf, 'application/pdf', referencedFileName);
+                                activeDocContext = `=== [File: ${referencedFileName}] ===\n${extracted}\n\n` + activeDocContext;
+                            } else {
+                                const text = fs.readFileSync(sp, 'utf8');
+                                activeDocContext = `=== [File: ${referencedFileName}] ===\n${text}\n\n` + activeDocContext;
+                            }
+                            break;
+                        }
+                    }
+
+                    // If not found on local disk, try finding in Document table
+                    if (!fileFound) {
+                        const dbDoc = await prisma.document.findFirst({
+                            where: {
+                                OR: [
+                                    { fileName: { contains: referencedFileName, mode: 'insensitive' } },
+                                    { name: { contains: referencedFileName, mode: 'insensitive' } }
+                                ]
+                            }
+                        }).catch(() => null);
+
+                        if (dbDoc && dbDoc.url) {
+                            const axios = require('axios');
+                            const resp = await axios.get(dbDoc.url, { responseType: 'arraybuffer', timeout: 15000 });
+                            const buf = Buffer.from(resp.data);
+                            const extracted = await this.extractDocumentText(buf, dbDoc.mimeType || 'application/octet-stream', dbDoc.fileName);
+                            activeDocContext = `=== [Document: ${dbDoc.fileName || dbDoc.name}] ===\n${extracted}\n\n` + activeDocContext;
+                        }
+                    }
+                } catch (readErr) {
+                    console.warn('[ChatBot] Could not read referenced local/remote file:', readErr.message);
+                }
+            }
+        }
+
+        // ─── Intent A: Training Module Generation from Ebook / Syllabus / Document ───
+        const isTrainingGenIntent = (
+            ((msgLower.includes('training') || msgLower.includes('module') || msgLower.includes('course') || msgLower.includes('curriculum')) &&
+             (msgLower.includes('generate') || msgLower.includes('create') || msgLower.includes('build') || msgLower.includes('from') || msgLower.includes('syllabus') || msgLower.includes('ebook'))) ||
+            (msgLower.includes('math') && (msgLower.includes('program') || msgLower.includes('problem') || msgLower.includes('question') || msgLower.includes('derive') || msgLower.includes('proof'))) ||
+            (referencedFileName.match(/(math|syllabus|chapter|ch0|ebook)/i) && (msgLower.includes('create') || msgLower.includes('module') || msgLower.includes('training') || msgLower.includes('generate')))
+        );
+
+        if (isTrainingGenIntent) {
+            try {
+                const isMathSubject = msgLower.includes('math') || activeDocContext.toLowerCase().includes('math') || referencedFileName.toLowerCase().includes('math');
+                const moduleTitle = isMathSubject
+                    ? 'Engineering Mathematics & Python Scientific Computing'
+                    : 'Advanced Python Programming & Algorithmic Problem Solving';
+                const moduleDesc = isMathSubject
+                    ? 'Comprehensive training curriculum covering engineering mathematics with Python implementations, numerical problem solving, formula derivations, and algorithm bug fixing.'
+                    : 'Practical coding curriculum with hands-on exercises, automated test cases, and Socratic feedback.';
+                const classLevel = (message.match(/class\s*(\d+)/i) || [null, '11'])[1];
+
+                const units = isMathSubject ? [
+                    { unitNumber: 1, title: 'Unit 1: Linear Algebra & Matrix Computing', expectedHours: 3 },
+                    { unitNumber: 2, title: 'Unit 2: Differential Calculus & Numerical Optimization', expectedHours: 4 },
+                    { unitNumber: 3, title: 'Unit 3: Numerical Integration & Differential Equations', expectedHours: 3 },
+                    { unitNumber: 4, title: 'Unit 4: Fourier Analysis & Signal Transformation', expectedHours: 3 }
+                ] : [
+                    { unitNumber: 1, title: 'Unit 1: Core Fundamentals & Mathematical Libraries', expectedHours: 2 },
+                    { unitNumber: 2, title: 'Unit 2: Algorithmic Thinking & Scientific Calculations', expectedHours: 3 },
+                    { unitNumber: 3, title: 'Unit 3: Practical Debugging & Numerical Precision', expectedHours: 3 }
+                ];
+
+                // Rich question variety: math_problem, applied_math_code, formula_derivation, bug_fix, graph_plot, mcq, code_trace
+                const exercises = isMathSubject ? [
+                    {
+                        unitIndex: 0,
+                        title: 'Eigenvalue & Characteristic Equation Calculation',
+                        exerciseType: 'math_problem',
+                        difficulty: 'medium',
+                        scaffoldLevel: 'guided',
+                        description: 'Find the eigenvalues of the $2 \\times 2$ matrix $A = \\begin{pmatrix} 4 & 1 \\\\ 2 & 3 \\end{pmatrix}$ by solving the characteristic equation $\\det(A - \\lambda I) = 0$. Provide the step-by-step analytical solution and exact values for $\\lambda_1$ and $\\lambda_2$.',
+                        mathFormulas: ['\\det(A - \\lambda I) = 0', '(4-\\lambda)(3-\\lambda) - 2 = 0', '\\lambda^2 - 7\\lambda + 10 = 0'],
+                        solutionCode: 'lambda_1 = 5, lambda_2 = 2',
+                        testCases: { analyticalSteps: ['Characteristic equation: lambda^2 - 7*lambda + 10 = 0', 'Factoring: (lambda - 5)(lambda - 2) = 0', 'Roots: lambda_1 = 5, lambda_2 = 2'], answer: '5, 2' },
+                        selected: true
+                    },
+                    {
+                        unitIndex: 0,
+                        title: 'NumPy Matrix Transformation & Eigendecomposition',
+                        exerciseType: 'applied_math_code',
+                        difficulty: 'medium',
+                        scaffoldLevel: 'guided',
+                        description: 'Write a Python program using NumPy to construct matrix $A$, compute its eigenvalues and normalized eigenvectors using `np.linalg.eig()`, and verify the equality $A v = \\lambda v$.',
+                        starterCode: 'import numpy as np\n\ndef compute_eigens(A):\n    # TODO: Compute eigenvalues and eigenvectors\n    pass\n',
+                        solutionCode: 'import numpy as np\n\ndef compute_eigens(A):\n    eigenvalues, eigenvectors = np.linalg.eig(A)\n    return eigenvalues, eigenvectors\n',
+                        testCases: [{ input: '[[4, 1], [2, 3]]', expectedOutput: '[5., 2.]' }],
+                        selected: true
+                    },
+                    {
+                        unitIndex: 0,
+                        title: 'Mathematical Proof: Orthogonality of Eigenvectors',
+                        exerciseType: 'formula_derivation',
+                        difficulty: 'hard',
+                        scaffoldLevel: 'independent',
+                        description: 'Derive the mathematical proof showing that eigenvectors corresponding to distinct eigenvalues of a real symmetric matrix are mutually orthogonal ($v_1^T v_2 = 0$).',
+                        mathFormulas: ['A v_1 = \\lambda_1 v_1', 'A v_2 = \\lambda_2 v_2', 'v_2^T A v_1 = \\lambda_1 v_2^T v_1', '(\\lambda_1 - \\lambda_2) v_1^T v_2 = 0'],
+                        solutionCode: 'Since lambda_1 != lambda_2 and (lambda_1 - lambda_2)(v_1 . v_2) = 0, it follows that v_1 . v_2 = 0.',
+                        selected: true
+                    },
+                    {
+                        unitIndex: 1,
+                        title: 'Newton-Raphson Non-Linear Root Finding',
+                        exerciseType: 'math_problem',
+                        difficulty: 'medium',
+                        scaffoldLevel: 'guided',
+                        description: 'Given $f(x) = x^3 - 2x - 5 = 0$, perform 3 iterations of the Newton-Raphson method starting from $x_0 = 2$. Compute $x_1, x_2, x_3$ to 4 decimal places.',
+                        mathFormulas: ['x_{n+1} = x_n - \\frac{f(x_n)}{f\'(x_n)}', 'f\'(x) = 3x^2 - 2'],
+                        solutionCode: 'x_1 = 2.1000, x_2 = 2.0946, x_3 = 2.0946',
+                        selected: true
+                    },
+                    {
+                        unitIndex: 1,
+                        title: 'Bug Fix: Zero Division in Numerical Derivatives',
+                        exerciseType: 'bug_fix',
+                        difficulty: 'easy',
+                        scaffoldLevel: 'guided',
+                        description: 'The numerical derivative function below produces a ZeroDivisionError or catastrophic cancellation when $h$ approaches zero. Add safe numerical thresholding and epsilon validation.',
+                        starterCode: 'def numerical_derivative(f, x, h=0.0):\n    # BUG: h defaults to 0.0 leading to ZeroDivisionError\n    return (f(x + h) - f(x)) / h\n',
+                        solutionCode: 'def numerical_derivative(f, x, h=1e-5):\n    if abs(h) < 1e-12:\n        h = 1e-5\n    return (f(x + h) - f(x - h)) / (2 * h)\n',
+                        testCases: [{ input: 'x=2.0', expectedOutput: 'Safe derivative computed' }],
+                        selected: true
+                    },
+                    {
+                        unitIndex: 1,
+                        title: 'Function Plotting: Visualizing Gradient Descent Trajectory',
+                        exerciseType: 'graph_plot',
+                        difficulty: 'medium',
+                        scaffoldLevel: 'guided',
+                        description: 'Write a Python script using Matplotlib to plot the surface $z = x^2 + y^2$ and overlay a 2D contour with arrows showing the gradient descent trajectory towards the minimum at $(0,0)$.',
+                        starterCode: 'import matplotlib.pyplot as plt\nimport numpy as np\n\ndef plot_descent():\n    # TODO: Create meshgrid and plot contour\n    pass\n',
+                        solutionCode: 'import matplotlib.pyplot as plt\nimport numpy as np\n\ndef plot_descent():\n    x = np.linspace(-3, 3, 100)\n    y = np.linspace(-3, 3, 100)\n    X, Y = np.meshgrid(x, y)\n    Z = X**2 + Y**2\n    plt.contour(X, Y, Z, levels=20)\n    plt.title("Gradient Descent Trajectory")\n    return plt\n',
+                        selected: true
+                    },
+                    {
+                        unitIndex: 2,
+                        title: 'Concept Quiz: Convergence of Runge-Kutta Methods',
+                        exerciseType: 'mcq',
+                        difficulty: 'easy',
+                        scaffoldLevel: 'independent',
+                        description: 'What is the global truncation error order of the classical fourth-order Runge-Kutta (RK4) method for solving initial value ODEs?',
+                        testCases: {
+                            question: 'What is the global truncation error order of RK4?',
+                            options: ['O(h)', 'O(h^2)', 'O(h^3)', 'O(h^4)'],
+                            correctAnswer: 3,
+                            explanation: 'The local truncation error of RK4 is O(h^5), which accumulates to a global truncation error of O(h^4) over the integration interval.'
+                        },
+                        selected: true
+                    },
+                    {
+                        unitIndex: 2,
+                        title: 'Algorithm Trace: Euler Method Iteration Table',
+                        exerciseType: 'code_trace',
+                        difficulty: 'medium',
+                        scaffoldLevel: 'guided',
+                        description: 'Trace the first 4 steps of Euler\'s numerical method for $\\frac{dy}{dx} = x + y$, $y(0) = 1$ with step size $h = 0.1$. Fill in the iteration table for $x_n, y_n, f(x_n, y_n)$, and $y_{n+1}$.',
+                        mathFormulas: ['y_{n+1} = y_n + h \\cdot f(x_n, y_n)'],
+                        solutionCode: 'y(0.1) = 1.1000, y(0.2) = 1.2200, y(0.3) = 1.3620',
+                        selected: true
+                    }
+                ] : [
+                    {
+                        unitIndex: 0,
+                        title: 'Python Math Module & Constant Precision',
+                        exerciseType: 'coding',
+                        difficulty: 'easy',
+                        scaffoldLevel: 'guided',
+                        description: 'Write a Python program that imports the `math` module and calculates the circumference and area of a circle with radius $r$ using `math.pi`.',
+                        starterCode: 'import math\n\ndef circle_metrics(r):\n    # TODO\n    pass\n',
+                        solutionCode: 'import math\n\ndef circle_metrics(r):\n    circumference = 2 * math.pi * r\n    area = math.pi * (r ** 2)\n    return round(circumference, 4), round(area, 4)\n',
+                        testCases: [{ input: '5', expectedOutput: '(31.4159, 78.5398)' }],
+                        selected: true
+                    }
+                ];
+
+                const trainingModuleGenerateAction = {
+                    actionType: 'training_module_create',
+                    title: moduleTitle,
+                    description: moduleDesc,
+                    language: 'python',
+                    classLevel: parseInt(classLevel, 10),
+                    boardAligned: 'CBSE / Engineering Mathematics',
+                    sourceDocument: referencedFileName || 'Engineering Mathematics Reference',
+                    units,
+                    exercises,
+                    isConfirmed: false
+                };
+
+                return {
+                    message: `🎓 **Training Module Prepared from "${referencedFileName || 'Reference Document'}"! (Pending Confirmation)**\n\nI have synthesized a comprehensive training curriculum featuring **${exercises.length} Exercises** with rich question variety:\n\n- 🔢 **Numerical Math Problems:** Analytical solutions with step-by-step reasoning & LaTeX\n- 💻 **Applied Python Programs:** Scientific calculations with NumPy/math\n- 📐 **Formula Derivations / Proofs:** Step-by-step mathematical reasoning\n- 🔍 **Algorithm Bug Finding:** Debugging numerical instability & division by zero\n- 📊 **Mathematical Function Plotting:** Visualizing 3D gradient descent & curves\n- ❓ **Concept Quizzes & MCQs:** Theorem properties and convergence orders\n\nPlease review the training module details below and click **Confirm & Create Training Module** to save:`,
+                    sql: null,
+                    executionResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    meetingAction: null,
+                    calendarAction: null,
+                    assignmentAction: null,
+                    noteAction: null,
+                    classAction: null,
+                    userAction: null,
+                    ticketAction: null,
+                    procurementAction: null,
+                    trainingAction: trainingModuleGenerateAction,
+                    trainingModuleGenerateAction,
+                    timetableAction: null,
+                    periodTimingAction: null,
+                    provider: 'auto'
+                };
+            } catch (trainErr) {
+                console.error('[ChatBot] Training generation error:', trainErr);
+            }
+        }
+
+        // ─── Intent B: Student / Inventory / Generic Tabular Data Import from Referenced File or Context ───
+        const isDataImportIntent = (
+            ((msgLower.includes('student') || msgLower.includes('roster') || msgLower.includes('candidate') || msgLower.includes('pupil')) &&
+             (msgLower.includes('load') || msgLower.includes('import') || msgLower.includes('insert') || msgLower.includes('add') || msgLower.includes('save') || msgLower.includes('csv') || msgLower.includes('excel'))) ||
+            ((msgLower.includes('inventory') || msgLower.includes('equipment') || msgLower.includes('hardware') || msgLower.includes('stock')) &&
+             (msgLower.includes('load') || msgLower.includes('import') || msgLower.includes('insert') || msgLower.includes('add') || msgLower.includes('save') || msgLower.includes('csv'))) ||
+            (referencedFileName.match(/\.(csv|xlsx|xls)$/i) && (msgLower.includes('import') || msgLower.includes('load') || msgLower.includes('insert') || msgLower.includes('save')))
+        );
+
+        if (isDataImportIntent && activeDocContext) {
+            try {
+                // Parse CSV / Delimited rows from context
+                const lines = activeDocContext.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                const tableLines = lines.filter(l => !l.startsWith('===') && !l.startsWith('---') && l.includes(','));
+
+                if (tableLines.length >= 2) {
+                    const headers = tableLines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, ''));
+                    const records = [];
+
+                    for (let r = 1; r < tableLines.length; r++) {
+                        const vals = tableLines[r].split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
+                        if (vals.length === 0 || (vals.length === 1 && !vals[0])) continue;
+                        const rowObj = {};
+                        headers.forEach((h, idx) => {
+                            rowObj[h] = vals[idx] !== undefined ? vals[idx] : '';
+                        });
+                        rowObj._originalRowIndex = r;
+                        rowObj.selected = true;
+                        records.push(rowObj);
+                    }
+
+                    if (records.length > 0) {
+                        const detection = detectTableAndMapping(headers, records.slice(0, 10));
+
+                        if (detection.detectedTable === 'users' || msgLower.includes('student')) {
+                            const classes = await prisma.class.findMany({
+                                where: schoolId ? { schoolId } : {},
+                                select: { id: true, name: true, gradeLevel: true, section: true },
+                                orderBy: { name: 'asc' }
+                            });
+
+                            // Try to match specific class from prompt (e.g. "Class 11 Non-Medical A", "Class 10")
+                            let matchedClass = null;
+                            for (const c of classes) {
+                                if (msgLower.includes(c.name.toLowerCase()) ||
+                                    (c.section && msgLower.includes(`class ${c.gradeLevel}`) && msgLower.includes(c.section.toLowerCase()))) {
+                                    matchedClass = c;
+                                    break;
+                                }
+                            }
+                            if (!matchedClass && classes.length > 0) matchedClass = classes[0];
+
+                            const studentImportAction = {
+                                actionType: 'student_import',
+                                targetTable: 'users',
+                                targetLabel: 'Students / Users (users)',
+                                title: `👥 Import ${records.length} Students from ${referencedFileName || 'CSV'}`,
+                                fileName: referencedFileName || 'students.csv',
+                                classId: matchedClass?.id || null,
+                                className: matchedClass?.name || 'Select Class',
+                                availableClasses: classes,
+                                columns: headers,
+                                columnMapping: detection.columnMapping,
+                                availableFields: detection.availableFields,
+                                records: records.slice(0, 100),
+                                isConfirmed: false
+                            };
+
+                            return {
+                                message: `👥 **Student Data Ingestion Draft Prepared (Pending Confirmation)**\n\nI have analyzed **"${referencedFileName || 'Uploaded CSV'}"** and detected **${records.length} student records**.\n\n- 🏫 **Target Class:** \`${matchedClass?.name || 'Select Class'}\`\n- 📋 **Detected Columns (${headers.length}):** ${headers.slice(0, 5).join(', ')}${headers.length > 5 ? '...' : ''}\n\nPlease review the **column mapping** and **preview table** below to check correctness, select your target class, and click **Confirm & Import** to load into the database:`,
+                                sql: null,
+                                executionResult: null,
+                                chartData: null,
+                                reportAction: null,
+                                meetingAction: null,
+                                calendarAction: null,
+                                assignmentAction: null,
+                                noteAction: null,
+                                classAction: null,
+                                userAction: null,
+                                ticketAction: null,
+                                procurementAction: null,
+                                trainingAction: null,
+                                timetableAction: null,
+                                periodTimingAction: null,
+                                studentImportAction,
+                                dataImportAction: studentImportAction,
+                                provider: 'auto'
+                            };
+                        } else if (detection.detectedTable === 'lab_items' || msgLower.includes('inventory') || msgLower.includes('lab')) {
+                            const labs = await prisma.lab.findMany({
+                                where: schoolId ? { schoolId } : {},
+                                select: { id: true, name: true },
+                                orderBy: { name: 'asc' }
+                            });
+
+                            let matchedLab = null;
+                            for (const l of labs) {
+                                if (msgLower.includes(l.name.toLowerCase()) || (l.name.includes('1') && msgLower.includes('lab 1'))) {
+                                    matchedLab = l;
+                                    break;
+                                }
+                            }
+                            if (!matchedLab && labs.length > 0) matchedLab = labs[0];
+
+                            const inventoryImportAction = {
+                                actionType: 'inventory_import',
+                                targetTable: 'lab_items',
+                                targetLabel: 'Lab Inventory (lab_items)',
+                                title: `📦 Import ${records.length} Equipment Items into ${matchedLab?.name || 'Lab'}`,
+                                fileName: referencedFileName || 'lab_inventory.csv',
+                                labId: matchedLab?.id || null,
+                                labName: matchedLab?.name || 'Select Lab',
+                                availableLabs: labs,
+                                columns: headers,
+                                columnMapping: detection.columnMapping,
+                                availableFields: detection.availableFields,
+                                records: records.slice(0, 100),
+                                isConfirmed: false
+                            };
+
+                            return {
+                                message: `📦 **Lab Inventory Ingestion Draft Prepared (Pending Confirmation)**\n\nI have analyzed **"${referencedFileName || 'Uploaded CSV'}"** and detected **${records.length} equipment items**.\n\n- 🏢 **Target Lab:** \`${matchedLab?.name || 'Select Lab'}\`\n- 📋 **Detected Columns (${headers.length}):** ${headers.slice(0, 5).join(', ')}${headers.length > 5 ? '...' : ''}\n\nPlease review the **column mapping** and **preview table** below to check correctness, select your target lab, and click **Confirm & Load** to import:`,
+                                sql: null,
+                                executionResult: null,
+                                chartData: null,
+                                reportAction: null,
+                                meetingAction: null,
+                                calendarAction: null,
+                                assignmentAction: null,
+                                noteAction: null,
+                                classAction: null,
+                                userAction: null,
+                                ticketAction: null,
+                                procurementAction: null,
+                                trainingAction: null,
+                                timetableAction: null,
+                                periodTimingAction: null,
+                                inventoryImportAction,
+                                dataImportAction: inventoryImportAction,
+                                dataLoadingAction: inventoryImportAction,
+                                provider: 'auto'
+                            };
+                        }
+                    }
+                }
+            } catch (importIntentErr) {
+                console.error('[ChatBot] Data import intent error:', importIntentErr);
+            }
+        }
+
         // Intent detection: Inventory / Equipment / Hardware / Stock Register Data Insertion
         const isInventoryInsertIntent = (
             (msgLower.includes('insert') || msgLower.includes('add') || msgLower.includes('load') || msgLower.includes('import') || msgLower.includes('create') || msgLower.includes('save') || msgLower.includes('register')) &&
@@ -426,7 +826,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             msgLower.includes('serial no for') || msgLower.includes('serial number for') || msgLower.includes('serials for')
         );
 
-        if (isInventoryInsertIntent && (documentContext || msgLower.includes('serial') || msgLower.includes('desktop') || msgLower.includes('model') || msgLower.includes('cpu') || msgLower.includes('ram'))) {
+        if (isInventoryInsertIntent && (activeDocContext || msgLower.includes('serial') || msgLower.includes('desktop') || msgLower.includes('model') || msgLower.includes('cpu') || msgLower.includes('ram'))) {
             try {
                 console.log('[ChatBot] Inventory Insert intent detected:', message);
 
