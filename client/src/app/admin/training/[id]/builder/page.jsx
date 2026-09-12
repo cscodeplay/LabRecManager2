@@ -8,7 +8,7 @@ import {
     Lightbulb, Trash2, Edit3, Lock, Trophy, CheckCircle,
     AlertTriangle, XCircle, Sparkles, FlaskConical, Eye,
     GripVertical, Send, Users, Calendar, Globe, Settings, Clock,
-    CheckSquare, FileText, Code2, RefreshCw, X, UserCheck, GraduationCap
+    CheckSquare, FileText, Code2, RefreshCw, X, UserCheck, GraduationCap, BarChart2
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api, { trainingAPI, classesAPI } from '@/lib/api';
@@ -19,6 +19,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import MathRenderer from '@/components/MathRenderer';
 import StudentTheoryViewer from '@/components/StudentTheoryViewer';
 import ModuleAssignmentModal from '@/components/ModuleAssignmentModal';
+import AdminTrainingProgressModal from '@/components/AdminTrainingProgressModal';
 
 // --- Pedagogy Score Engine ---
 function computePedagogyScore(moduleData) {
@@ -321,6 +322,7 @@ export default function PedagogyBuilderPage() {
     // Delete Module State
     const [showDeleteModuleModal, setShowDeleteModuleModal] = useState(false);
     const [isDeletingModule, setIsDeletingModule] = useState(false);
+    const [showProgressModal, setShowProgressModal] = useState(false);
 
     // Enforce SINGLE active modal at any given time (Zero Modal Stacking)
     const closeAllModals = () => {
@@ -332,6 +334,7 @@ export default function PedagogyBuilderPage() {
         setShowAssignModal(false);
         setShowEditModuleModal(false);
         setShowDeleteModuleModal(false);
+        setShowProgressModal(false);
     };
 
     const handleDeleteEntireModule = async () => {
@@ -1086,6 +1089,14 @@ export default function PedagogyBuilderPage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={() => { closeAllModals(); setShowProgressModal(true); }}
+                                className="btn btn-secondary text-xs py-2 px-3 rounded-xl flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400"
+                                title="View Student Training Progress Dashboard"
+                            >
+                                <BarChart2 className="w-4 h-4 text-emerald-500" />
+                                <span className="hidden sm:inline">Student Progress</span>
+                            </button>
                             <button 
                                 onClick={() => { closeAllModals(); setAiCopilotTab('outline'); setShowAiCopilot(true); }}
                                 className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 text-white font-bold text-sm shadow-md shadow-indigo-500/25 p-2.5 rounded-xl flex items-center justify-center transition"
@@ -2234,6 +2245,16 @@ export default function PedagogyBuilderPage() {
                         setShowAssignModal(false);
                         loadData();
                     }}
+                />
+            )}
+
+            {/* ====== STUDENT PROGRESS DASHBOARD MODAL ====== */}
+            {showProgressModal && (
+                <AdminTrainingProgressModal
+                    isOpen={showProgressModal}
+                    moduleId={moduleData?.id || id}
+                    moduleTitle={moduleData?.title || ''}
+                    onClose={() => setShowProgressModal(false)}
                 />
             )}
 

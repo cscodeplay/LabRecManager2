@@ -658,6 +658,8 @@ export const trainingAPI = {
     getExercise: (id) => api.get(`/training/exercises/${id}`),
     runCode: (id, data) => api.post(`/training/exercises/${id}/run`, data),
     submitCode: (id, data) => api.post(`/training/exercises/${id}/submit`, data),
+    saveExerciseDraft: (id, data) => api.post(`/training/exercises/${id}/draft`, data),
+    revealExerciseSolution: (id) => api.post(`/training/exercises/${id}/solution`),
     getClassAnalytics: (classId) => api.get(`/training/class/${classId}/analytics`),
     
     // Builder APIs

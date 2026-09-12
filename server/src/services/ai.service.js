@@ -2404,20 +2404,34 @@ Output MUST be ONLY valid JSON:
         language = 'python',
         classLevel = 11,
         board = 'CBSE',
-        count = 3,
+        count = null,
         source = 'topics',
         documentText = '',
         exerciseType = 'mixed',
         provider = 'gemini'
     }) {
-        const targetCount = Math.max(1, Math.min(8, parseInt(count) || 3));
+        let targetCount = parseInt(count);
+        if (!targetCount || isNaN(targetCount)) {
+            const topicCount = Array.isArray(topics) ? topics.length : 0;
+            if (topicCount >= 5) targetCount = 5;
+            else if (topicCount >= 3) targetCount = 4;
+            else targetCount = 3;
+        }
+        targetCount = Math.max(1, Math.min(8, targetCount));
         const topicsStr = Array.isArray(topics) && topics.length > 0 ? topics.join('; ') : unitTitle || 'Core Concepts';
 
         let promptDirectives = '';
         if (source === 'rag' && documentText) {
-            promptDirectives = `Extract or construct ${targetCount} practical exercises for the unit "${unitTitle}" based directly on the provided textbook / ebook chapter text below. Look for review questions, exercise problems, code snippets to debug, or theoretical MCQs:\n\n--- TEXTBOOK EXCERPT ---\n${documentText.slice(0, 7000)}\n--- END EXCERPT ---`;
+            promptDirectives = `CRITICAL EXTRACTION DIRECTIVE (70-80% AUTHENTIC EXERCISES):
+Extract authentic exercises directly from the provided textbook / syllabus chapter excerpt below.
+PRIMARY PRIORITY: Look for prebuilt chapter-end questions, back-exercises, review questions, assignment problems, solved examples, or code snippets provided in the text. You MUST extract and format these real textbook questions first (at least 70-80% of the returned exercises).
+SECONDARY LIBERTY: Only if the textbook excerpt does not contain enough exercises to reach the requested count (${targetCount}), you have minor creative liberty to synthesize supplementary exercises tightly aligned with the specific concepts and grade level (Class ${classLevel}, ${board}).
+
+--- TEXTBOOK EXCERPT ---
+${documentText.slice(0, 10000)}
+--- END EXCERPT ---`;
         } else {
-            promptDirectives = `Construct ${targetCount} practical exercises for the unit "${unitTitle}" specifically testing these checked topics/checkpoints: ${topicsStr}.`;
+            promptDirectives = `Construct ${targetCount} practical exercises for the unit "${unitTitle}" specifically testing these checked topics/checkpoints: ${topicsStr}. Each exercise must directly assess a specific concept, formula, algorithm, or code pattern from these topics with zero generic filler.`;
         }
 
         const systemPrompt = `You are a high-school and university Computer Science pedagogy expert.
@@ -2426,8 +2440,9 @@ ${promptDirectives}
 SPECIFICATIONS:
 - LANGUAGE: ${language}
 - CLASS LEVEL: Grade ${classLevel} (${board} Curriculum)
-- EXERCISE TYPE REQUIREMENT: ${exerciseType === 'mixed' ? 'Provide a varied pedagogical mix (e.g. 1 coding lab, 1 MCQ, 1 bug_fix or assertion_reason)' : `All exercises must be of type "${exerciseType}"`}
+- EXERCISE TYPE REQUIREMENT: ${exerciseType === 'mixed' ? 'Provide a varied pedagogical mix (e.g. coding labs, MCQs from review questions, bug_fix or assertion_reason)' : `All exercises must be of type "${exerciseType}"`}
 - Total exercises to return: ${targetCount}
+- AUTHENTICITY MANDATE: Preserve the real textbook problem phrasing, variable names, and expected input/output from the source material wherever possible.
 
 For each exercise, provide:
 1. "title": Concise, engaging problem title.

@@ -8,13 +8,14 @@ import PageHeader from '@/components/PageHeader';
 import { 
     GraduationCap, Clock, Award, ChevronRight, BookOpen, 
     AlertCircle, Plus, Sparkles, Edit3, Trash2, BookCheck, ShieldCheck, Zap,
-    Users, UserCheck, UserPlus
+    Users, UserCheck, UserPlus, LayoutGrid, List, BarChart2
 } from 'lucide-react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import TrainingModuleWizard from '@/components/TrainingModuleWizard';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import ModuleAssignmentModal from '@/components/ModuleAssignmentModal';
+import AdminTrainingProgressModal from '@/components/AdminTrainingProgressModal';
 
 export default function TrainingModulesPage() {
     const router = useRouter();
@@ -23,7 +24,9 @@ export default function TrainingModulesPage() {
     const [classes, setClasses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showWizard, setShowWizard] = useState(false);
+    const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
     const [assigningModule, setAssigningModule] = useState(null);
+    const [progressModalModule, setProgressModalModule] = useState(null);
     const [deleteModalState, setDeleteModalState] = useState({
         isOpen: false,
         moduleId: null,
@@ -96,22 +99,43 @@ export default function TrainingModulesPage() {
                 description="Self-paced mastery learning, interactive coding labs & automated AI pedagogy"
                 icon={GraduationCap}
             >
-                {isInstructorOrAdmin && (
-                    <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                    <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
                         <button 
-                            onClick={() => setShowWizard(true)}
-                            className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs py-2 px-3.5 rounded-xl shadow-lg shadow-indigo-600/20 flex items-center gap-1.5 transition"
+                            type="button" 
+                            onClick={() => setViewMode('grid')} 
+                            className={`p-1.5 rounded-lg transition ${viewMode === 'grid' ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs font-semibold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`} 
+                            title="Grid View"
                         >
-                            <Sparkles className="w-4 h-4" /> ✨ Create Training Module
+                            <LayoutGrid className="w-4 h-4" />
                         </button>
-                        <Link 
-                            href="/admin/training" 
-                            className="btn btn-secondary text-xs py-2 px-3 rounded-xl hidden md:flex items-center gap-1.5 font-bold"
+                        <button 
+                            type="button" 
+                            onClick={() => setViewMode('list')} 
+                            className={`p-1.5 rounded-lg transition ${viewMode === 'list' ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs font-semibold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`} 
+                            title="List View"
                         >
-                            <Edit3 className="w-3.5 h-3.5" /> Pedagogy Builder
-                        </Link>
+                            <List className="w-4 h-4" />
+                        </button>
                     </div>
-                )}
+
+                    {isInstructorOrAdmin && (
+                        <>
+                            <button 
+                                onClick={() => setShowWizard(true)}
+                                className="btn bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs py-2 px-3.5 rounded-xl shadow-lg shadow-indigo-600/20 flex items-center gap-1.5 transition"
+                            >
+                                <Sparkles className="w-4 h-4" /> ✨ Create Training Module
+                            </button>
+                            <Link 
+                                href="/admin/training" 
+                                className="btn btn-secondary text-xs py-2 px-3 rounded-xl hidden md:flex items-center gap-1.5 font-bold"
+                            >
+                                <Edit3 className="w-3.5 h-3.5" /> Pedagogy Builder
+                            </Link>
+                        </>
+                    )}
+                </div>
             </PageHeader>
 
             {/* Top Stat Ribbon */}
@@ -178,7 +202,7 @@ export default function TrainingModulesPage() {
                         </button>
                     )}
                 </div>
-            ) : (
+            ) : viewMode === 'grid' ? (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {modules.map((mod) => {
                         const assignedClasses = [];
@@ -292,9 +316,16 @@ export default function TrainingModulesPage() {
                                             <span>{mod.totalExercises || 0} Exercises</span>
                                         </div>
 
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-1.5">
                                             {isInstructorOrAdmin && (
                                                 <>
+                                                    <button
+                                                        onClick={() => setProgressModalModule(mod)}
+                                                        className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition"
+                                                        title="Student Progress Dashboard"
+                                                    >
+                                                        <BarChart2 className="w-4 h-4" />
+                                                    </button>
                                                     <button
                                                         onClick={() => setAssigningModule(mod)}
                                                         className="p-2 text-slate-400 hover:text-blue-600 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-950 transition"
@@ -320,7 +351,7 @@ export default function TrainingModulesPage() {
                                             )}
                                             <Link
                                                 href={`/training/${mod.id}`}
-                                                className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-1.5 px-3.5 rounded-xl flex items-center gap-1 shadow-sm"
+                                                className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-1.5 px-3.5 rounded-xl flex items-center gap-1 shadow-sm ml-1"
                                             >
                                                 <span>Enter Course</span>
                                                 <ChevronRight className="w-4 h-4" />
@@ -332,6 +363,148 @@ export default function TrainingModulesPage() {
                         );
                     })}
                 </div>
+            ) : (
+                /* List View Table */
+                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[750px] text-left text-xs border-collapse">
+                            <thead>
+                                <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
+                                    <th className="py-3.5 px-5">Course Module</th>
+                                    <th className="py-3.5 px-3">Subject / Lang</th>
+                                    <th className="py-3.5 px-3">Board & Level</th>
+                                    <th className="py-3.5 px-3 text-center">Units</th>
+                                    <th className="py-3.5 px-3 text-center">Exercises</th>
+                                    <th className="py-3.5 px-3 text-center">Assigned</th>
+                                    <th className="py-3.5 px-5 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                                {modules.map(mod => {
+                                    const assignedClasses = [];
+                                    const assignedGroups = [];
+                                    const seenC = new Set();
+                                    const seenG = new Set();
+
+                                    (mod.assignments || []).forEach(a => {
+                                        (a.targets || []).forEach(t => {
+                                            const cName = t.className || (t.targetClassId && classes.find(c => c.id === t.targetClassId)?.name) || (t.targetClassId ? 'Class' : null);
+                                            if (t.targetType === 'class' && cName && !seenC.has(cName)) {
+                                                seenC.add(cName);
+                                                assignedClasses.push(cName);
+                                            }
+                                            const gName = t.groupName || (t.targetGroupId ? 'Group' : null);
+                                            if (t.targetType === 'group' && gName && !seenG.has(gName)) {
+                                                seenG.add(gName);
+                                                assignedGroups.push(gName);
+                                            }
+                                        });
+                                    });
+                                    const hasAssignments = assignedClasses.length > 0 || assignedGroups.length > 0;
+
+                                    return (
+                                        <tr 
+                                            key={mod.id}
+                                            onClick={() => router.push(`/training/${mod.id}`)}
+                                            className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 cursor-pointer transition group"
+                                        >
+                                            <td className="py-3.5 px-5">
+                                                <div className="font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition text-sm">
+                                                    {mod.title}
+                                                </div>
+                                                {mod.titleHindi && (
+                                                    <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                                                        {mod.titleHindi}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="py-3.5 px-3">
+                                                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider ${
+                                                    mod.language === 'python' ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300' : 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300'
+                                                }`}>
+                                                    {mod.language}
+                                                </span>
+                                            </td>
+                                            <td className="py-3.5 px-3 font-medium text-slate-600 dark:text-slate-300">
+                                                {mod.boardAligned || 'CBSE'} • Class {mod.classLevel || 11}
+                                            </td>
+                                            <td className="py-3.5 px-3 text-center font-bold text-slate-800 dark:text-slate-200">
+                                                {mod.totalUnits || mod._count?.units || 0}
+                                            </td>
+                                            <td className="py-3.5 px-3 text-center font-bold text-slate-800 dark:text-slate-200">
+                                                {mod.totalExercises || 0}
+                                            </td>
+                                            <td className="py-3.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                <span className="text-[11px] text-slate-600 dark:text-slate-300 font-semibold">
+                                                    {hasAssignments 
+                                                        ? (assignedClasses.length > 0 ? assignedClasses.join(', ') : `${assignedGroups.length} Groups`)
+                                                        : <span className="text-slate-400 italic">Unassigned</span>}
+                                                </span>
+                                            </td>
+                                            <td className="py-3.5 px-5 text-right" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center justify-end gap-1.5">
+                                                    {isInstructorOrAdmin && (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setProgressModalModule(mod)}
+                                                                className="p-1.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition"
+                                                                title="Student Progress Dashboard"
+                                                            >
+                                                                <BarChart2 className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setAssigningModule(mod)}
+                                                                className="p-1.5 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                                                title="Assign Course"
+                                                            >
+                                                                <UserPlus className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => router.push(`/admin/training/${mod.id}/builder`)}
+                                                                className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                                                title="Edit in Builder"
+                                                            >
+                                                                <Edit3 className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => handleDeleteClick(e, mod)}
+                                                                className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                                                title="Delete Course"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    <Link
+                                                        href={`/training/${mod.id}`}
+                                                        className="btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-1.5 px-3 rounded-xl flex items-center gap-1 shadow-xs ml-1"
+                                                    >
+                                                        <span>Enter</span>
+                                                        <ChevronRight className="w-3.5 h-3.5" />
+                                                    </Link>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Admin Student Progress Dashboard Modal */}
+            {progressModalModule && (
+                <AdminTrainingProgressModal
+                    isOpen={!!progressModalModule}
+                    moduleId={progressModalModule.id}
+                    moduleTitle={progressModalModule.title}
+                    onClose={() => setProgressModalModule(null)}
+                />
             )}
 
             {/* 6-Step Training Module Creator Wizard */}

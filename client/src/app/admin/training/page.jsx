@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
     Plus, BookOpen, GraduationCap, ChevronRight, Edit3, Trash2, 
     BookCheck, AlertCircle, Sparkles, MoveRight, Layers, Award,
-    LayoutGrid, List, Users, UserCheck
+    LayoutGrid, List, Users, UserCheck, BarChart2
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { trainingAPI, classesAPI } from '@/lib/api';
@@ -14,6 +14,7 @@ import PageHeader from '@/components/PageHeader';
 import TrainingModuleWizard from '@/components/TrainingModuleWizard';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import ModuleAssignmentModal from '@/components/ModuleAssignmentModal';
+import AdminTrainingProgressModal from '@/components/AdminTrainingProgressModal';
 
 export default function AdminTrainingModules() {
     const router = useRouter();
@@ -27,6 +28,7 @@ export default function AdminTrainingModules() {
     const [editingModule, setEditingModule] = useState(null);
     const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
     const [assignmentModalModule, setAssignmentModalModule] = useState(null);
+    const [progressModalModule, setProgressModalModule] = useState(null);
     const [deleteModalState, setDeleteModalState] = useState({
         isOpen: false,
         moduleId: null,
@@ -251,6 +253,18 @@ export default function AdminTrainingModules() {
                                                         <BookCheck className="w-3 h-3" /> Published
                                                     </span>
                                                 )}
+                                                {/* Student Progress Button */}
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setProgressModalModule(mod);
+                                                    }}
+                                                    className="p-1.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition"
+                                                    title="View Student Progress Dashboard"
+                                                >
+                                                    <BarChart2 className="w-3.5 h-3.5" />
+                                                </button>
                                                 {/* Assigned Entities Icon-Only Button */}
                                                 <button
                                                     type="button"
@@ -452,6 +466,14 @@ export default function AdminTrainingModules() {
                                                     <div className="flex items-center justify-end gap-1.5">
                                                         <button
                                                             type="button"
+                                                            onClick={() => setProgressModalModule(mod)}
+                                                            className="p-1.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition"
+                                                            title="Student Progress Dashboard"
+                                                        >
+                                                            <BarChart2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
                                                             onClick={(e) => handleOpenEditModule(e, mod)}
                                                             className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                                                             title="Edit Course Settings"
@@ -614,6 +636,16 @@ export default function AdminTrainingModules() {
                     loadData();
                 }}
             />
+
+            {/* Student Progress Dashboard Modal */}
+            {progressModalModule && (
+                <AdminTrainingProgressModal
+                    isOpen={Boolean(progressModalModule)}
+                    moduleId={progressModalModule.id}
+                    moduleTitle={progressModalModule.title}
+                    onClose={() => setProgressModalModule(null)}
+                />
+            )}
         </div>
     );
 }

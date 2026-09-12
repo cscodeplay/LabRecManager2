@@ -9,8 +9,8 @@ import {
     Plus, Trash2, RotateCcw, ListOrdered, FileText, Sparkles,
     CheckSquare, HelpCircle, Code2, BookOpen, AlertTriangle, Send, Award,
     PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Flame, RefreshCw, 
-    Check, Undo2, Lock, CheckCircle, ArrowRight, X, Compass, Clock, ChevronRight,
-    FolderArchive
+    Check, Undo2, Lock, Unlock, CheckCircle, ArrowRight, X, Compass, Clock, ChevronRight,
+    FolderArchive, Eye, Copy, Info, AlertCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Editor from '@monaco-editor/react';
@@ -44,6 +44,7 @@ export default function ExerciseEditorPage() {
     const { moduleId, exerciseId } = useParams();
     const router = useRouter();
     const { isAuthenticated, user } = useAuthStore();
+    const isInstructorOrAdmin = user?.role === 'admin' || user?.role === 'principal' || user?.role === 'instructor' || user?.role === 'lab_assistant';
     
     // Module & Exercise state
     const [moduleData, setModuleData] = useState(null);
@@ -58,6 +59,16 @@ export default function ExerciseEditorPage() {
     const [testResults, setTestResults] = useState(null);
     const [socraticReview, setSocraticReview] = useState(null);
     const [showHint, setShowHint] = useState(false);
+
+    // Solution Access state
+    const [failedAttemptsCount, setFailedAttemptsCount] = useState(0);
+    const [canViewSolution, setCanViewSolution] = useState(false);
+    const [hasUsedSolution, setHasUsedSolution] = useState(false);
+    const [solutionData, setSolutionData] = useState(null);
+    const [showSolutionModal, setShowSolutionModal] = useState(false);
+    const [showSolutionConfirm, setShowSolutionConfirm] = useState(false);
+    const [isRevealingSolution, setIsRevealingSolution] = useState(false);
+    const [copiedSolution, setCopiedSolution] = useState(false);
     
     // Gamification & Progress state
     const [xpEarned, setXpEarned] = useState(0);
@@ -164,13 +175,23 @@ export default function ExerciseEditorPage() {
         }
     }, [advanceCountdown, nextExerciseId, moduleId, router]);
 
-    // Auto-save code draft
+    // User-scoped draft storage key
+    const draftStorageKey = user?.id ? `training_draft_${user.id}_${exerciseId}` : `training_draft_anon_${exerciseId}`;
+
+    // Auto-save code draft to scoped localStorage and database
     useEffect(() => {
         if (!exerciseId || !code) return;
         try {
-            localStorage.setItem(`training_draft_${exerciseId}`, code);
+            localStorage.setItem(draftStorageKey, code);
         } catch {}
-    }, [code, exerciseId]);
+
+        if (user?.id && (exerciseType === 'coding' || exerciseType === 'bug_fix' || exerciseType === 'code_debug')) {
+            const timer = setTimeout(() => {
+                trainingAPI.saveExerciseDraft(exerciseId, { code }).catch(() => {});
+            }, 2500);
+            return () => clearTimeout(timer);
+        }
+    }, [code, exerciseId, draftStorageKey, user?.id, exerciseType]);
 
     // Ensure occurrence inputs array has at least as many fields as detected input() statements
     useEffect(() => {
@@ -251,6 +272,7 @@ export default function ExerciseEditorPage() {
         const initialCode = debugCode || exercise.starterCode || '# Write your code here\n';
         setCode(initialCode);
         try {
+            localStorage.removeItem(draftStorageKey);
             localStorage.removeItem(`training_draft_${exerciseId}`);
         } catch {}
         toast.success('Reset to starter code template');
@@ -269,12 +291,27 @@ export default function ExerciseEditorPage() {
 
                 const ex = exRes.data.data.exercise;
                 const latestSub = exRes.data.data.latestSubmission;
-                setExercise(ex);
+                const failedAttempts = exRes.data.data.failedAttemptsCount || 0;
+                const canViewSol = Boolean(exRes.data.data.canViewSolution);
+                const usedSol = Boolean(exRes.data.data.hasUsedSolution);
 
-                // Restore draft if present
-                const savedDraft = localStorage.getItem(`training_draft_${exerciseId}`);
+                setExercise(ex);
+                setFailedAttemptsCount(failedAttempts);
+                setCanViewSolution(canViewSol);
+                setHasUsedSolution(usedSol);
+
+                // Purge legacy unscoped draft to prevent admin code from bleeding into student account
+                try {
+                    localStorage.removeItem(`training_draft_${exerciseId}`);
+                } catch {}
+
+                // Priority:
+                // 1. Scoped localStorage for this specific user
+                // 2. Database draft or latest submission for this student
+                // 3. Starter / buggy code
+                const scopedDraft = localStorage.getItem(draftStorageKey);
                 const debugCode = ex.exerciseType === 'code_debug' ? (ex.testCases?.buggyCode || ex.starterCode) : null;
-                const initialCode = savedDraft || 
+                const initialCode = scopedDraft || 
                     (latestSub?.code && (ex.exerciseType === 'coding' || ex.exerciseType === 'bug_fix' || ex.exerciseType === 'code_debug') ? latestSub.code : null) || 
                     debugCode || 
                     ex.starterCode || 
@@ -384,6 +421,22 @@ export default function ExerciseEditorPage() {
         }
     };
 
+    const handleRevealSolution = async () => {
+        setIsRevealingSolution(true);
+        try {
+            const res = await trainingAPI.revealExerciseSolution(exerciseId);
+            setSolutionData(res.data.data);
+            setHasUsedSolution(true);
+            setShowSolutionConfirm(false);
+            setShowSolutionModal(true);
+            toast.success('Reference solution unlocked');
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to unlock solution');
+        } finally {
+            setIsRevealingSolution(false);
+        }
+    };
+
     const handleRun = async () => {
         setIsRunning(true);
         setOutput('Running in sandbox...');
@@ -462,6 +515,13 @@ export default function ExerciseEditorPage() {
             } else {
                 toast.error('Submission review needed. Check details below.');
                 setAdvanceCountdown(null);
+                setFailedAttemptsCount(prev => {
+                    const next = prev + 1;
+                    if (next >= 3 || isInstructorOrAdmin) {
+                        setCanViewSolution(true);
+                    }
+                    return next;
+                });
             }
             
             setOutput('');
@@ -556,15 +616,52 @@ export default function ExerciseEditorPage() {
 
                 {/* Right Action Buttons */}
                 <div className="flex items-center gap-2">
-                    {/* Ask Socratic AI Tutor */}
-                    <button
-                        onClick={handleAskSocraticTutor}
-                        className="btn bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/30 text-indigo-300 hover:text-indigo-200 py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5 rounded-xl transition"
-                        title="Get Socratic Hints without spoiling the answer"
-                    >
-                        <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                        <span className="hidden sm:inline">Ask AI Tutor</span>
-                    </button>
+                    {/* Ask Socratic AI Tutor (Instructors/Admins only) */}
+                    {isInstructorOrAdmin && (
+                        <button
+                            onClick={handleAskSocraticTutor}
+                            className="btn bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/30 text-indigo-300 hover:text-indigo-200 py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5 rounded-xl transition"
+                            title="Get Socratic Hints without spoiling the answer"
+                        >
+                            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                            <span className="hidden sm:inline">Ask AI Tutor</span>
+                        </button>
+                    )}
+
+                    {/* Reference Solution Button */}
+                    {(exerciseType === 'coding' || exerciseType === 'bug_fix' || exerciseType === 'code_debug') && (
+                        canViewSolution ? (
+                            <button
+                                onClick={() => {
+                                    if (solutionData) {
+                                        setShowSolutionModal(true);
+                                    } else if (hasUsedSolution || isInstructorOrAdmin) {
+                                        handleRevealSolution();
+                                    } else {
+                                        setShowSolutionConfirm(true);
+                                    }
+                                }}
+                                className={`py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5 rounded-xl border transition shadow-sm ${
+                                    hasUsedSolution
+                                        ? 'bg-amber-950/80 hover:bg-amber-900 border-amber-500/40 text-amber-300'
+                                        : 'bg-emerald-950/80 hover:bg-emerald-900 border-emerald-500/40 text-emerald-300'
+                                }`}
+                                title={hasUsedSolution ? "Review Reference Solution (Previously unlocked)" : "View Complete Reference Solution"}
+                            >
+                                <Unlock className="w-3.5 h-3.5 text-emerald-400" />
+                                <span className="hidden sm:inline">Reference Solution</span>
+                                {hasUsedSolution && <span className="text-[10px] bg-amber-500/20 px-1 rounded text-amber-300">Assisted</span>}
+                            </button>
+                        ) : (
+                            <div 
+                                className="py-1.5 px-2.5 text-xs text-slate-500 bg-slate-800/60 border border-slate-700/60 rounded-xl flex items-center gap-1.5 cursor-not-allowed select-none"
+                                title={`Solution unlocks after 3 failed attempts (${failedAttemptsCount}/3 attempts)`}
+                            >
+                                <Lock className="w-3.5 h-3.5 text-slate-500" />
+                                <span className="hidden sm:inline">Solution ({failedAttemptsCount}/3)</span>
+                            </div>
+                        )
+                    )}
 
                     {/* Unit Theory Reader */}
                     {exercise?.unitId && (
@@ -1608,6 +1705,70 @@ export default function ExerciseEditorPage() {
                             )}
                         </div>
 
+                        {/* Sample Test Cases & Input Format (Pre-submission visibility) */}
+                        {exercise?.testCases && Array.isArray(exercise.testCases) && exercise.testCases.some(tc => !tc.isHidden) && (
+                            <div className="p-4 border-t border-slate-700 bg-slate-900/90 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                                        <CheckCircle className="w-3.5 h-3.5 text-emerald-400" /> Sample Test Cases & Format
+                                    </h3>
+                                    <span className="text-[10px] text-slate-400 font-mono">
+                                        {exercise.testCases.filter(t => !t.isHidden).length} Sample Case(s)
+                                    </span>
+                                </div>
+
+                                <div className="text-[11px] text-slate-300 bg-indigo-950/40 border border-indigo-500/20 p-2.5 rounded-xl flex items-start gap-2">
+                                    <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                                    <div>
+                                        <span className="font-semibold text-indigo-300">Flexible Input Notice: </span>
+                                        <span>Interactive prompt strings like <code className="text-indigo-300">input("Enter value: ")</code> or raw <code className="text-indigo-300">input()</code> are both supported and will not corrupt test evaluations. Match the exact expected output format below.</span>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                                    {exercise.testCases.filter(tc => !tc.isHidden).map((tc, tcIdx) => (
+                                        <div key={tcIdx} className="bg-slate-950/70 rounded-xl border border-slate-800 p-3 space-y-2 text-xs">
+                                            <div className="flex items-center justify-between">
+                                                <span className="font-semibold text-slate-300 font-mono text-[11px]">
+                                                    Sample #{tcIdx + 1}
+                                                </span>
+                                                {tc.input != null && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const inputStr = typeof tc.input === 'string' ? tc.input : String(tc.input);
+                                                            const lines = inputStr.split(/\r?\n/);
+                                                            setOccurrenceInputs(lines.length > 0 ? lines : ['']);
+                                                            setCustomInput(inputStr);
+                                                            toast.success(`Loaded Sample #${tcIdx + 1} into STDIN`);
+                                                        }}
+                                                        className="text-[10px] bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-lg flex items-center gap-1 font-medium transition"
+                                                    >
+                                                        <Sparkles className="w-2.5 h-2.5" /> Load to STDIN
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
+                                                <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                                                    <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1">Standard Input:</div>
+                                                    <pre className="text-slate-200 whitespace-pre-wrap">{tc.input ? String(tc.input) : '<None>'}</pre>
+                                                </div>
+                                                <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                                                    <div className="text-[10px] text-emerald-400 uppercase font-bold tracking-wider mb-1">Expected Output:</div>
+                                                    <pre className="text-emerald-300 whitespace-pre-wrap">{tc.expectedOutput ? String(tc.expectedOutput) : '<Any output>'}</pre>
+                                                </div>
+                                            </div>
+                                            {tc.explanation && (
+                                                <div className="text-[11px] text-slate-400 italic">
+                                                    Note: {tc.explanation}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Step-by-Step STDIN (Occurrence-Based) Section */}
                         <div className="p-5 border-t border-slate-700 bg-slate-900/80 space-y-3.5">
                             <div className="flex items-center justify-between">
@@ -1861,8 +2022,8 @@ export default function ExerciseEditorPage() {
 
             </div>
 
-            {/* Socratic AI Tutor Side Drawer */}
-            {showSocraticDrawer && (
+            {/* Socratic AI Tutor Side Drawer (Instructors/Admins only) */}
+            {showSocraticDrawer && isInstructorOrAdmin && (
                 <div className="fixed inset-y-0 right-0 w-96 bg-slate-900 border-l border-slate-700 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
                     <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-indigo-950/40">
                         <div className="flex items-center gap-2">
@@ -1937,6 +2098,142 @@ export default function ExerciseEditorPage() {
                                 </button>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* Solution Access Confirmation Dialog */}
+            {showSolutionConfirm && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                                <AlertTriangle className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-bold text-white">Unlock Reference Solution?</h3>
+                                <p className="text-xs text-slate-400">Available after 3 failed attempts</p>
+                            </div>
+                        </div>
+
+                        <div className="bg-amber-950/30 border border-amber-500/20 rounded-2xl p-4 text-xs text-amber-200 space-y-2">
+                            <p className="font-semibold text-amber-300">⚠️ Important Notice:</p>
+                            <p>
+                                Accessing the official reference solution will be permanently recorded on your training record.
+                                Any subsequent submissions for this exercise will be tagged as <span className="underline font-bold text-amber-300">solution-assisted</span> in the instructor progress dashboard.
+                            </p>
+                            <p className="text-amber-300/80">
+                                We encourage you to use this reference to understand the algorithm, and then write your own implementation.
+                            </p>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowSolutionConfirm(false)}
+                                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition"
+                                disabled={isRevealingSolution}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleRevealSolution}
+                                disabled={isRevealingSolution}
+                                className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-xl transition flex items-center gap-1.5 shadow-lg shadow-amber-600/20"
+                            >
+                                {isRevealingSolution ? (
+                                    <>
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        <span>Unlocking...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Unlock className="w-3.5 h-3.5" />
+                                        <span>I Understand, Unlock Solution</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Reference Solution Viewer Modal */}
+            {showSolutionModal && solutionData && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
+                        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                                    <Unlock className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                                        <span>Reference Solution</span>
+                                        <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono">
+                                            Assisted Mode
+                                        </span>
+                                    </h3>
+                                    <p className="text-[11px] text-slate-400">{exercise?.title}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowSolutionModal(false)}
+                                className="p-1.5 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+                            <div className="flex items-center justify-between">
+                                <span className="font-semibold text-slate-300 uppercase tracking-wider text-[10px]">
+                                    Official Python Implementation:
+                                </span>
+                                <button
+                                    onClick={() => {
+                                        if (solutionData.solutionCode) {
+                                            navigator.clipboard.writeText(solutionData.solutionCode);
+                                            setCopiedSolution(true);
+                                            toast.success('Solution copied to clipboard');
+                                            setTimeout(() => setCopiedSolution(false), 2000);
+                                        }
+                                    }}
+                                    className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition font-medium"
+                                >
+                                    {copiedSolution ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                    <span>{copiedSolution ? 'Copied' : 'Copy Code'}</span>
+                                </button>
+                            </div>
+
+                            <div className="bg-slate-950 rounded-2xl border border-slate-800 p-4 font-mono text-xs text-emerald-300 overflow-x-auto">
+                                <pre className="whitespace-pre">{solutionData.solutionCode || '# No code provided'}</pre>
+                            </div>
+
+                            {solutionData.explanation && (
+                                <div className="p-4 bg-indigo-950/30 border border-indigo-500/20 rounded-2xl text-indigo-200 space-y-1.5">
+                                    <h4 className="font-bold text-indigo-300 text-xs flex items-center gap-1.5">
+                                        <Lightbulb className="w-3.5 h-3.5 text-amber-400" /> Concept & Approach:
+                                    </h4>
+                                    <p className="whitespace-pre-wrap leading-relaxed">{solutionData.explanation}</p>
+                                </div>
+                            )}
+
+                            <div className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/60 text-slate-400 text-[11px] flex items-start gap-2">
+                                <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                                <span>Try to understand why this solution works, close this dialog, and adapt your code to pass all test cases!</span>
+                            </div>
+                        </div>
+
+                        <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex justify-end">
+                            <button
+                                onClick={() => setShowSolutionModal(false)}
+                                className="btn bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 px-5 rounded-xl transition shadow-sm"
+                            >
+                                Back to Coding Arena
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

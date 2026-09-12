@@ -74,7 +74,7 @@ async function evaluateStudentCodeWithAI(code, problemStatement, failedCases) {
 /**
  * Helper to run Python/SQL code with local sandbox and Wandbox fallback
  */
-async function executePythonCode(code, input = '', language = 'python', studentId = null) {
+async function executePythonCode(code, input = '', language = 'python', studentId = null, quietInput = false) {
     let workspaceDir = process.cwd();
     if (studentId) {
         try {
@@ -157,10 +157,15 @@ con.close()
     } else if (input !== undefined && input !== null) {
         inputStr = String(input) + '\n';
     }
+
+    // Neutralize input("Prompt") prompt printing to stdout during test evaluation
+    const codeToRun = (language === 'python' && quietInput)
+        ? `import builtins as _bi\n_real_input = _bi.input\ndef _quiet_input(prompt=None):\n    return _real_input()\n_bi.input = _quiet_input\n${code}`
+        : code;
     
     // 1. Try local python3 execution first for high speed, isolated workspace directory, and reliability
     try {
-        const proc = spawnSync('python3', ['-c', code], {
+        const proc = spawnSync('python3', ['-c', codeToRun], {
             input: inputStr,
             encoding: 'utf8',
             timeout: 6000,
@@ -182,7 +187,7 @@ con.close()
     try {
         const response = await axios.post('https://wandbox.org/api/compile.json', {
             compiler: 'cpython-3.11.10',
-            code: code,
+            code: codeToRun,
             stdin: inputStr
         }, { timeout: 8000 });
         
@@ -205,9 +210,41 @@ con.close()
 router.get('/modules', authenticate, asyncHandler(async (req, res) => {
     const isAdmin = ['admin', 'principal', 'instructor'].includes(req.user.role);
     let where = { schoolId: req.user.schoolId };
-    // Students only see published modules; admins see all (draft + published)
+
+    // Students only see published modules assigned to them directly or to their class/group
     if (!isAdmin) {
         where.isPublished = true;
+
+        const enrollments = await prisma.classEnrollment.findMany({
+            where: { studentId: req.user.id, status: 'active' },
+            select: { classId: true }
+        });
+        const groupMemberships = await prisma.groupMember.findMany({
+            where: { studentId: req.user.id },
+            select: { groupId: true }
+        });
+        const classIds = enrollments.map(e => e.classId).filter(Boolean);
+        const groupIds = groupMemberships.map(g => g.groupId).filter(Boolean);
+
+        const orTargetConditions = [
+            { targetType: 'student', targetStudentId: req.user.id }
+        ];
+        if (classIds.length > 0) {
+            orTargetConditions.push({ targetType: 'class', targetClassId: { in: classIds } });
+        }
+        if (groupIds.length > 0) {
+            orTargetConditions.push({ targetType: 'group', targetGroupId: { in: groupIds } });
+        }
+
+        where.assignments = {
+            some: {
+                targets: {
+                    some: {
+                        OR: orTargetConditions
+                    }
+                }
+            }
+        };
     }
     
     // Filter by academic session if provided via header from client interceptor
@@ -317,6 +354,49 @@ router.get('/modules/:id', authenticate, asyncHandler(async (req, res) => {
 
     if (!moduleDetails) {
         return res.status(404).json({ success: false, message: 'Module not found' });
+    }
+
+    const isAdmin = ['admin', 'principal', 'instructor'].includes(req.user.role);
+    if (!isAdmin) {
+        if (!moduleDetails.isPublished) {
+            return res.status(403).json({ success: false, message: 'This training module is currently in draft mode' });
+        }
+
+        const enrollments = await prisma.classEnrollment.findMany({
+            where: { studentId: req.user.id, status: 'active' },
+            select: { classId: true }
+        });
+        const groupMemberships = await prisma.groupMember.findMany({
+            where: { studentId: req.user.id },
+            select: { groupId: true }
+        });
+        const classIds = enrollments.map(e => e.classId).filter(Boolean);
+        const groupIds = groupMemberships.map(g => g.groupId).filter(Boolean);
+
+        const orTargetConditions = [
+            { targetType: 'student', targetStudentId: req.user.id }
+        ];
+        if (classIds.length > 0) {
+            orTargetConditions.push({ targetType: 'class', targetClassId: { in: classIds } });
+        }
+        if (groupIds.length > 0) {
+            orTargetConditions.push({ targetType: 'group', targetGroupId: { in: groupIds } });
+        }
+
+        const assignmentCount = await prisma.assignment.count({
+            where: {
+                trainingModuleId: moduleId,
+                targets: {
+                    some: {
+                        OR: orTargetConditions
+                    }
+                }
+            }
+        });
+
+        if (assignmentCount === 0) {
+            return res.status(403).json({ success: false, message: 'You are not assigned to this training course module' });
+        }
     }
 
     // Get student/user progress
@@ -1258,8 +1338,12 @@ router.get('/exercises/:id', authenticate, asyncHandler(async (req, res) => {
         }
     }
 
-    // Fetch latest user submission for this exercise to restore answers & results
+    // Fetch latest user submission or draft for this exercise to restore answers & results
     let latestSubmission = null;
+    let failedAttemptsCount = 0;
+    let hasUsedSolution = false;
+    const isAdmin = ['admin', 'principal', 'instructor'].includes(req.user.role);
+
     if (req.user?.id) {
         latestSubmission = await prisma.codingSubmission.findFirst({
             where: {
@@ -1268,9 +1352,148 @@ router.get('/exercises/:id', authenticate, asyncHandler(async (req, res) => {
             },
             orderBy: { submittedAt: 'desc' }
         });
+
+        failedAttemptsCount = await prisma.codingSubmission.count({
+            where: {
+                exerciseId: req.params.id,
+                studentId: req.user.id,
+                status: 'failed'
+            }
+        });
+
+        const solutionLog = await prisma.activityLog.findFirst({
+            where: {
+                userId: req.user.id,
+                entityType: 'training_exercise',
+                entityId: req.params.id,
+                action_type: 'TRAINING_VIEW_SOLUTION'
+            }
+        });
+        hasUsedSolution = Boolean(solutionLog);
     }
 
-    res.json({ success: true, data: { exercise, latestSubmission } });
+    const canViewSolution = isAdmin || failedAttemptsCount >= 3;
+
+    res.json({
+        success: true,
+        data: {
+            exercise,
+            latestSubmission,
+            failedAttemptsCount,
+            canViewSolution,
+            hasUsedSolution
+        }
+    });
+}));
+
+/**
+ * @route   POST /api/training/exercises/:id/draft
+ * @desc    Auto-save in-progress code draft to database per user
+ * @access  Private
+ */
+router.post('/exercises/:id/draft', authenticate, asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { code } = req.body;
+    if (typeof code !== 'string') {
+        return res.status(400).json({ success: false, message: 'Code string is required' });
+    }
+
+    const existingDraft = await prisma.codingSubmission.findFirst({
+        where: {
+            exerciseId: id,
+            studentId: req.user.id,
+            status: 'draft'
+        }
+    });
+
+    let draftRecord;
+    if (existingDraft) {
+        draftRecord = await prisma.codingSubmission.update({
+            where: { id: existingDraft.id },
+            data: {
+                code,
+                submittedAt: new Date()
+            }
+        });
+    } else {
+        draftRecord = await prisma.codingSubmission.create({
+            data: {
+                exerciseId: id,
+                studentId: req.user.id,
+                code,
+                status: 'draft',
+                submittedAt: new Date()
+            }
+        });
+    }
+
+    res.json({ success: true, data: { draft: draftRecord } });
+}));
+
+/**
+ * @route   POST /api/training/exercises/:id/solution
+ * @desc    Reveal solution after 3 failed attempts & record activity
+ * @access  Private
+ */
+router.post('/exercises/:id/solution', authenticate, asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const isAdmin = ['admin', 'principal', 'instructor'].includes(req.user.role);
+
+    const exercise = await prisma.trainingExercise.findUnique({
+        where: { id },
+        select: { id: true, title: true, solutionCode: true, testCases: true }
+    });
+    if (!exercise) {
+        return res.status(404).json({ success: false, message: 'Exercise not found' });
+    }
+
+    let failedAttemptsCount = 0;
+    if (!isAdmin) {
+        failedAttemptsCount = await prisma.codingSubmission.count({
+            where: {
+                exerciseId: id,
+                studentId: req.user.id,
+                status: 'failed'
+            }
+        });
+
+        if (failedAttemptsCount < 3) {
+            return res.status(403).json({
+                success: false,
+                message: `Reference solution is locked. You must make at least 3 failed attempts before unlocking (current failed attempts: ${failedAttemptsCount}/3).`
+            });
+        }
+    }
+
+    // Log in ActivityLog for instructor/admin audit
+    try {
+        await prisma.activityLog.create({
+            data: {
+                userId: req.user.id,
+                schoolId: req.user.schoolId,
+                action_type: 'TRAINING_VIEW_SOLUTION',
+                description: `Student accessed reference solution for exercise "${exercise.title}" after ${failedAttemptsCount} failed attempts.`,
+                entityType: 'training_exercise',
+                entityId: exercise.id,
+                metadata: {
+                    failedAttempts: failedAttemptsCount,
+                    exerciseTitle: exercise.title,
+                    usedSolution: true,
+                    revealedAt: new Date()
+                }
+            }
+        });
+    } catch (logErr) {
+        console.warn('[ActivityLog] Could not log solution reveal:', logErr.message);
+    }
+
+    res.json({
+        success: true,
+        data: {
+            solutionCode: exercise.solutionCode || '# No reference solution code registered for this exercise',
+            explanation: exercise.testCases?.explanation || 'Study the reference logic and implement the solution in your code.'
+        }
+    });
 }));
 
 /**
@@ -1613,7 +1836,7 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
                             }
                         }
                     }
-                    exe = await executePythonCode(codeToRun, stdinInput, language, studentId);
+                    exe = await executePythonCode(codeToRun, stdinInput, language, studentId, true);
                 }
                 
                 const actualRaw = exe.stdout ? exe.stdout.replace(/\r\n/g, '\n') : '';
@@ -1626,9 +1849,14 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
                 
                 let passed = (exe.code === 0) && (actualClean === expectedClean);
 
-                // Flexible comparison for numeric equality and outputs with labels (e.g. "Value is: 10" or float "10.0")
+                // Flexible comparison for numeric equality, outputs with labels, or residual prompts
                 if (!passed && exe.code === 0) {
-                    if (!isNaN(Number(expectedClean)) && !isNaN(Number(actualClean)) && Number(expectedClean) === Number(actualClean)) {
+                    const strippedActual = actualClean.replace(/^.*?(?:enter|input|prompt|value)[^:\n]*?[:>]\s*/is, '').trim();
+                    if (strippedActual === expectedClean) {
+                        passed = true;
+                    } else if (!isNaN(Number(expectedClean)) && !isNaN(Number(actualClean)) && Number(expectedClean) === Number(actualClean)) {
+                        passed = true;
+                    } else if (!isNaN(Number(expectedClean)) && !isNaN(Number(strippedActual)) && Number(expectedClean) === Number(strippedActual)) {
                         passed = true;
                     } else {
                         const lines = actualClean.split('\n').map(l => l.trim()).filter(Boolean);
@@ -1690,6 +1918,10 @@ router.post('/exercises/:id/submit', authenticate, asyncHandler(async (req, res)
     }
 
     const testStatus = passedAll ? 'passed' : 'failed';
+    const usedSolution = Boolean(req.body.usedSolution);
+    if (usedSolution && Array.isArray(results) && results.length > 0) {
+        results.forEach(r => { r.usedSolution = true; });
+    }
 
     // Save Submission
     const submission = await prisma.codingSubmission.create({
@@ -2148,26 +2380,238 @@ router.get('/modules/:id/assignments', authenticate, authorize('admin', 'princip
 router.get('/modules/:id/progress', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
     const { id } = req.params;
 
-    const progress = await prisma.studentTrainingProgress.findMany({
-        where: { moduleId: id },
+    const mod = await prisma.trainingModule.findUnique({
+        where: { id },
         include: {
-            student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } }
-        },
-        orderBy: { totalXP: 'desc' }
-    });
-
-    const unitMasteries = await prisma.studentUnitMastery.findMany({
-        where: { unit: { moduleId: id } },
-        include: {
-            student: { select: { id: true, firstName: true, lastName: true } }
+            units: {
+                orderBy: { unitNumber: 'asc' },
+                include: {
+                    exercises: {
+                        orderBy: { sequenceOrder: 'asc' },
+                        select: { id: true, title: true, exerciseType: true, xpReward: true, sequenceOrder: true, unitId: true }
+                    }
+                }
+            },
+            assignments: {
+                include: { targets: true }
+            }
         }
     });
+
+    if (!mod) {
+        return res.status(404).json({ success: false, message: 'Training module not found' });
+    }
+
+    const classIds = new Set();
+    const groupIds = new Set();
+    const directStudentIds = new Set();
+
+    (mod.assignments || []).forEach(a => {
+        (a.targets || []).forEach(t => {
+            if (t.targetClassId) classIds.add(t.targetClassId);
+            if (t.targetGroupId) groupIds.add(t.targetGroupId);
+            if (t.targetStudentId) directStudentIds.add(t.targetStudentId);
+        });
+    });
+
+    const [classEnrollments, groupMembers] = await Promise.all([
+        classIds.size > 0 ? prisma.classEnrollment.findMany({
+            where: { classId: { in: Array.from(classIds) }, status: 'active' },
+            include: {
+                student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true, email: true } },
+                class: { select: { id: true, name: true } }
+            }
+        }) : [],
+        groupIds.size > 0 ? prisma.groupMember.findMany({
+            where: { groupId: { in: Array.from(groupIds) } },
+            include: {
+                student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true, email: true } },
+                group: { select: { id: true, name: true } }
+            }
+        }) : []
+    ]);
+
+    // Build unique student map
+    const studentMap = new Map();
+    classEnrollments.forEach(ce => {
+        if (ce.student) {
+            studentMap.set(ce.student.id, {
+                ...ce.student,
+                className: ce.class?.name || null,
+                groupName: null
+            });
+        }
+    });
+    groupMembers.forEach(gm => {
+        if (gm.student) {
+            if (studentMap.has(gm.student.id)) {
+                studentMap.get(gm.student.id).groupName = gm.group?.name || null;
+            } else {
+                studentMap.set(gm.student.id, {
+                    ...gm.student,
+                    className: null,
+                    groupName: gm.group?.name || null
+                });
+            }
+        }
+    });
+
+    if (directStudentIds.size > 0) {
+        const directStudents = await prisma.user.findMany({
+            where: { id: { in: Array.from(directStudentIds) } },
+            select: { id: true, firstName: true, lastName: true, admissionNumber: true, email: true }
+        });
+        directStudents.forEach(ds => {
+            if (!studentMap.has(ds.id)) {
+                studentMap.set(ds.id, { ...ds, className: null, groupName: null });
+            }
+        });
+    }
+
+    // Include any student who already has progress record in this module
+    const existingProgress = await prisma.studentTrainingProgress.findMany({
+        where: { moduleId: id },
+        include: {
+            student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true, email: true } }
+        }
+    });
+    existingProgress.forEach(ep => {
+        if (ep.student && !studentMap.has(ep.student.id)) {
+            studentMap.set(ep.student.id, { ...ep.student, className: null, groupName: null });
+        }
+    });
+
+    const allStudentIds = Array.from(studentMap.keys());
+    const allExerciseIds = mod.units.flatMap(u => u.exercises.map(e => e.id));
+
+    const [submissions, unitMasteries, solutionLogs] = await Promise.all([
+        allStudentIds.length > 0 && allExerciseIds.length > 0 ? prisma.codingSubmission.findMany({
+            where: {
+                exerciseId: { in: allExerciseIds },
+                studentId: { in: allStudentIds }
+            },
+            orderBy: { submittedAt: 'desc' }
+        }) : [],
+        allStudentIds.length > 0 ? prisma.studentUnitMastery.findMany({
+            where: {
+                unit: { moduleId: id },
+                studentId: { in: allStudentIds }
+            }
+        }) : [],
+        allStudentIds.length > 0 && allExerciseIds.length > 0 ? prisma.activityLog.findMany({
+            where: {
+                userId: { in: allStudentIds },
+                entityType: 'training_exercise',
+                entityId: { in: allExerciseIds },
+                action_type: 'TRAINING_VIEW_SOLUTION'
+            }
+        }) : []
+    ]);
+
+    const totalExercisesCount = allExerciseIds.length;
+    const progressMap = new Map(existingProgress.map(p => [p.studentId, p]));
+
+    const enrichedStudents = allStudentIds.map(sId => {
+        const std = studentMap.get(sId);
+        const pr = progressMap.get(sId);
+        const stdSubs = submissions.filter(sub => sub.studentId === sId);
+        const stdMasteries = unitMasteries.filter(m => m.studentId === sId);
+        const stdSolutionLogs = solutionLogs.filter(sl => sl.userId === sId);
+
+        const passedExIds = new Set(stdSubs.filter(sub => sub.status === 'passed').map(sub => sub.exerciseId));
+        const passedCount = passedExIds.size;
+        const overallProgress = totalExercisesCount > 0 ? Math.round((passedCount / totalExercisesCount) * 100) : 0;
+
+        const usedSolutionExIds = new Set([
+            ...stdSolutionLogs.map(sl => sl.entityId),
+            ...stdSubs.filter(sub => {
+                const tr = sub.testResults;
+                return (Array.isArray(tr) && tr.some(t => t?.usedSolution)) || (tr && typeof tr === 'object' && tr.usedSolution);
+            }).map(sub => sub.exerciseId)
+        ]);
+
+        const unitsProgress = mod.units.map(u => {
+            const uMastery = stdMasteries.find(m => m.unitId === u.id);
+            const uExIds = u.exercises.map(e => e.id);
+            const uPassedCount = uExIds.filter(eId => passedExIds.has(eId)).length;
+            return {
+                unitId: u.id,
+                unitNumber: u.unitNumber,
+                title: u.title,
+                status: uMastery?.status || (uPassedCount === uExIds.length && uExIds.length > 0 ? 'mastered' : uPassedCount > 0 ? 'in_progress' : 'locked'),
+                masteryScore: uMastery?.masteryScore || (uExIds.length > 0 ? Math.round((uPassedCount / uExIds.length) * 100) : 0),
+                exercisesDone: uPassedCount,
+                totalExercises: uExIds.length
+            };
+        });
+
+        const exercisesDetail = mod.units.flatMap(u => u.exercises.map(ex => {
+            const exSubs = stdSubs.filter(s => s.exerciseId === ex.id);
+            const latestSub = exSubs[0] || null;
+            const isPassed = exSubs.some(s => s.status === 'passed');
+            const usedSol = usedSolutionExIds.has(ex.id);
+            return {
+                exerciseId: ex.id,
+                unitId: u.id,
+                unitNumber: u.unitNumber,
+                title: ex.title,
+                exerciseType: ex.exerciseType,
+                status: isPassed ? 'passed' : latestSub ? latestSub.status : 'unvisited',
+                attemptsCount: exSubs.length,
+                usedSolution: usedSol,
+                latestCode: latestSub?.code || null,
+                latestOutput: latestSub?.output || null,
+                score: isPassed ? (ex.xpReward || 10) : 0
+            };
+        }));
+
+        let statusLabel = 'not_started';
+        if (overallProgress === 100) statusLabel = 'completed';
+        else if (overallProgress > 0 || stdSubs.length > 0) statusLabel = 'in_progress';
+
+        return {
+            student: std,
+            overallProgress,
+            totalXP: pr?.totalXP || (passedCount * 10),
+            streak: pr?.streak || 0,
+            lastActiveAt: pr?.lastActiveAt || (stdSubs[0]?.submittedAt || null),
+            status: statusLabel,
+            passedCount,
+            totalExercisesCount,
+            usedSolutionCount: usedSolutionExIds.size,
+            unitsProgress,
+            exercisesDetail
+        };
+    });
+
+    enrichedStudents.sort((a, b) => b.overallProgress - a.overallProgress || b.totalXP - a.totalXP);
+
+    const totalAssigned = enrichedStudents.length;
+    const totalActive = enrichedStudents.filter(s => s.status === 'in_progress' || s.status === 'completed').length;
+    const totalCompleted = enrichedStudents.filter(s => s.status === 'completed').length;
+    const avgProgress = totalAssigned > 0 ? Math.round(enrichedStudents.reduce((acc, s) => acc + s.overallProgress, 0) / totalAssigned) : 0;
+    const solutionAssistedCount = enrichedStudents.filter(s => s.usedSolutionCount > 0).length;
 
     res.json({
         success: true,
         data: {
-            progress,
-            unitMasteries
+            module: {
+                id: mod.id,
+                title: mod.title,
+                language: mod.language,
+                boardAligned: mod.boardAligned,
+                classLevel: mod.classLevel,
+                totalUnits: mod.units.length,
+                totalExercises: totalExercisesCount
+            },
+            metrics: {
+                totalAssigned,
+                totalActive,
+                totalCompleted,
+                avgProgress,
+                solutionAssistedCount
+            },
+            students: enrichedStudents
         }
     });
 }));
