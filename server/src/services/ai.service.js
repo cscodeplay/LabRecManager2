@@ -4709,16 +4709,57 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
             cleanText = cleanText.substring(firstCurly, lastCurly + 1);
         }
 
+        // Helper to escape raw control characters (literal unescaped newlines/tabs) inside quotes
+        const sanitizeControlCharsInStrings = (jsonStr) => {
+            let inString = false;
+            let escaped = false;
+            let out = '';
+            for (let i = 0; i < jsonStr.length; i++) {
+                const c = jsonStr[i];
+                if (c === '"' && !escaped) {
+                    inString = !inString;
+                }
+                if (inString && c === '\n') {
+                    out += '\\n';
+                } else if (inString && c === '\r') {
+                    out += '\\r';
+                } else if (inString && c === '\t') {
+                    out += '\\t';
+                } else {
+                    out += c;
+                }
+                escaped = (c === '\\' && !escaped);
+            }
+            return out;
+        };
+
         try {
             return JSON.parse(cleanText);
         } catch (err) {
-            // Attempt to clean trailing commas
+            // Attempt repairs: trailing commas, unescaped LaTeX backslashes (\frac, \partial, \alpha, etc.), control chars
             try {
-                const fixed = cleanText.replace(/,\s*([\]}])/g, '$1');
+                let fixed = sanitizeControlCharsInStrings(cleanText);
+                fixed = fixed.replace(/,\s*([\]}])/g, '$1');
+                // Escape backslashes that are not valid JSON escape characters
+                fixed = fixed.replace(/\\([^"\\/bfnrtu]|u(?![\da-fA-F]{4}))/g, '\\\\$1');
                 return JSON.parse(fixed);
             } catch (innerErr) {
-                console.warn('[AIService] Failed to parse JSON response:', cleanText.substring(0, 100));
-                return null;
+                // If truncated, attempt to balance braces/brackets
+                try {
+                    let repaired = sanitizeControlCharsInStrings(cleanText);
+                    repaired = repaired.replace(/,\s*([\]}])/g, '$1');
+                    repaired = repaired.replace(/\\([^"\\/bfnrtu]|u(?![\da-fA-F]{4}))/g, '\\\\$1');
+                    const openBraces = (repaired.match(/{/g) || []).length;
+                    const closeBraces = (repaired.match(/}/g) || []).length;
+                    const openSquares = (repaired.match(/\[/g) || []).length;
+                    const closeSquares = (repaired.match(/\]/g) || []).length;
+                    if (openSquares > closeSquares) repaired += ']'.repeat(openSquares - closeSquares);
+                    if (openBraces > closeBraces) repaired += '}'.repeat(openBraces - closeBraces);
+                    return JSON.parse(repaired);
+                } catch (truncErr) {
+                    console.warn('[AIService] Failed to parse JSON response:', cleanText.substring(0, 120));
+                    return null;
+                }
             }
         }
     }
