@@ -396,12 +396,21 @@ router.post('/load-data', authenticate, authorize('admin', 'principal', 'instruc
 
         for (let uIdx = 0; uIdx < units.length; uIdx++) {
             const u = units[uIdx];
+            let unitDesc = null;
+            if (typeof u.description === 'object' && u.description !== null) {
+                unitDesc = JSON.stringify(u.description);
+            } else if (typeof u.description === 'string' && u.description.trim()) {
+                unitDesc = u.description;
+            } else if (u.theory) {
+                unitDesc = typeof u.theory === 'object' ? JSON.stringify(u.theory) : String(u.theory);
+            }
+
             const createdUnit = await prisma.trainingUnit.create({
                 data: {
                     moduleId: createdModule.id,
                     unitNumber: u.unitNumber || (uIdx + 1),
                     title: u.title || `Unit ${uIdx + 1}`,
-                    description: u.description || null,
+                    description: unitDesc,
                     expectedHours: u.expectedHours || 2,
                     unlockThreshold: 75,
                     sequenceOrder: uIdx + 1

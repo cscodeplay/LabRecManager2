@@ -45,11 +45,27 @@ export default function TrainingModuleConfirmCard({ action }) {
     const [selectedTypeFilter, setSelectedTypeFilter] = useState('all');
     const [expandedUnit, setExpandedUnit] = useState(0); // Unit 1 expanded by default
     const [previewExercise, setPreviewExercise] = useState(null);
+    const [showTheoryUnit, setShowTheoryUnit] = useState(null); // Accordion to inspect extracted theory
 
     const [loading, setLoading] = useState(false);
     const [isConfirmed, setIsConfirmed] = useState(action.isConfirmed || false);
     const [createdModule, setCreatedModule] = useState(null);
     const [copiedCode, setCopiedCode] = useState(false);
+
+    // Extract or parse structured theory data for a unit
+    const getParsedUnitTheory = (u) => {
+        if (!u) return null;
+        if (typeof u.theory === 'object' && u.theory !== null) return u.theory;
+        if (u.description) {
+            try {
+                const parsed = JSON.parse(u.description);
+                if (parsed && typeof parsed === 'object') return parsed;
+            } catch (e) {
+                return { content: u.description };
+            }
+        }
+        return null;
+    };
 
     // Filter exercises by selected question type
     const filteredExercises = useMemo(() => {
@@ -194,8 +210,11 @@ export default function TrainingModuleConfirmCard({ action }) {
                                 {action.sourceDocument || 'Syllabus / Reference Ebook'}
                             </span>
                         </div>
-                        <p className="text-[11px] text-purple-100 mt-0.5">
-                            {units.length} Units • {exercises.length} Exercises Generated • Board: {boardAligned}
+                        <p className="text-[11px] text-purple-100 mt-0.5 flex items-center gap-2 flex-wrap">
+                            <span>{units.length} Units • {exercises.length} Exercises Generated • Board: {boardAligned}</span>
+                            <span className="px-1.5 py-0.2 rounded bg-white/20 text-[10px] font-semibold tracking-wide">
+                                ⚡ Max 2 Chapters Active
+                            </span>
                         </p>
                     </div>
                 </div>
@@ -341,11 +360,95 @@ export default function TrainingModuleConfirmCard({ action }) {
                                 </div>
 
                                 <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowTheoryUnit(showTheoryUnit === uIdx ? null : uIdx);
+                                        }}
+                                        className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-purple-100 hover:bg-purple-200 dark:bg-purple-950/80 dark:hover:bg-purple-900/80 text-purple-800 dark:text-purple-300 flex items-center gap-1 transition"
+                                        title="View Chapter Theory Notes extracted from book"
+                                    >
+                                        <BookOpen className="w-3 h-3" />
+                                        <span>{showTheoryUnit === uIdx ? 'Hide Theory' : '📖 Theory Notes'}</span>
+                                    </button>
                                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-semibold">
                                         Unit {u.unitNumber || (uIdx + 1)}
                                     </span>
                                 </div>
                             </div>
+
+                            {/* Extracted Chapter Theory Preview Drawer */}
+                            {showTheoryUnit === uIdx && (() => {
+                                const theory = getParsedUnitTheory(u);
+                                if (!theory) {
+                                    return (
+                                        <div className="p-3 bg-purple-50/50 dark:bg-purple-950/30 text-slate-500 text-xs text-center border-b border-purple-100 dark:border-purple-900/40">
+                                            No detailed theory notes populated for this unit.
+                                        </div>
+                                    );
+                                }
+                                return (
+                                    <div className="p-3 bg-purple-50/60 dark:bg-purple-950/30 border-b border-purple-100 dark:border-purple-900/40 text-xs space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5 text-xs">
+                                                <BookOpen className="w-3.5 h-3.5 text-purple-600" />
+                                                Grounded Theory & Textbook Concept Notes
+                                            </span>
+                                            <span className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
+                                                Persisted into Student Theory Viewer
+                                            </span>
+                                        </div>
+
+                                        {theory.summary && (
+                                            <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-purple-100 dark:border-purple-900/50 text-[11px] text-slate-700 dark:text-slate-300">
+                                                <strong className="text-purple-700 dark:text-purple-300">Summary: </strong>
+                                                <MathRenderer content={theory.summary} inline size="sm" />
+                                            </div>
+                                        )}
+
+                                        {Array.isArray(theory.keyConcepts) && theory.keyConcepts.length > 0 && (
+                                            <div className="flex flex-wrap gap-1">
+                                                {theory.keyConcepts.map((kc, kcIdx) => (
+                                                    <span key={kcIdx} className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 text-[10px] font-medium">
+                                                        • {typeof kc === 'string' ? kc : (kc.title || kc.name || JSON.stringify(kc))}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {theory.content && (
+                                            <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-purple-100 dark:border-purple-900/50 text-[11px] max-h-48 overflow-y-auto scrollbar-thin text-slate-700 dark:text-slate-300">
+                                                <MathRenderer content={theory.content} size="sm" />
+                                            </div>
+                                        )}
+
+                                        {Array.isArray(theory.cbseTips) && theory.cbseTips.length > 0 && (
+                                            <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-[10px] text-amber-900 dark:text-amber-200 space-y-0.5">
+                                                <strong className="text-amber-800 dark:text-amber-300 block">💡 Exam Tips & Pitfalls:</strong>
+                                                {theory.cbseTips.map((tip, tIdx) => (
+                                                    <p key={tIdx}>• {tip}</p>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {Array.isArray(theory.miniCheckpoints) && theory.miniCheckpoints.length > 0 && (
+                                            <div className="pt-1">
+                                                <span className="text-[10px] font-bold text-purple-800 dark:text-purple-300">
+                                                    {theory.miniCheckpoints.length} Interactive Mini-Checkpoints:
+                                                </span>
+                                                <div className="mt-1 space-y-1">
+                                                    {theory.miniCheckpoints.map((cp, cpIdx) => (
+                                                        <div key={cpIdx} className="p-1.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px]">
+                                                            <span className="font-semibold text-slate-800 dark:text-slate-200">Q{cpIdx + 1}: {cp.question}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
 
                             {/* Exercises within Unit */}
                             {isUnitExpanded && (

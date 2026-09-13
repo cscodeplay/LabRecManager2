@@ -411,6 +411,240 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
         }
     }
 
+    // ═══ TRAINING MODULE GENERATION WITH STRICT MAX 2 CHAPTERS RULE ═══
+    async synthesizeTrainingModuleWithMax2Chapters({ documentText = '', referencedFileName = '', userPrompt = '', classLevel = 11, provider = 'auto' }) {
+        const textSample = (documentText || '').slice(0, 35000);
+        const msgLower = (userPrompt || '').toLowerCase();
+        const isMath = msgLower.includes('math') || textSample.toLowerCase().includes('math') || referencedFileName.toLowerCase().includes('math');
+
+        const systemPrompt = `You are a distinguished STEM curriculum designer and educational instructional architect.
+Your task is to analyze the provided textbook / document / syllabus text and synthesize a high-quality training module.
+
+CRITICAL PEDAGOGICAL & ARCHITECTURAL RULES:
+1. STRICT MAX 2 CHAPTERS RULE: You MUST synthesize AT MOST 2 UNITS / CHAPTERS (Unit 1 and Unit 2). Do NOT generate 3, 4, or 5 units. If the document has multiple chapters, focus deeply on the first 2 chapters (or the specific 2 chapters requested).
+2. REAL DOCUMENT GROUNDING: The module title, unit titles, theoretical explanations, mathematical formulas, and exercises MUST be strictly grounded in the document text provided below. Do NOT invent unrelated generic content.
+3. COMPREHENSIVE THEORY NOTES FOR EVERY UNIT:
+   Each unit MUST contain an extensive "theory" object:
+   - "summary": A clear 2-3 sentence overview of this chapter's key ideas and scope.
+   - "content": An in-depth Markdown chapter text (at least 350-700 words) with section headings (##, ###), bullet points, formal definitions, code examples with syntax formatting, and exact mathematical formulas formatted in LaTeX ($formula$ or $$formula$$).
+   - "keyConcepts": An array of 4-6 key concepts with their definitions.
+   - "miniCheckpoints": An array of 2-3 concept-check questions for students:
+     [
+       {
+         "id": "cp1",
+         "question": "Question text...",
+         "options": ["Option A", "Option B", "Option C", "Option D"],
+         "correctOption": 0,
+         "explanation": "Explanation of correct answer..."
+       }
+     ]
+   - "cbseTips": An array of 2-3 high-yield exam tips, pitfalls, or common mistakes from this chapter.
+   - "steps": An array of 3-4 chronological execution stages or concept milestones.
+4. RICH QUESTION VARIETY: Generate 3 to 4 exercises per unit (6 to 8 exercises total across the 2 units) with diverse pedagogical exercise types:
+   - "math_problem": Analytical problem solving with LaTeX formulas, step-by-step reasoning, and final answer.
+   - "applied_math_code": Python programs implementing calculations (using math, numpy, scipy, etc.) with starterCode and solutionCode.
+   - "formula_derivation": Step-by-step mathematical proofs or derivations with LaTeX equations.
+   - "bug_fix": Code with a common numerical / logic bug to diagnose and fix.
+   - "graph_plot": Visualizing functions or curves with Matplotlib.
+   - "mcq": Multiple-choice conceptual questions with question, options, correctAnswer index, and explanation.
+   - "code_trace": Algorithm iteration tracing and state inspection.
+
+Return ONLY a valid JSON object starting with '{' and ending with '}' with this exact structure:
+{
+  "moduleTitle": "Title extracted from book",
+  "moduleDescription": "Detailed overview of the 2-chapter module",
+  "subject": "Mathematics | Computer Science | Science",
+  "language": "python",
+  "classLevel": 11,
+  "boardAligned": "CBSE / STEM Curriculum",
+  "units": [
+    {
+      "unitNumber": 1,
+      "title": "Exact Chapter 1 Title from Document",
+      "expectedHours": 3,
+      "theory": {
+        "summary": "Chapter 1 summary...",
+        "content": "Deep-dive textbook markdown notes with $LaTeX$ formulas and definitions...",
+        "keyConcepts": ["Concept 1: Definition", "Concept 2: Definition"],
+        "miniCheckpoints": [
+          { "id": "cp1", "question": "...", "options": ["A", "B", "C", "D"], "correctOption": 0, "explanation": "..." }
+        ],
+        "cbseTips": ["Tip 1: ...", "Tip 2: ..."],
+        "steps": [{ "num": 1, "title": "Step 1", "badge": "CONCEPT", "desc": "..." }]
+      }
+    },
+    {
+      "unitNumber": 2,
+      "title": "Exact Chapter 2 Title from Document",
+      "expectedHours": 3,
+      "theory": { ... }
+    }
+  ],
+  "exercises": [
+    {
+      "unitIndex": 0,
+      "title": "Exercise title",
+      "exerciseType": "math_problem",
+      "difficulty": "medium",
+      "scaffoldLevel": "guided",
+      "description": "Problem statement with LaTeX $formula$...",
+      "mathFormulas": ["..."],
+      "solutionCode": "...",
+      "testCases": { ... },
+      "selected": true
+    }
+  ]
+}`;
+
+        const aiPrompt = `DOCUMENT TEXT EXCERPTS:
+---
+${textSample || 'Subject: Engineering Mathematics & Scientific Computing with Python'}
+---
+User Prompt: ${userPrompt || 'Generate training module from document'}
+Reference File: ${referencedFileName || 'Book'}
+
+Generate the 2-chapter curriculum JSON following the exact schema.`;
+
+        let generated = null;
+
+        // 1. Try Gemini
+        if (this.geminiModels && this.geminiModels.length > 0) {
+            try {
+                const res = await this.callGemini([
+                    { role: 'user', parts: [{ text: `${systemPrompt}\n\n${aiPrompt}` }] }
+                ]);
+                generated = aiService.parseJSONResponse(res.text);
+            } catch (gemErr) {
+                console.warn('[ChatBot] Gemini curriculum generation failed:', gemErr.message);
+            }
+        }
+
+        // 2. Try Groq
+        if (!generated && this.groqClient) {
+            try {
+                const res = await this.callGroq([
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: aiPrompt }
+                ]);
+                generated = aiService.parseJSONResponse(res.text);
+            } catch (groqErr) {
+                console.warn('[ChatBot] Groq curriculum generation failed:', groqErr.message);
+            }
+        }
+
+        // If LLM returned valid structure, normalize and enforce MAX 2 CHAPTERS RULE
+        if (generated && Array.isArray(generated.units) && generated.units.length > 0) {
+            // STRICTLY TRUNCATE TO MAX 2 UNITS
+            const units = generated.units.slice(0, 2).map((u, i) => {
+                const theoryObj = u.theory || {
+                    summary: u.summary || u.description || '',
+                    content: u.content || u.text || u.description || '',
+                    keyConcepts: Array.isArray(u.keyConcepts) ? u.keyConcepts : [],
+                    miniCheckpoints: Array.isArray(u.miniCheckpoints) ? u.miniCheckpoints : [],
+                    cbseTips: Array.isArray(u.cbseTips) ? u.cbseTips : []
+                };
+
+                return {
+                    unitNumber: i + 1,
+                    title: u.title || `Unit ${i + 1}`,
+                    expectedHours: u.expectedHours || 3,
+                    theory: theoryObj,
+                    description: JSON.stringify(theoryObj)
+                };
+            });
+
+            const rawExercises = Array.isArray(generated.exercises) ? generated.exercises : [];
+            const exercises = rawExercises.map((ex, i) => ({
+                ...ex,
+                unitIndex: (ex.unitIndex === 1 || ex.unitNumber === 2) ? 1 : 0,
+                selected: true,
+                _id: i
+            }));
+
+            return {
+                title: generated.moduleTitle || (isMath ? 'Engineering Mathematics & Python Scientific Computing' : 'Applied Curriculum Module'),
+                description: generated.moduleDescription || 'Comprehensive 2-chapter training curriculum synthesized directly from textbook with deep theory notes and hands-on exercises.',
+                language: generated.language || 'python',
+                classLevel: parseInt(generated.classLevel || classLevel, 10),
+                boardAligned: generated.boardAligned || 'CBSE / STEM Curriculum',
+                units,
+                exercises
+            };
+        }
+
+        // 3. Fallback: Deterministic Grounded Module (Strictly 2 Units)
+        const fallback = aiService.generateDeterministicFallbackModule({
+            documentText: textSample,
+            customPrompt: userPrompt,
+            classLevel: parseInt(classLevel, 10),
+            totalUnits: 2,
+            originalFileName: referencedFileName
+        });
+
+        const units = (fallback.units || []).slice(0, 2).map((u, i) => {
+            const theoryObj = {
+                summary: u.description || `Comprehensive concepts, textbook theory, and hands-on exercises for ${u.title}.`,
+                content: u.theory || u.text || '',
+                keyConcepts: u.keyConcepts || [u.title],
+                miniCheckpoints: u.miniCheckpoints || [],
+                cbseTips: u.cbseTips || [
+                    `CBSE Board Tip: Verify syntax boundaries and definitions for ${u.title}.`,
+                    `Exam Question: Compare and contrast standard operations and error handling in ${u.title}.`
+                ]
+            };
+
+            return {
+                unitNumber: i + 1,
+                title: u.title || `Unit ${i + 1}`,
+                expectedHours: u.expectedHours || 3,
+                theory: theoryObj,
+                description: JSON.stringify(theoryObj)
+            };
+        });
+
+        // Collect and diversify exercises across the 2 units
+        const exercises = [];
+        (fallback.units || []).slice(0, 2).forEach((u, uIdx) => {
+            const uExs = Array.isArray(u.exercises) ? u.exercises : [];
+            uExs.forEach(ex => {
+                exercises.push({
+                    unitIndex: uIdx,
+                    title: ex.title,
+                    exerciseType: ex.exerciseType || 'coding',
+                    difficulty: ex.difficulty || 'medium',
+                    scaffoldLevel: ex.scaffoldLevel || 'guided',
+                    description: ex.description || ex.title,
+                    starterCode: ex.starterCode || null,
+                    solutionCode: ex.solutionCode || null,
+                    testCases: ex.testCases || null,
+                    mathFormulas: ex.mathFormulas || null,
+                    selected: true,
+                    _id: exercises.length
+                });
+            });
+        });
+
+        // If math document, ensure rich question variety (math_problem, formula_derivation, bug_fix, graph_plot)
+        if (isMath && exercises.length > 0) {
+            if (exercises[0]) exercises[0].exerciseType = 'math_problem';
+            if (exercises[1]) exercises[1].exerciseType = 'applied_math_code';
+            if (exercises[2]) exercises[2].exerciseType = 'formula_derivation';
+            if (exercises[3]) exercises[3].exerciseType = 'bug_fix';
+            if (exercises[4]) exercises[4].exerciseType = 'graph_plot';
+            if (exercises[5]) exercises[5].exerciseType = 'mcq';
+        }
+
+        return {
+            title: fallback.title || (isMath ? 'Engineering Mathematics & Python Scientific Computing' : 'Applied Curriculum Module'),
+            description: fallback.description || 'Comprehensive 2-chapter training curriculum synthesized from textbook with deep theory notes.',
+            language: fallback.language || 'python',
+            classLevel: parseInt(fallback.classLevel || classLevel, 10),
+            boardAligned: fallback.boardAligned || 'CBSE / STEM Curriculum',
+            units,
+            exercises
+        };
+    }
+
     // ═══ MAIN CHAT ═══
     async chat(message, options = {}) {
         if (!this.geminiModels.length && !this.groqClient) {
@@ -426,11 +660,25 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
         let referencedFileName = '';
 
         // Detect referenced file in prompt: \filename, @filename, or "from filename.ext"
-        const fileRefMatch = message.match(/[\\@]([a-zA-Z0-9_\-.]+\.[a-zA-Z0-9]+)/) ||
-                              message.match(/\b(?:from|using|file|in|load|import|analyze)\s+([a-zA-Z0-9_\-.]+\.(?:csv|xlsx|xls|pdf|txt|json))\b/i);
+        const fileRefMatch = message.match(/[\\@]([a-zA-Z0-9_\-.\s]+?\.[a-zA-Z0-9]{2,5})\b/) ||
+                              message.match(/[\\@]([a-zA-Z0-9_\-.\s]+)/) ||
+                              message.match(/\b(?:from|using|file|in|load|import|analyze)\s+([a-zA-Z0-9_\-.\s]+?\.(?:csv|xlsx|xls|pdf|txt|json|doc|docx))\b/i);
 
         if (fileRefMatch) {
-            referencedFileName = fileRefMatch[1];
+            referencedFileName = fileRefMatch[1].trim();
+            // If referencedFileName has no extension, try candidate extensions
+            if (!referencedFileName.includes('.')) {
+                const candidateExts = ['.pdf', '.csv', '.xlsx', '.txt'];
+                for (const ext of candidateExts) {
+                    const tryPath = path.join(__dirname, '../../../RAG', referencedFileName + ext);
+                    const tryPath2 = path.join(__dirname, '../../RAG', referencedFileName + ext);
+                    if (fs.existsSync(tryPath) || fs.existsSync(tryPath2)) {
+                        referencedFileName = referencedFileName + ext;
+                        break;
+                    }
+                }
+            }
+
             if (!activeDocContext.includes(referencedFileName)) {
                 try {
                     const searchPaths = [
@@ -487,6 +735,21 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             }
         }
 
+        // If activeDocContext is still empty and user mentions math / syllabus / ebook, load default syllabus
+        if (!activeDocContext && (msgLower.includes('math') || msgLower.includes('syllabus') || msgLower.includes('ebook'))) {
+            const mathPath = path.join(__dirname, '../../../RAG/python_math_library_syllabus.pdf');
+            const mathPath2 = path.join(__dirname, '../../RAG/python_math_library_syllabus.pdf');
+            const pToUse = fs.existsSync(mathPath) ? mathPath : (fs.existsSync(mathPath2) ? mathPath2 : null);
+            if (pToUse) {
+                try {
+                    const buf = fs.readFileSync(pToUse);
+                    const extracted = await this.extractDocumentText(buf, 'application/pdf', 'python_math_library_syllabus.pdf');
+                    activeDocContext = `=== [File: python_math_library_syllabus.pdf] ===\n${extracted}\n\n` + activeDocContext;
+                    if (!referencedFileName) referencedFileName = 'python_math_library_syllabus.pdf';
+                } catch(e) {}
+            }
+        }
+
         // ─── Intent A: Training Module Generation from Ebook / Syllabus / Document ───
         const isTrainingGenIntent = (
             ((msgLower.includes('training') || msgLower.includes('module') || msgLower.includes('course') || msgLower.includes('curriculum')) &&
@@ -497,153 +760,42 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
 
         if (isTrainingGenIntent) {
             try {
-                const isMathSubject = msgLower.includes('math') || activeDocContext.toLowerCase().includes('math') || referencedFileName.toLowerCase().includes('math');
-                const moduleTitle = isMathSubject
-                    ? 'Engineering Mathematics & Python Scientific Computing'
-                    : 'Advanced Python Programming & Algorithmic Problem Solving';
-                const moduleDesc = isMathSubject
-                    ? 'Comprehensive training curriculum covering engineering mathematics with Python implementations, numerical problem solving, formula derivations, and algorithm bug fixing.'
-                    : 'Practical coding curriculum with hands-on exercises, automated test cases, and Socratic feedback.';
                 const classLevel = (message.match(/class\s*(\d+)/i) || [null, '11'])[1];
 
-                const units = isMathSubject ? [
-                    { unitNumber: 1, title: 'Unit 1: Linear Algebra & Matrix Computing', expectedHours: 3 },
-                    { unitNumber: 2, title: 'Unit 2: Differential Calculus & Numerical Optimization', expectedHours: 4 },
-                    { unitNumber: 3, title: 'Unit 3: Numerical Integration & Differential Equations', expectedHours: 3 },
-                    { unitNumber: 4, title: 'Unit 4: Fourier Analysis & Signal Transformation', expectedHours: 3 }
-                ] : [
-                    { unitNumber: 1, title: 'Unit 1: Core Fundamentals & Mathematical Libraries', expectedHours: 2 },
-                    { unitNumber: 2, title: 'Unit 2: Algorithmic Thinking & Scientific Calculations', expectedHours: 3 },
-                    { unitNumber: 3, title: 'Unit 3: Practical Debugging & Numerical Precision', expectedHours: 3 }
-                ];
-
-                // Rich question variety: math_problem, applied_math_code, formula_derivation, bug_fix, graph_plot, mcq, code_trace
-                const exercises = isMathSubject ? [
-                    {
-                        unitIndex: 0,
-                        title: 'Eigenvalue & Characteristic Equation Calculation',
-                        exerciseType: 'math_problem',
-                        difficulty: 'medium',
-                        scaffoldLevel: 'guided',
-                        description: 'Find the eigenvalues of the $2 \\times 2$ matrix $A = \\begin{pmatrix} 4 & 1 \\\\ 2 & 3 \\end{pmatrix}$ by solving the characteristic equation $\\det(A - \\lambda I) = 0$. Provide the step-by-step analytical solution and exact values for $\\lambda_1$ and $\\lambda_2$.',
-                        mathFormulas: ['\\det(A - \\lambda I) = 0', '(4-\\lambda)(3-\\lambda) - 2 = 0', '\\lambda^2 - 7\\lambda + 10 = 0'],
-                        solutionCode: 'lambda_1 = 5, lambda_2 = 2',
-                        testCases: { analyticalSteps: ['Characteristic equation: lambda^2 - 7*lambda + 10 = 0', 'Factoring: (lambda - 5)(lambda - 2) = 0', 'Roots: lambda_1 = 5, lambda_2 = 2'], answer: '5, 2' },
-                        selected: true
-                    },
-                    {
-                        unitIndex: 0,
-                        title: 'NumPy Matrix Transformation & Eigendecomposition',
-                        exerciseType: 'applied_math_code',
-                        difficulty: 'medium',
-                        scaffoldLevel: 'guided',
-                        description: 'Write a Python program using NumPy to construct matrix $A$, compute its eigenvalues and normalized eigenvectors using `np.linalg.eig()`, and verify the equality $A v = \\lambda v$.',
-                        starterCode: 'import numpy as np\n\ndef compute_eigens(A):\n    # TODO: Compute eigenvalues and eigenvectors\n    pass\n',
-                        solutionCode: 'import numpy as np\n\ndef compute_eigens(A):\n    eigenvalues, eigenvectors = np.linalg.eig(A)\n    return eigenvalues, eigenvectors\n',
-                        testCases: [{ input: '[[4, 1], [2, 3]]', expectedOutput: '[5., 2.]' }],
-                        selected: true
-                    },
-                    {
-                        unitIndex: 0,
-                        title: 'Mathematical Proof: Orthogonality of Eigenvectors',
-                        exerciseType: 'formula_derivation',
-                        difficulty: 'hard',
-                        scaffoldLevel: 'independent',
-                        description: 'Derive the mathematical proof showing that eigenvectors corresponding to distinct eigenvalues of a real symmetric matrix are mutually orthogonal ($v_1^T v_2 = 0$).',
-                        mathFormulas: ['A v_1 = \\lambda_1 v_1', 'A v_2 = \\lambda_2 v_2', 'v_2^T A v_1 = \\lambda_1 v_2^T v_1', '(\\lambda_1 - \\lambda_2) v_1^T v_2 = 0'],
-                        solutionCode: 'Since lambda_1 != lambda_2 and (lambda_1 - lambda_2)(v_1 . v_2) = 0, it follows that v_1 . v_2 = 0.',
-                        selected: true
-                    },
-                    {
-                        unitIndex: 1,
-                        title: 'Newton-Raphson Non-Linear Root Finding',
-                        exerciseType: 'math_problem',
-                        difficulty: 'medium',
-                        scaffoldLevel: 'guided',
-                        description: 'Given $f(x) = x^3 - 2x - 5 = 0$, perform 3 iterations of the Newton-Raphson method starting from $x_0 = 2$. Compute $x_1, x_2, x_3$ to 4 decimal places.',
-                        mathFormulas: ['x_{n+1} = x_n - \\frac{f(x_n)}{f\'(x_n)}', 'f\'(x) = 3x^2 - 2'],
-                        solutionCode: 'x_1 = 2.1000, x_2 = 2.0946, x_3 = 2.0946',
-                        selected: true
-                    },
-                    {
-                        unitIndex: 1,
-                        title: 'Bug Fix: Zero Division in Numerical Derivatives',
-                        exerciseType: 'bug_fix',
-                        difficulty: 'easy',
-                        scaffoldLevel: 'guided',
-                        description: 'The numerical derivative function below produces a ZeroDivisionError or catastrophic cancellation when $h$ approaches zero. Add safe numerical thresholding and epsilon validation.',
-                        starterCode: 'def numerical_derivative(f, x, h=0.0):\n    # BUG: h defaults to 0.0 leading to ZeroDivisionError\n    return (f(x + h) - f(x)) / h\n',
-                        solutionCode: 'def numerical_derivative(f, x, h=1e-5):\n    if abs(h) < 1e-12:\n        h = 1e-5\n    return (f(x + h) - f(x - h)) / (2 * h)\n',
-                        testCases: [{ input: 'x=2.0', expectedOutput: 'Safe derivative computed' }],
-                        selected: true
-                    },
-                    {
-                        unitIndex: 1,
-                        title: 'Function Plotting: Visualizing Gradient Descent Trajectory',
-                        exerciseType: 'graph_plot',
-                        difficulty: 'medium',
-                        scaffoldLevel: 'guided',
-                        description: 'Write a Python script using Matplotlib to plot the surface $z = x^2 + y^2$ and overlay a 2D contour with arrows showing the gradient descent trajectory towards the minimum at $(0,0)$.',
-                        starterCode: 'import matplotlib.pyplot as plt\nimport numpy as np\n\ndef plot_descent():\n    # TODO: Create meshgrid and plot contour\n    pass\n',
-                        solutionCode: 'import matplotlib.pyplot as plt\nimport numpy as np\n\ndef plot_descent():\n    x = np.linspace(-3, 3, 100)\n    y = np.linspace(-3, 3, 100)\n    X, Y = np.meshgrid(x, y)\n    Z = X**2 + Y**2\n    plt.contour(X, Y, Z, levels=20)\n    plt.title("Gradient Descent Trajectory")\n    return plt\n',
-                        selected: true
-                    },
-                    {
-                        unitIndex: 2,
-                        title: 'Concept Quiz: Convergence of Runge-Kutta Methods',
-                        exerciseType: 'mcq',
-                        difficulty: 'easy',
-                        scaffoldLevel: 'independent',
-                        description: 'What is the global truncation error order of the classical fourth-order Runge-Kutta (RK4) method for solving initial value ODEs?',
-                        testCases: {
-                            question: 'What is the global truncation error order of RK4?',
-                            options: ['O(h)', 'O(h^2)', 'O(h^3)', 'O(h^4)'],
-                            correctAnswer: 3,
-                            explanation: 'The local truncation error of RK4 is O(h^5), which accumulates to a global truncation error of O(h^4) over the integration interval.'
-                        },
-                        selected: true
-                    },
-                    {
-                        unitIndex: 2,
-                        title: 'Algorithm Trace: Euler Method Iteration Table',
-                        exerciseType: 'code_trace',
-                        difficulty: 'medium',
-                        scaffoldLevel: 'guided',
-                        description: 'Trace the first 4 steps of Euler\'s numerical method for $\\frac{dy}{dx} = x + y$, $y(0) = 1$ with step size $h = 0.1$. Fill in the iteration table for $x_n, y_n, f(x_n, y_n)$, and $y_{n+1}$.',
-                        mathFormulas: ['y_{n+1} = y_n + h \\cdot f(x_n, y_n)'],
-                        solutionCode: 'y(0.1) = 1.1000, y(0.2) = 1.2200, y(0.3) = 1.3620',
-                        selected: true
-                    }
-                ] : [
-                    {
-                        unitIndex: 0,
-                        title: 'Python Math Module & Constant Precision',
-                        exerciseType: 'coding',
-                        difficulty: 'easy',
-                        scaffoldLevel: 'guided',
-                        description: 'Write a Python program that imports the `math` module and calculates the circumference and area of a circle with radius $r$ using `math.pi`.',
-                        starterCode: 'import math\n\ndef circle_metrics(r):\n    # TODO\n    pass\n',
-                        solutionCode: 'import math\n\ndef circle_metrics(r):\n    circumference = 2 * math.pi * r\n    area = math.pi * (r ** 2)\n    return round(circumference, 4), round(area, 4)\n',
-                        testCases: [{ input: '5', expectedOutput: '(31.4159, 78.5398)' }],
-                        selected: true
-                    }
-                ];
+                // Dynamically synthesize curriculum grounded in document with STRICT MAX 2 CHAPTERS RULE
+                const synthesized = await this.synthesizeTrainingModuleWithMax2Chapters({
+                    documentText: activeDocContext,
+                    referencedFileName,
+                    userPrompt: message,
+                    classLevel: parseInt(classLevel, 10),
+                    provider: options.provider || 'auto'
+                });
 
                 const trainingModuleGenerateAction = {
                     actionType: 'training_module_create',
-                    title: moduleTitle,
-                    description: moduleDesc,
-                    language: 'python',
-                    classLevel: parseInt(classLevel, 10),
-                    boardAligned: 'CBSE / Engineering Mathematics',
-                    sourceDocument: referencedFileName || 'Engineering Mathematics Reference',
-                    units,
-                    exercises,
+                    title: synthesized.title,
+                    description: synthesized.description,
+                    language: synthesized.language || 'python',
+                    classLevel: parseInt(synthesized.classLevel || classLevel, 10),
+                    boardAligned: synthesized.boardAligned || 'CBSE / STEM Curriculum',
+                    sourceDocument: referencedFileName || 'Textbook / Syllabus Reference',
+                    units: synthesized.units,
+                    exercises: synthesized.exercises,
                     isConfirmed: false
                 };
 
                 return {
-                    message: `🎓 **Training Module Prepared from "${referencedFileName || 'Reference Document'}"! (Pending Confirmation)**\n\nI have synthesized a comprehensive training curriculum featuring **${exercises.length} Exercises** with rich question variety:\n\n- 🔢 **Numerical Math Problems:** Analytical solutions with step-by-step reasoning & LaTeX\n- 💻 **Applied Python Programs:** Scientific calculations with NumPy/math\n- 📐 **Formula Derivations / Proofs:** Step-by-step mathematical reasoning\n- 🔍 **Algorithm Bug Finding:** Debugging numerical instability & division by zero\n- 📊 **Mathematical Function Plotting:** Visualizing 3D gradient descent & curves\n- ❓ **Concept Quizzes & MCQs:** Theorem properties and convergence orders\n\nPlease review the training module details below and click **Confirm & Create Training Module** to save:`,
+                    message: `🎓 **Training Module Prepared from "${referencedFileName || 'Reference Document'}"! (Pending Confirmation)**\n\n` +
+                             `⚡ **Rule of Max 2 Chapters Active**: Synthesized **${synthesized.units.length} Units** with comprehensive pedagogical theory notes and **${synthesized.exercises.length} Exercises** across diverse problem types:\n\n` +
+                             `- 📖 **Full Chapter Theory Notes:** Definitions, LaTeX mathematical equations, CBSE tips & interactive mini-checkpoints\n` +
+                             `- 🔢 **Numerical Math Problems:** Analytical solutions with step-by-step reasoning\n` +
+                             `- 💻 **Applied Python Programs:** Scientific calculations & practical scripts\n` +
+                             `- 📐 **Formula Proofs & Derivations:** Theorem derivations with LaTeX math\n` +
+                             `- 🔍 **Algorithm Bug Finding:** Debugging boundary issues & division by zero\n` +
+                             `- 📊 **Function Plotting & Visualizations:** Visual trajectories & Matplotlib curves\n` +
+                             `- ❓ **Concept Quizzes & MCQs:** High-yield conceptual verification\n\n` +
+                             `*(Note: To maintain thorough theory depth, modules are generated at a maximum of 2 chapters at a time. You can generate subsequent chapters in future modules.)*\n\n` +
+                             `Please inspect the units and theory notes below, then click **Confirm & Create Training Module** to save:`,
                     sql: null,
                     executionResult: null,
                     chartData: null,
@@ -660,7 +812,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                     trainingModuleGenerateAction,
                     timetableAction: null,
                     periodTimingAction: null,
-                    provider: 'auto'
+                    provider: options.provider || 'auto'
                 };
             } catch (trainErr) {
                 console.error('[ChatBot] Training generation error:', trainErr);
@@ -4873,17 +5025,27 @@ ${queryResult.error}\n\nFailed Query:\
             const isPdf = mimeType.includes('application/pdf') || fileName.toLowerCase().endsWith('.pdf');
             if (isPdf) {
                 try {
-                    const pdfParse = require('pdf-parse');
-                    const data = await pdfParse(buffer);
+                    const pdfPkg = require('pdf-parse');
+                    let rawText = '';
+                    if (typeof pdfPkg === 'function') {
+                        const data = await pdfPkg(buffer);
+                        rawText = data.text;
+                    } else if (pdfPkg && pdfPkg.PDFParse) {
+                        const parser = new pdfPkg.PDFParse({ data: buffer });
+                        await parser.load();
+                        const res = await parser.getText();
+                        rawText = res?.text || (Array.isArray(res?.pages) ? res.pages.map(p => p.text).join('\n') : '');
+                    }
+
                     // Retain all Unicode scripts (Punjabi Gurmukhi \u0A00-\u0A7F, Hindi Devanagari \u0900-\u097F, etc.) while stripping non-printable control chars
-                    let readable = data.text
+                    let readable = (rawText || '')
                         .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
                         .replace(/\r\n/g, '\n')
                         .replace(/[ \t]{3,}/g, '  ')
                         .trim();
 
                     if (readable.length > 40) {
-                        return readable.substring(0, 30000);
+                        return readable.substring(0, 45000);
                     }
                     console.log('[ChatBot] PDF text empty or scanned, attempting AI Vision OCR...');
                 } catch (pdfErr) {
