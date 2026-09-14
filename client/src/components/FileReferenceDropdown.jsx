@@ -22,6 +22,15 @@ import { documentsAPI } from '@/lib/api';
  */
 const PRESET_FILES = [
     {
+        fileName: 'engmaths.pdf',
+        name: 'Higher Engineering Mathematics (Differential Calculus, Leibniz Theorem & Applied Math)',
+        category: 'Engineering Mathematics & Ebook',
+        fileType: 'pdf',
+        description: 'Comprehensive Engineering Mathematics covering Differential Calculus, Leibniz Theorem, Taylor Series, and Applied Math',
+        aiCapability: '🎓 Generates Training Module (Math Problems, Proofs, Python Programs, Bug Fixes)',
+        badgeColor: 'bg-purple-100 text-purple-700 border-purple-200'
+    },
+    {
         fileName: 'python_math_library_syllabus.pdf',
         name: 'Engineering Mathematics & Python Scientific Computing Syllabus',
         category: 'Engineering Mathematics & Ebook',

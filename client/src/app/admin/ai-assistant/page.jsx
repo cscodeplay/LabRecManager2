@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import {
     Bot, Send, Upload, Database, ChevronDown, ChevronRight, Trash2,
     Sparkles, FileText, AlertTriangle, Copy, Check, RefreshCw, X, Download, Loader2,
-    GraduationCap, Clock, CheckCircle2, Edit3, XCircle, Undo2, ExternalLink, Plus, Calendar
+    GraduationCap, Clock, CheckCircle2, Edit3, XCircle, Undo2, ExternalLink, Plus, Calendar,
+    FileSpreadsheet, BookOpen
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api, { classesAPI, timetableAPI } from '@/lib/api';
@@ -48,6 +49,86 @@ function RenderMessage({ content }) {
 
                 return <div key={i} dangerouslySetInnerHTML={{ __html: `<p class="mb-2">${html}</p>` }} />;
             })}
+        </div>
+    );
+}
+
+/* ─── Highlighted Document Reference Pill (searched & selected via \) ─── */
+function FileRefPill({ file, onRemove, readonly = false }) {
+    if (!file || !file.fileName) return null;
+    const type = (file.fileType || file.fileName.split('.').pop() || 'pdf').toLowerCase();
+    
+    // Distinct themed background pills depending on file type
+    let pillTheme = 'bg-indigo-50 border-indigo-200 text-indigo-900 dark:bg-indigo-950/60 dark:border-indigo-800 dark:text-indigo-200';
+    let icon = <FileText className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />;
+    
+    if (type === 'pdf') {
+        pillTheme = 'bg-rose-50 border-rose-200 text-rose-900 dark:bg-rose-950/60 dark:border-rose-800 dark:text-rose-200';
+        icon = <FileText className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 flex-shrink-0" />;
+    } else if (['csv', 'xlsx', 'xls'].includes(type)) {
+        pillTheme = 'bg-emerald-50 border-emerald-200 text-emerald-900 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-200';
+        icon = <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />;
+    } else if (['doc', 'docx'].includes(type)) {
+        pillTheme = 'bg-blue-50 border-blue-200 text-blue-900 dark:bg-blue-950/60 dark:border-blue-800 dark:text-blue-200';
+        icon = <BookOpen className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />;
+    }
+
+    return (
+        <span className={`inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-medium border shadow-2xs transition-all select-none animate-in zoom-in-95 duration-150 ${pillTheme}`}>
+            {icon}
+            <span className="font-mono font-semibold tracking-tight text-[11.5px] max-w-[220px] truncate">
+                \{file.fileName}
+            </span>
+            <span className="text-[9px] uppercase px-1.5 py-0.5 rounded-full bg-white/90 dark:bg-slate-900/90 font-bold border border-current/25 opacity-90 shadow-2xs">
+                {type}
+            </span>
+            {!readonly && onRemove && (
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onRemove(file);
+                    }}
+                    title={`Remove \\${file.fileName}`}
+                    aria-label={`Remove \\${file.fileName}`}
+                    className="w-4 h-4 rounded-full flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-100/80 dark:hover:bg-red-950/80 transition ml-0.5 flex-shrink-0"
+                >
+                    <X className="w-3 h-3" />
+                </button>
+            )}
+        </span>
+    );
+}
+
+/* ─── User Message Content with Highlighted Pill References ─── */
+function UserMessageContent({ content, referencedFiles = [] }) {
+    if (!content) return null;
+    const parts = content.split(/(\\[a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]{2,5})/g);
+    if (parts.length === 1 && (!referencedFiles || referencedFiles.length === 0)) {
+        return <p className="text-sm whitespace-pre-wrap">{content}</p>;
+    }
+    return (
+        <div className="space-y-1.5">
+            {referencedFiles && referencedFiles.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-1 pb-1.5 border-b border-white/20">
+                    {referencedFiles.map((rf, rIdx) => (
+                        <FileRefPill key={rIdx} file={rf} readonly={true} />
+                    ))}
+                </div>
+            )}
+            <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                {parts.map((part, i) => {
+                    if (part.startsWith('\\') && part.includes('.')) {
+                        return (
+                            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 mx-0.5 rounded-full bg-white/25 border border-white/40 text-white font-mono text-xs font-semibold shadow-2xs">
+                                <FileText className="w-3 h-3 text-white/90 flex-shrink-0" />
+                                {part}
+                            </span>
+                        );
+                    }
+                    return part;
+                })}
+            </p>
         </div>
     );
 }
@@ -1087,6 +1168,7 @@ export default function AIAssistantPage() {
     // ── File Reference Popover State (\ trigger) ──
     const [fileRefOpen, setFileRefOpen] = useState(false);
     const [fileRefQuery, setFileRefQuery] = useState('');
+    const [selectedFileRefs, setSelectedFileRefs] = useState([]);
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -1109,6 +1191,13 @@ export default function AIAssistantPage() {
 
     const handleSelectFileRef = (file) => {
         if (!file || !file.fileName) return;
+
+        // Add file to selectedFileRefs array without duplicates
+        setSelectedFileRefs(prev => {
+            if (prev.some(f => f.fileName.toLowerCase() === file.fileName.toLowerCase())) return prev;
+            return [...prev, file];
+        });
+
         const cursorPos = inputRef.current ? inputRef.current.selectionStart : input.length;
         const textBefore = input.slice(0, cursorPos);
         const textAfter = input.slice(cursorPos);
@@ -1119,20 +1208,35 @@ export default function AIAssistantPage() {
             prefix = textBefore.slice(0, lastSlash);
         }
 
-        const inserted = `\\${file.fileName} `;
-        const full = `${prefix}${inserted}${textAfter}`;
+        // Clean up search trigger from text so the document is neatly represented as a highlighted background pill
+        const full = `${prefix}${textAfter}`.trim();
         setInput(full);
         setFileRefOpen(false);
 
         setTimeout(() => {
             if (inputRef.current) {
                 inputRef.current.focus();
-                const pos = prefix.length + inserted.length;
+                const pos = prefix.trim().length;
                 inputRef.current.setSelectionRange(pos, pos);
             }
         }, 50);
 
-        toast.success(`Referenced file: \\${file.fileName}`);
+        toast.success(`Referenced: \\${file.fileName}`);
+    };
+
+    const handleRemoveFileRef = (fileToRemove) => {
+        if (!fileToRemove) return;
+        const fn = fileToRemove.fileName || fileToRemove;
+        setSelectedFileRefs(prev => prev.filter(f => f.fileName.toLowerCase() !== fn.toLowerCase()));
+
+        // Also clean up any \filename reference from the input text
+        setInput(prev => {
+            const escaped = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return prev.replace(new RegExp(`\\\\?${escaped}\\s*`, 'gi'), ' ').trim();
+        });
+
+        toast(`Removed \\${fn}`, { icon: '🗑️' });
+        setTimeout(() => inputRef.current?.focus(), 50);
     };
 
     useEffect(() => {
@@ -1160,12 +1264,36 @@ export default function AIAssistantPage() {
     }, []);
 
     const handleSend = async () => {
-        const msg = input.trim();
+        let msg = input.trim();
+        const activeRefs = [...selectedFileRefs];
+        if (!msg && activeRefs.length > 0) {
+            const primary = activeRefs[0];
+            if (primary.fileName.toLowerCase().endsWith('.pdf')) {
+                msg = `Create training module from \\${primary.fileName}`;
+            } else if (primary.fileName.toLowerCase().match(/\.(csv|xlsx|xls)$/i)) {
+                msg = `Load data from \\${primary.fileName}`;
+            } else {
+                msg = `Analyze and summarize \\${primary.fileName}`;
+            }
+        }
         if (!msg || isLoading) return;
 
-        const userMessage = { role: 'user', content: msg, timestamp: new Date().toISOString() };
+        // If message text doesn't already contain \filename, append to guarantee resolution
+        activeRefs.forEach(f => {
+            if (!msg.toLowerCase().includes(f.fileName.toLowerCase())) {
+                msg = `${msg} \\${f.fileName}`;
+            }
+        });
+
+        const userMessage = { 
+            role: 'user', 
+            content: msg, 
+            referencedFiles: activeRefs,
+            timestamp: new Date().toISOString() 
+        };
         setMessages(prev => [...prev, userMessage]);
         setInput('');
+        setSelectedFileRefs([]);
         setIsLoading(true);
 
         try {
@@ -1181,7 +1309,9 @@ export default function AIAssistantPage() {
             const res = await api.post('/admin/chatbot/chat', {
                 message: msg,
                 conversationHistory: history,
-                documentContext: docContext
+                documentContext: docContext,
+                referencedFiles: activeRefs,
+                referencedFileName: activeRefs[0]?.fileName || ''
             });
 
             if (res.data.success) {
@@ -1349,7 +1479,7 @@ export default function AIAssistantPage() {
                                     </div>
                                 )}
                                 {msg.role === 'user' ? (
-                                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                                    <UserMessageContent content={msg.content} referencedFiles={msg.referencedFiles} />
                                 ) : (
                                     <>
                                         <RenderMessage content={msg.content} />
@@ -1413,7 +1543,20 @@ export default function AIAssistantPage() {
                 </div>
 
                 {/* Input bar */}
-                <div className="border-t border-slate-200 dark:border-slate-700 pt-3 pb-2">
+                <div className="border-t border-slate-200 dark:border-slate-700 pt-2 pb-2">
+                    {/* Highlighted Document Reference Pills Bar */}
+                    {selectedFileRefs.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 mb-2 rounded-xl bg-gradient-to-r from-indigo-50/90 via-purple-50/50 to-slate-50 dark:from-indigo-950/60 dark:via-purple-950/40 dark:to-slate-900/60 border border-indigo-100 dark:border-indigo-900/60 animate-in fade-in slide-in-from-bottom-1">
+                            <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-1 mr-0.5">
+                                <Sparkles className="w-3 h-3 text-indigo-500" />
+                                Referenced:
+                            </span>
+                            {selectedFileRefs.map((doc, i) => (
+                                <FileRefPill key={doc.fileName || i} file={doc} onRemove={handleRemoveFileRef} />
+                            ))}
+                        </div>
+                    )}
+
                     <div className="flex items-end gap-2">
                         {/* Upload button */}
                         <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden"
@@ -1444,6 +1587,7 @@ export default function AIAssistantPage() {
                                         return;
                                     }
                                     if (fileRefOpen && (e.key === 'Enter' || e.key === 'Tab')) {
+                                        // Handled by FileReferenceDropdown window listener
                                         e.preventDefault();
                                         return;
                                     }
@@ -1452,7 +1596,7 @@ export default function AIAssistantPage() {
                                         handleSend();
                                     }
                                 }}
-                                placeholder="Ask anything, or type \ to reference a file (e.g. \lab1_inventory.csv or \python_math_library_syllabus.pdf)..."
+                                placeholder={selectedFileRefs.length > 0 ? `Ask about \\${selectedFileRefs[0].fileName}, or press Enter to run...` : "Ask anything, or type \\ to reference a file (e.g. \\engmaths.pdf or \\lab1_inventory.csv)..."}
                                 rows={1}
                                 className="w-full px-4 py-2.5 pr-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
                                 style={{ minHeight: '44px', maxHeight: '120px' }}
@@ -1460,7 +1604,7 @@ export default function AIAssistantPage() {
                         </div>
 
                         {/* Send button */}
-                        <button onClick={handleSend} disabled={!input.trim() || isLoading}
+                        <button onClick={handleSend} disabled={(!input.trim() && selectedFileRefs.length === 0) || isLoading}
                             className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center hover:from-indigo-600 hover:to-violet-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20">
                             {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                         </button>

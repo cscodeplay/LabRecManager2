@@ -889,7 +889,7 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
 
         // ─── File Reference Resolution & Auto Document Ingestion Engine ───
         let activeDocContext = documentContext || '';
-        let referencedFileName = '';
+        let referencedFileName = (options.referencedFileName || (options.referencedFiles && options.referencedFiles[0]?.fileName) || '').trim();
 
         // Detect referenced file in prompt: \filename, @filename, or "from filename.ext"
         const fileRefMatch = message.match(/[\\@]([a-zA-Z0-9_\-.\s]+?\.[a-zA-Z0-9]{2,5})\b/) ||
@@ -898,6 +898,9 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
 
         if (fileRefMatch) {
             referencedFileName = fileRefMatch[1].trim();
+        }
+
+        if (referencedFileName) {
             // If referencedFileName has no extension, try candidate extensions
             if (!referencedFileName.includes('.')) {
                 const candidateExts = ['.pdf', '.csv', '.xlsx', '.txt'];
