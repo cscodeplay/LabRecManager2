@@ -356,7 +356,6 @@ router.get('/modules/:id', authenticate, asyncHandler(async (req, res) => {
         return res.status(404).json({ success: false, message: 'Module not found' });
     }
 
-    const isAdmin = ['admin', 'principal', 'instructor'].includes(req.user.role);
     if (!isAdmin) {
         if (!moduleDetails.isPublished) {
             return res.status(403).json({ success: false, message: 'This training module is currently in draft mode' });
