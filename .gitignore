@@ -37,7 +37,10 @@ Thumbs.db
 # Uploads (user generated content)
 server/uploads/
 uploads/
-RAG/
+RAG/*
+!RAG/engmaths.pdf
+!RAG/python_math_library_syllabus.pdf
+!RAG/README.md
 
 # Testing
 coverage/

@@ -96,10 +96,16 @@ router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor',
         });
     } catch (error) {
         console.error('[ChatBot Route] Error:', error.message);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'AI chat failed'
-        });
+        if (!res.headersSent) {
+            res.json({
+                success: true,
+                data: {
+                    message: `⚠️ I encountered an issue processing that request: ${error.message || 'An unexpected error occurred'}. Please try again or rephrase your request.`,
+                    provider: req.body?.provider || 'auto',
+                    timestamp: new Date().toISOString()
+                }
+            });
+        }
     }
 }));
 

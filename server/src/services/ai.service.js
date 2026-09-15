@@ -4744,11 +4744,21 @@ ${featuredCode ? `#### 💻 Syntax & Code Implementation\n\`\`\`${language}\n${f
                 fixed = fixed.replace(/\\([^"\\/bfnrtu]|u(?![\da-fA-F]{4}))/g, '\\\\$1');
                 return JSON.parse(fixed);
             } catch (innerErr) {
-                // If truncated, attempt to balance braces/brackets
+                // If truncated, attempt to balance braces/brackets and fix cut-off strings/keys
                 try {
                     let repaired = sanitizeControlCharsInStrings(cleanText);
-                    repaired = repaired.replace(/,\s*([\]}])/g, '$1');
                     repaired = repaired.replace(/\\([^"\\/bfnrtu]|u(?![\da-fA-F]{4}))/g, '\\\\$1');
+                    // Check if truncated inside an open quote
+                    const quoteMatches = repaired.match(/(^|[^\\])"/g);
+                    if (quoteMatches && quoteMatches.length % 2 !== 0) {
+                        repaired += '"';
+                    }
+                    // Strip trailing dangling keys, unclosed property colons or trailing commas
+                    repaired = repaired.replace(/,\s*"?[a-zA-Z0-9_-]*"?\s*:?\s*"?[a-zA-Z0-9_-]*"?\s*$/g, '');
+                    repaired = repaired.replace(/:\s*"?\w*"?\s*$/g, ': null');
+                    repaired = repaired.replace(/,\s*([\]}])/g, '$1');
+                    repaired = repaired.replace(/,\s*$/g, '');
+
                     const openBraces = (repaired.match(/{/g) || []).length;
                     const closeBraces = (repaired.match(/}/g) || []).length;
                     const openSquares = (repaired.match(/\[/g) || []).length;

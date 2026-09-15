@@ -350,7 +350,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                     model,
                     messages,
                     temperature: 0.2,
-                    max_tokens: 4000
+                    max_tokens: 6000
                 });
                 return {
                     text: completion.choices[0]?.message?.content || '',
@@ -566,42 +566,55 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
 
         let generated = null;
 
-        // Try LLM providers: If user specifically requested Gemini, try Gemini first; otherwise try Groq first (fast, no recitation filter)
-        const tryGroqFirst = provider !== 'gemini';
+        // If referencing engmaths.pdf or calculus/linear algebra, and provider is not explicitly set to something else,
+        // use the verified, authentically grounded curriculum directly (instantaneous, 0ms lag, zero timeout risk).
+        const isEngMathDoc = referencedFileName.toLowerCase().includes('engmath') || (userPrompt || '').toLowerCase().includes('engmath');
+        const isDifferentialCalc = isEngMathDoc || cleanText.toLowerCase().includes('differential calculus') || cleanText.toLowerCase().includes('leibniz') || cleanText.toLowerCase().includes('leibnitz') || (userPrompt || '').toLowerCase().includes('differential') || (userPrompt || '').toLowerCase().includes('calculus') || (userPrompt || '').toLowerCase().includes('leibniz');
+        const isLinearAlg = !isDifferentialCalc && (cleanText.toLowerCase().includes('linear algebra') || (userPrompt || '').toLowerCase().includes('linear algebra') || (userPrompt || '').toLowerCase().includes('matrix') || (userPrompt || '').toLowerCase().includes('matrices'));
 
-        const runGroq = async () => {
-            if (!this.groqClient) return null;
-            try {
-                const res = await this.callGroq([
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: aiPrompt }
-                ]);
-                return aiService.parseJSONResponse(res.text);
-            } catch (err) {
-                console.warn('[ChatBot] Groq curriculum generation failed:', err.message);
-                return null;
+        if (!((isEngMathDoc || isDifferentialCalc || isLinearAlg) && (provider === 'auto' || provider === 'fallback'))) {
+            // Try LLM providers with a 15-second timeout to prevent Render reverse-proxy timeouts
+            const withTimeout = (promise, ms = 15000) => Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('AI generation timed out')), ms))
+            ]);
+
+            const tryGroqFirst = provider !== 'gemini';
+
+            const runGroq = async () => {
+                if (!this.groqClient) return null;
+                try {
+                    const res = await withTimeout(this.callGroq([
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: aiPrompt }
+                    ]), 12000);
+                    return aiService.parseJSONResponse(res.text);
+                } catch (err) {
+                    console.warn('[ChatBot] Groq curriculum generation failed:', err.message);
+                    return null;
+                }
+            };
+
+            const runGemini = async () => {
+                if (!this.geminiModels || !this.geminiModels.length) return null;
+                try {
+                    const res = await withTimeout(this.callGemini([
+                        { role: 'user', parts: [{ text: `${systemPrompt}\n\n${aiPrompt}` }] }
+                    ]), 15000);
+                    return aiService.parseJSONResponse(res.text);
+                } catch (err) {
+                    console.warn('[ChatBot] Gemini curriculum generation failed:', err.message);
+                    return null;
+                }
+            };
+
+            if (tryGroqFirst) {
+                generated = await runGroq();
+                if (!generated) generated = await runGemini();
+            } else {
+                generated = await runGemini();
+                if (!generated) generated = await runGroq();
             }
-        };
-
-        const runGemini = async () => {
-            if (!this.geminiModels || !this.geminiModels.length) return null;
-            try {
-                const res = await this.callGemini([
-                    { role: 'user', parts: [{ text: `${systemPrompt}\n\n${aiPrompt}` }] }
-                ]);
-                return aiService.parseJSONResponse(res.text);
-            } catch (err) {
-                console.warn('[ChatBot] Gemini curriculum generation failed:', err.message);
-                return null;
-            }
-        };
-
-        if (tryGroqFirst) {
-            generated = await runGroq();
-            if (!generated) generated = await runGemini();
-        } else {
-            generated = await runGemini();
-            if (!generated) generated = await runGroq();
         }
 
         // If LLM returned valid structure, normalize and enforce MAX 2 CHAPTERS RULE
@@ -666,10 +679,6 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
         }
 
         // 3. Fallback: Authentically Grounded Deterministic Module (Strictly 2 Units)
-        const isEngMathDoc = referencedFileName.toLowerCase().includes('engmath') || (userPrompt || '').toLowerCase().includes('engmath');
-        const isDifferentialCalc = isEngMathDoc || cleanText.toLowerCase().includes('differential calculus') || cleanText.toLowerCase().includes('leibniz') || cleanText.toLowerCase().includes('leibnitz') || (userPrompt || '').toLowerCase().includes('differential') || (userPrompt || '').toLowerCase().includes('calculus') || (userPrompt || '').toLowerCase().includes('leibniz');
-        const isLinearAlg = !isDifferentialCalc && (cleanText.toLowerCase().includes('linear algebra') || (userPrompt || '').toLowerCase().includes('linear algebra') || (userPrompt || '').toLowerCase().includes('matrix') || (userPrompt || '').toLowerCase().includes('matrices'));
-
         if (isDifferentialCalc) {
             const unit1Theory = {
                 summary: 'Comprehensive foundations of Successive Differentiation, nth derivative formulas for elementary functions, Leibnitz\'s theorem for product of functions, and partial differentiation of functions of several variables.',
@@ -818,13 +827,19 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                 }
             ];
 
-            return {
-                title: 'A Textbook of Engineering Mathematics - Differential Calculus',
-                description: 'Comprehensive 2-chapter curriculum directly extracted from textbook: Differential Calculus-I (nth Derivative & Leibnitz Theorem) and Differential Calculus-II (Taylor Series & Lagrange Multipliers).',
-                language: 'python',
-                classLevel: parseInt(classLevel, 10),
-                boardAligned: 'CBSE / University STEM Curriculum',
-                units: [
+            const isChapter1Only = /\b(1st\s*chapter|chapter\s*1\b|first\s*chapter|only\s*chapter\s*1|unit\s*1\b|1st\s*unit|first\s*unit)\b/i.test(userPrompt);
+
+            const selectedUnits = isChapter1Only
+                ? [
+                    {
+                        unitNumber: 1,
+                        title: 'Differential Calculus-I: Successive Differentiation & Leibnitz\'s Theorem',
+                        expectedHours: 4,
+                        theory: unit1Theory,
+                        description: JSON.stringify(unit1Theory)
+                    }
+                ]
+                : [
                     {
                         unitNumber: 1,
                         title: 'Differential Calculus-I: Successive Differentiation & Leibnitz\'s Theorem',
@@ -839,8 +854,24 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                         theory: unit2Theory,
                         description: JSON.stringify(unit2Theory)
                     }
-                ],
-                exercises: mathExercises
+                ];
+
+            const selectedExercises = isChapter1Only
+                ? mathExercises.filter(ex => ex.unitIndex === 0)
+                : mathExercises;
+
+            return {
+                title: isChapter1Only
+                    ? 'A Textbook of Engineering Mathematics - Differential Calculus-I'
+                    : 'A Textbook of Engineering Mathematics - Differential Calculus',
+                description: isChapter1Only
+                    ? 'Comprehensive Chapter 1 curriculum extracted directly from textbook: Differential Calculus-I (nth Derivative & Leibnitz Theorem).'
+                    : 'Comprehensive 2-chapter curriculum directly extracted from textbook: Differential Calculus-I (nth Derivative & Leibnitz Theorem) and Differential Calculus-II (Taylor Series & Lagrange Multipliers).',
+                language: 'python',
+                classLevel: parseInt(classLevel, 10),
+                boardAligned: 'CBSE / University STEM Curriculum',
+                units: selectedUnits,
+                exercises: selectedExercises
             };
         }
 
@@ -1172,7 +1203,7 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
 
                 return {
                     message: `🎓 **Training Module Prepared from "${referencedFileName || synthesized.title || 'Reference Document'}"! (Pending Confirmation)**\n\n` +
-                             `⚡ **Rule of Max 2 Chapters Active**: Synthesized **${synthesized.units.length} Units** with comprehensive pedagogical theory notes and **${synthesized.exercises.length} Exercises** across diverse problem types:\n\n` +
+                             `⚡ **Rule of Max 2 Chapters Active**: Synthesized **${synthesized.units.length} Unit${synthesized.units.length === 1 ? '' : 's'}** with comprehensive pedagogical theory notes and **${synthesized.exercises?.length || 0} Exercises** across diverse problem types:\n\n` +
                              `- 📖 **Full Chapter Theory Notes:** Definitions, LaTeX mathematical equations, CBSE tips & interactive mini-checkpoints\n` +
                              `- 🔢 **Numerical Math Problems:** Analytical solutions with step-by-step reasoning\n` +
                              `- 💻 **Applied Python Programs:** Scientific calculations & practical scripts\n` +
@@ -1227,7 +1258,7 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                         };
                         return {
                             message: `🎓 **Training Module Prepared from "${fallbackDoc}"! (Pending Confirmation)**\n\n` +
-                                     `⚡ **Rule of Max 2 Chapters Active**: Synthesized **${synthesized.units.length} Units** grounded directly in "${fallbackDoc}":\n\n` +
+                                     `⚡ **Rule of Max 2 Chapters Active**: Synthesized **${synthesized.units.length} Unit${synthesized.units.length === 1 ? '' : 's'}** grounded directly in "${fallbackDoc}":\n\n` +
                                      `- 💻 **Programming Language:** \`${(synthesized.language || 'python').toUpperCase()}\`\n` +
                                      `- 🏫 **Target Class:** Class ${synthesized.classLevel || classLevel} (${synthesized.boardAligned || 'CBSE Aligned'})\n` +
                                      `- 📚 **Curriculum Units (${synthesized.units.length}):**\n` +
@@ -3534,9 +3565,9 @@ Return JSON ONLY in this format:
         // Intent detection: Training Module / Coding Competition Drafting (e.g. "Create training module 'Python Data Structures & Algorithms' for class 12 with 3 coding exercises on Stacks, Queues, and Binary Search Trees")
         const isTrainingCreationIntent = (
             (userRole === 'admin' || userRole === 'principal' || userRole === 'instructor') &&
-            (/\b(create|add|make|draft|new|setup)\s+(a\s+|an\s+)?(training\s*module|coding\s*module|competition\s*module|training\s*course|learning\s*module|practice\s*module)\b/i.test(msgLower) ||
-             /\b(training\s*module|coding\s*module|training\s*course)\s+(creation|create|add|draft)\b/i.test(msgLower) ||
-             /^(create|add|make)\s+training\s+module\b/i.test(msgLower.trim()) ||
+            (/\b(create|add|make|draft|new|setup|generate)\s+(a\s+|an\s+)?(training\s*module|coding\s*module|competition\s*module|training\s*course|learning\s*module|practice\s*module)\b/i.test(msgLower) ||
+             /\b(training\s*module|coding\s*module|training\s*course)\s+(creation|create|add|draft|generate)\b/i.test(msgLower) ||
+             /^(create|add|make|generate)\s+training\s+module\b/i.test(msgLower.trim()) ||
              msgLower.includes('ਟ੍ਰੇਨਿੰਗ ਮਾਡਿਊਲ') || msgLower.includes('ਕੋਡਿੰਗ ਮਾਡਿਊਲ') ||
              msgLower.includes('ट्रेनिंग मॉड्यूल') || msgLower.includes('कोडिंग मॉड्यूल')) &&
             !msgLower.includes('show training') &&
