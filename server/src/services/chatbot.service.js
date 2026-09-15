@@ -411,6 +411,75 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
         }
     }
 
+    // ═══ CHAPTER & UNIT EXTRACTION HELPER ═══
+    extractRequestedChapters(prompt) {
+        if (!prompt || typeof prompt !== 'string') return [];
+
+        const lower = prompt.toLowerCase();
+        const chapters = new Set();
+
+        const wordNums = {
+            'first': 1, '1st': 1, 'one': 1,
+            'second': 2, '2nd': 2, 'two': 2,
+            'third': 3, '3rd': 3, 'three': 3,
+            'fourth': 4, '4th': 4, 'four': 4,
+            'fifth': 5, '5th': 5, 'five': 5,
+            'sixth': 6, '6th': 6, 'six': 6,
+            'seventh': 7, '7th': 7, 'seven': 7,
+            'eighth': 8, '8th': 8, 'eight': 8,
+            'ninth': 9, '9th': 9, 'nine': 9,
+            'tenth': 10, '10th': 10, 'ten': 10
+        };
+
+        // Range or pairs: 'ch 1 & 2', 'ch 3-4', 'chapters 1 to 2', 'unit 1 and 2', 'ch 1 and ch 2'
+        const rangePattern = /\b(?:chapters?|units?|chs?)[.\s-]*([0-9]+)\s*(?:-|to|and|&|,)\s*(?:chapters?|units?|chs?)?[.\s-]*([0-9]+)\b/gi;
+        let match;
+        while ((match = rangePattern.exec(lower)) !== null) {
+            const start = parseInt(match[1], 10);
+            const end = parseInt(match[2], 10);
+            if (start && end) {
+                for (let i = Math.min(start, end); i <= Math.max(start, end); i++) {
+                    chapters.add(i);
+                }
+            }
+        }
+
+        if (chapters.size === 0) {
+            const ordinalPattern = /\b(1st|2nd|3rd|4th|5th|6th|7th|8th|9th|10th|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+(?:chapter|unit|ch|mod|module)\b/gi;
+            while ((match = ordinalPattern.exec(lower)) !== null) {
+                const val = wordNums[match[1].toLowerCase()];
+                if (val) chapters.add(val);
+            }
+        }
+
+        if (chapters.size === 0) {
+            const chPrefixPattern = /\b(?:chapter|chap|ch|unit|module|mod)[.\s-]*([0-9]+|one|two|three|four|five|six|seven|eight|nine|ten)\b/gi;
+            while ((match = chPrefixPattern.exec(lower)) !== null) {
+                const raw = match[1].toLowerCase();
+                const val = parseInt(raw, 10) || wordNums[raw];
+                if (val) chapters.add(val);
+            }
+        }
+
+        if (chapters.size === 0) {
+            const standaloneNumMatch = lower.trim().match(/^#?([1-9]|10)$/);
+            if (standaloneNumMatch) {
+                chapters.add(parseInt(standaloneNumMatch[1], 10));
+            } else {
+                const withNumMatch = lower.match(/\b(?:with|for|generate|create|module|chapter|unit)\s+([1-9]|10)\b/i);
+                if (withNumMatch) {
+                    const num = parseInt(withNumMatch[1], 10);
+                    const classCheck = new RegExp(`class\\s*${num}\\b`, 'i');
+                    if (!classCheck.test(lower)) {
+                        chapters.add(num);
+                    }
+                }
+            }
+        }
+
+        return Array.from(chapters).sort((a, b) => a - b);
+    }
+
     // ═══ TRAINING MODULE GENERATION WITH STRICT MAX 2 CHAPTERS RULE ═══
     async synthesizeTrainingModuleWithMax2Chapters({ documentText = '', referencedFileName = '', userPrompt = '', classLevel = 11, provider = 'auto' }) {
         let activeText = documentText || '';
@@ -555,14 +624,26 @@ Return JSON matching this exact structure:
   ]
 }`;
 
+        const requestedChapters = this.extractRequestedChapters(userPrompt);
+        const isSingleChapterRequested = requestedChapters.length === 1;
+        const targetChaptersStr = isSingleChapterRequested
+            ? `Chapter ${requestedChapters[0]}`
+            : (requestedChapters.length > 1 ? `Chapters ${requestedChapters.slice(0, 2).join(' and ')}` : 'the first 2 chapters');
+
         const aiPrompt = `DOCUMENT TEXT EXCERPTS:
 ---
 ${textSample || 'Subject: Engineering Mathematics & Scientific Computing with Python'}
 ---
 User Prompt: ${userPrompt || 'Generate training module from document'}
 Reference File: ${referencedFileName || 'Book'}
+Target Chapter Scope: ${targetChaptersStr}
 
-Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY JSON.`;
+CRITICAL SCOPE RULE:
+${isSingleChapterRequested 
+    ? `The user specifically requested ${targetChaptersStr}. You MUST extract and generate ONLY this 1 chapter (1 unit total). Do NOT generate multiple units.`
+    : `Generate ${targetChaptersStr} (maximum 2 units total) according to the Rule of Max 2 Chapters.`}
+
+Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
 
         let generated = null;
 
@@ -617,7 +698,7 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
             }
         }
 
-        // If LLM returned valid structure, normalize and enforce MAX 2 CHAPTERS RULE
+        // If LLM returned valid structure, normalize and enforce TARGET SCOPE (1 unit if single chapter, else max 2)
         const rawUnits = Array.isArray(generated?.units)
             ? generated.units
             : (Array.isArray(generated?.chapters)
@@ -625,8 +706,8 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                 : (Array.isArray(generated?.modules) ? generated.modules : []));
 
         if (generated && rawUnits.length > 0) {
-            // STRICTLY TRUNCATE TO MAX 2 UNITS
-            const units = rawUnits.slice(0, 2).map((u, i) => {
+            const maxUnitsToTake = isSingleChapterRequested ? 1 : 2;
+            const units = rawUnits.slice(0, maxUnitsToTake).map((u, i) => {
                 const theoryObj = u.theory || {
                     summary: u.summary || u.description || '',
                     content: u.content || u.text || u.description || '',
@@ -652,7 +733,7 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                     : (Array.isArray(generated.problems) ? generated.problems : []));
 
             if (rawExercises.length === 0) {
-                rawUnits.slice(0, 2).forEach((u, uIdx) => {
+                rawUnits.slice(0, maxUnitsToTake).forEach((u, uIdx) => {
                     const sub = u.exercises || u.problems || u.assignments || [];
                     sub.forEach(ex => {
                         if (typeof ex === 'object') rawExercises.push({ ...ex, unitIndex: uIdx });
@@ -662,14 +743,18 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
 
             const exercises = rawExercises.map((ex, i) => ({
                 ...ex,
-                unitIndex: (ex.unitIndex === 1 || ex.unitNumber === 2) ? 1 : 0,
+                unitIndex: isSingleChapterRequested ? 0 : ((ex.unitIndex === 1 || ex.unitNumber === 2) ? 1 : 0),
                 selected: true,
                 _id: i
             }));
 
+            const desc = isSingleChapterRequested
+                ? (generated.moduleDescription || generated.description || `Comprehensive single-chapter training curriculum for ${targetChaptersStr} synthesized directly from document with deep theory notes and hands-on exercises.`)
+                : (generated.moduleDescription || generated.description || 'Comprehensive 2-chapter training curriculum synthesized directly from textbook with deep theory notes and hands-on exercises.');
+
             return {
                 title: generated.moduleTitle || generated.course || generated.title || (isMath ? 'Engineering Mathematics & Python Scientific Computing' : 'Applied Curriculum Module'),
-                description: generated.moduleDescription || generated.description || 'Comprehensive 2-chapter training curriculum synthesized directly from textbook with deep theory notes and hands-on exercises.',
+                description: desc,
                 language: generated.language || 'python',
                 classLevel: parseInt(generated.classLevel || classLevel, 10),
                 boardAligned: generated.boardAligned || 'CBSE / STEM Curriculum',
@@ -678,8 +763,8 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
             };
         }
 
-        // 3. Fallback: Authentically Grounded Deterministic Module (Strictly 2 Units)
-        if (isDifferentialCalc) {
+        // 3. Fallback: Authentically Grounded Deterministic Module (All 5 Units of Engineering Mathematics)
+        if (isDifferentialCalc || isEngMathDoc || isLinearAlg) {
             const unit1Theory = {
                 summary: 'Comprehensive foundations of Successive Differentiation, nth derivative formulas for elementary functions, Leibnitz\'s theorem for product of functions, and partial differentiation of functions of several variables.',
                 content: `### 📘 Differential Calculus-I: Successive Differentiation & Partial Derivatives\n\nCalculus measures rate of change, motion, growth, and decay. Successive differentiation extends single derivatives to higher-order rates, essential for curvature, series expansions, and physical dynamics.\n\n#### 🔑 1. Standard $n^{\\text{th}}$ Order Derivatives\n- **Power Function:** For $y = (ax + b)^m$:\n  $$y_n = \\frac{d^n}{dx^n}(ax + b)^m = m(m-1)\\dots(m-n+1)a^n(ax + b)^{m-n}$$\n  When $m = -1$, $y = \\frac{1}{ax+b} \\implies y_n = \\frac{(-1)^n n! a^n}{(ax+b)^{n+1}}$\n- **Exponential Function:** For $y = e^{ax} \\implies y_n = a^n e^{ax}$\n- **Trigonometric Functions:** For $y = \\sin(ax+b)$:\n  $$y_n = a^n \\sin\\left(ax + b + \\frac{n\\pi}{2}\\right)$$\n  For $y = \\cos(ax+b) \\implies y_n = a^n \\cos\\left(ax + b + \\frac{n\\pi}{2}\\right)$\n- **Product Exponential & Sine/Cosine:** For $y = e^{ax}\\sin(bx+c)$:\n  $$y_n = r^n e^{ax}\\sin(bx + c + n\\phi) \\quad \\text{where } r = \\sqrt{a^2+b^2}, \\, \\phi = \\tan^{-1}\\left(\\frac{b}{a}\\right)$$\n\n#### 📐 2. Leibnitz's Theorem for Product of Two Functions\nIf $u$ and $v$ are functions of $x$ possessing derivatives of the $n^{\\text{th}}$ order, then:\n$$(uv)_n = \\sum_{r=0}^{n} \\binom{n}{r} u_{n-r} v_r = u_n v + n u_{n-1} v_1 + \\frac{n(n-1)}{2!} u_{n-2} v_2 + \\dots + u v_n$$\nThis theorem is fundamental for solving linear differential equations and series solutions of mathematical physics.\n\n#### 🌐 3. Functions of Several Variables & Partial Differentiation\nWhen $z = f(x, y)$ depends on multiple independent variables, the partial derivative with respect to $x$ treats $y$ as a constant:\n$$\\frac{\\partial z}{\\partial x} = f_x = \\lim_{\\Delta x \\to 0} \\frac{f(x+\\Delta x, y) - f(x, y)}{\\Delta x}$$\n- **Euler's Theorem on Homogeneous Functions:** If $u(x, y)$ is homogeneous of degree $n$, then:\n  $$x \\frac{\\partial u}{\\partial x} + y \\frac{\\partial u}{\\partial y} = n u$$\n  and $x^2 \\frac{\\partial^2 u}{\\partial x^2} + 2xy \\frac{\\partial^2 u}{\\partial x \\partial y} + y^2 \\frac{\\partial^2 u}{\\partial y^2} = n(n-1) u$.`,
@@ -752,7 +837,117 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                 ]
             };
 
+            const unit3Theory = {
+                summary: 'Foundations of Matrix Algebra, Elementary Row Operations, Rank of Matrix, System of Linear Equations, Gaussian Elimination, Eigenvalues, Eigenvectors, Cayley-Hamilton Theorem, and Diagonalization.',
+                content: `### 📘 Matrices & Linear Algebra: Rank, Systems of Equations & Eigenvalues\n\nMatrices form the computational bedrock of scientific computing, computer graphics, quantum mechanics, and machine learning. This unit establishes the algebraic and geometric foundations of matrix transformations.\n\n#### 🔑 1. Rank of a Matrix & Echelon Form\nThe rank $\\rho(A)$ is the maximum number of linearly independent row or column vectors in $A$:\n- **Elementary Row Operations:** Row exchange ($R_i \\leftrightarrow R_j$), non-zero scalar multiplication ($R_i \\to k R_i$), and row addition ($R_i \\to R_i + k R_j$).\n- **Row Echelon Form:** All non-zero rows are above any zero rows, and the leading coefficient of a non-zero row is strictly to the right of the leading coefficient of the row above. The number of non-zero rows in echelon form equals $\\rho(A)$.\n- **Normal Form $[I_r \\, 0; 0 \\, 0]$:** Reduced using both elementary row and column operations.\n\n#### 📐 2. Systems of Linear Equations ($AX = B$)\nFor $m$ linear equations in $n$ unknowns with augmented matrix $[A|B]$:\n- **Consistent (Unique Solution):** $\\rho(A) = \\rho([A|B]) = n$.\n- **Consistent (Infinitely Many Solutions):** $\\rho(A) = \\rho([A|B]) = r < n$, with $(n - r)$ free parameters.\n- **Inconsistent (No Solution):** $\\rho(A) \\neq \\rho([A|B])$.\n- **Homogeneous System ($AX = 0$):** Always consistent ($X = 0$ is trivial solution). Possesses non-trivial solutions if and only if $\\rho(A) < n$ (i.e. $\\det(A) = 0$ for square $A$).\n- **Gaussian Elimination:** Systematic forward elimination to upper triangular form followed by back substitution.\n\n#### 🔄 3. Eigenvalues, Eigenvectors & Cayley-Hamilton Theorem\n- **Characteristic Equation:** For square matrix $A$ of order $n$, $\\det(A - \\lambda I) = 0$. The roots $\\lambda_1, \\lambda_2, \\dots, \\lambda_n$ are the eigenvalues.\n- **Eigenvectors:** Non-zero vector $X$ satisfying $(A - \\lambda I)X = 0$.\n- **Properties:** $\\sum \\lambda_i = \\text{tr}(A)$ (trace of $A$), and $\\prod \\lambda_i = \\det(A)$.\n- **Cayley-Hamilton Theorem:** Every square matrix satisfies its own characteristic equation: $p(A) = A^n + c_1 A^{n-1} + \\dots + c_n I = 0$.\n- **Inverse via Cayley-Hamilton:** $A^{-1} = -\\frac{1}{c_n}(A^{n-1} + c_1 A^{n-2} + \\dots + c_{n-1} I)$.`,
+                keyConcepts: [
+                    'Matrix Rank: Number of linearly independent rows in row echelon form',
+                    'Gaussian Elimination: Systematic algorithm for solving systems of linear equations AX = B',
+                    'Eigenvalues and Eigenvectors: Characteristic values satisfying det(A - lambda*I) = 0 and (A - lambda*I)X = 0',
+                    'Cayley-Hamilton Theorem: A matrix satisfies its own characteristic equation, enabling efficient computation of powers and inverses'
+                ],
+                miniCheckpoints: [
+                    {
+                        id: 'cp1',
+                        question: 'What is the sum of the eigenvalues of any square matrix A?',
+                        options: ['Determinant of A', 'Trace of A (sum of main diagonal entries)', 'Rank of A', 'Zero'],
+                        correctOption: 1,
+                        explanation: 'The sum of the eigenvalues of a matrix is always equal to its trace (sum of elements on the main diagonal).'
+                    },
+                    {
+                        id: 'cp2',
+                        question: 'A system of linear equations AX = B is consistent if and only if:',
+                        options: ['rank(A) = rank([A|B])', 'rank(A) > rank([A|B])', 'det(A) = 0', 'A is symmetric'],
+                        correctOption: 0,
+                        explanation: 'By the Rouche-Capelli theorem, AX = B is consistent if and only if the rank of coefficient matrix A equals the rank of augmented matrix [A|B].'
+                    }
+                ],
+                cbseTips: [
+                    'Tip: Use only elementary row operations when reducing [A|B] to solve linear systems; do NOT mix row and column operations.',
+                    'Cayley-Hamilton Tip: When calculating A^-1, multiply the characteristic polynomial equation through by A^-1.'
+                ],
+                steps: [
+                    { num: 1, title: 'Row Reduction', badge: 'ECHELON', desc: 'Transform augmented matrix [A|B] to row echelon form using Gaussian elimination' },
+                    { num: 2, title: 'Consistency Check', badge: 'ANALYSIS', desc: 'Compare rank(A) with rank([A|B]) to determine if solutions exist' },
+                    { num: 3, title: 'Eigen Spectrum', badge: 'EIGEN', desc: 'Solve characteristic determinant det(A - lambda*I) = 0 and compute eigenvectors' }
+                ]
+            };
+
+            const unit4Theory = {
+                summary: 'Multiple Integrals in Cartesian and Polar Coordinates, Working Rules, Change of Order of Integration, Change of Variables via Jacobians, Beta & Gamma Functions, and Applications to Area and Volume.',
+                content: `### 📘 Multiple Integrals: Double & Triple Integrals and Beta-Gamma Functions\n\nMultiple integrals extend single-variable Riemann integration to higher-dimensional manifolds, serving as the core computational machinery for areas, volumes, centers of mass, moments of inertia, and probability distributions.\n\n#### 🔑 1. Double Integrals & Coordinate Transformations\nA double integral over region $R$ in the $xy$-plane is defined by:\n$$\\iint_R f(x, y) \\, dx dy = \\int_{a}^{b} \\left( \\int_{y_1(x)}^{y_2(x)} f(x, y) \\, dy \\right) dx$$\n- **Polar Coordinates Transformation:** Substituting $x = r\\cos\\theta$ and $y = r\\sin\\theta$, the differential area element scales by the Jacobian $J = r$:\n  $$\\iint_R f(x, y) \\, dx dy = \\iint_{R'} f(r\\cos\\theta, r\\sin\\theta) \\, r \\, dr d\\theta$$\n- **Change of Order of Integration:** When an inner integral cannot be evaluated analytically (e.g. $\\int_{0}^{1} \\int_{x}^{1} e^{y^2} \\, dy dx$), sketching the region and reversing integration order yields an elementary antiderivative: $\\int_{0}^{1} \\int_{0}^{y} e^{y^2} \\, dx dy = \\int_0^1 y e^{y^2} dy = \\frac{e-1}{2}$.\n\n#### 📐 2. Beta and Gamma Functions\n- **Gamma Function (Euler's Integral of Second Kind):**\n  $$\\Gamma(n) = \\int_{0}^{\\infty} e^{-x} x^{n-1} \\, dx \\quad (n > 0)$$\n  Key recurrence: $\\Gamma(n+1) = n\\Gamma(n)$, $\\Gamma(n+1) = n!$ for integers, and $\\Gamma\\left(\\frac{1}{2}\\right) = \\sqrt{\\pi}$.\n- **Beta Function (Euler's Integral of First Kind):**\n  $$B(m, n) = \\int_{0}^{1} x^{m-1} (1-x)^{n-1} \\, dx = 2 \\int_{0}^{\\pi/2} \\sin^{2m-1}\\theta \\cos^{2n-1}\\theta \\, d\\theta \\quad (m > 0, n > 0)$$\n- **Fundamental Relation:** $B(m, n) = \\frac{\\Gamma(m)\\Gamma(n)}{\\Gamma(m+n)}$.\n- **Legendre's Duplication Formula:** $\\Gamma(m) \\Gamma\\left(m + \\frac{1}{2}\\right) = \\frac{\\sqrt{\\pi}}{2^{2m-1}} \\Gamma(2m)$.\n\n#### 🌐 3. Applications to Plane Area & Solid Volume\n- **Area of Plane Region $R$:** $A = \\iint_R dx dy = \\iint_R r \\, dr d\\theta$.\n- **Volume of Solid $V$:** $V = \\iiint_V dx dy dz$.\n- **Dirichlet's Integral for Positive Octant:** For $x, y, z \\ge 0$ with $x + y + z \\le 1$:\n  $$\\iiint_V x^{l-1} y^{m-1} z^{n-1} \\, dx dy dz = \\frac{\\Gamma(l) \\Gamma(m) \\Gamma(n)}{\\Gamma(l + m + n + 1)}$$`,
+                keyConcepts: [
+                    'Double Integrals: Evaluation over Cartesian regions and polar transformations with Jacobian r',
+                    'Change of Order of Integration: Inverting integration bounds to evaluate non-elementary integrals',
+                    'Beta and Gamma Functions: Generalized factorial functions with fundamental relation B(m,n) = Gamma(m)*Gamma(n)/Gamma(m+n)',
+                    'Dirichlet Theorem: Multivariable integral over simplex region using Gamma products'
+                ],
+                miniCheckpoints: [
+                    {
+                        id: 'cp1',
+                        question: 'What is the exact numerical value of Gamma(1/2)?',
+                        options: ['1', 'pi', 'sqrt(pi)', '1/2'],
+                        correctOption: 2,
+                        explanation: 'Gamma(1/2) = sqrt(pi), a cornerstone result derived via the Gaussian integral integral_{-infty}^{infty} e^{-x^2} dx = sqrt(pi).'
+                    },
+                    {
+                        id: 'cp2',
+                        question: 'When transforming dx dy to polar coordinates r, theta, the area element becomes:',
+                        options: ['dr dtheta', 'r dr dtheta', 'r^2 dr dtheta', '1/r dr dtheta'],
+                        correctOption: 1,
+                        explanation: 'The Jacobian determinant for x = r*cos(theta), y = r*sin(theta) is r, so dx dy = r dr dtheta.'
+                    }
+                ],
+                cbseTips: [
+                    'Exam Tip: Always sketch the integration domain carefully when changing order of integration to identify split boundaries.',
+                    'Symmetry Tip: Use polar coordinates whenever the integrand contains x^2 + y^2 or the boundary is circular.'
+                ],
+                steps: [
+                    { num: 1, title: 'Domain Mapping', badge: 'BOUNDS', desc: 'Identify bounding curves and formulate horizontal or vertical strips' },
+                    { num: 2, title: 'Order Swapping', badge: 'TRANSPOSE', desc: 'Swap integration variables and establish new valid limits from region sketch' },
+                    { num: 3, title: 'Beta-Gamma Evaluation', badge: 'SPECIAL', desc: 'Convert trigonometric power integrals to Beta-Gamma ratios' }
+                ]
+            };
+
+            const unit5Theory = {
+                summary: 'Vector Differential Calculus, Gradient, Directional Derivative, Divergence, Curl, Line Integrals, Surface Flux, Gauss Divergence Theorem, and Stokes Theorem.',
+                content: `### 📘 Vector Calculus: Differential Operations, Flux & Integral Theorems\n\nVector calculus extends multivariable differential and integral concepts to 3D vector fields, providing the mathematical framework for electrodynamics (Maxwell's equations), fluid mechanics (Navier-Stokes), gravitation, and robotics.\n\n#### 🔑 1. Vector Differential Operator (Del $\\nabla$)\nThe vector differential operator is $\\nabla = \\hat{i}\\frac{\\partial}{\\partial x} + \\hat{j}\\frac{\\partial}{\\partial y} + \\hat{k}\\frac{\\partial}{\\partial z}$:\n- **Gradient:** For a scalar field $\\phi(x, y, z)$, $\\nabla \\phi = \\frac{\\partial \\phi}{\\partial x}\\hat{i} + \\frac{\\partial \\phi}{\\partial y}\\hat{j} + \\frac{\\partial \\phi}{\\partial z}\\hat{k}$. The unit normal vector to level surface $\\phi = c$ is $\\hat{n} = \\frac{\\nabla \\phi}{|\\nabla \\phi|}$.\n- **Directional Derivative:** The rate of change of $\\phi$ along unit vector $\\hat{u}$ is $D_u \\phi = \\nabla \\phi \\cdot \\hat{u}$. Maximum rate of change occurs along $\\nabla \\phi$.\n- **Divergence:** For $\\vec{F} = F_1\\hat{i} + F_2\\hat{j} + F_3\\hat{k}$, $\\nabla \\cdot \\vec{F} = \\frac{\\partial F_1}{\\partial x} + \\frac{\\partial F_2}{\\partial y} + \\frac{\\partial F_3}{\\partial z}$. If $\\nabla \\cdot \\vec{F} = 0$, $\\vec{F}$ is **solenoidal** (incompressible fluid flow).\n- **Curl:** $\\nabla \\times \\vec{F} = \\begin{vmatrix} \\hat{i} & \\hat{j} & \\hat{k} \\\\ \\frac{\\partial}{\\partial x} & \\frac{\\partial}{\\partial y} & \\frac{\\partial}{\\partial z} \\\\ F_1 & F_2 & F_3 \\end{vmatrix}$. If $\\nabla \\times \\vec{F} = \\vec{0}$, $\\vec{F}$ is **irrotational** (conservative force field where $\\vec{F} = \\nabla \\phi$).\n\n#### 📐 2. Line, Surface & Volume Integrals\n- **Work Done by Force $\\vec{F}$ along Path $C$:** $W = \\int_C \\vec{F} \\cdot d\\vec{r} = \\int_C (F_1 dx + F_2 dy + F_3 dz)$.\n- **Flux across Surface $S$:** $\\Phi = \\iint_S \\vec{F} \\cdot \\hat{n} \\, dS$.\n\n#### 🌐 3. Fundamental Integral Theorems\n- **Gauss's Divergence Theorem:** Relates surface flux to volume divergence:\n  $$\\iint_S \\vec{F} \\cdot \\hat{n} \\, dS = \\iiint_V (\\nabla \\cdot \\vec{F}) \\, dV$$\n- **Stokes' Theorem:** Relates line integral circulation to surface curl:\n  $$\\oint_C \\vec{F} \\cdot d\\vec{r} = \\iint_S (\\nabla \\times \\vec{F}) \\cdot \\hat{n} \\, dS$$\n- **Green's Theorem in Plane:** $\\oint_C (M dx + N dy) = \\iint_R \\left( \\frac{\\partial N}{\\partial x} - \\frac{\\partial M}{\\partial y} \\right) dx dy$.`,
+                keyConcepts: [
+                    'Gradient: Vector of maximum directional derivative and normal to surface',
+                    'Divergence: Net flux per unit volume (solenoidal when div F = 0)',
+                    'Curl: Rotational circulation density (irrotational / conservative when curl F = 0)',
+                    'Gauss Divergence Theorem: Equivalence between closed surface flux and volume divergence',
+                    'Stokes Theorem: Equivalence between boundary curve line integral and surface curl flux'
+                ],
+                miniCheckpoints: [
+                    {
+                        id: 'cp1',
+                        question: 'A vector field F is called solenoidal if:',
+                        options: ['curl F = 0', 'div F = 0', 'grad F = 0', 'div(curl F) != 0'],
+                        correctOption: 1,
+                        explanation: 'A vector field is solenoidal (divergence-free) when div F = nabla . F = 0, indicating zero net source or sink.'
+                    },
+                    {
+                        id: 'cp2',
+                        question: 'If curl F = 0 everywhere in a simply connected region, the work done along any closed loop is:',
+                        options: ['Zero', 'Infinite', 'Surface area', 'Dependent on path'],
+                        correctOption: 0,
+                        explanation: 'By Stokes theorem, closed loop line integral of an irrotational field (curl F = 0) is identically zero (path-independent).'
+                    }
+                ],
+                cbseTips: [
+                    'Vector Identity Tip: Remember div(curl F) = 0 and curl(grad phi) = 0 always identically vanish.',
+                    'Gauss Theorem Tip: Convert complex closed surface integrals to simple volume integrals using divergence.'
+                ],
+                steps: [
+                    { num: 1, title: 'Differential Ops', badge: 'VECTOR', desc: 'Compute gradient, divergence, and curl of given field' },
+                    { num: 2, title: 'Field Properties', badge: 'TEST', desc: 'Verify solenoidal (div = 0) or irrotational (curl = 0) behavior' },
+                    { num: 3, title: 'Integral Theorem', badge: 'THEOREMS', desc: 'Apply Gauss divergence or Stokes theorem to evaluate boundary integrals' }
+                ]
+            };
+
             const mathExercises = [
+                // Unit 1 Exercises
                 {
                     unitIndex: 0,
                     title: 'nth Derivative using Leibnitz Theorem',
@@ -789,6 +984,7 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                     selected: true,
                     _id: 2
                 },
+                // Unit 2 Exercises
                 {
                     unitIndex: 1,
                     title: 'Numerical Jacobian Bug Fix',
@@ -824,49 +1020,206 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                     correctAnswer: 1,
                     selected: true,
                     _id: 5
+                },
+                // Unit 3 Exercises
+                {
+                    unitIndex: 2,
+                    title: 'NumPy Gaussian Elimination & Matrix Rank Solver',
+                    exerciseType: 'applied_math_code',
+                    difficulty: 'medium',
+                    scaffoldLevel: 'guided',
+                    description: 'Write a Python program using `numpy` to determine the rank of a 3x3 matrix and solve the non-homogeneous linear system $AX = B$ via Gaussian elimination.',
+                    starterCode: 'import numpy as np\n\ndef solve_linear_system(A, B):\n    # Return rank of A, rank of augmented [A|B], and solution X if consistent\n    pass\n',
+                    solutionCode: 'import numpy as np\n\ndef solve_linear_system(A, B):\n    rank_A = np.linalg.matrix_rank(A)\n    aug = np.column_stack((A, B))\n    rank_aug = np.linalg.matrix_rank(aug)\n    if rank_A == rank_aug:\n        X = np.linalg.solve(A, B)\n        return rank_A, rank_aug, X\n    return rank_A, rank_aug, None\n',
+                    selected: true,
+                    _id: 6
+                },
+                {
+                    unitIndex: 2,
+                    title: 'Cayley-Hamilton Matrix Inverse Theorem Proof',
+                    exerciseType: 'formula_derivation',
+                    difficulty: 'hard',
+                    scaffoldLevel: 'scaffolded',
+                    description: 'For matrix $A = \\begin{bmatrix} 1 & 2 \\\\ 3 & 4 \\end{bmatrix}$, state the characteristic equation, verify Cayley-Hamilton theorem $A^2 - 5A - 2I = 0$, and use it to calculate $A^{-1}$.',
+                    mathFormulas: ['\\det(A - \\lambda I) = \\lambda^2 - 5\\lambda - 2 = 0', 'A^{-1} = \\frac{1}{2}(A - 5I)'],
+                    selected: true,
+                    _id: 7
+                },
+                {
+                    unitIndex: 2,
+                    title: 'Matrix Eigenvalues & Trace Properties Quiz',
+                    exerciseType: 'mcq',
+                    difficulty: 'easy',
+                    scaffoldLevel: 'independent',
+                    description: 'If a 3x3 matrix has eigenvalues $\\lambda_1 = 2, \\lambda_2 = 3, \\lambda_3 = -1$, what are the trace and determinant of the matrix?',
+                    options: ['Trace = 4, Det = -6', 'Trace = 6, Det = 4', 'Trace = 5, Det = -5', 'Trace = -6, Det = 4'],
+                    correctAnswer: 0,
+                    selected: true,
+                    _id: 8
+                },
+                // Unit 4 Exercises
+                {
+                    unitIndex: 3,
+                    title: 'SymPy Double Integral over Circular Domain',
+                    exerciseType: 'applied_math_code',
+                    difficulty: 'medium',
+                    scaffoldLevel: 'guided',
+                    description: 'Write a Python program using `sympy` to evaluate the double integral $\\iint_R (x^2 + y^2) \\, dx dy$ over the positive quadrant of circle $x^2 + y^2 \\le a^2$ using polar coordinates.',
+                    starterCode: 'import sympy as sp\n\ndef eval_polar_double_integral():\n    r, theta, a = sp.symbols("r theta a", positive=True)\n    # Evaluate double integral with Jacobian r\n    pass\n',
+                    solutionCode: 'import sympy as sp\n\ndef eval_polar_double_integral():\n    r, theta, a = sp.symbols("r theta a", positive=True)\n    integrand = (r**2) * r\n    res = sp.integrate(integrand, (r, 0, a), (theta, 0, sp.pi/2))\n    return sp.simplify(res)\n',
+                    selected: true,
+                    _id: 9
+                },
+                {
+                    unitIndex: 3,
+                    title: 'Beta-Gamma Duplication Formula Verification',
+                    exerciseType: 'formula_derivation',
+                    difficulty: 'hard',
+                    scaffoldLevel: 'scaffolded',
+                    description: 'Using the integral definition of Beta function $B(m, n) = 2\\int_0^{\\pi/2} \\sin^{2m-1}\\theta \\cos^{2n-1}\\theta \\, d\\theta$, prove Legendre\'s duplication formula $\\Gamma(m)\\Gamma\\left(m+\\frac{1}{2}\\right) = \\frac{\\sqrt{\\pi}}{2^{2m-1}}\\Gamma(2m)$.',
+                    mathFormulas: ['B(m, n) = \\frac{\\Gamma(m)\\Gamma(n)}{\\Gamma(m+n)}', '\\Gamma(1/2) = \\sqrt{\\pi}'],
+                    selected: true,
+                    _id: 10
+                },
+                {
+                    unitIndex: 3,
+                    title: 'Change of Order of Integration Quiz',
+                    exerciseType: 'mcq',
+                    difficulty: 'medium',
+                    scaffoldLevel: 'independent',
+                    description: 'In evaluating $\\int_0^1 \\int_x^1 f(x, y) \\, dy dx$, reversing the order of integration leads to:',
+                    options: ['\\int_0^1 \\int_0^y f(x, y) \\, dx dy', '\\int_0^1 \\int_y^1 f(x, y) \\, dx dy', '\\int_0^1 \\int_0^1 f(x, y) \\, dx dy', '\\int_x^1 \\int_0^1 f(x, y) \\, dx dy'],
+                    correctAnswer: 0,
+                    selected: true,
+                    _id: 11
+                },
+                // Unit 5 Exercises
+                {
+                    unitIndex: 4,
+                    title: 'Python SymPy Vector Field Divergence & Curl',
+                    exerciseType: 'applied_math_code',
+                    difficulty: 'medium',
+                    scaffoldLevel: 'guided',
+                    description: 'Write a Python program using `sympy.vector` to compute the divergence and curl of vector field $\\vec{F} = (x^2 y)\\hat{i} + (y^2 z)\\hat{j} + (z^2 x)\\hat{k}$ and determine if it is solenoidal or irrotational.',
+                    starterCode: 'from sympy.vector import CoordSys3D, divergence, curl\n\ndef vector_field_analysis():\n    N = CoordSys3D("N")\n    # Define vector field and compute divergence and curl\n    pass\n',
+                    solutionCode: 'from sympy.vector import CoordSys3D, divergence, curl\n\ndef vector_field_analysis():\n    N = CoordSys3D("N")\n    F = (N.x**2 * N.y)*N.i + (N.y**2 * N.z)*N.j + (N.z**2 * N.x)*N.k\n    div_F = divergence(F)\n    curl_F = curl(F)\n    return div_F, curl_F\n',
+                    selected: true,
+                    _id: 12
+                },
+                {
+                    unitIndex: 4,
+                    title: 'Work Done along Helix Path via Line Integral',
+                    exerciseType: 'math_problem',
+                    difficulty: 'medium',
+                    scaffoldLevel: 'guided',
+                    description: 'Evaluate the work done by force field $\\vec{F} = 3x^2\\hat{i} + (2xz - y)\\hat{j} + z\\hat{k}$ along the space curve $x = 2t^2, y = t, z = t^3$ from $t = 0$ to $t = 1$.',
+                    mathFormulas: ['W = \\int_C \\vec{F} \\cdot d\\vec{r} = \\int_{t_1}^{t_2} (F_x \\frac{dx}{dt} + F_y \\frac{dy}{dt} + F_z \\frac{dz}{dt}) \\, dt'],
+                    selected: true,
+                    _id: 13
+                },
+                {
+                    unitIndex: 4,
+                    title: 'Gauss Divergence & Solenoidal Vector Field Quiz',
+                    exerciseType: 'mcq',
+                    difficulty: 'easy',
+                    scaffoldLevel: 'independent',
+                    description: 'For a closed surface $S$ bounding volume $V$, if $\\nabla \\cdot \\vec{F} = 3$ throughout $V$, what is the outward total flux $\\iint_S \\vec{F} \\cdot \\hat{n} \\, dS$?',
+                    options: ['3 * Volume(V)', '0', '3 / Volume(V)', 'Volume(V) / 3'],
+                    correctAnswer: 0,
+                    selected: true,
+                    _id: 14
                 }
             ];
 
-            const isChapter1Only = /\b(1st\s*chapter|chapter\s*1\b|first\s*chapter|only\s*chapter\s*1|unit\s*1\b|1st\s*unit|first\s*unit)\b/i.test(userPrompt);
+            const allMathUnits = [
+                {
+                    unitNumber: 1,
+                    title: 'Differential Calculus-I: Successive Differentiation & Leibnitz\'s Theorem',
+                    expectedHours: 4,
+                    theory: unit1Theory,
+                    description: JSON.stringify(unit1Theory)
+                },
+                {
+                    unitNumber: 2,
+                    title: 'Differential Calculus-II: Multivariable Expansions & Optimization',
+                    expectedHours: 4,
+                    theory: unit2Theory,
+                    description: JSON.stringify(unit2Theory)
+                },
+                {
+                    unitNumber: 3,
+                    title: 'Matrices & Linear Algebra: Systems of Equations & Eigenvalues',
+                    expectedHours: 4,
+                    theory: unit3Theory,
+                    description: JSON.stringify(unit3Theory)
+                },
+                {
+                    unitNumber: 4,
+                    title: 'Multiple Integrals: Double & Triple Integrals and Beta-Gamma Functions',
+                    expectedHours: 4,
+                    theory: unit4Theory,
+                    description: JSON.stringify(unit4Theory)
+                },
+                {
+                    unitNumber: 5,
+                    title: 'Vector Calculus: Differential Operations, Flux & Integral Theorems',
+                    expectedHours: 4,
+                    theory: unit5Theory,
+                    description: JSON.stringify(unit5Theory)
+                }
+            ];
 
-            const selectedUnits = isChapter1Only
-                ? [
-                    {
-                        unitNumber: 1,
-                        title: 'Differential Calculus-I: Successive Differentiation & Leibnitz\'s Theorem',
-                        expectedHours: 4,
-                        theory: unit1Theory,
-                        description: JSON.stringify(unit1Theory)
-                    }
-                ]
-                : [
-                    {
-                        unitNumber: 1,
-                        title: 'Differential Calculus-I: Successive Differentiation & Leibnitz\'s Theorem',
-                        expectedHours: 4,
-                        theory: unit1Theory,
-                        description: JSON.stringify(unit1Theory)
-                    },
-                    {
-                        unitNumber: 2,
-                        title: 'Differential Calculus-II: Multivariable Expansions & Optimization',
-                        expectedHours: 4,
-                        theory: unit2Theory,
-                        description: JSON.stringify(unit2Theory)
-                    }
-                ];
+            const requestedChapters = this.extractRequestedChapters(userPrompt);
+            let targetIndices = [];
 
-            const selectedExercises = isChapter1Only
-                ? mathExercises.filter(ex => ex.unitIndex === 0)
-                : mathExercises;
+            if (requestedChapters.length === 1) {
+                const ch = requestedChapters[0];
+                targetIndices = (ch >= 1 && ch <= 5) ? [ch - 1] : [0];
+            } else if (requestedChapters.length >= 2) {
+                const valid = requestedChapters.filter(c => c >= 1 && c <= 5);
+                if (valid.length >= 2) {
+                    targetIndices = valid.slice(0, 2).map(c => c - 1);
+                } else if (valid.length === 1) {
+                    targetIndices = [valid[0] - 1];
+                } else {
+                    targetIndices = [0, 1];
+                }
+            } else {
+                targetIndices = [0, 1];
+            }
+
+            const isSingleUnit = targetIndices.length === 1;
+
+            const selectedUnits = targetIndices.map((idx, i) => ({
+                ...allMathUnits[idx],
+                unitNumber: i + 1
+            }));
+
+            const selectedExercises = [];
+            targetIndices.forEach((origUnitIdx, newUnitIdx) => {
+                const uExercises = mathExercises.filter(ex => ex.unitIndex === origUnitIdx);
+                uExercises.forEach(ex => {
+                    selectedExercises.push({
+                        ...ex,
+                        unitIndex: newUnitIdx,
+                        _id: selectedExercises.length
+                    });
+                });
+            });
+
+            const shortTitle = isSingleUnit
+                ? allMathUnits[targetIndices[0]].title.split(':')[0].trim()
+                : targetIndices.map(idx => `Unit ${idx + 1}`).join(' & ');
+
+            const title = `A Textbook of Engineering Mathematics - ${shortTitle}`;
+
+            const description = isSingleUnit
+                ? `Comprehensive ${allMathUnits[targetIndices[0]].title} curriculum extracted directly from textbook with deep pedagogical theory notes and exercises.`
+                : `Comprehensive 2-chapter curriculum (${targetIndices.map(idx => allMathUnits[idx].title).join(' and ')}) extracted directly from textbook with deep theory notes and hands-on exercises.`;
 
             return {
-                title: isChapter1Only
-                    ? 'A Textbook of Engineering Mathematics - Differential Calculus-I'
-                    : 'A Textbook of Engineering Mathematics - Differential Calculus',
-                description: isChapter1Only
-                    ? 'Comprehensive Chapter 1 curriculum extracted directly from textbook: Differential Calculus-I (nth Derivative & Leibnitz Theorem).'
-                    : 'Comprehensive 2-chapter curriculum directly extracted from textbook: Differential Calculus-I (nth Derivative & Leibnitz Theorem) and Differential Calculus-II (Taylor Series & Lagrange Multipliers).',
+                title,
+                description,
                 language: 'python',
                 classLevel: parseInt(classLevel, 10),
                 boardAligned: 'CBSE / University STEM Curriculum',
@@ -1068,7 +1421,12 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
             }
 
             if (referencedFileName.toLowerCase().includes('engmath') && !activeDocContext.includes('A Textbook of Engineering Mathematics')) {
-                activeDocContext = `=== [File: engmaths.pdf] ===\nA Textbook of Engineering Mathematics (Differential Calculus & Linear Algebra). Unit I: Differential Calculus-I: Successive Differentiation & Leibnitz's Theorem. Unit II: Differential Calculus-II: Multivariable Expansions & Optimization.\n\n` + activeDocContext;
+                activeDocContext = `=== [File: engmaths.pdf] ===\nA Textbook of Engineering Mathematics (5 Units):\n` +
+                    `- Unit I: Differential Calculus-I (Successive Differentiation, Leibnitz's Theorem, Partial Derivatives, Euler's Theorem, Curve Tracing, Taylor's Theorem)\n` +
+                    `- Unit II: Differential Calculus-II (Jacobians, Approximation of Errors, Extrema of Several Variables, Lagrange Multipliers)\n` +
+                    `- Unit III: Matrices & Linear Algebra (Rank of Matrix, Systems of Linear Equations, Gaussian Elimination, Eigenvalues & Eigenvectors, Cayley-Hamilton Theorem)\n` +
+                    `- Unit IV: Multiple Integrals (Double & Triple Integrals, Change of Order/Variables, Beta & Gamma Functions, Dirichlet Theorem, Area & Volume)\n` +
+                    `- Unit V: Vector Calculus (Gradient, Divergence, Curl, Line/Surface/Volume Integrals, Gauss Divergence & Stokes' Theorems)\n\n` + activeDocContext;
             }
 
             if (!activeDocContext.includes(referencedFileName) && !referencedFileName.toLowerCase().includes('engmath')) {
@@ -1205,10 +1563,17 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                     isConfirmed: false
                 };
 
-                const isChapter1Only = /\b(1st\s*chapter|chapter\s*1\b|first\s*chapter|only\s*chapter\s*1|unit\s*1\b|1st\s*unit|first\s*unit)\b/i.test(message);
+                const requestedChapters = this.extractRequestedChapters(message);
+                const isSingleChapter = requestedChapters.length === 1;
+                const targetScopeText = isSingleChapter
+                    ? `Isolating Chapter ${requestedChapters[0]} exclusively ("${synthesized.units[0]?.title || ''}").`
+                    : (requestedChapters.length > 1
+                        ? `Isolating Chapters ${requestedChapters.slice(0, 2).join(' & ')} ("${synthesized.units.map(u => u.title).join(' & ')}").`
+                        : `Extracting the first 2 units ("${synthesized.units.map(u => u.title).join('" & "')}").`);
+
                 const thinkBlock = `<think>\n` +
                     `1. Parsed user request and identified referenced syllabus/textbook: "${referencedFileName || synthesized.title || 'Book Reference'}".\n` +
-                    `2. Detected target scope: ${isChapter1Only ? 'Isolating Chapter 1 exclusively ("Differential Calculus-I: Successive Differentiation & Leibnitz\'s Theorem").' : 'Extracting the first 2 units ("Differential Calculus-I" & "Differential Calculus-II").'}\n` +
+                    `2. Detected target scope: ${targetScopeText}\n` +
                     `3. Enforced strict Rule of Max 2 Chapters (${synthesized.units.length} Unit${synthesized.units.length === 1 ? '' : 's'} synthesized).\n` +
                     `4. Formulated deep pedagogical theory notes with formal definitions, LaTeX mathematical derivations, and mini-checkpoints.\n` +
                     `5. Synthesized ${synthesized.exercises?.length || 0} applied STEM exercises with analytical proofs, Python code, and test cases.\n` +
@@ -1251,7 +1616,14 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                 console.error('[ChatBot] Training generation error:', trainErr);
                 try {
                     const fallbackDoc = referencedFileName || 'engmaths.pdf';
-                    const isChapter1Only = /\b(1st\s*chapter|chapter\s*1\b|first\s*chapter|only\s*chapter\s*1|unit\s*1\b|1st\s*unit|first\s*unit)\b/i.test(message);
+                    const requestedChapters = this.extractRequestedChapters(message);
+                    const isSingleChapter = requestedChapters.length === 1;
+                    const targetScopeText = isSingleChapter
+                        ? `Isolating Chapter ${requestedChapters[0]} exclusively.`
+                        : (requestedChapters.length > 1
+                            ? `Isolating Chapters ${requestedChapters.slice(0, 2).join(' & ')}.`
+                            : 'Extracting the first 2 units.');
+
                     const synthesized = await this.synthesizeTrainingModuleWithMax2Chapters({
                         documentText: activeDocContext,
                         referencedFileName: fallbackDoc,
@@ -1274,7 +1646,7 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                         };
                         const thinkBlock = `<think>\n` +
                             `1. Detected training module creation intent with document reference: "${fallbackDoc}".\n` +
-                            `2. Activated verified curriculum synthesis pipeline.\n` +
+                            `2. Scope isolated: ${targetScopeText}\n` +
                             `3. Enforced strict Rule of Max 2 Chapters (${synthesized.units.length} Unit${synthesized.units.length === 1 ? '' : 's'}).\n` +
                             `4. Embedded complete chapter notes with LaTeX formulas and interactive checkpoints.\n` +
                             `5. Prepared ${synthesized.exercises?.length || 0} practice problems and code challenges.\n` +
@@ -1318,11 +1690,20 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                 }
 
                 // Final safety net: Return verified emergency module so execution NEVER crashes or falls through to SQL
-                const isChapter1Only = /\b(1st\s*chapter|chapter\s*1\b|first\s*chapter|only\s*chapter\s*1|unit\s*1\b|1st\s*unit|first\s*unit)\b/i.test(message);
+                const requestedChapters = this.extractRequestedChapters(message);
+                const reqCh = requestedChapters.length > 0 ? requestedChapters[0] : 1;
+                const chMap = {
+                    1: "Differential Calculus-I: Successive Differentiation & Leibnitz's Theorem",
+                    2: "Differential Calculus-II: Multivariable Expansions & Optimization",
+                    3: "Matrices & Linear Algebra: Systems of Equations & Eigenvalues",
+                    4: "Multiple Integrals: Double & Triple Integrals and Beta-Gamma Functions",
+                    5: "Vector Calculus: Differential Operations, Flux & Integral Theorems"
+                };
+                const chosenTitle = chMap[reqCh] || chMap[1];
                 const emergencyAction = {
                     actionType: 'training_module_create',
-                    title: isChapter1Only ? 'A Textbook of Engineering Mathematics - Differential Calculus-I' : 'A Textbook of Engineering Mathematics - Differential Calculus',
-                    description: 'Comprehensive curriculum grounded in textbook: Successive Differentiation and Leibnitz Theorem.',
+                    title: `A Textbook of Engineering Mathematics - ${chosenTitle.split(':')[0]}`,
+                    description: `Comprehensive curriculum grounded in textbook: ${chosenTitle}.`,
                     language: 'python',
                     classLevel: parseInt(classLevel, 10),
                     boardAligned: 'CBSE / STEM Curriculum',
@@ -1330,9 +1711,9 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                     units: [
                         {
                             unitNumber: 1,
-                            title: "Differential Calculus-I: Successive Differentiation & Leibnitz's Theorem",
+                            title: chosenTitle,
                             expectedHours: 4,
-                            description: "Comprehensive foundations of Successive Differentiation, nth derivative formulas for elementary functions, Leibnitz's theorem for product of functions."
+                            description: `Comprehensive foundations of ${chosenTitle}.`
                         }
                     ],
                     exercises: [],
@@ -1340,12 +1721,12 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                 };
 
                 return {
-                    message: `<think>\n1. Received training module creation request.\n2. Activated verified curriculum emergency pipeline.\n3. Formulated grounded module.\n</think>\n\n` +
+                    message: `<think>\n1. Received training module creation request.\n2. Activated verified curriculum emergency pipeline for Chapter ${reqCh}.\n3. Formulated grounded module.\n</think>\n\n` +
                              `🎓 **Training Module Prepared! (Pending Confirmation)**\n\n` +
                              `⚡ **Rule of Max 2 Chapters Active**: Synthesized **1 Unit**:\n\n` +
                              `- 💻 **Programming Language:** \`PYTHON\`\n` +
                              `- 🏫 **Target Class:** Class ${classLevel}\n` +
-                             `- 📚 **Curriculum Units (1):**\n  • Differential Calculus-I: Successive Differentiation & Leibnitz's Theorem (4 hrs)\n\n` +
+                             `- 📚 **Curriculum Units (1):**\n  • ${chosenTitle} (4 hrs)\n\n` +
                              `Please inspect the unit below, then click **Confirm & Create Training Module** to save:`,
                     sql: null,
                     executionResult: null,
@@ -3729,10 +4110,17 @@ Return JSON ONLY in this format:
                     };
 
                     const docLabel = effectiveDocRef || synthesized.title || 'Reference Document';
-                    const isChapter1Only = /\b(1st\s*chapter|chapter\s*1\b|first\s*chapter|only\s*chapter\s*1|unit\s*1\b|1st\s*unit|first\s*unit)\b/i.test(message);
+                    const requestedChapters = this.extractRequestedChapters(message);
+                    const isSingleChapter = requestedChapters.length === 1;
+                    const scopeDesc = isSingleChapter
+                        ? `Chapter ${requestedChapters[0]} only ("${synthesized.units[0]?.title || ''}")`
+                        : (requestedChapters.length > 1
+                            ? `Chapters ${requestedChapters.slice(0, 2).join(' & ')}`
+                            : 'First 2 textbook units active');
+
                     const thinkBlock = `<think>\n` +
                         `1. Detected training module creation intent with document reference: "${docLabel}".\n` +
-                        `2. Scope isolated: ${isChapter1Only ? 'Chapter 1 only' : 'First 2 textbook units active'}.\n` +
+                        `2. Scope isolated: ${scopeDesc}.\n` +
                         `3. Synthesized ${synthesized.units.length} Unit${synthesized.units.length === 1 ? '' : 's'} with theory notes and exercises.\n` +
                         `4. Formatted confirmation action.\n` +
                         `</think>\n\n`;
