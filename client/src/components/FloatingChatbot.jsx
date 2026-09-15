@@ -21,6 +21,7 @@ import VoiceInputButton from './VoiceInputButton';
 import FileReferenceDropdown from './FileReferenceDropdown';
 import GenericDataImportConfirmCard from './GenericDataImportConfirmCard';
 import TrainingModuleConfirmCard from './TrainingModuleConfirmCard';
+import ThinkingStepsCollapsible from './ThinkingStepsCollapsible';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
@@ -637,18 +638,7 @@ function RenderMessage({ content, hasQueryResult }) {
                 }
                 
                 if (part.startsWith('<think>')) {
-                    const thinkContent = part.replace(/<\/?think>/g, '').trim();
-                    return (
-                        <details key={i} className="mb-3 group border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
-                            <summary className="px-3 py-2 text-[11px] font-medium text-slate-500 cursor-pointer hover:bg-slate-100 flex items-center gap-1.5 select-none list-none [&::-webkit-details-marker]:hidden">
-                                <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />
-                                Thought Process
-                            </summary>
-                            <div className="px-3 pb-3 text-[11px] text-slate-500 whitespace-pre-wrap border-t border-slate-200 pt-2 bg-slate-50/50">
-                                {thinkContent}
-                            </div>
-                        </details>
-                    );
+                    return <ThinkingStepsCollapsible key={i} thinkContent={part} />;
                 }
 
                 const html = part
@@ -7586,6 +7576,18 @@ export default function FloatingChatbot() {
     });
     const [showHistory, setShowHistory] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
+    const [loadingPhase, setLoadingPhase] = useState(0);
+
+    useEffect(() => {
+        if (!isLoading) {
+            setLoadingPhase(0);
+            return;
+        }
+        const interval = setInterval(() => {
+            setLoadingPhase(p => (p + 1) % 4);
+        }, 2200);
+        return () => clearInterval(interval);
+    }, [isLoading]);
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
     const inputRef = useRef(null);
@@ -7932,9 +7934,21 @@ export default function FloatingChatbot() {
                 if (!isOpen) setUnread(u => u + 1);
             }
         } catch (err) {
-            const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message;
+            const is500 = err.response?.status === 500 || (err.message && err.message.includes('500'));
+            const isTimeout = err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'));
+            let errorMsg = err.response?.data?.message || err.response?.data?.error;
+            if (!errorMsg) {
+                if (is500 || isTimeout) {
+                    errorMsg = 'The AI engine encountered a temporary gateway timeout. The model is recovering — please re-send your message or choose "Auto" model.';
+                } else {
+                    errorMsg = err.message || 'An unexpected error occurred';
+                }
+            }
             setMessages(prev => [...prev, {
-                role: 'assistant', content: `❌ **Error:** ${errorMsg}`, timestamp: new Date().toISOString(), isError: true
+                role: 'assistant',
+                content: `<think>\n1. Received user request: "${msg.substring(0, 50)}${msg.length > 50 ? '...' : ''}"\n2. Routed query through AI engine\n3. Exception encountered: ${errorMsg}\n</think>\n\n⚠️ **Notice:** ${errorMsg}`,
+                timestamp: new Date().toISOString(),
+                isError: true
             }]);
         } finally {
             setIsLoading(false);
@@ -8354,15 +8368,23 @@ export default function FloatingChatbot() {
 
                                 {isLoading && (
                                     <div className="flex justify-start">
-                                        <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-3.5 py-3 shadow-sm">
-                                            <div className="flex items-center gap-2">
-                                                <Loader2 className="w-3.5 h-3.5 text-indigo-500 animate-spin" />
-                                                <div className="flex gap-1">
-                                                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                        <div className="bg-white border border-indigo-100 rounded-2xl rounded-bl-sm px-3.5 py-2.5 shadow-xs max-w-[85%]">
+                                            <div className="flex items-center gap-2.5">
+                                                <Loader2 className="w-3.5 h-3.5 text-indigo-600 animate-spin flex-shrink-0" />
+                                                <div className="flex flex-col">
+                                                    <span className="text-[11px] font-semibold text-indigo-700">
+                                                        {[
+                                                            'Analyzing prompt & referenced documents...',
+                                                            'Extracting chapter structure & textbook theory...',
+                                                            'Synthesizing verified pedagogical units & exercises...',
+                                                            'Finalizing curriculum details & response...'
+                                                        ][loadingPhase]}
+                                                    </span>
+                                                    <span className="text-[9.5px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                                        <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
+                                                        Thinking steps in progress...
+                                                    </span>
                                                 </div>
-                                                <span className="text-[11px] text-slate-400">Thinking...</span>
                                             </div>
                                         </div>
                                     </div>

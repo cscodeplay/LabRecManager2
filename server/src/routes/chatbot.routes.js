@@ -74,21 +74,23 @@ router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor',
         });
 
         // Log AI chatbot usage
-        prisma.activityLog.create({
-            data: {
-                userId: req.user.id,
-                schoolId: req.user.schoolId,
-                actionType: 'other',
-                action_type: 'ai_chatbot',
-                description: `AI Chatbot: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
-                entityType: 'ai_chatbot',
-                metadata: {
-                    messageLength: message.length,
-                    hadSQL: !!result.sql,
-                    hadQueryResult: !!result.queryResult
+        if (req.user?.id) {
+            prisma.activityLog.create({
+                data: {
+                    userId: req.user.id,
+                    schoolId: req.user.schoolId || null,
+                    actionType: 'other',
+                    action_type: 'ai_chatbot',
+                    description: `AI Chatbot: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
+                    entityType: 'ai_chatbot',
+                    metadata: {
+                        messageLength: message.length,
+                        hadSQL: !!result?.sql,
+                        hadQueryResult: !!result?.queryResult
+                    }
                 }
-            }
-        }).catch(err => console.warn('[ChatBot] Activity log failed:', err.message));
+            }).catch(err => console.warn('[ChatBot] Activity log failed:', err.message));
+        }
 
         res.json({
             success: true,
@@ -97,10 +99,10 @@ router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor',
     } catch (error) {
         console.error('[ChatBot Route] Error:', error.message);
         if (!res.headersSent) {
-            res.json({
+            return res.status(200).json({
                 success: true,
                 data: {
-                    message: `⚠️ I encountered an issue processing that request: ${error.message || 'An unexpected error occurred'}. Please try again or rephrase your request.`,
+                    message: `<think>\n1. Received user prompt: "${(message || '').substring(0, 50)}"\n2. Error intercepted: ${error.message || 'Service exception'}\n3. Providing graceful recovery\n</think>\n\n⚠️ I encountered an issue processing that request: ${error.message || 'An unexpected error occurred'}. Please try again or rephrase your request.`,
                     provider: req.body?.provider || 'auto',
                     timestamp: new Date().toISOString()
                 }

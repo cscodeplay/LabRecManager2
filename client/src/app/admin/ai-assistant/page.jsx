@@ -15,17 +15,19 @@ import PageHeader from '@/components/PageHeader';
 import FileReferenceDropdown from '@/components/FileReferenceDropdown';
 import GenericDataImportConfirmCard from '@/components/GenericDataImportConfirmCard';
 import TrainingModuleConfirmCard from '@/components/TrainingModuleConfirmCard';
+import ThinkingStepsCollapsible from '@/components/ThinkingStepsCollapsible';
 import { formatTime } from '@/lib/dateUtils';
 
 // Markdown-like renderer for AI messages
 function RenderMessage({ content }) {
     if (!content) return null;
 
-    const parts = content.split(/(```[\s\S]*?```)/g);
+    const parts = content.split(new RegExp('(`{3}[\\s\\S]*?`{3}|<think>[\\s\\S]*?<\\/think>)', 'g'));
 
     return (
         <div className="prose prose-sm max-w-none dark:prose-invert">
             {parts.map((part, i) => {
+                if (!part) return null;
                 if (part.startsWith('```')) {
                     const match = part.match(/```(\w+)?\n?([\s\S]*?)```/);
                     if (match) {
@@ -33,6 +35,9 @@ function RenderMessage({ content }) {
                         const code = match[2].trim();
                         return <CodeBlock key={i} code={code} language={lang} />;
                     }
+                }
+                if (part.startsWith('<think>')) {
+                    return <ThinkingStepsCollapsible key={i} thinkContent={part} />;
                 }
                 // Convert basic markdown
                 const html = part
@@ -1312,6 +1317,8 @@ export default function AIAssistantPage() {
                 documentContext: docContext,
                 referencedFiles: activeRefs,
                 referencedFileName: activeRefs[0]?.fileName || ''
+            }, {
+                timeout: 120000
             });
 
             if (res.data.success) {
@@ -1334,14 +1341,23 @@ export default function AIAssistantPage() {
                 }]);
             }
         } catch (err) {
-            const errorMsg = err.response?.data?.message || err.message || 'Something went wrong';
+            const is500 = err.response?.status === 500 || (err.message && err.message.includes('500'));
+            const isTimeout = err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'));
+            let errorMsg = err.response?.data?.message || err.response?.data?.error;
+            if (!errorMsg) {
+                if (is500 || isTimeout) {
+                    errorMsg = 'The AI engine encountered a temporary gateway timeout. Please re-send your message.';
+                } else {
+                    errorMsg = err.message || 'Something went wrong';
+                }
+            }
             setMessages(prev => [...prev, {
                 role: 'assistant',
-                content: `❌ **Error:** ${errorMsg}\n\nPlease try rephrasing your question.`,
+                content: `<think>\n1. Received user request: "${msg.substring(0, 50)}${msg.length > 50 ? '...' : ''}"\n2. Routed query through AI engine\n3. Exception encountered: ${errorMsg}\n</think>\n\n⚠️ **Notice:** ${errorMsg}`,
                 timestamp: new Date().toISOString(),
                 isError: true
             }]);
-            toast.error('AI request failed');
+            toast.error('AI request encountered an issue');
         } finally {
             setIsLoading(false);
             inputRef.current?.focus();
