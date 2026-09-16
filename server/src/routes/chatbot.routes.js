@@ -110,11 +110,16 @@ router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor',
     } catch (error) {
         console.error('[ChatBot Route] Error:', error.message);
         if (!res.headersSent) {
+            const is502 = error.message && error.message.includes('502');
+            const userFriendlyMsg = is502
+                ? 'The AI model gateway temporarily returned a 502 Bad Gateway. The service is recovering — please re-send your query.'
+                : (error.message || 'An unexpected error occurred');
             return res.status(200).json({
                 success: true,
                 data: {
-                    message: `<think>\n1. Received user prompt: "${(message || '').substring(0, 50)}"\n2. Error intercepted: ${error.message || 'Service exception'}\n3. Providing graceful recovery\n</think>\n\n⚠️ I encountered an issue processing that request: ${error.message || 'An unexpected error occurred'}. Please try again or rephrase your request.`,
+                    message: `<think>\n1. Received user prompt: "${(message || '').substring(0, 50)}"\n2. Error intercepted: ${userFriendlyMsg}\n3. Providing graceful recovery\n</think>\n\n⚠️ I encountered an issue processing that request: ${userFriendlyMsg}. Please try again or rephrase your request.`,
                     provider: req.body?.provider || 'auto',
+                    model: req.body?.provider || 'auto',
                     timestamp: new Date().toISOString()
                 }
             });

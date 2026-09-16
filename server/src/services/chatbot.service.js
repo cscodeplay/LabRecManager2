@@ -36,7 +36,7 @@ class ChatbotService {
         const geminiKey = process.env.GEMINI_API_KEY;
         if (geminiKey) {
             const genAI = new GoogleGenerativeAI(geminiKey);
-            const geminiModelNames = ['gemini-2.5-flash', 'gemini-3.6-flash'];
+            const geminiModelNames = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-3.6-flash'];
             this.geminiModels = geminiModelNames.map(name => ({
                 name, instance: genAI.getGenerativeModel({ model: name })
             }));
@@ -222,7 +222,7 @@ TABLE users:
   school_id uuid NOT NULL
   name character varying(255) NOT NULL
   email character varying(255) NOT NULL
-  role user_role NOT NULL
+  role user_role NOT NULL -- Stores user type/role: admin, principal, instructor, lab_assistant, student
   phone character varying(50)
 
 TABLE classes:
@@ -338,6 +338,14 @@ TABLE tickets:
                 isValid: false,
                 error: `The table 'users' DOES NOT have a 'class_id' column.`,
                 hint: `Students are linked to classes via class_enrollments (JOIN class_enrollments ON users.id = class_enrollments.student_id).`
+            };
+        }
+
+        if (/\bFROM\s+users\b/i.test(trimmed) && (/\b(users\.)?type\b/i.test(trimmed) && !/\bAS\s+type\b/i.test(trimmed))) {
+            return {
+                isValid: false,
+                error: `The table 'users' DOES NOT have a 'type' column.`,
+                hint: `User type is stored in the 'role' column (values: 'admin', 'principal', 'instructor', 'lab_assistant', 'student'). Query 'role' instead (e.g. SELECT INITCAP(REPLACE(role::text, '_', ' ')) AS user_type, COUNT(*) AS count FROM users GROUP BY role).`
             };
         }
 
@@ -507,6 +515,14 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
   * For assignments by programming language:
     \`SELECT INITCAP(TRIM(programming_language)) AS language, COUNT(*) AS count FROM assignments WHERE programming_language IS NOT NULL GROUP BY INITCAP(TRIM(programming_language)) ORDER BY count DESC;\`
   * Never leave raw casing un-normalized in GROUP BY; otherwise 'Python' and 'python' or 'JAVA' and 'java' will generate duplicate distinct bars!
+15. **USERS TABLE SCHEMA & "USERS BY TYPE"**:
+- The \`users\` table stores user accounts and roles.
+  * \`role\` (user_role ENUM): 'admin', 'principal', 'instructor', 'lab_assistant', 'student'.
+  * THERE IS NO \`type\` COLUMN in the \`users\` table!
+- When the user asks for "users by type", "count of users by type", "breakdown of user types", or "distribution of users":
+  * ALWAYS query the \`role\` column and alias it as \`user_type\` or \`type\`:
+    \`SELECT INITCAP(REPLACE(role::text, '_', ' ')) AS user_type, COUNT(*) AS count FROM users GROUP BY role ORDER BY count DESC;\`
+  * Never write \`SELECT type FROM users\` or \`GROUP BY type\` on the \`users\` table!
 ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     }
 
@@ -535,7 +551,7 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     // ═══ GROQ CALL ═══
     async callGroq(messages) {
         if (!this.groqClient) throw new Error('Groq not configured');
-        const groqModels = ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
+        const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'openai/gpt-oss-120b', 'qwen/qwen3.6-27b'];
         let lastError = null;
 
         for (const model of groqModels) {

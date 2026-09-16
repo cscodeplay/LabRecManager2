@@ -630,7 +630,7 @@ const DEFAULT_COLORS = [
     '#DB2777'  // Rose Pink
 ];
 
-function RenderMessage({ content, hasQueryResult }) {
+function RenderMessage({ content, hasQueryResult, model, provider }) {
     if (!content) return null;
     let cleanContent = content;
     // When structured query results are present, hide redundant raw SQL codeblocks from message body
@@ -671,7 +671,7 @@ function RenderMessage({ content, hasQueryResult }) {
                 }
                 
                 if (part.startsWith('<think>')) {
-                    return <ThinkingStepsCollapsible key={i} thinkContent={part} />;
+                    return <ThinkingStepsCollapsible key={i} thinkContent={part} model={model} provider={provider} />;
                 }
 
                 const html = part
@@ -8190,19 +8190,25 @@ export default function FloatingChatbot() {
                 if (!isOpen) setUnread(u => u + 1);
             }
         } catch (err) {
-            const is500 = err.response?.status === 500 || (err.message && err.message.includes('500'));
+            const is502 = err.response?.status === 502 || (err.message && err.message.includes('502'));
+            const isServerError = [500, 502, 503, 504].includes(err.response?.status) || /\b(500|502|503|504)\b/.test(err.message);
             const isTimeout = err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'));
             let errorMsg = err.response?.data?.message || err.response?.data?.error;
             if (!errorMsg) {
-                if (is500 || isTimeout) {
-                    errorMsg = 'The AI engine encountered a temporary gateway timeout. The model is recovering — please re-send your message or choose "Auto" model.';
+                if (is502) {
+                    errorMsg = 'The upstream AI gateway returned a temporary Bad Gateway (502). Please retry in a moment or switch to Gemini/Groq in model settings.';
+                } else if (isServerError || isTimeout) {
+                    errorMsg = 'The AI engine encountered a temporary server error or gateway timeout. The model is recovering — please re-send your message or choose "Auto" model.';
                 } else {
                     errorMsg = err.message || 'An unexpected error occurred';
                 }
             }
+            const activeModel = preferredModel === 'auto' ? 'Auto (Gemini / Groq)' : preferredModel;
             setMessages(prev => [...prev, {
                 role: 'assistant',
-                content: `<think>\n1. Received user request: "${msg.substring(0, 50)}${msg.length > 50 ? '...' : ''}"\n2. Routed query through AI engine\n3. Exception encountered: ${errorMsg}\n</think>\n\n⚠️ **Notice:** ${errorMsg}`,
+                content: `<think>\n1. Received user request: "${msg.substring(0, 50)}${msg.length > 50 ? '...' : ''}"\n2. Routed query through AI engine (${activeModel})\n3. Exception encountered: ${errorMsg}\n</think>\n\n⚠️ **Notice:** ${errorMsg}`,
+                model: preferredModel,
+                provider: preferredModel,
                 timestamp: new Date().toISOString(),
                 isError: true
             }]);
@@ -8667,7 +8673,7 @@ export default function FloatingChatbot() {
                                     {msg.role === 'user' ? (
                                         <UserMessageContent content={msg.content} referencedFiles={msg.referencedFiles} />
                                     ) : (
-                                        <RenderMessage content={msg.content} hasQueryResult={Boolean(msg.queryResult || msg.sql)} />
+                                        <RenderMessage content={msg.content} hasQueryResult={Boolean(msg.queryResult || msg.sql)} model={msg.model} provider={msg.provider} />
                                     )}
                                     {msg.imageUrl && (
                                         <div 
@@ -8750,9 +8756,9 @@ export default function FloatingChatbot() {
                                                     <span className="text-[11px] font-semibold text-indigo-700">
                                                         {getInFlightStages(activePromptForLoading)[loadingPhase % 4]}
                                                     </span>
-                                                    <span className="text-[9.5px] text-slate-400 flex items-center gap-1 mt-0.5">
-                                                        <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
-                                                        Thinking steps in progress...
+                                                    <span className="text-[9.5px] text-slate-500 flex items-center gap-1.5 mt-0.5 font-medium">
+                                                        <Sparkles className="w-2.5 h-2.5 text-indigo-500 animate-pulse" />
+                                                        <span>Thinking with <strong className="text-indigo-600 font-semibold">{preferredModel === 'auto' ? 'Auto (Gemini / Groq)' : preferredModel.toUpperCase()}</strong>...</span>
                                                     </span>
                                                 </div>
                                             </div>

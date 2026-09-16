@@ -19,7 +19,7 @@ import ThinkingStepsCollapsible from '@/components/ThinkingStepsCollapsible';
 import { formatTime } from '@/lib/dateUtils';
 
 // Markdown-like renderer for AI messages
-function RenderMessage({ content }) {
+function RenderMessage({ content, model, provider }) {
     if (!content) return null;
 
     const parts = content.split(new RegExp('(`{3}[\\s\\S]*?`{3}|<think>[\\s\\S]*?<\\/think>)', 'g'));
@@ -37,7 +37,7 @@ function RenderMessage({ content }) {
                     }
                 }
                 if (part.startsWith('<think>')) {
-                    return <ThinkingStepsCollapsible key={i} thinkContent={part} />;
+                    return <ThinkingStepsCollapsible key={i} thinkContent={part} model={model} provider={provider} />;
                 }
                 // Convert basic markdown
                 const html = part
@@ -1341,19 +1341,25 @@ export default function AIAssistantPage() {
                 }]);
             }
         } catch (err) {
-            const is500 = err.response?.status === 500 || (err.message && err.message.includes('500'));
+            const is502 = err.response?.status === 502 || (err.message && err.message.includes('502'));
+            const isServerError = [500, 502, 503, 504].includes(err.response?.status) || /\b(500|502|503|504)\b/.test(err.message);
             const isTimeout = err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'));
             let errorMsg = err.response?.data?.message || err.response?.data?.error;
             if (!errorMsg) {
-                if (is500 || isTimeout) {
-                    errorMsg = 'The AI engine encountered a temporary gateway timeout. Please re-send your message.';
+                if (is502) {
+                    errorMsg = 'The upstream AI gateway returned a temporary Bad Gateway (502). Please retry in a moment or select a different model in settings.';
+                } else if (isServerError || isTimeout) {
+                    errorMsg = 'The AI engine encountered a temporary gateway timeout or server error. Please re-send your message.';
                 } else {
                     errorMsg = err.message || 'Something went wrong';
                 }
             }
+            const activeModel = preferredModel === 'auto' ? 'Auto (Gemini / Groq)' : preferredModel;
             setMessages(prev => [...prev, {
                 role: 'assistant',
-                content: `<think>\n1. Received user request: "${msg.substring(0, 50)}${msg.length > 50 ? '...' : ''}"\n2. Routed query through AI engine\n3. Exception encountered: ${errorMsg}\n</think>\n\n⚠️ **Notice:** ${errorMsg}`,
+                content: `<think>\n1. Received user request: "${msg.substring(0, 50)}${msg.length > 50 ? '...' : ''}"\n2. Routed query through AI engine (${activeModel})\n3. Exception encountered: ${errorMsg}\n</think>\n\n⚠️ **Notice:** ${errorMsg}`,
+                model: preferredModel,
+                provider: preferredModel,
                 timestamp: new Date().toISOString(),
                 isError: true
             }]);
@@ -1498,7 +1504,7 @@ export default function AIAssistantPage() {
                                     <UserMessageContent content={msg.content} referencedFiles={msg.referencedFiles} />
                                 ) : (
                                     <>
-                                        <RenderMessage content={msg.content} />
+                                        <RenderMessage content={msg.content} model={msg.model} provider={msg.provider} />
                                         {msg.classAction && <ClassActionCard action={msg.classAction} />}
                                         {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
                                         {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
