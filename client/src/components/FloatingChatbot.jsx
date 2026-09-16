@@ -291,16 +291,32 @@ function SQLResult({ sql, result, onRerun, hasDedicatedChart = false, dedicatedC
     const hasCountSummary = countCols.length > 0 && rows.length > 0;
 
     // Auto-generate inline chart structure if user clicks 'chart' (sync with dedicatedChartData if present)
-    const inlineChartData = dedicatedChartData || (numCols.length > 0 && rows.length > 0 ? {
-        type: 'bar',
-        title: `${numCols[0].replace(/_/g, ' ')} by ${strCols[0] ? strCols[0].replace(/_/g, ' ') : 'Category'}`,
-        data: rows.slice(0, 15).map(r => ({
-            label: String(r[strCols[0]] || r[cols[0]] || 'Item').substring(0, 25),
-            [numCols[0]]: Number(r[numCols[0]]) || 0
-        })),
-        seriesKeys: [numCols[0]],
-        colors: DEFAULT_COLORS
-    } : null);
+    const inlineChartData = dedicatedChartData || (numCols.length > 0 && rows.length > 0 ? (() => {
+        const canonicalize = (s) => {
+            if (!s) return 'Item';
+            const str = String(s).trim();
+            return str ? str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : 'Item';
+        };
+        const catCol = strCols[0] || cols[0];
+        const valCol = numCols[0];
+        const mergedMap = new Map();
+        rows.slice(0, 15).forEach(r => {
+            const rawLabel = String(r[catCol] || 'Item').substring(0, 25);
+            const canon = canonicalize(rawLabel);
+            const num = Number(r[valCol]) || 0;
+            mergedMap.set(canon, (mergedMap.get(canon) || 0) + num);
+        });
+        return {
+            type: 'bar',
+            title: `${valCol.replace(/_/g, ' ')} by ${strCols[0] ? strCols[0].replace(/_/g, ' ') : 'Category'}`,
+            data: Array.from(mergedMap.entries()).map(([label, val]) => ({
+                label,
+                [valCol]: val
+            })),
+            seriesKeys: [valCol],
+            colors: DEFAULT_COLORS
+        };
+    })() : null);
 
     const exportCSV = () => {
         if (!rows.length) return;
@@ -7691,8 +7707,17 @@ export default function FloatingChatbot() {
     }, [isLoading]);
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
+    const cameraInputRef = useRef(null);
+    const videoRef = useRef(null);
     const inputRef = useRef(null);
     const panelRef = useRef(null);
+
+    // ── Multi-Image Attachment & Camera State (up to 5 images) ──
+    const [attachedImages, setAttachedImages] = useState([]); // [{ id, file, dataUrl, name, size }]
+    const [previewZoomImage, setPreviewZoomImage] = useState(null);
+    const [cameraModalOpen, setCameraModalOpen] = useState(false);
+    const [cameraStream, setCameraStream] = useState(null);
+    const [capturedPhoto, setCapturedPhoto] = useState(null);
 
     // ── File Reference Popover State (\ trigger) ──
     const [fileRefOpen, setFileRefOpen] = useState(false);
@@ -7766,6 +7791,129 @@ export default function FloatingChatbot() {
 
         toast(`Removed \\${fn}`, { icon: '🗑️' });
         setTimeout(() => inputRef.current?.focus(), 50);
+    };
+
+    // ── Multi-Image Attachment & Camera Handlers ──
+    const attachImages = (newFiles) => {
+        if (!newFiles || newFiles.length === 0) return;
+        
+        const filesArray = Array.from(newFiles).filter(f => f.type?.startsWith('image/'));
+        if (filesArray.length === 0) {
+            toast.error('Only image files (PNG, JPG, WebP) are supported for image attachment');
+            return;
+        }
+
+        setAttachedImages(prev => {
+            const currentCount = prev.length;
+            if (currentCount >= 5) {
+                toast.error('Maximum 5 images allowed');
+                return prev;
+            }
+            const slots = 5 - currentCount;
+            const toAdd = filesArray.slice(0, slots);
+            if (filesArray.length > slots) {
+                toast(`Attached ${slots} images (maximum 5 allowed)`);
+            }
+
+            toAdd.forEach(f => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    setAttachedImages(current => {
+                        if (current.some(item => item.name === f.name && item.size === f.size)) return current;
+                        if (current.length >= 5) return current;
+                        return [...current, {
+                            id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            file: f,
+                            dataUrl: e.target.result,
+                            name: f.name || 'Pasted Image',
+                            size: f.size
+                        }];
+                    });
+                };
+                reader.readAsDataURL(f);
+            });
+            toast.success(`Attached ${toAdd.length} image(s)`);
+            return prev;
+        });
+    };
+
+    const handlePaste = (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        const imgFiles = [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.type && item.type.startsWith('image/')) {
+                const file = item.getAsFile();
+                if (file) imgFiles.push(file);
+            }
+        }
+        if (imgFiles.length > 0) {
+            e.preventDefault();
+            attachImages(imgFiles);
+        }
+    };
+
+    const startCamera = async () => {
+        setCapturedPhoto(null);
+        setCameraModalOpen(true);
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+            });
+            setCameraStream(stream);
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+            }
+        } catch (err) {
+            console.warn('[Camera] getUserMedia failed:', err.message);
+            if (cameraInputRef.current) {
+                cameraInputRef.current.click();
+            } else {
+                toast.error('Camera access denied or unavailable: ' + err.message);
+            }
+            setCameraModalOpen(false);
+        }
+    };
+
+    const stopCamera = () => {
+        if (cameraStream) {
+            cameraStream.getTracks().forEach(track => track.stop());
+            setCameraStream(null);
+        }
+        setCapturedPhoto(null);
+        setCameraModalOpen(false);
+    };
+
+    const takeSnapshot = () => {
+        if (!videoRef.current) return;
+        const video = videoRef.current;
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        setCapturedPhoto(dataUrl);
+    };
+
+    const confirmSnapshot = () => {
+        if (!capturedPhoto) return;
+        try {
+            const byteString = atob(capturedPhoto.split(',')[1]);
+            const mimeString = capturedPhoto.split(',')[0].split(':')[1].split(';')[0];
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+            }
+            const blob = new Blob([ab], { type: mimeString });
+            const file = new File([blob], `camera_photo_${Date.now()}.jpg`, { type: mimeString });
+            attachImages([file]);
+            stopCamera();
+        } catch (e) {
+            toast.error('Failed to process snapshot: ' + e.message);
+        }
     };
 
     // ── Draggable Window State ──
@@ -7943,6 +8091,7 @@ export default function FloatingChatbot() {
     const handleSend = async () => {
         let msg = input.trim();
         const activeRefs = [...selectedFileRefs];
+        const activeImages = [...attachedImages];
         if (!msg && activeRefs.length > 0) {
             const primary = activeRefs[0];
             if (primary.fileName.toLowerCase().endsWith('.pdf')) {
@@ -7952,8 +8101,10 @@ export default function FloatingChatbot() {
             } else {
                 msg = `Analyze and summarize \\${primary.fileName}`;
             }
+        } else if (!msg && activeImages.length > 0) {
+            msg = `Analyze the attached image${activeImages.length > 1 ? 's' : ''}`;
         }
-        if (!msg || isLoading) return;
+        if ((!msg && activeImages.length === 0) || isLoading) return;
         setActivePromptForLoading(msg);
 
         // If message text doesn't already contain \filename, append to guarantee resolution
@@ -7967,10 +8118,12 @@ export default function FloatingChatbot() {
             role: 'user', 
             content: msg, 
             referencedFiles: activeRefs,
+            attachedImages: activeImages.map(img => ({ id: img.id, name: img.name, dataUrl: img.dataUrl })),
             timestamp: new Date().toISOString() 
         }]);
         setInput('');
         setSelectedFileRefs([]);
+        setAttachedImages([]);
         setIsLoading(true);
 
         try {
@@ -7983,6 +8136,7 @@ export default function FloatingChatbot() {
                 documentContext: docCtx,
                 referencedFiles: activeRefs,
                 referencedFileName: activeRefs[0]?.fileName || '',
+                attachedImages: activeImages.map(img => ({ name: img.name, dataUrl: img.dataUrl })),
                 provider: preferredModel
             }, {
                 timeout: 120000
@@ -8516,8 +8670,31 @@ export default function FloatingChatbot() {
                                         <RenderMessage content={msg.content} hasQueryResult={Boolean(msg.queryResult || msg.sql)} />
                                     )}
                                     {msg.imageUrl && (
-                                        <div className="mt-2 mb-1.5 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 max-w-xs shadow-2xs">
+                                        <div 
+                                            onClick={() => setPreviewZoomImage(msg.imageUrl)}
+                                            className="mt-2 mb-1.5 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 max-w-xs shadow-2xs cursor-pointer group relative"
+                                        >
                                             <img src={msg.imageUrl} alt="Uploaded Image" className="max-h-44 w-full object-contain" />
+                                            <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                                                <Maximize2 className="w-4 h-4 text-white drop-shadow" />
+                                            </div>
+                                        </div>
+                                    )}
+                                    {msg.attachedImages && msg.attachedImages.length > 0 && (
+                                        <div className="mt-2 mb-1.5 flex flex-wrap gap-1.5 max-w-xs">
+                                            {msg.attachedImages.map((img, i) => (
+                                                <div 
+                                                    key={img.id || i}
+                                                    onClick={() => setPreviewZoomImage(img.dataUrl)}
+                                                    className="group relative w-16 h-16 rounded-lg overflow-hidden border border-white/25 bg-black/10 cursor-pointer hover:opacity-90 hover:scale-105 transition shadow-xs"
+                                                    title={img.name || `Attached image ${i + 1}`}
+                                                >
+                                                    <img src={img.dataUrl} alt={img.name || 'Attached'} className="w-full h-full object-cover" />
+                                                    <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                                                        <Maximize2 className="w-3.5 h-3.5 text-white drop-shadow" />
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
                                     {msg.chartData && <ChatChart chartData={msg.chartData} />}
@@ -8653,11 +8830,77 @@ export default function FloatingChatbot() {
                                     </div>
                                 )}
 
+                                {/* Attached Images Preview Tray */}
+                                {attachedImages.length > 0 && (
+                                    <div className="px-3 pt-2 pb-1 bg-gradient-to-r from-violet-50/80 via-indigo-50/50 to-slate-50 border-b border-violet-100 flex flex-col gap-1.5 animate-in fade-in slide-in-from-bottom-1">
+                                        <div className="flex items-center justify-between text-[11px] text-violet-800 font-medium">
+                                            <span className="flex items-center gap-1">
+                                                <ImageIcon className="w-3.5 h-3.5 text-violet-600" />
+                                                <span>{attachedImages.length} of 5 images attached</span>
+                                            </span>
+                                            <button 
+                                                type="button"
+                                                onClick={() => setAttachedImages([])}
+                                                className="text-[10px] text-slate-500 hover:text-red-600 transition"
+                                            >
+                                                Clear all
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-thin">
+                                            {attachedImages.map((img, idx) => (
+                                                <div 
+                                                    key={img.id || idx}
+                                                    className="group relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-violet-200 bg-white shadow-2xs cursor-pointer"
+                                                >
+                                                    <img 
+                                                        src={img.dataUrl} 
+                                                        alt={img.name || `Image ${idx + 1}`}
+                                                        onClick={() => setPreviewZoomImage(img.dataUrl)}
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setAttachedImages(prev => prev.filter(item => item.id !== img.id));
+                                                        }}
+                                                        className="absolute top-1 right-1 w-4 h-4 rounded-full bg-slate-900/80 hover:bg-red-600 text-white flex items-center justify-center transition shadow"
+                                                        title="Remove image"
+                                                    >
+                                                        <X className="w-2.5 h-2.5" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="flex items-end gap-2 px-3 py-2.5">
                                     <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".txt,.csv,.json,.pdf,.md,.sql,.log,.png,.jpg,.jpeg,.webp,.bmp" />
                                     <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
                                         className="flex-shrink-0 w-8 h-8 rounded-lg bg-violet-50 border border-violet-200 flex items-center justify-center text-violet-500 hover:bg-violet-100 transition disabled:opacity-50" title="Upload documents or images for auto-table detection & loading">
                                         {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                                    </button>
+
+                                    {/* Mobile / Camera fallback input */}
+                                    <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        capture="environment" 
+                                        ref={cameraInputRef} 
+                                        onChange={(e) => { 
+                                            if (e.target.files?.length) attachImages(e.target.files); 
+                                            e.target.value = ''; 
+                                        }} 
+                                        className="hidden" 
+                                    />
+                                    <button 
+                                        type="button"
+                                        onClick={startCamera} 
+                                        className="flex-shrink-0 w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 hover:bg-emerald-100 transition shadow-2xs" 
+                                        title="Capture photo with Camera"
+                                    >
+                                        <Camera className="w-3.5 h-3.5" />
                                     </button>
                                     
                                     <VoiceInputButton
@@ -8671,6 +8914,7 @@ export default function FloatingChatbot() {
                                     <div className="flex-1 relative">
                                         <textarea ref={inputRef} value={input}
                                             onChange={handleInputChange}
+                                            onPaste={handlePaste}
                                             onKeyDown={(e) => {
                                                 if (fileRefOpen && e.key === 'Escape') {
                                                     e.preventDefault();
@@ -8687,13 +8931,13 @@ export default function FloatingChatbot() {
                                                     handleSend();
                                                 }
                                             }}
-                                            placeholder={selectedFileRefs.length > 0 ? `Ask about \\${selectedFileRefs[0].fileName}, or press Enter to run...` : "Type \\ to reference file (e.g. \\engmaths.pdf), or ask anything..."}
+                                            placeholder={attachedImages.length > 0 ? `Ask about attached image${attachedImages.length > 1 ? 's' : ''} or type your message...` : (selectedFileRefs.length > 0 ? `Ask about \\${selectedFileRefs[0].fileName}, or press Enter to run...` : "Type \\ to reference file, paste images, or ask anything...")}
                                             rows={1}
                                             className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[13px] resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
                                             style={{ minHeight: '36px', maxHeight: '80px' }}
                                         />
                                     </div>
-                                    <button onClick={handleSend} disabled={(!input.trim() && selectedFileRefs.length === 0) || isLoading}
+                                    <button onClick={handleSend} disabled={(!input.trim() && selectedFileRefs.length === 0 && attachedImages.length === 0) || isLoading}
                                         className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center hover:from-indigo-600 hover:to-violet-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-indigo-500/20">
                                         {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                                     </button>
@@ -8701,6 +8945,109 @@ export default function FloatingChatbot() {
                             </div>
                         </>
                     )}
+                </div>
+            )}
+
+            {/* Camera Capture Modal */}
+            {cameraModalOpen && (
+                <div className="fixed inset-0 z-[100000] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full overflow-hidden shadow-2xl flex flex-col">
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-950/60">
+                            <div className="flex items-center gap-2 text-white font-medium text-sm">
+                                <Camera className="w-4 h-4 text-emerald-400" />
+                                <span>Take Photo</span>
+                            </div>
+                            <button 
+                                onClick={stopCamera} 
+                                className="w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="p-4 flex flex-col items-center gap-3">
+                            <div className="relative w-full h-72 rounded-xl overflow-hidden bg-black flex items-center justify-center border border-slate-800 shadow-inner">
+                                {capturedPhoto ? (
+                                    <img src={capturedPhoto} alt="Captured" className="w-full h-full object-contain" />
+                                ) : (
+                                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                                )}
+                            </div>
+                            <div className="w-full flex items-center justify-between gap-3 pt-1">
+                                {capturedPhoto ? (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCapturedPhoto(null)}
+                                            className="flex-1 py-2 px-3 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-medium transition"
+                                        >
+                                            Retake
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={confirmSnapshot}
+                                            className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition shadow-md shadow-emerald-900/40"
+                                        >
+                                            Attach Photo
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                stopCamera();
+                                                cameraInputRef.current?.click();
+                                            }}
+                                            className="text-slate-400 hover:text-slate-200 text-xs underline underline-offset-2 transition"
+                                        >
+                                            Switch to file picker
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={takeSnapshot}
+                                            className="py-2 px-5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition flex items-center gap-2 shadow-lg shadow-emerald-500/30"
+                                        >
+                                            <Camera className="w-4 h-4" />
+                                            Capture
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Image Zoom Lightbox Modal */}
+            {previewZoomImage && (
+                <div 
+                    onClick={() => setPreviewZoomImage(null)}
+                    className="fixed inset-0 z-[100000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out animate-in fade-in duration-150"
+                >
+                    <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
+                        <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+                            <a
+                                href={previewZoomImage}
+                                download={`image_${Date.now()}.jpg`}
+                                className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-slate-800 text-white flex items-center justify-center transition shadow-md"
+                                title="Download Image"
+                            >
+                                <Download className="w-4 h-4" />
+                            </a>
+                            <button
+                                onClick={() => setPreviewZoomImage(null)}
+                                className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-slate-800 text-white flex items-center justify-center transition shadow-md"
+                                title="Close"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <img 
+                            src={previewZoomImage} 
+                            alt="Zoom Preview" 
+                            className="max-h-[85vh] max-w-full object-contain rounded-xl border border-white/10 shadow-2xl"
+                        />
+                    </div>
                 </div>
             )}
         </>

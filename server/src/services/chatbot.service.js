@@ -239,9 +239,43 @@ TABLE class_enrollments:
 
 TABLE assignments:
   id uuid NOT NULL
+  school_id uuid NOT NULL
+  subject_id uuid NOT NULL
+  lab_id uuid
+  created_by uuid NOT NULL
   title character varying(255) NOT NULL
   description text
+  programming_language character varying(50)
+  assignment_type assignment_type NOT NULL
+  status assignment_status
   due_date timestamp
+  training_module_id uuid
+
+TABLE training_modules:
+  id uuid NOT NULL
+  school_id uuid NOT NULL
+  title character varying(255) NOT NULL
+  description text
+  language character varying(50) NOT NULL
+  board_aligned character varying(50)
+  class_level integer
+  total_units integer
+  total_exercises integer
+  is_published boolean NOT NULL
+
+TABLE training_units:
+  id uuid NOT NULL
+  module_id uuid NOT NULL
+  unit_number integer NOT NULL
+  title character varying(255) NOT NULL
+  description text
+  expected_hours integer
+
+TABLE subjects:
+  id uuid NOT NULL
+  school_id uuid NOT NULL
+  name character varying(100) NOT NULL
+  code character varying(50)
 
 TABLE tickets:
   id uuid NOT NULL
@@ -252,6 +286,80 @@ TABLE tickets:
   status ticket_status NOT NULL
   category ticket_category NOT NULL
 `;
+    }
+
+    // ═══ PRE-FLIGHT QUERY VALIDATOR (Data Dictionary, Relationships, Types, Permissions) ═══
+    validateQuery(sql, options = {}) {
+        if (!sql || typeof sql !== 'string') return { isValid: false, error: 'Empty SQL query' };
+
+        const trimmed = sql.trim();
+        const { userRole = 'admin' } = options;
+
+        // 1. Permissions Check
+        const isMutation = /^(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|GRANT|REVOKE)\b/i.test(trimmed);
+        if (isMutation && userRole !== 'admin') {
+            return {
+                isValid: false,
+                error: `Permission Denied: User role '${userRole}' is not authorized to execute data modifications.`,
+                hint: `Generate a read-only SELECT query instead.`
+            };
+        }
+
+        // 2. Destructive Operations Protection
+        if (/^(DROP|TRUNCATE|ALTER)\b/i.test(trimmed)) {
+            return {
+                isValid: false,
+                error: `Destructive DDL operations (DROP, TRUNCATE, ALTER) are strictly prohibited.`,
+                hint: `Only SELECT, INSERT, or UPDATE queries are permitted.`
+            };
+        }
+
+        // 3. Data Dictionary & Hallucinated Column Checks
+        if (/assignments\s*(\.|\s+AS\s+\w+\s+WHERE\s+|\s+WHERE\s+.*)class_id/i.test(trimmed) ||
+            (/\bclass_id\b/i.test(trimmed) && /\bFROM\s+assignments\b/i.test(trimmed) && !/\bassignment_targets\b/i.test(trimmed))) {
+            return {
+                isValid: false,
+                error: `The table 'assignments' DOES NOT have a 'class_id' column.`,
+                hint: `To filter assignments by class, JOIN assignment_targets on assignment_targets.assignment_id = assignments.id and filter by assignment_targets.target_class_id.`
+            };
+        }
+
+        if (/training_modules\s*(\.|\s+AS\s+\w+\s+WHERE\s+|\s+WHERE\s+.*)subject_id/i.test(trimmed) ||
+            (/\bsubject_id\b/i.test(trimmed) && /\bFROM\s+training_modules\b/i.test(trimmed) && !/\bassignments\b/i.test(trimmed))) {
+            return {
+                isValid: false,
+                error: `The table 'training_modules' DOES NOT have a 'subject_id' column.`,
+                hint: `The topic, subject, or technology is stored directly in training_modules.language (e.g. 'python', 'javascript', 'sql', 'cpp'). Or join assignments on assignments.training_module_id = training_modules.id to reach subjects.`
+            };
+        }
+
+        if (/users\s*(\.|\s+AS\s+\w+\s+WHERE\s+|\s+WHERE\s+.*)class_id/i.test(trimmed)) {
+            return {
+                isValid: false,
+                error: `The table 'users' DOES NOT have a 'class_id' column.`,
+                hint: `Students are linked to classes via class_enrollments (JOIN class_enrollments ON users.id = class_enrollments.student_id).`
+            };
+        }
+
+        // 4. Data Type & Casting Checks
+        if (/\b(role|priority|status|assignment_type)\s+ILIKE\b/i.test(trimmed) && !/::text\s+ILIKE/i.test(trimmed)) {
+            return {
+                isValid: false,
+                error: `PostgreSQL ENUM column compared with ILIKE without explicit ::text cast.`,
+                hint: `Cast the enum column to text (e.g. role::text ILIKE '%...%') or use exact '='.`
+            };
+        }
+
+        // 5. UUID Type Mismatch
+        if (/\b(id|_id)\s*=\s*\d+\b/i.test(trimmed)) {
+            return {
+                isValid: false,
+                error: `Primary/Foreign keys in PostgreSQL are UUIDs, not integers.`,
+                hint: `Never compare UUID columns with integer numbers (e.g. lab_id = 1). JOIN to the related table and filter by name.`
+            };
+        }
+
+        return { isValid: true };
     }
 
     // ═══ SQL EXECUTION (via Prisma — no separate pg dependency needed) ═══
@@ -378,6 +486,27 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
   * Webcams: \`SELECT li.item_number, li.brand, li.model_no, li.serial_no, l.name AS lab_name, li.status FROM lab_items li LEFT JOIN labs l ON li.lab_id = l.id WHERE (li.item_type ILIKE '%webcam%' OR li.item_type ILIKE '%camera%');\`
   * Strict policy: Laptops may ONLY be issued to staff/instructors/lab_assistants/admins/principals, NEVER to students.
 12. Be extremely concise. No unnecessary explanations. Results speak for themselves.
+13. **TRAINING MODULES & TOPICS (DATA DICTIONARY & GOLDEN QUERIES)**:
+- The \`training_modules\` table stores interactive training modules and courses:
+  * \`language\` (VARCHAR): Stores the topic, subject, or technology tag (e.g. 'python', 'javascript', 'sql', 'java', 'cpp').
+  * \`is_published\` (BOOLEAN): \`true\` indicates Published, \`false\` indicates Draft.
+  * \`title\` (VARCHAR): Module title.
+  * \`class_level\` (INT): Grade/class level.
+- When a user asks for training modules by "topic", "subject", "technology", or "language":
+  * ALWAYS query the \`language\` column on \`training_modules\`:
+    \`SELECT INITCAP(TRIM(language)) AS topic, COUNT(*) AS count FROM training_modules GROUP BY INITCAP(TRIM(language)) ORDER BY count DESC;\`
+- When a user asks for "published vs draft" training modules:
+  * Query the \`is_published\` column:
+    \`SELECT CASE WHEN is_published = true THEN 'Published' ELSE 'Draft' END AS status, COUNT(*) AS count FROM training_modules GROUP BY is_published;\`
+- The \`training_units\` table stores individual unit chapters (\`module_id\`, \`title\`, \`unit_number\`). To query unit topics:
+  \`SELECT tu.title AS unit_topic, tm.title AS module_title FROM training_units tu JOIN training_modules tm ON tu.module_id = tm.id;\`
+
+14. **CASE-INSENSITIVE CATEGORY GROUPING (PREVENT DUPLICATE BARS)**:
+- ALWAYS normalize text casing in \`SELECT\` and \`GROUP BY\` when grouping by categorical columns such as \`programming_language\`, \`language\`, \`item_type\`, \`role\`, \`status\`:
+  * Use \`INITCAP(TRIM(column))\` or \`UPPER(TRIM(column))\`.
+  * For assignments by programming language:
+    \`SELECT INITCAP(TRIM(programming_language)) AS language, COUNT(*) AS count FROM assignments WHERE programming_language IS NOT NULL GROUP BY INITCAP(TRIM(programming_language)) ORDER BY count DESC;\`
+  * Never leave raw casing un-normalized in GROUP BY; otherwise 'Python' and 'python' or 'JAVA' and 'java' will generate duplicate distinct bars!
 ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     }
 
@@ -1474,6 +1603,31 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
         let activeDocContext = documentContext || '';
         let referencedFileName = (options.referencedFileName || (options.referencedFiles && options.referencedFiles[0]?.fileName) || '').trim();
 
+        // ─── Attached Multi-Image Vision Processor (up to 5 images) ───
+        const attachedImageUrls = (options.imageUrls || []).concat(
+            (options.attachedImages || []).map(img => typeof img === 'string' ? img : (img.dataUrl || img.url)).filter(Boolean)
+        ).slice(0, 5);
+
+        if (attachedImageUrls.length > 0) {
+            console.log(`[ChatBot] Analyzing ${attachedImageUrls.length} attached images with AI Vision...`);
+            for (let i = 0; i < attachedImageUrls.length; i++) {
+                const imgDataUrl = attachedImageUrls[i];
+                const matches = imgDataUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+                if (matches) {
+                    try {
+                        const mime = matches[1];
+                        const buf = Buffer.from(matches[2], 'base64');
+                        const imgText = await this.extractMultimodalText(buf, mime, `attached_image_${i + 1}.png`);
+                        if (imgText && imgText.length > 10) {
+                            activeDocContext = `=== [Attached Image ${i + 1}/${attachedImageUrls.length}: Visual Content & OCR] ===\n${imgText}\n\n` + activeDocContext;
+                        }
+                    } catch (visErr) {
+                        console.warn(`[ChatBot] Attached image ${i + 1} vision extraction failed:`, visErr.message);
+                    }
+                }
+            }
+        }
+
         // Detect referenced file in prompt: \filename, @filename, or "from filename.ext"
         const fileRefMatch = message.match(/[\\@]([a-zA-Z0-9_\-.\s]+?\.[a-zA-Z0-9]{2,5})\b/) ||
                               message.match(/[\\@]([a-zA-Z0-9_\-]+)/) ||
@@ -1603,7 +1757,10 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
         }
 
         // ─── Intent A: Training Module Generation from Ebook / Syllabus / Document ───
-        const isTrainingGenIntent = (
+        // Guard: Analytical, graph, status, count, and reporting queries must NEVER be hijacked into course creation!
+        const isDataOrAnalyticsQuery = /\b(graph|chart|plot|count|how many|show|list|stats|breakdown|distribution|status|published|draft|report|summary)\b/i.test(message);
+
+        const isTrainingGenIntent = !isDataOrAnalyticsQuery && (
             ((msgLower.includes('training') || msgLower.includes('module') || msgLower.includes('course') || msgLower.includes('curriculum')) &&
              (msgLower.includes('generate') || msgLower.includes('create') || msgLower.includes('build') || msgLower.includes('from') || msgLower.includes('syllabus') || msgLower.includes('ebook') || msgLower.includes('try') || msgLower.includes('draft') || msgLower.includes('new') || msgLower.includes('setup') || msgLower.includes('make') || msgLower.includes('add'))) ||
             (msgLower.includes('math') && (msgLower.includes('program') || msgLower.includes('problem') || msgLower.includes('question') || msgLower.includes('derive') || msgLower.includes('proof') || msgLower.includes('training') || msgLower.includes('module'))) ||
@@ -4092,7 +4249,7 @@ Return JSON ONLY in this format:
         }
 
         // Intent detection: Training Module / Coding Competition Drafting (e.g. "Create training module 'Python Data Structures & Algorithms' for class 12 with 3 coding exercises on Stacks, Queues, and Binary Search Trees")
-        const isTrainingCreationIntent = (
+        const isTrainingCreationIntent = !isDataOrAnalyticsQuery && (
             (userRole === 'admin' || userRole === 'principal' || userRole === 'instructor') &&
             (/\b(create|add|make|draft|new|setup|generate)\s+(a\s+|an\s+)?(training\s*module|coding\s*module|competition\s*module|training\s*course|learning\s*module|practice\s*module)\b/i.test(msgLower) ||
              /\b(training\s*module|coding\s*module|training\s*course)\s+(creation|create|add|draft|generate)\b/i.test(msgLower) ||
@@ -5939,6 +6096,26 @@ ${documentContext || message}
         }
 
         if (executedSQL) {
+            // ─── PRE-FLIGHT QUERY VALIDATOR (Data Dictionary, Relationships, Types, Permissions) ───
+            const validation = this.validateQuery(executedSQL, { userRole });
+            if (!validation.isValid && !options._isRetry) {
+                console.warn('[ChatBot Validator] Pre-flight validation failed:', validation.error);
+                const retryPrompt = `Your generated SQL query failed pre-flight database validation:\n` +
+                    `Validation Error: ${validation.error}\n` +
+                    (validation.hint ? `Correction Guidance: ${validation.hint}\n` : '') +
+                    `\nFailed SQL Query:\n\`\`\`sql\n${executedSQL}\n\`\`\`\n\n` +
+                    `Please check the DATABASE SCHEMA rules, fix the query, and output ONLY the corrected SQL in a \`\`\`sql block with <!--EXEC_SQL:...:END_SQL-->.`;
+                return await this.chat(retryPrompt, {
+                    ...options,
+                    _isRetry: true,
+                    conversationHistory: [
+                        ...conversationHistory,
+                        { role: 'user', content: message },
+                        { role: 'assistant', content: aiText }
+                    ]
+                });
+            }
+
             const norm = executedSQL.toLowerCase().trim();
             
             const isReadQuery = norm.startsWith('select') || norm.startsWith('with');
@@ -6035,9 +6212,16 @@ ${documentContext || message}
     }
 
     autoGenerateChart(result) {
-        if (!result.rows || result.rows.length < 2) return null;
+        if (!result.rows || result.rows.length < 1) return null;
         const fields = result.fields?.map(f => f.name) || Object.keys(result.rows[0]);
-        if (fields.length < 2) return null;
+        if (fields.length < 2 && (result.rows.length === 0 || !fields.length)) return null;
+
+        const canonicalizeLabel = (str) => {
+            if (!str) return 'Unknown';
+            const s = String(str).trim();
+            if (!s) return 'Unknown';
+            return s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+        };
 
         const numCols = fields.filter(f => {
             const val = result.rows[0][f];
@@ -6052,15 +6236,22 @@ ${documentContext || message}
         // Multi-Numeric Series Chart (1+ strings, 2+ numbers) -> e.g. Lab Name, PC Count, Printer Count
         if (numCols.length >= 2) {
             const labelCol = strCols.length > 0 ? strCols[0] : fields[0];
-            const data = result.rows.slice(0, 15).map(row => {
-                const obj = { label: String(row[labelCol] || '').substring(0, 30) };
-                numCols.forEach(col => { obj[col] = Number(row[col]) || 0; });
-                return obj;
+            const mergedMap = new Map();
+            result.rows.slice(0, 15).forEach(row => {
+                const label = canonicalizeLabel(row[labelCol]);
+                if (!mergedMap.has(label)) {
+                    const obj = { label };
+                    numCols.forEach(col => { obj[col] = Number(row[col]) || 0; });
+                    mergedMap.set(label, obj);
+                } else {
+                    const existing = mergedMap.get(label);
+                    numCols.forEach(col => { existing[col] = (existing[col] || 0) + (Number(row[col]) || 0); });
+                }
             });
             return {
                 type: 'bar',
                 title: `${numCols.join(' and ')} by ${labelCol}`,
-                data,
+                data: Array.from(mergedMap.values()),
                 seriesKeys: numCols,
                 colors: ['#F5B027', '#538D4E', '#2563EB', '#DC2626', '#7C3AED', '#0D9488', '#EA580C', '#0284C7', '#475569', '#DB2777']
             };
@@ -6075,12 +6266,12 @@ ${documentContext || message}
             const seriesKeys = new Set();
             
             result.rows.forEach(row => {
-                const group = String(row[groupCol] || 'Unknown');
-                const series = String(row[seriesCol] || 'Unknown');
+                const group = canonicalizeLabel(row[groupCol]);
+                const series = canonicalizeLabel(row[seriesCol]);
                 const val = Number(row[valueCol]) || 0;
                 
                 if (!pivot[group]) pivot[group] = { label: group };
-                pivot[group][series] = val;
+                pivot[group][series] = (pivot[group][series] || 0) + val;
                 seriesKeys.add(series);
             });
             
@@ -6093,15 +6284,19 @@ ${documentContext || message}
             };
         }
 
-        // Standard Single-Series Chart
+        // Standard Single-Series Chart (deduplicating and merging case variants like Python and python)
         const labelCol = strCols[0] || fields[0];
-        if (labelCol === valueCol) return null;
+        if (labelCol === valueCol && fields.length > 1) return null;
 
-        const data = result.rows.slice(0, 15).map(row => ({
-            label: String(row[labelCol] || '').substring(0, 30),
-            value: Number(row[valueCol]) || 0
-        }));
+        const mergedMap = new Map();
+        result.rows.forEach(row => {
+            const rawLabel = String(row[labelCol] || '').substring(0, 30);
+            const canonLabel = canonicalizeLabel(rawLabel);
+            const val = Number(row[valueCol]) || 0;
+            mergedMap.set(canonLabel, (mergedMap.get(canonLabel) || 0) + val);
+        });
 
+        const data = Array.from(mergedMap.entries()).slice(0, 15).map(([label, value]) => ({ label, value }));
         const type = data.length <= 6 ? 'doughnut' : 'bar';
         return {
             type, title: `${valueCol} by ${labelCol}`, data,
