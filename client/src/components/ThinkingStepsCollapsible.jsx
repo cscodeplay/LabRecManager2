@@ -14,28 +14,47 @@ export default function ThinkingStepsCollapsible({ thinkContent, defaultOpen = f
     const steps = [];
     let currentStep = null;
 
+    // Preamble filters (lines that are headers, conversational chatter, or monologue transitions)
+    const isPreamble = (text) => /^(?:i\s*need\s*to:?|here\s*(?:are|is)\s*(?:the\s*)?steps:?|plan:?|approach:?|the\s*user\s*(?:is\s*asking|wants|requested):?|let['’]s\s*see:?|thinking:?)$/i.test(text.trim());
+
     lines.forEach(line => {
+        if (isPreamble(line)) return;
+
         // Matches "1. ...", "Step 1: ...", "1) ...", "[1] ...", "- ...", "• ..."
         const match = line.match(/^(?:(?:Step\s*)?(\d+)[\.:\)\-\]]|\*|\-|\u2022)\s*(.*)/i);
         if (match) {
+            const stepText = (match[2] || '').trim();
+            if (!stepText || isPreamble(stepText)) return;
             if (currentStep) steps.push(currentStep);
             currentStep = {
                 number: steps.length + 1,
-                text: match[2].trim()
+                text: stepText
             };
         } else if (currentStep) {
+            // Append continuation line to current step
             currentStep.text += " " + line;
-        } else {
-            steps.push({
+        } else if (line.length > 15 && !isPreamble(line)) {
+            // Only create an un-numbered step if it's a substantive sentence
+            currentStep = {
                 number: steps.length + 1,
                 text: line
-            });
+            };
         }
     });
-    if (currentStep) steps.push(currentStep);
+    if (currentStep && currentStep.text.length > 3) {
+        steps.push(currentStep);
+    }
 
     if (steps.length === 0) {
-        steps.push({ number: 1, text: raw });
+        // Fallback: split by sentences if raw is a single block
+        const sentences = raw.split(/(?<=[.!?])\s+/).filter(s => s.length > 10 && !isPreamble(s));
+        if (sentences.length > 0) {
+            sentences.slice(0, 5).forEach((s, idx) => {
+                steps.push({ number: idx + 1, text: s });
+            });
+        } else {
+            steps.push({ number: 1, text: raw.substring(0, 200) });
+        }
     }
 
     return (

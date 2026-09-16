@@ -264,7 +264,8 @@ function SQLCardItem({ row, cols }) {
 }
 
 /* ─── SQL result panel: Graphic Card View, Chart View, Table View, SQL query inspection, CSV export ─── */
-function SQLResult({ sql, result, onRerun }) {
+function SQLResult({ sql, result, onRerun, hasDedicatedChart = false, dedicatedChartData = null }) {
+    const [isCollapsed, setIsCollapsed] = useState(Boolean(hasDedicatedChart));
     const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'chart' | 'table'
     const [sqlOpen, setSqlOpen] = useState(false);
     if (!result) return null;
@@ -289,8 +290,8 @@ function SQLResult({ sql, result, onRerun }) {
     const countCols = cols.filter(c => ['total_computers', 'pc_count', 'count', 'total_items', 'item_count', 'quantity', 'total'].includes(c));
     const hasCountSummary = countCols.length > 0 && rows.length > 0;
 
-    // Auto-generate inline chart structure if user clicks 'chart'
-    const inlineChartData = numCols.length > 0 && rows.length > 0 ? {
+    // Auto-generate inline chart structure if user clicks 'chart' (sync with dedicatedChartData if present)
+    const inlineChartData = dedicatedChartData || (numCols.length > 0 && rows.length > 0 ? {
         type: 'bar',
         title: `${numCols[0].replace(/_/g, ' ')} by ${strCols[0] ? strCols[0].replace(/_/g, ' ') : 'Category'}`,
         data: rows.slice(0, 15).map(r => ({
@@ -299,7 +300,7 @@ function SQLResult({ sql, result, onRerun }) {
         })),
         seriesKeys: [numCols[0]],
         colors: DEFAULT_COLORS
-    } : null;
+    } : null);
 
     const exportCSV = () => {
         if (!rows.length) return;
@@ -324,14 +325,24 @@ function SQLResult({ sql, result, onRerun }) {
         <div className="mt-2.5 rounded-2xl border border-indigo-200/90 shadow-sm overflow-hidden bg-gradient-to-b from-indigo-50/40 via-white to-slate-50/30 text-[12px] animate-in fade-in">
             {/* Header bar */}
             <div className="px-3 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 text-white flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
+                <button
+                    type="button"
+                    onClick={() => setIsCollapsed(c => !c)}
+                    className="flex items-center gap-2 select-none hover:opacity-95 transition text-left cursor-pointer group"
+                    title={isCollapsed ? "Click to expand underlying data records" : "Click to collapse data view"}
+                >
                     <Database className="w-3.5 h-3.5 text-indigo-200 shrink-0" />
                     <span className="font-bold text-xs tracking-tight">
                         {rows.length} {rows.length === 1 ? 'Record Found' : 'Records Found'}
                     </span>
-                </div>
+                    <span className="text-[10px] font-semibold text-indigo-200 bg-indigo-950/40 group-hover:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-400/30 flex items-center gap-1 transition">
+                        {isCollapsed ? 'View Data' : 'Collapse'}
+                        <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : 'rotate-0'}`} />
+                    </span>
+                </button>
 
-                <div className="flex items-center gap-1.5">
+                {!isCollapsed && (
+                    <div className="flex items-center gap-1.5">
                     {/* View Switcher: Cards / Chart / Table */}
                     {rows.length > 0 && (
                         <div className="flex items-center bg-indigo-950/40 p-0.5 rounded-lg border border-indigo-400/30">
@@ -407,178 +418,184 @@ function SQLResult({ sql, result, onRerun }) {
                         </button>
                     )}
                 </div>
-            </div>
-
-            {/* SQL Query Collapsible Details (Hidden by default) */}
-            {sqlOpen && sql && (
-                <div className="px-3 py-2 bg-slate-900 border-b border-indigo-200 animate-in fade-in">
-                    <div className="flex items-center justify-between pb-1 border-b border-slate-800 mb-1.5">
-                        <span className="text-[10px] font-mono text-indigo-300 font-semibold uppercase tracking-wider">Executed SQL Query</span>
-                        <div className="flex items-center gap-2">
-                            <button onClick={() => { navigator.clipboard.writeText(sql); toast.success('SQL copied to clipboard'); }}
-                                className="text-[10px] text-indigo-400 hover:text-white flex items-center gap-1 transition">
-                                <Copy className="w-2.5 h-2.5" /> Copy
-                            </button>
-                            {onRerun && (
-                                <button onClick={onRerun} className="text-[10px] text-emerald-400 hover:text-white flex items-center gap-1 transition">
-                                    <RefreshCw className="w-2.5 h-2.5" /> Re-run
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                    <pre className="text-[10.5px] text-indigo-100 font-mono whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{sql}</pre>
-                </div>
-            )}
-
-            {/* Body Content */}
-            <div className="p-2.5 space-y-2.5">
-                {/* Requires Confirmation */}
-                {result.requiresConfirmation ? (
-                    <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex items-start gap-2.5">
-                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                        <div className="flex-1 space-y-1.5">
-                            <p className="text-amber-900 text-xs font-bold">Execution requires confirmation</p>
-                            <p className="text-amber-800 text-[11px] leading-relaxed">Please review the SQL query above. This operation will modify data in your database.</p>
-                            {onRerun && (
-                                <button onClick={onRerun} className="bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition shadow-2xs">
-                                    <Check className="w-3 h-3" /> Confirm & Execute
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                ) : !result.success ? (
-                    <div className="p-2.5 bg-red-50 text-red-700 text-[11px] rounded-xl border border-red-200 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
-                        <span className="font-medium">{result.error || 'Query failed to execute.'}</span>
-                    </div>
-                ) : rows.length === 0 ? (
-                    /* Empty State */
-                    isSelect ? (
-                        <div className="p-4 bg-white rounded-xl border border-slate-200 text-center space-y-2">
-                            <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center mx-auto text-indigo-500 shadow-2xs">
-                                <Inbox className="w-4 h-4" />
-                            </div>
-                            <div>
-                                <h5 className="font-bold text-slate-800 text-xs">0 Records Found</h5>
-                                <p className="text-[11px] text-slate-500 max-w-xs mx-auto mt-0.5 leading-relaxed">
-                                    No records currently match this query in the database.
-                                </p>
-                            </div>
-                            <div className="pt-1 flex items-center justify-center gap-2 flex-wrap text-[10px]">
-                                <a
-                                    href="/admin/labs"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold border border-indigo-200 transition flex items-center gap-1"
-                                >
-                                    <Server className="w-3 h-3" /> Lab Management
-                                </a>
-                                <a
-                                    href="/classes"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="px-2 py-1 rounded-lg bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold border border-slate-200 transition flex items-center gap-1"
-                                >
-                                    <BookOpen className="w-3 h-3" /> Classes
-                                </a>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="p-3 bg-emerald-50 text-emerald-800 text-[11px] font-medium flex items-center gap-2 border border-emerald-200 rounded-xl">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>Operation executed successfully ({result.rowCount || 0} row(s) affected).</span>
-                        </div>
-                    )
-                ) : viewMode === 'chart' && inlineChartData ? (
-                    /* Inline Chart View */
-                    <div className="p-2 bg-white rounded-xl border border-slate-200">
-                        <ChatChart chartData={inlineChartData} />
-                    </div>
-                ) : viewMode === 'cards' ? (
-                    /* Graphic Cards View */
-                    <div className="space-y-2.5 max-h-80 overflow-y-auto pr-0.5">
-                        {/* Summary / Hero Card for 1-3 row summary query results */}
-                        {hasCountSummary && rows.length <= 3 && (
-                            <div className="grid grid-cols-1 gap-2">
-                                {rows.map((r, ri) => (
-                                    <div key={ri} className="p-3 rounded-xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-violet-500/10 border border-indigo-200 flex items-center justify-between gap-3 shadow-2xs">
-                                        <div className="flex items-center gap-2.5 min-w-0">
-                                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                                                <Laptop className="w-4 h-4" />
-                                            </div>
-                                            <div className="min-w-0">
-                                                <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider truncate">
-                                                    {r.lab_name || r.name || 'Equipment Metric'} {r.room_number ? `(Room ${r.room_number})` : ''}
-                                                </div>
-                                                <div className="text-sm font-extrabold text-slate-900 flex items-baseline gap-1.5">
-                                                    <span className="text-lg text-indigo-700 font-mono">
-                                                        {r[countCols[0]] !== undefined ? r[countCols[0]] : 0}
-                                                    </span>
-                                                    <span className="text-xs font-semibold text-slate-600">
-                                                        {countCols[0].replace(/_/g, ' ')}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {rows.slice(0, 50).map((row, idx) => (
-                                <SQLCardItem key={idx} row={row} cols={cols} />
-                            ))}
-                        </div>
-                        {rows.length > 50 && (
-                            <p className="text-[10px] text-slate-400 text-center py-1 font-medium">
-                                Showing first 50 of {rows.length} records (Export CSV for full dataset)
-                            </p>
-                        )}
-                    </div>
-                ) : (
-                    /* Table View */
-                    <div className="overflow-x-auto max-h-64 rounded-xl border border-slate-200 bg-white">
-                        <table className="w-full text-[11px]">
-                            <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-slate-700 font-semibold">
-                                <tr>
-                                    {cols.map((c, i) => (
-                                        <th key={i} className="px-2.5 py-1.5 text-left whitespace-nowrap uppercase tracking-wider text-[9px] text-slate-500">
-                                            {c.replace(/_/g, ' ')}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {rows.slice(0, 50).map((row, ri) => (
-                                    <tr key={ri} className={ri % 2 ? 'bg-slate-50/50 hover:bg-indigo-50/30' : 'hover:bg-indigo-50/30'}>
-                                        {cols.map((c, ci) => (
-                                            <td key={ci} className="px-2.5 py-1.5 font-mono whitespace-nowrap max-w-[200px] truncate text-slate-800">
-                                                {row[c] === null ? (
-                                                    <span className="text-slate-400 italic font-sans text-[10px]">NULL</span>
-                                                ) : typeof row[c] === 'string' && row[c].startsWith('http') ? (
-                                                    <a href={row[c]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline hover:text-indigo-800">
-                                                        Open Link
-                                                    </a>
-                                                ) : typeof row[c] === 'object' ? (
-                                                    JSON.stringify(row[c])
-                                                ) : (
-                                                    String(row[c])
-                                                )}
-                                            </td>
-                                        ))}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        {rows.length > 50 && (
-                            <p className="text-[10px] text-slate-400 text-center py-1.5 border-t border-slate-100 font-medium">
-                                Showing 50 of {rows.length} rows
-                            </p>
-                        )}
-                    </div>
                 )}
             </div>
+
+            {/* Collapsible Details & Content */}
+            {!isCollapsed && (
+                <>
+                    {/* SQL Query Collapsible Details (Hidden by default) */}
+                    {sqlOpen && sql && (
+                        <div className="px-3 py-2 bg-slate-900 border-b border-indigo-200 animate-in fade-in">
+                            <div className="flex items-center justify-between pb-1 border-b border-slate-800 mb-1.5">
+                                <span className="text-[10px] font-mono text-indigo-300 font-semibold uppercase tracking-wider">Executed SQL Query</span>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => { navigator.clipboard.writeText(sql); toast.success('SQL copied to clipboard'); }}
+                                        className="text-[10px] text-indigo-400 hover:text-white flex items-center gap-1 transition">
+                                        <Copy className="w-2.5 h-2.5" /> Copy
+                                    </button>
+                                    {onRerun && (
+                                        <button onClick={onRerun} className="text-[10px] text-emerald-400 hover:text-white flex items-center gap-1 transition">
+                                            <RefreshCw className="w-2.5 h-2.5" /> Re-run
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                            <pre className="text-[10.5px] text-indigo-100 font-mono whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{sql}</pre>
+                        </div>
+                    )}
+
+                    {/* Body Content */}
+                    <div className="p-2.5 space-y-2.5">
+                        {/* Requires Confirmation */}
+                        {result.requiresConfirmation ? (
+                            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex items-start gap-2.5">
+                                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                <div className="flex-1 space-y-1.5">
+                                    <p className="text-amber-900 text-xs font-bold">Execution requires confirmation</p>
+                                    <p className="text-amber-800 text-[11px] leading-relaxed">Please review the SQL query above. This operation will modify data in your database.</p>
+                                    {onRerun && (
+                                        <button onClick={onRerun} className="bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition shadow-2xs">
+                                            <Check className="w-3 h-3" /> Confirm & Execute
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ) : !result.success ? (
+                            <div className="p-2.5 bg-red-50 text-red-700 text-[11px] rounded-xl border border-red-200 flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
+                                <span className="font-medium">{result.error || 'Query failed to execute.'}</span>
+                            </div>
+                        ) : rows.length === 0 ? (
+                            /* Empty State */
+                            isSelect ? (
+                                <div className="p-4 bg-white rounded-xl border border-slate-200 text-center space-y-2">
+                                    <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center mx-auto text-indigo-500 shadow-2xs">
+                                        <Inbox className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                        <h5 className="font-bold text-slate-800 text-xs">0 Records Found</h5>
+                                        <p className="text-[11px] text-slate-500 max-w-xs mx-auto mt-0.5 leading-relaxed">
+                                            No records currently match this query in the database.
+                                        </p>
+                                    </div>
+                                    <div className="pt-1 flex items-center justify-center gap-2 flex-wrap text-[10px]">
+                                        <a
+                                            href="/admin/labs"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold border border-indigo-200 transition flex items-center gap-1"
+                                        >
+                                            <Server className="w-3 h-3" /> Lab Management
+                                        </a>
+                                        <a
+                                            href="/classes"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="px-2 py-1 rounded-lg bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold border border-slate-200 transition flex items-center gap-1"
+                                        >
+                                            <BookOpen className="w-3 h-3" /> Classes
+                                        </a>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="p-3 bg-emerald-50 text-emerald-800 text-[11px] font-medium flex items-center gap-2 border border-emerald-200 rounded-xl">
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                    <span>Operation executed successfully ({result.rowCount || 0} row(s) affected).</span>
+                                </div>
+                            )
+                        ) : viewMode === 'chart' && inlineChartData ? (
+                            /* Inline Chart View */
+                            <div className="p-2 bg-white rounded-xl border border-slate-200">
+                                <ChatChart chartData={inlineChartData} />
+                            </div>
+                        ) : viewMode === 'cards' ? (
+                            /* Graphic Cards View */
+                            <div className="space-y-2.5 max-h-80 overflow-y-auto pr-0.5">
+                                {/* Summary / Hero Card for 1-3 row summary query results */}
+                                {hasCountSummary && rows.length <= 3 && (
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {rows.map((r, ri) => (
+                                            <div key={ri} className="p-3 rounded-xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-violet-500/10 border border-indigo-200 flex items-center justify-between gap-3 shadow-2xs">
+                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                                                        <Laptop className="w-4 h-4" />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider truncate">
+                                                            {r.lab_name || r.name || 'Equipment Metric'} {r.room_number ? `(Room ${r.room_number})` : ''}
+                                                        </div>
+                                                        <div className="text-sm font-extrabold text-slate-900 flex items-baseline gap-1.5">
+                                                            <span className="text-lg text-indigo-700 font-mono">
+                                                                {r[countCols[0]] !== undefined ? r[countCols[0]] : 0}
+                                                            </span>
+                                                            <span className="text-xs font-semibold text-slate-600">
+                                                                {countCols[0].replace(/_/g, ' ')}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {rows.slice(0, 50).map((row, idx) => (
+                                        <SQLCardItem key={idx} row={row} cols={cols} />
+                                    ))}
+                                </div>
+                                {rows.length > 50 && (
+                                    <p className="text-[10px] text-slate-400 text-center py-1 font-medium">
+                                        Showing first 50 of {rows.length} records (Export CSV for full dataset)
+                                    </p>
+                                )}
+                            </div>
+                        ) : (
+                            /* Table View */
+                            <div className="overflow-x-auto max-h-64 rounded-xl border border-slate-200 bg-white">
+                                <table className="w-full text-[11px]">
+                                    <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-slate-700 font-semibold">
+                                        <tr>
+                                            {cols.map((c, i) => (
+                                                <th key={i} className="px-2.5 py-1.5 text-left whitespace-nowrap uppercase tracking-wider text-[9px] text-slate-500">
+                                                    {c.replace(/_/g, ' ')}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {rows.slice(0, 50).map((row, ri) => (
+                                            <tr key={ri} className={ri % 2 ? 'bg-slate-50/50 hover:bg-indigo-50/30' : 'hover:bg-indigo-50/30'}>
+                                                {cols.map((c, ci) => (
+                                                    <td key={ci} className="px-2.5 py-1.5 font-mono whitespace-nowrap max-w-[200px] truncate text-slate-800">
+                                                        {row[c] === null ? (
+                                                            <span className="text-slate-400 italic font-sans text-[10px]">NULL</span>
+                                                        ) : typeof row[c] === 'string' && row[c].startsWith('http') ? (
+                                                            <a href={row[c]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline hover:text-indigo-800">
+                                                                Open Link
+                                                            </a>
+                                                        ) : typeof row[c] === 'object' ? (
+                                                            JSON.stringify(row[c])
+                                                        ) : (
+                                                            String(row[c])
+                                                        )}
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                {rows.length > 50 && (
+                                    <p className="text-[10px] text-slate-400 text-center py-1.5 border-t border-slate-100 font-medium">
+                                        Showing 50 of {rows.length} rows
+                                    </p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
         </div>
     );
 }
@@ -670,28 +687,49 @@ function ChatChart({ chartData }) {
     const getImgData = () => {
         const inst = echartsRef.current?.getEchartsInstance();
         if (!inst) return null;
-        return inst.getDataURL({ type: 'png', backgroundColor: '#fff', pixelRatio: 2 });
+        try {
+            return inst.getDataURL({
+                type: 'png',
+                pixelRatio: 2,
+                backgroundColor: '#ffffff',
+                excludeComponents: ['toolbox']
+            });
+        } catch (e) {
+            console.error('Error getting chart data URL:', e);
+            return null;
+        }
     };
 
     const downloadChart = () => {
         const url = getImgData();
         if (!url) { toast.error('No chart to export'); return; }
-        const a = document.createElement('a');
-        a.download = `${(title || 'chart').replace(/\s+/g, '_')}.png`;
-        a.href = url;
-        a.click();
-        toast.success('Chart downloaded');
+        try {
+            const a = document.createElement('a');
+            const safeName = (title || 'chart').replace(/[^a-zA-Z0-9_\-]/g, '_').toLowerCase();
+            a.download = `${safeName}.png`;
+            a.href = url;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            toast.success('Chart downloaded as PNG');
+        } catch (err) {
+            console.error('Download error:', err);
+            toast.error('Failed to download chart image');
+        }
     };
 
     const copyChart = async () => {
         const url = getImgData();
-        if (!url) return;
+        if (!url) { toast.error('No chart to copy'); return; }
         try {
             const res = await fetch(url);
             const blob = await res.blob();
             await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
             toast.success('Chart copied to clipboard');
-        } catch { toast.error('Copy not supported in this browser'); }
+        } catch (err) {
+            console.warn('Clipboard write failed:', err);
+            toast.error('Copy not supported by browser. Try downloading instead.');
+        }
     };
 
     const renderChart = () => {
@@ -780,7 +818,7 @@ function ChatChart({ chartData }) {
                 };
             });
         }
-        return <ReactECharts ref={echartsRef} option={option} style={{ height: 230, width: '100%' }} opts={{ renderer: 'svg' }} />;
+        return <ReactECharts ref={echartsRef} option={option} style={{ height: 230, width: '100%' }} opts={{ renderer: 'canvas' }} />;
     };
 
     return (
@@ -7577,6 +7615,69 @@ export default function FloatingChatbot() {
     const [showHistory, setShowHistory] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
     const [loadingPhase, setLoadingPhase] = useState(0);
+    const [activePromptForLoading, setActivePromptForLoading] = useState('');
+
+    const getInFlightStages = (prompt = '') => {
+        const p = (prompt || '').toLowerCase();
+        
+        // 1. Chart / Graph / Visualizations
+        if (/\b(chart|graph|plot|combo|bar|pie|visualize|distribution|doughnut|histogram)\b/i.test(p)) {
+            return [
+                'Interpreting visualization request & metrics...',
+                'Querying database & aggregating categories...',
+                'Configuring multi-series chart datasets...',
+                'Rendering interactive visual chart...'
+            ];
+        }
+        
+        // 2. Training Module & Document RAG
+        if (/\b(training|module|course|curriculum|syllabus|\.pdf|chapter|unit|ch-)\b/i.test(p) && /\b(generate|create|build|draft|from|make)\b/i.test(p)) {
+            return [
+                'Reading referenced document & syllabus scope...',
+                'Extracting chapter structure & key concepts...',
+                'Synthesizing pedagogical unit theory & exercises...',
+                'Finalizing training module confirmation card...'
+            ];
+        }
+        
+        // 3. Student Groups & PC Allocation
+        if (/\b(group|assign pc|allocate pc|groups|workstation)\b/i.test(p)) {
+            return [
+                'Evaluating class roster & student count...',
+                'Checking available active lab workstations...',
+                'Allocating contiguous PCs to groups...',
+                'Building group management proposal...'
+            ];
+        }
+
+        // 4. Data Import / CSV Ingestion
+        if (/\b(import|load|csv|upload|roster|insert|save)\b/i.test(p)) {
+            return [
+                'Parsing tabular data structure & columns...',
+                'Auto-detecting database table schema mapping...',
+                'Validating records & integrity rules...',
+                'Preparing data import preview card...'
+            ];
+        }
+
+        // 5. Database & SQL Queries (Computers, Inventory, Attendance, Students, Tickets, Labs)
+        if (/\b(list|show|count|which|where|pc|computer|ram|specs|student|attendance|ticket|lab|who|total|hardware|equipment|inventory)\b/i.test(p)) {
+            return [
+                'Analyzing query intent & parameters...',
+                'Inspecting database tables & column schema...',
+                'Executing SQL query & gathering records...',
+                'Formatting interactive data table...'
+            ];
+        }
+
+        // 6. General Assistance Fallback
+        return [
+            'Understanding request & context...',
+            'Consulting school management knowledge...',
+            'Synthesizing intelligent response...',
+            'Finalizing output...'
+        ];
+    };
 
     useEffect(() => {
         if (!isLoading) {
@@ -7853,6 +7954,7 @@ export default function FloatingChatbot() {
             }
         }
         if (!msg || isLoading) return;
+        setActivePromptForLoading(msg);
 
         // If message text doesn't already contain \filename, append to guarantee resolution
         activeRefs.forEach(f => {
@@ -8199,36 +8301,124 @@ export default function FloatingChatbot() {
                         </div>
                     </div>
 
-                    {/* Help Modal */}
+                    {/* Help Modal: Google PARTS Prompt Framework */}
                     {showHelp && (
-                        <div className="absolute inset-0 top-[52px] bg-white z-50 flex flex-col">
-                            <div className="p-3 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                                <h3 className="font-semibold text-slate-800 flex items-center gap-2"><HelpCircle className="w-4 h-4 text-indigo-600"/> Prompt Guide</h3>
-                                <button onClick={() => setShowHelp(false)} className="p-1 hover:bg-slate-200 rounded"><X className="w-4 h-4"/></button>
+                        <div className="absolute inset-0 top-[52px] bg-white z-50 flex flex-col shadow-xl">
+                            <div className="p-3 border-b border-slate-200 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-violet-50">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-md bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">P</div>
+                                    <div>
+                                        <h3 className="font-semibold text-slate-800 text-xs flex items-center gap-1.5">
+                                            Google PARTS Prompt Framework
+                                            <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-medium">Prompt Engineering</span>
+                                        </h3>
+                                        <p className="text-[10px] text-slate-500">Formulate high-precision requests for data, charts, and RAG modules</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowHelp(false)} className="p-1 hover:bg-slate-200/80 rounded transition text-slate-500 hover:text-slate-700"><X className="w-4 h-4"/></button>
                             </div>
-                            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                                <div>
-                                    <h4 className="font-medium text-slate-900 mb-1">Create Assignments</h4>
-                                    <p className="text-xs text-slate-600 mb-2">Generate and assign tasks automatically.</p>
-                                    <div className="bg-indigo-50 p-2 rounded text-xs text-indigo-800 font-mono">"Create assignment to write a Python program for factorial and assign it to 10th A"</div>
-                                    <div className="bg-indigo-50 p-2 rounded text-xs text-indigo-800 font-mono mt-1">"Create a lab task for Java Inheritance and set due date to 5th Oct"</div>
+                            
+                            <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5 text-slate-700 text-xs">
+                                {/* PARTS breakdown grid */}
+                                <div className="grid grid-cols-5 gap-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                                    <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs text-center">
+                                        <div className="font-bold text-indigo-600 text-xs">P</div>
+                                        <div className="font-semibold text-[10px] text-slate-800 mt-0.5">Persona</div>
+                                        <div className="text-[9px] text-slate-500 mt-1 leading-tight">Role: Senior Lab Admin / STEM Instructor</div>
+                                    </div>
+                                    <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs text-center">
+                                        <div className="font-bold text-blue-600 text-xs">A</div>
+                                        <div className="font-semibold text-[10px] text-slate-800 mt-0.5">Action</div>
+                                        <div className="text-[9px] text-slate-500 mt-1 leading-tight">Verb: List, Generate, Show graph, Import</div>
+                                    </div>
+                                    <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs text-center">
+                                        <div className="font-bold text-emerald-600 text-xs">R</div>
+                                        <div className="font-semibold text-[10px] text-slate-800 mt-0.5">Reference</div>
+                                        <div className="text-[9px] text-slate-500 mt-1 leading-tight">Source: \engmaths.pdf, Lab 1, lab_items</div>
+                                    </div>
+                                    <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs text-center">
+                                        <div className="font-bold text-purple-600 text-xs">T</div>
+                                        <div className="font-semibold text-[10px] text-slate-800 mt-0.5">Target</div>
+                                        <div className="text-[9px] text-slate-500 mt-1 leading-tight">Format: Combo graph, Data table, 1-unit card</div>
+                                    </div>
+                                    <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs text-center">
+                                        <div className="font-bold text-amber-600 text-xs">S</div>
+                                        <div className="font-semibold text-[10px] text-slate-800 mt-0.5">Scope</div>
+                                        <div className="text-[9px] text-slate-500 mt-1 leading-tight">Limits: Chapter 1 only, RAM &gt;= 16GB</div>
+                                    </div>
                                 </div>
+
+                                {/* Clickable Prompt Chips */}
                                 <div>
-                                    <h4 className="font-medium text-slate-900 mb-1">Schedule Meetings</h4>
-                                    <p className="text-xs text-slate-600 mb-2">Quickly create instant or scheduled meetings.</p>
-                                    <div className="bg-emerald-50 p-2 rounded text-xs text-emerald-800 font-mono">"Create an instant meeting for Lab 1"</div>
-                                    <div className="bg-emerald-50 p-2 rounded text-xs text-emerald-800 font-mono mt-1">"Schedule a meeting for tomorrow at 10 AM"</div>
-                                </div>
-                                <div>
-                                    <h4 className="font-medium text-slate-900 mb-1">Search Documents</h4>
-                                    <p className="text-xs text-slate-600 mb-2">Find your uploaded documents.</p>
-                                    <div className="bg-amber-50 p-2 rounded text-xs text-amber-800 font-mono">"Find documents related to Physics syllabus"</div>
-                                </div>
-                                <div>
-                                    <h4 className="font-medium text-slate-900 mb-1">Database Queries (SQL)</h4>
-                                    <p className="text-xs text-slate-600 mb-2">Ask questions about your data.</p>
-                                    <div className="bg-slate-100 p-2 rounded text-xs text-slate-700 font-mono">"Show me the top 5 students by submissions"</div>
-                                    <div className="bg-slate-100 p-2 rounded text-xs text-slate-700 font-mono mt-1">"How many active instructors are there?"</div>
+                                    <h4 className="font-semibold text-slate-800 text-[11px] mb-2 flex items-center gap-1.5">
+                                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                                        1-Click PARTS Prompt Templates
+                                        <span className="text-[9px] text-slate-400 font-normal">(Click any prompt to use)</span>
+                                    </h4>
+                                    
+                                    <div className="space-y-2">
+                                        {[
+                                            {
+                                                tag: "COMBO GRAPH",
+                                                color: "bg-blue-50 text-blue-700 border-blue-200",
+                                                parts: "Action: Show combo graph | Ref: lab_items | Target: Multi-series chart | Scope: Across all labs",
+                                                prompt: "Show combo graph of count of each device type across labs"
+                                            },
+                                            {
+                                                tag: "1-UNIT PDF RAG",
+                                                color: "bg-indigo-50 text-indigo-700 border-indigo-200",
+                                                parts: "Action: Generate module | Ref: \\engmaths.pdf | Target: Training card | Scope: Chapter 1 only",
+                                                prompt: "Generate training module from \\engmaths.pdf for Chapter 1 only with exercises"
+                                            },
+                                            {
+                                                tag: "HARDWARE SPECS",
+                                                color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                                                parts: "Action: List PCs | Ref: Computer Lab 1 | Target: Interactive Table | Scope: Include RAM specs",
+                                                prompt: "List all computers in Computer Lab 1 with RAM and processor specifications"
+                                            },
+                                            {
+                                                tag: "PC ALLOCATION",
+                                                color: "bg-purple-50 text-purple-700 border-purple-200",
+                                                parts: "Action: Assign PCs | Ref: 10th A & Lab 1 | Target: Group Proposal | Scope: 30 students",
+                                                prompt: "Assign 30 students from 10th A to available workstations in Computer Lab 1"
+                                            },
+                                            {
+                                                tag: "SUPPORT TICKETS",
+                                                color: "bg-amber-50 text-amber-700 border-amber-200",
+                                                parts: "Action: Show tickets | Ref: IT Support | Target: Priority cards | Scope: Pending high-priority",
+                                                prompt: "Show all pending high-priority IT support tickets with lab location"
+                                            },
+                                            {
+                                                tag: "CSV DATA TEMPLATE",
+                                                color: "bg-rose-50 text-rose-700 border-rose-200",
+                                                parts: "Action: Export template | Ref: Inventory | Target: Raw CSV block | Scope: Standard columns",
+                                                prompt: "Show me the CSV template for importing lab inventory"
+                                            }
+                                        ].map((item, idx) => (
+                                            <div 
+                                                key={idx}
+                                                onClick={() => {
+                                                    setInput(item.prompt);
+                                                    setShowHelp(false);
+                                                    inputRef.current?.focus();
+                                                }}
+                                                className="p-2.5 bg-white border border-slate-200 rounded-xl hover:border-indigo-400 hover:shadow-xs transition cursor-pointer group"
+                                            >
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${item.color}`}>{item.tag}</span>
+                                                    <span className="text-[9.5px] text-slate-400 group-hover:text-indigo-600 flex items-center gap-0.5">
+                                                        Use prompt <Send className="w-2.5 h-2.5 inline" />
+                                                    </span>
+                                                </div>
+                                                <div className="font-mono text-[11px] text-slate-800 group-hover:text-indigo-900 bg-slate-50 group-hover:bg-indigo-50/50 p-1.5 rounded-lg border border-slate-100 transition">
+                                                    "{item.prompt}"
+                                                </div>
+                                                <div className="text-[9.5px] text-slate-500 mt-1 font-sans">
+                                                    {item.parts}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -8330,8 +8520,16 @@ export default function FloatingChatbot() {
                                             <img src={msg.imageUrl} alt="Uploaded Image" className="max-h-44 w-full object-contain" />
                                         </div>
                                     )}
-                                    {msg.queryResult && <SQLResult sql={msg.sql} result={msg.queryResult} onRerun={() => handleRerunSQL(msg.sql)} />}
                                     {msg.chartData && <ChatChart chartData={msg.chartData} />}
+                                    {msg.queryResult && (
+                                        <SQLResult 
+                                            sql={msg.sql} 
+                                            result={msg.queryResult} 
+                                            onRerun={() => handleRerunSQL(msg.sql)}
+                                            hasDedicatedChart={Boolean(msg.chartData)}
+                                            dedicatedChartData={msg.chartData}
+                                        />
+                                    )}
                                     {msg.reportAction && <ReportActionCard action={msg.reportAction} />}
                                     {(msg.studentImportAction || msg.inventoryImportAction || msg.dataImportAction) ? (
                                         <GenericDataImportConfirmCard action={msg.studentImportAction || msg.inventoryImportAction || msg.dataImportAction} />
@@ -8373,12 +8571,7 @@ export default function FloatingChatbot() {
                                                 <Loader2 className="w-3.5 h-3.5 text-indigo-600 animate-spin flex-shrink-0" />
                                                 <div className="flex flex-col">
                                                     <span className="text-[11px] font-semibold text-indigo-700">
-                                                        {[
-                                                            'Analyzing prompt & referenced documents...',
-                                                            'Extracting chapter structure & textbook theory...',
-                                                            'Synthesizing verified pedagogical units & exercises...',
-                                                            'Finalizing curriculum details & response...'
-                                                        ][loadingPhase]}
+                                                        {getInFlightStages(activePromptForLoading)[loadingPhase % 4]}
                                                     </span>
                                                     <span className="text-[9.5px] text-slate-400 flex items-center gap-1 mt-0.5">
                                                         <Sparkles className="w-2.5 h-2.5 text-indigo-400" />

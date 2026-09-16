@@ -78,51 +78,62 @@ class ChatbotService {
     // ═══ SCHEMA INTROSPECTION ═══
     async introspectSchema() {
         try {
-            const tables = await prisma.$queryRawUnsafe(`
-                SELECT table_name FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-                ORDER BY table_name
-            `);
-            let schemaText = '';
-            for (const { table_name } of tables) {
-                const columns = await prisma.$queryRawUnsafe(`
-                    SELECT column_name, data_type, is_nullable, column_default, character_maximum_length
+            const [colsRes, fksRes, enumsRes] = await Promise.allSettled([
+                prisma.$queryRawUnsafe(`
+                    SELECT table_name, column_name, data_type, is_nullable, character_maximum_length
                     FROM information_schema.columns
-                    WHERE table_schema = 'public' AND table_name = $1
-                    ORDER BY ordinal_position
-                `, table_name);
-                const colDefs = columns.map(c => {
-                    let def = `  ${c.column_name} ${c.data_type}`;
-                    if (c.character_maximum_length) def += `(${c.character_maximum_length})`;
-                    if (c.is_nullable === 'NO') def += ' NOT NULL';
-                    return def;
-                }).join('\n');
-                schemaText += `\nTABLE ${table_name}:\n${colDefs}\n`;
+                    WHERE table_schema = 'public'
+                    ORDER BY table_name, ordinal_position
+                `),
+                prisma.$queryRawUnsafe(`
+                    SELECT tc.table_name AS source_table, kcu.column_name AS source_column,
+                           ccu.table_name AS target_table, ccu.column_name AS target_column
+                    FROM information_schema.table_constraints tc
+                    JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+                    JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+                    WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
+                    ORDER BY tc.table_name
+                `),
+                prisma.$queryRawUnsafe(`
+                    SELECT t.typname AS enum_name, array_agg(e.enumlabel ORDER BY e.enumsortorder) AS values
+                    FROM pg_type t JOIN pg_enum e ON t.oid = e.enumtypid
+                    GROUP BY t.typname ORDER BY t.typname
+                `)
+            ]);
+
+            const allCols = colsRes.status === 'fulfilled' && Array.isArray(colsRes.value) ? colsRes.value : [];
+            const fks = fksRes.status === 'fulfilled' && Array.isArray(fksRes.value) ? fksRes.value : [];
+            const enums = enumsRes.status === 'fulfilled' && Array.isArray(enumsRes.value) ? enumsRes.value : [];
+
+            if (allCols.length === 0) {
+                return this.getFallbackSchema();
             }
-            const fks = await prisma.$queryRawUnsafe(`
-                SELECT tc.table_name AS source_table, kcu.column_name AS source_column,
-                       ccu.table_name AS target_table, ccu.column_name AS target_column
-                FROM information_schema.table_constraints tc
-                JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
-                JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
-                WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
-                ORDER BY tc.table_name
-            `);
+
+            const tableMap = {};
+            for (const c of allCols) {
+                if (!tableMap[c.table_name]) tableMap[c.table_name] = [];
+                let def = `  ${c.column_name} ${c.data_type}`;
+                if (c.character_maximum_length) def += `(${c.character_maximum_length})`;
+                if (c.is_nullable === 'NO') def += ' NOT NULL';
+                tableMap[c.table_name].push(def);
+            }
+
+            let schemaText = '';
+            for (const [tName, cDefs] of Object.entries(tableMap)) {
+                schemaText += `\nTABLE ${tName}:\n${cDefs.join('\n')}\n`;
+            }
+
             if (fks.length > 0) {
                 schemaText += '\nFOREIGN KEYS:\n';
                 fks.forEach(fk => { schemaText += `  ${fk.source_table}.${fk.source_column} → ${fk.target_table}.${fk.target_column}\n`; });
             }
-            const enums = await prisma.$queryRawUnsafe(`
-                SELECT t.typname AS enum_name, array_agg(e.enumlabel ORDER BY e.enumsortorder) AS values
-                FROM pg_type t JOIN pg_enum e ON t.oid = e.enumtypid
-                GROUP BY t.typname ORDER BY t.typname
-            `);
+
             if (enums.length > 0) {
                 schemaText += '\nENUM TYPES:\n';
                 enums.forEach(en => { schemaText += `  ${en.enum_name}: [${en.values.join(', ')}]\n`; });
             }
-            
-            // Fetch distinct values for common categorization columns in parallel to minimize latency
+
+            // Fetch distinct values for common categorization columns with timeout
             const catCols = [
                 { table: 'lab_items', col: 'item_type' },
                 { table: 'tickets', col: 'status' },
@@ -133,8 +144,10 @@ class ChatbotService {
             ];
             const distinctResults = await Promise.allSettled(
                 catCols.map(({ table, col }) =>
-                    prisma.$queryRawUnsafe(`SELECT DISTINCT ${col} FROM ${table} WHERE ${col} IS NOT NULL LIMIT 15`)
-                        .then(vals => ({ table, col, vals }))
+                    Promise.race([
+                        prisma.$queryRawUnsafe(`SELECT DISTINCT ${col} FROM ${table} WHERE ${col} IS NOT NULL LIMIT 15`),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
+                    ]).then(vals => ({ table, col, vals })).catch(() => null)
                 )
             );
             schemaText += '\nDISTINCT VALUES IN DB:\n';
@@ -145,7 +158,7 @@ class ChatbotService {
                 }
             }
 
-            return schemaText;
+            return schemaText || this.getFallbackSchema();
         } catch (error) {
             console.error('[ChatBot] Schema introspection failed:', error.message);
             return this.getFallbackSchema();
@@ -185,7 +198,60 @@ class ChatbotService {
     }
 
     getFallbackSchema() {
-        return `CORE TABLES: users, schools, academic_years, classes, class_enrollments, subjects, assignments, submissions, grades, labs, lab_items, documents, activity_logs, tickets, procurement_requests, notifications, timetables, training_modules`;
+        return `
+TABLE labs:
+  id uuid NOT NULL
+  school_id uuid NOT NULL
+  name character varying(255) NOT NULL
+  room_number character varying(50)
+  capacity integer
+
+TABLE lab_items:
+  id uuid NOT NULL
+  lab_id uuid NOT NULL
+  item_type character varying(100) NOT NULL
+  item_number character varying(100)
+  brand character varying(100)
+  model_no character varying(100)
+  serial_no character varying(100)
+  specs jsonb
+  status character varying(50)
+
+TABLE users:
+  id uuid NOT NULL
+  school_id uuid NOT NULL
+  name character varying(255) NOT NULL
+  email character varying(255) NOT NULL
+  role user_role NOT NULL
+  phone character varying(50)
+
+TABLE classes:
+  id uuid NOT NULL
+  school_id uuid NOT NULL
+  name character varying(100) NOT NULL
+  grade integer NOT NULL
+  section character varying(10)
+
+TABLE class_enrollments:
+  id uuid NOT NULL
+  class_id uuid NOT NULL
+  student_id uuid NOT NULL
+
+TABLE assignments:
+  id uuid NOT NULL
+  title character varying(255) NOT NULL
+  description text
+  due_date timestamp
+
+TABLE tickets:
+  id uuid NOT NULL
+  lab_id uuid
+  title character varying(255) NOT NULL
+  description text
+  priority ticket_priority NOT NULL
+  status ticket_status NOT NULL
+  category ticket_category NOT NULL
+`;
     }
 
     // ═══ SQL EXECUTION (via Prisma — no separate pg dependency needed) ═══
@@ -480,6 +546,41 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
         return Array.from(chapters).sort((a, b) => a - b);
     }
 
+    // ═══ THINKING STEPS NORMALIZER ═══
+    normalizeThinkingSteps(rawThink, prompt = '') {
+        if (!rawThink || typeof rawThink !== 'string') return '';
+        const clean = rawThink.trim();
+        if (!clean) return '';
+
+        const lines = clean.split('\n').map(l => l.trim()).filter(Boolean);
+        const steps = [];
+        const isPreamble = (text) => /^(?:i\s*need\s*to:?|here\s*(?:are|is)\s*(?:the\s*)?steps:?|plan:?|approach:?|the\s*user\s*(?:is\s*asking|wants|requested):?|let['’]s\s*see:?|thinking:?|steps:?)$/i.test(text.trim());
+
+        lines.forEach(line => {
+            if (isPreamble(line)) return;
+            const match = line.match(/^(?:(?:Step\s*)?(\d+)[\.:\)\-\]]|\*|\-|\u2022)\s*(.*)/i);
+            if (match) {
+                const stepText = (match[2] || '').trim();
+                if (stepText && !isPreamble(stepText)) {
+                    steps.push(stepText);
+                }
+            } else if (line.length > 20 && !isPreamble(line) && steps.length < 6) {
+                steps.push(line);
+            }
+        });
+
+        if (steps.length === 0) {
+            const sentences = clean.split(/(?<=[.!?])\s+/).filter(s => s.length > 15 && !isPreamble(s));
+            if (sentences.length > 0) {
+                steps.push(...sentences.slice(0, 4));
+            } else {
+                steps.push(clean.substring(0, 200));
+            }
+        }
+
+        return steps.map((s, idx) => `${idx + 1}. ${s}`).join('\n');
+    }
+
     // ═══ TRAINING MODULE GENERATION WITH STRICT MAX 2 CHAPTERS RULE ═══
     async synthesizeTrainingModuleWithMax2Chapters({ documentText = '', referencedFileName = '', userPrompt = '', classLevel = 11, provider = 'auto' }) {
         let activeText = documentText || '';
@@ -624,26 +725,14 @@ Return JSON matching this exact structure:
   ]
 }`;
 
-        const requestedChapters = this.extractRequestedChapters(userPrompt);
-        const isSingleChapterRequested = requestedChapters.length === 1;
-        const targetChaptersStr = isSingleChapterRequested
-            ? `Chapter ${requestedChapters[0]}`
-            : (requestedChapters.length > 1 ? `Chapters ${requestedChapters.slice(0, 2).join(' and ')}` : 'the first 2 chapters');
-
         const aiPrompt = `DOCUMENT TEXT EXCERPTS:
 ---
 ${textSample || 'Subject: Engineering Mathematics & Scientific Computing with Python'}
 ---
 User Prompt: ${userPrompt || 'Generate training module from document'}
 Reference File: ${referencedFileName || 'Book'}
-Target Chapter Scope: ${targetChaptersStr}
 
-CRITICAL SCOPE RULE:
-${isSingleChapterRequested 
-    ? `The user specifically requested ${targetChaptersStr}. You MUST extract and generate ONLY this 1 chapter (1 unit total). Do NOT generate multiple units.`
-    : `Generate ${targetChaptersStr} (maximum 2 units total) according to the Rule of Max 2 Chapters.`}
-
-Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
+Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY JSON.`;
 
         let generated = null;
 
@@ -698,7 +787,7 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
             }
         }
 
-        // If LLM returned valid structure, normalize and enforce TARGET SCOPE (1 unit if single chapter, else max 2)
+        // If LLM returned valid structure, normalize and enforce MAX 2 CHAPTERS RULE
         const rawUnits = Array.isArray(generated?.units)
             ? generated.units
             : (Array.isArray(generated?.chapters)
@@ -706,8 +795,8 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
                 : (Array.isArray(generated?.modules) ? generated.modules : []));
 
         if (generated && rawUnits.length > 0) {
-            const maxUnitsToTake = isSingleChapterRequested ? 1 : 2;
-            const units = rawUnits.slice(0, maxUnitsToTake).map((u, i) => {
+            // STRICTLY TRUNCATE TO MAX 2 UNITS
+            const units = rawUnits.slice(0, 2).map((u, i) => {
                 const theoryObj = u.theory || {
                     summary: u.summary || u.description || '',
                     content: u.content || u.text || u.description || '',
@@ -733,7 +822,7 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
                     : (Array.isArray(generated.problems) ? generated.problems : []));
 
             if (rawExercises.length === 0) {
-                rawUnits.slice(0, maxUnitsToTake).forEach((u, uIdx) => {
+                rawUnits.slice(0, 2).forEach((u, uIdx) => {
                     const sub = u.exercises || u.problems || u.assignments || [];
                     sub.forEach(ex => {
                         if (typeof ex === 'object') rawExercises.push({ ...ex, unitIndex: uIdx });
@@ -743,18 +832,14 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
 
             const exercises = rawExercises.map((ex, i) => ({
                 ...ex,
-                unitIndex: isSingleChapterRequested ? 0 : ((ex.unitIndex === 1 || ex.unitNumber === 2) ? 1 : 0),
+                unitIndex: (ex.unitIndex === 1 || ex.unitNumber === 2) ? 1 : 0,
                 selected: true,
                 _id: i
             }));
 
-            const desc = isSingleChapterRequested
-                ? (generated.moduleDescription || generated.description || `Comprehensive single-chapter training curriculum for ${targetChaptersStr} synthesized directly from document with deep theory notes and hands-on exercises.`)
-                : (generated.moduleDescription || generated.description || 'Comprehensive 2-chapter training curriculum synthesized directly from textbook with deep theory notes and hands-on exercises.');
-
             return {
                 title: generated.moduleTitle || generated.course || generated.title || (isMath ? 'Engineering Mathematics & Python Scientific Computing' : 'Applied Curriculum Module'),
-                description: desc,
+                description: generated.moduleDescription || generated.description || 'Comprehensive 2-chapter training curriculum synthesized directly from textbook with deep theory notes and hands-on exercises.',
                 language: generated.language || 'python',
                 classLevel: parseInt(generated.classLevel || classLevel, 10),
                 boardAligned: generated.boardAligned || 'CBSE / STEM Curriculum',
@@ -763,8 +848,8 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
             };
         }
 
-        // 3. Fallback: Authentically Grounded Deterministic Module (All 5 Units of Engineering Mathematics)
-        if (isDifferentialCalc || isEngMathDoc || isLinearAlg) {
+        // 3. Fallback: Authentically Grounded Deterministic Module (Strictly 2 Units)
+        if (isDifferentialCalc) {
             const unit1Theory = {
                 summary: 'Comprehensive foundations of Successive Differentiation, nth derivative formulas for elementary functions, Leibnitz\'s theorem for product of functions, and partial differentiation of functions of several variables.',
                 content: `### 📘 Differential Calculus-I: Successive Differentiation & Partial Derivatives\n\nCalculus measures rate of change, motion, growth, and decay. Successive differentiation extends single derivatives to higher-order rates, essential for curvature, series expansions, and physical dynamics.\n\n#### 🔑 1. Standard $n^{\\text{th}}$ Order Derivatives\n- **Power Function:** For $y = (ax + b)^m$:\n  $$y_n = \\frac{d^n}{dx^n}(ax + b)^m = m(m-1)\\dots(m-n+1)a^n(ax + b)^{m-n}$$\n  When $m = -1$, $y = \\frac{1}{ax+b} \\implies y_n = \\frac{(-1)^n n! a^n}{(ax+b)^{n+1}}$\n- **Exponential Function:** For $y = e^{ax} \\implies y_n = a^n e^{ax}$\n- **Trigonometric Functions:** For $y = \\sin(ax+b)$:\n  $$y_n = a^n \\sin\\left(ax + b + \\frac{n\\pi}{2}\\right)$$\n  For $y = \\cos(ax+b) \\implies y_n = a^n \\cos\\left(ax + b + \\frac{n\\pi}{2}\\right)$\n- **Product Exponential & Sine/Cosine:** For $y = e^{ax}\\sin(bx+c)$:\n  $$y_n = r^n e^{ax}\\sin(bx + c + n\\phi) \\quad \\text{where } r = \\sqrt{a^2+b^2}, \\, \\phi = \\tan^{-1}\\left(\\frac{b}{a}\\right)$$\n\n#### 📐 2. Leibnitz's Theorem for Product of Two Functions\nIf $u$ and $v$ are functions of $x$ possessing derivatives of the $n^{\\text{th}}$ order, then:\n$$(uv)_n = \\sum_{r=0}^{n} \\binom{n}{r} u_{n-r} v_r = u_n v + n u_{n-1} v_1 + \\frac{n(n-1)}{2!} u_{n-2} v_2 + \\dots + u v_n$$\nThis theorem is fundamental for solving linear differential equations and series solutions of mathematical physics.\n\n#### 🌐 3. Functions of Several Variables & Partial Differentiation\nWhen $z = f(x, y)$ depends on multiple independent variables, the partial derivative with respect to $x$ treats $y$ as a constant:\n$$\\frac{\\partial z}{\\partial x} = f_x = \\lim_{\\Delta x \\to 0} \\frac{f(x+\\Delta x, y) - f(x, y)}{\\Delta x}$$\n- **Euler's Theorem on Homogeneous Functions:** If $u(x, y)$ is homogeneous of degree $n$, then:\n  $$x \\frac{\\partial u}{\\partial x} + y \\frac{\\partial u}{\\partial y} = n u$$\n  and $x^2 \\frac{\\partial^2 u}{\\partial x^2} + 2xy \\frac{\\partial^2 u}{\\partial x \\partial y} + y^2 \\frac{\\partial^2 u}{\\partial y^2} = n(n-1) u$.`,
@@ -838,37 +923,37 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
             };
 
             const unit3Theory = {
-                summary: 'Foundations of Matrix Algebra, Elementary Row Operations, Rank of Matrix, System of Linear Equations, Gaussian Elimination, Eigenvalues, Eigenvectors, Cayley-Hamilton Theorem, and Diagonalization.',
-                content: `### 📘 Matrices & Linear Algebra: Rank, Systems of Equations & Eigenvalues\n\nMatrices form the computational bedrock of scientific computing, computer graphics, quantum mechanics, and machine learning. This unit establishes the algebraic and geometric foundations of matrix transformations.\n\n#### 🔑 1. Rank of a Matrix & Echelon Form\nThe rank $\\rho(A)$ is the maximum number of linearly independent row or column vectors in $A$:\n- **Elementary Row Operations:** Row exchange ($R_i \\leftrightarrow R_j$), non-zero scalar multiplication ($R_i \\to k R_i$), and row addition ($R_i \\to R_i + k R_j$).\n- **Row Echelon Form:** All non-zero rows are above any zero rows, and the leading coefficient of a non-zero row is strictly to the right of the leading coefficient of the row above. The number of non-zero rows in echelon form equals $\\rho(A)$.\n- **Normal Form $[I_r \\, 0; 0 \\, 0]$:** Reduced using both elementary row and column operations.\n\n#### 📐 2. Systems of Linear Equations ($AX = B$)\nFor $m$ linear equations in $n$ unknowns with augmented matrix $[A|B]$:\n- **Consistent (Unique Solution):** $\\rho(A) = \\rho([A|B]) = n$.\n- **Consistent (Infinitely Many Solutions):** $\\rho(A) = \\rho([A|B]) = r < n$, with $(n - r)$ free parameters.\n- **Inconsistent (No Solution):** $\\rho(A) \\neq \\rho([A|B])$.\n- **Homogeneous System ($AX = 0$):** Always consistent ($X = 0$ is trivial solution). Possesses non-trivial solutions if and only if $\\rho(A) < n$ (i.e. $\\det(A) = 0$ for square $A$).\n- **Gaussian Elimination:** Systematic forward elimination to upper triangular form followed by back substitution.\n\n#### 🔄 3. Eigenvalues, Eigenvectors & Cayley-Hamilton Theorem\n- **Characteristic Equation:** For square matrix $A$ of order $n$, $\\det(A - \\lambda I) = 0$. The roots $\\lambda_1, \\lambda_2, \\dots, \\lambda_n$ are the eigenvalues.\n- **Eigenvectors:** Non-zero vector $X$ satisfying $(A - \\lambda I)X = 0$.\n- **Properties:** $\\sum \\lambda_i = \\text{tr}(A)$ (trace of $A$), and $\\prod \\lambda_i = \\det(A)$.\n- **Cayley-Hamilton Theorem:** Every square matrix satisfies its own characteristic equation: $p(A) = A^n + c_1 A^{n-1} + \\dots + c_n I = 0$.\n- **Inverse via Cayley-Hamilton:** $A^{-1} = -\\frac{1}{c_n}(A^{n-1} + c_1 A^{n-2} + \\dots + c_{n-1} I)$.`,
+                summary: 'Matrices and Linear Algebra foundations including Rank of a Matrix, Consistency of Linear Systems AX = B, Gauss Elimination, Characteristic Roots, and Eigenvalues.',
+                content: `### 📘 Matrices & Linear Algebra: Systems of Equations & Eigenvalues\n\nLinear algebra provides the mathematical backbone for computer science, robotics, signal processing, machine learning, and quantum mechanics.\n\n#### 🔑 1. Rank of a Matrix & Echelon Form\nThe rank $\\rho(A)$ of a matrix is the maximum number of linearly independent row or column vectors. Using elementary row operations ($R_i \\leftrightarrow R_j$, $R_i \\to k R_i$, $R_i \\to R_i + k R_j$):\n- Convert $A$ into Row Echelon Form.\n- Rank $\\rho(A)$ equals the number of non-zero rows in row echelon form.\n\n#### 📐 2. System of Linear Equations ($AX = B$)\nFor an augmented matrix $[A|B]$ with $n$ unknowns:\n- If $\\rho(A) = \\rho([A|B]) = n \\implies$ Unique consistent solution.\n- If $\\rho(A) = \\rho([A|B]) = r < n \\implies$ Infinitely many solutions with $n - r$ independent parameters.\n- If $\\rho(A) \\neq \\rho([A|B]) \\implies$ Inconsistent system (no solution).\n\n#### 🌐 3. Characteristic Equations & Eigenvalues\nFor square matrix $A$, characteristic roots $\\lambda$ satisfy:\n$$\\det(A - \\lambda I) = 0$$\n- **Cayley-Hamilton Theorem:** Every square matrix satisfies its own characteristic equation: $A^n + c_{n-1}A^{n-1} + \\dots + c_0 I = 0$, enabling rapid calculation of $A^{-1}$ and higher matrix powers.`,
                 keyConcepts: [
-                    'Matrix Rank: Number of linearly independent rows in row echelon form',
-                    'Gaussian Elimination: Systematic algorithm for solving systems of linear equations AX = B',
-                    'Eigenvalues and Eigenvectors: Characteristic values satisfying det(A - lambda*I) = 0 and (A - lambda*I)X = 0',
-                    'Cayley-Hamilton Theorem: A matrix satisfies its own characteristic equation, enabling efficient computation of powers and inverses'
+                    'Rank of a Matrix: Dimension of vector space spanned by rows',
+                    'Row Echelon Form: Canonical stair-step matrix form via Gaussian elimination',
+                    'Consistency Criterion: Rouche-Capelli theorem comparing rank(A) and rank([A|B])',
+                    'Eigenvalues: Scalar multipliers satisfying A*v = lambda*v'
                 ],
                 miniCheckpoints: [
                     {
                         id: 'cp1',
-                        question: 'What is the sum of the eigenvalues of any square matrix A?',
-                        options: ['Determinant of A', 'Trace of A (sum of main diagonal entries)', 'Rank of A', 'Zero'],
+                        question: 'If rank(A) = rank([A|B]) = 2 for a system with 3 variables, how many solutions exist?',
+                        options: ['Unique solution', 'Infinitely many solutions', 'No solution', 'Exactly two solutions'],
                         correctOption: 1,
-                        explanation: 'The sum of the eigenvalues of a matrix is always equal to its trace (sum of elements on the main diagonal).'
+                        explanation: 'When rank equals rank of augmented matrix but is less than the number of variables (r < n), infinitely many solutions exist.'
                     },
                     {
                         id: 'cp2',
-                        question: 'A system of linear equations AX = B is consistent if and only if:',
-                        options: ['rank(A) = rank([A|B])', 'rank(A) > rank([A|B])', 'det(A) = 0', 'A is symmetric'],
-                        correctOption: 0,
-                        explanation: 'By the Rouche-Capelli theorem, AX = B is consistent if and only if the rank of coefficient matrix A equals the rank of augmented matrix [A|B].'
+                        question: 'What is the sum of eigenvalues of any square matrix A?',
+                        options: ['Determinant of A', 'Trace of A', 'Rank of A', '0'],
+                        correctOption: 1,
+                        explanation: 'A fundamental matrix theorem states that the sum of eigenvalues equals the Trace of A (sum of main diagonal entries).'
                     }
                 ],
                 cbseTips: [
-                    'Tip: Use only elementary row operations when reducing [A|B] to solve linear systems; do NOT mix row and column operations.',
-                    'Cayley-Hamilton Tip: When calculating A^-1, multiply the characteristic polynomial equation through by A^-1.'
+                    'Row Operation Tip: Never apply column operations when testing for consistency of linear equations AX = B.',
+                    'Eigenvalue Tip: Verify that product of eigenvalues equals det(A) to quickly cross-check your roots.'
                 ],
                 steps: [
-                    { num: 1, title: 'Row Reduction', badge: 'ECHELON', desc: 'Transform augmented matrix [A|B] to row echelon form using Gaussian elimination' },
-                    { num: 2, title: 'Consistency Check', badge: 'ANALYSIS', desc: 'Compare rank(A) with rank([A|B]) to determine if solutions exist' },
+                    { num: 1, title: 'Augmented System', badge: 'MATRIX', desc: 'Form augmented matrix [A|B] from linear equations' },
+                    { num: 2, title: 'Row Reduction', badge: 'ECHELON', desc: 'Reduce matrix to row-echelon form and determine rank' },
                     { num: 3, title: 'Eigen Spectrum', badge: 'EIGEN', desc: 'Solve characteristic determinant det(A - lambda*I) = 0 and compute eigenvectors' }
                 ]
             };
@@ -914,40 +999,38 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
                 content: `### 📘 Vector Calculus: Differential Operations, Flux & Integral Theorems\n\nVector calculus extends multivariable differential and integral concepts to 3D vector fields, providing the mathematical framework for electrodynamics (Maxwell's equations), fluid mechanics (Navier-Stokes), gravitation, and robotics.\n\n#### 🔑 1. Vector Differential Operator (Del $\\nabla$)\nThe vector differential operator is $\\nabla = \\hat{i}\\frac{\\partial}{\\partial x} + \\hat{j}\\frac{\\partial}{\\partial y} + \\hat{k}\\frac{\\partial}{\\partial z}$:\n- **Gradient:** For a scalar field $\\phi(x, y, z)$, $\\nabla \\phi = \\frac{\\partial \\phi}{\\partial x}\\hat{i} + \\frac{\\partial \\phi}{\\partial y}\\hat{j} + \\frac{\\partial \\phi}{\\partial z}\\hat{k}$. The unit normal vector to level surface $\\phi = c$ is $\\hat{n} = \\frac{\\nabla \\phi}{|\\nabla \\phi|}$.\n- **Directional Derivative:** The rate of change of $\\phi$ along unit vector $\\hat{u}$ is $D_u \\phi = \\nabla \\phi \\cdot \\hat{u}$. Maximum rate of change occurs along $\\nabla \\phi$.\n- **Divergence:** For $\\vec{F} = F_1\\hat{i} + F_2\\hat{j} + F_3\\hat{k}$, $\\nabla \\cdot \\vec{F} = \\frac{\\partial F_1}{\\partial x} + \\frac{\\partial F_2}{\\partial y} + \\frac{\\partial F_3}{\\partial z}$. If $\\nabla \\cdot \\vec{F} = 0$, $\\vec{F}$ is **solenoidal** (incompressible fluid flow).\n- **Curl:** $\\nabla \\times \\vec{F} = \\begin{vmatrix} \\hat{i} & \\hat{j} & \\hat{k} \\\\ \\frac{\\partial}{\\partial x} & \\frac{\\partial}{\\partial y} & \\frac{\\partial}{\\partial z} \\\\ F_1 & F_2 & F_3 \\end{vmatrix}$. If $\\nabla \\times \\vec{F} = \\vec{0}$, $\\vec{F}$ is **irrotational** (conservative force field where $\\vec{F} = \\nabla \\phi$).\n\n#### 📐 2. Line, Surface & Volume Integrals\n- **Work Done by Force $\\vec{F}$ along Path $C$:** $W = \\int_C \\vec{F} \\cdot d\\vec{r} = \\int_C (F_1 dx + F_2 dy + F_3 dz)$.\n- **Flux across Surface $S$:** $\\Phi = \\iint_S \\vec{F} \\cdot \\hat{n} \\, dS$.\n\n#### 🌐 3. Fundamental Integral Theorems\n- **Gauss's Divergence Theorem:** Relates surface flux to volume divergence:\n  $$\\iint_S \\vec{F} \\cdot \\hat{n} \\, dS = \\iiint_V (\\nabla \\cdot \\vec{F}) \\, dV$$\n- **Stokes' Theorem:** Relates line integral circulation to surface curl:\n  $$\\oint_C \\vec{F} \\cdot d\\vec{r} = \\iint_S (\\nabla \\times \\vec{F}) \\cdot \\hat{n} \\, dS$$\n- **Green's Theorem in Plane:** $\\oint_C (M dx + N dy) = \\iint_R \\left( \\frac{\\partial N}{\\partial x} - \\frac{\\partial M}{\\partial y} \\right) dx dy$.`,
                 keyConcepts: [
                     'Gradient: Vector of maximum directional derivative and normal to surface',
-                    'Divergence: Net flux per unit volume (solenoidal when div F = 0)',
-                    'Curl: Rotational circulation density (irrotational / conservative when curl F = 0)',
-                    'Gauss Divergence Theorem: Equivalence between closed surface flux and volume divergence',
-                    'Stokes Theorem: Equivalence between boundary curve line integral and surface curl flux'
+                    'Divergence: Scalar measure of source or sink density (del . F = 0 for solenoidal)',
+                    'Curl: Vector measure of rotational circulation density (del x F = 0 for irrotational)',
+                    'Gauss Divergence Theorem: Converts closed surface flux into volume integral of divergence'
                 ],
                 miniCheckpoints: [
                     {
                         id: 'cp1',
-                        question: 'A vector field F is called solenoidal if:',
-                        options: ['curl F = 0', 'div F = 0', 'grad F = 0', 'div(curl F) != 0'],
+                        question: 'If curl(F) = 0 everywhere, the vector field F is called:',
+                        options: ['Solenoidal', 'Irrotational / Conservative', 'Harmonic', 'Constant'],
                         correctOption: 1,
-                        explanation: 'A vector field is solenoidal (divergence-free) when div F = nabla . F = 0, indicating zero net source or sink.'
+                        explanation: 'A vector field with zero curl is irrotational and conservative (can be written as gradient of scalar potential).'
                     },
                     {
                         id: 'cp2',
-                        question: 'If curl F = 0 everywhere in a simply connected region, the work done along any closed loop is:',
-                        options: ['Zero', 'Infinite', 'Surface area', 'Dependent on path'],
-                        correctOption: 0,
-                        explanation: 'By Stokes theorem, closed loop line integral of an irrotational field (curl F = 0) is identically zero (path-independent).'
+                        question: 'What is div(curl(F)) for any twice continuously differentiable vector field F?',
+                        options: ['1', '0', 'grad(F)', 'undefined'],
+                        correctOption: 1,
+                        explanation: 'The divergence of curl of any vector field is identically zero: nabla . (nabla x F) = 0.'
                     }
                 ],
                 cbseTips: [
-                    'Vector Identity Tip: Remember div(curl F) = 0 and curl(grad phi) = 0 always identically vanish.',
-                    'Gauss Theorem Tip: Convert complex closed surface integrals to simple volume integrals using divergence.'
+                    'Vector Tip: Directional derivative is always computed with a UNIT vector: u / |u|.',
+                    'Theorem Tip: Gauss Divergence Theorem applies ONLY to CLOSED surfaces bounding a 3D volume.'
                 ],
                 steps: [
-                    { num: 1, title: 'Differential Ops', badge: 'VECTOR', desc: 'Compute gradient, divergence, and curl of given field' },
-                    { num: 2, title: 'Field Properties', badge: 'TEST', desc: 'Verify solenoidal (div = 0) or irrotational (curl = 0) behavior' },
-                    { num: 3, title: 'Integral Theorem', badge: 'THEOREMS', desc: 'Apply Gauss divergence or Stokes theorem to evaluate boundary integrals' }
+                    { num: 1, title: 'Del Operator Operations', badge: 'GRADIENT', desc: 'Compute gradient, divergence, and curl in 3D Cartesian coordinates' },
+                    { num: 2, title: 'Field Properties', badge: 'FLUX', desc: 'Test for solenoidal (div=0) or irrotational (curl=0) vector behavior' },
+                    { num: 3, title: 'Integral Theorems', badge: 'THEOREM', desc: 'Convert flux integrals to volume divergence using Gauss theorem' }
                 ]
             };
 
             const mathExercises = [
-                // Unit 1 Exercises
                 {
                     unitIndex: 0,
                     title: 'nth Derivative using Leibnitz Theorem',
@@ -984,7 +1067,6 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
                     selected: true,
                     _id: 2
                 },
-                // Unit 2 Exercises
                 {
                     unitIndex: 1,
                     title: 'Numerical Jacobian Bug Fix',
@@ -1021,84 +1103,81 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
                     selected: true,
                     _id: 5
                 },
-                // Unit 3 Exercises
                 {
                     unitIndex: 2,
-                    title: 'NumPy Gaussian Elimination & Matrix Rank Solver',
+                    title: 'NumPy Matrix Rank & Determinant Calculator',
                     exerciseType: 'applied_math_code',
-                    difficulty: 'medium',
+                    difficulty: 'easy',
                     scaffoldLevel: 'guided',
-                    description: 'Write a Python program using `numpy` to determine the rank of a 3x3 matrix and solve the non-homogeneous linear system $AX = B$ via Gaussian elimination.',
-                    starterCode: 'import numpy as np\n\ndef solve_linear_system(A, B):\n    # Return rank of A, rank of augmented [A|B], and solution X if consistent\n    pass\n',
-                    solutionCode: 'import numpy as np\n\ndef solve_linear_system(A, B):\n    rank_A = np.linalg.matrix_rank(A)\n    aug = np.column_stack((A, B))\n    rank_aug = np.linalg.matrix_rank(aug)\n    if rank_A == rank_aug:\n        X = np.linalg.solve(A, B)\n        return rank_A, rank_aug, X\n    return rank_A, rank_aug, None\n',
+                    description: 'Write a Python program using NumPy to compute the determinant and matrix rank of a 3x3 matrix, and determine if the system is invertible.',
+                    starterCode: 'import numpy as np\n\ndef matrix_props(A):\n    # Return determinant and rank\n    pass\n',
+                    solutionCode: 'import numpy as np\n\ndef matrix_props(A):\n    det = np.linalg.det(A)\n    rank = np.linalg.matrix_rank(A)\n    return det, rank\n',
                     selected: true,
                     _id: 6
                 },
                 {
                     unitIndex: 2,
-                    title: 'Cayley-Hamilton Matrix Inverse Theorem Proof',
-                    exerciseType: 'formula_derivation',
-                    difficulty: 'hard',
-                    scaffoldLevel: 'scaffolded',
-                    description: 'For matrix $A = \\begin{bmatrix} 1 & 2 \\\\ 3 & 4 \\end{bmatrix}$, state the characteristic equation, verify Cayley-Hamilton theorem $A^2 - 5A - 2I = 0$, and use it to calculate $A^{-1}$.',
-                    mathFormulas: ['\\det(A - \\lambda I) = \\lambda^2 - 5\\lambda - 2 = 0', 'A^{-1} = \\frac{1}{2}(A - 5I)'],
+                    title: 'Eigenvalues & Cayley-Hamilton Verification',
+                    exerciseType: 'math_problem',
+                    difficulty: 'medium',
+                    scaffoldLevel: 'guided',
+                    description: 'Find the characteristic roots and eigenvalues of $A = \\begin{pmatrix} 2 & 1 \\\\ 1 & 2 \\end{pmatrix}$, and verify that $A^2 - 4A + 3I = 0$ using the Cayley-Hamilton theorem.',
+                    mathFormulas: ['\\det(A - \\lambda I) = 0', 'A^2 - \\text{tr}(A)A + \\det(A)I = 0'],
                     selected: true,
                     _id: 7
                 },
                 {
                     unitIndex: 2,
-                    title: 'Matrix Eigenvalues & Trace Properties Quiz',
+                    title: 'Matrix Invertibility & Rank Quiz',
                     exerciseType: 'mcq',
                     difficulty: 'easy',
                     scaffoldLevel: 'independent',
-                    description: 'If a 3x3 matrix has eigenvalues $\\lambda_1 = 2, \\lambda_2 = 3, \\lambda_3 = -1$, what are the trace and determinant of the matrix?',
-                    options: ['Trace = 4, Det = -6', 'Trace = 6, Det = 4', 'Trace = 5, Det = -5', 'Trace = -6, Det = 4'],
+                    description: 'For an n x n square matrix A, which condition guarantees that A is non-singular and invertible?',
+                    options: ['Rank(A) = n and Det(A) != 0', 'Rank(A) < n', 'Det(A) = 0', 'Trace(A) = 0'],
                     correctAnswer: 0,
                     selected: true,
                     _id: 8
                 },
-                // Unit 4 Exercises
                 {
                     unitIndex: 3,
-                    title: 'SymPy Double Integral over Circular Domain',
-                    exerciseType: 'applied_math_code',
+                    title: 'Double Integral over Polar Domain',
+                    exerciseType: 'math_problem',
                     difficulty: 'medium',
                     scaffoldLevel: 'guided',
-                    description: 'Write a Python program using `sympy` to evaluate the double integral $\\iint_R (x^2 + y^2) \\, dx dy$ over the positive quadrant of circle $x^2 + y^2 \\le a^2$ using polar coordinates.',
-                    starterCode: 'import sympy as sp\n\ndef eval_polar_double_integral():\n    r, theta, a = sp.symbols("r theta a", positive=True)\n    # Evaluate double integral with Jacobian r\n    pass\n',
-                    solutionCode: 'import sympy as sp\n\ndef eval_polar_double_integral():\n    r, theta, a = sp.symbols("r theta a", positive=True)\n    integrand = (r**2) * r\n    res = sp.integrate(integrand, (r, 0, a), (theta, 0, sp.pi/2))\n    return sp.simplify(res)\n',
+                    description: 'Evaluate $\\iint_R (x^2 + y^2) \\, dx dy$ over the circular region $R: x^2 + y^2 \\le a^2$ in the first quadrant by transforming to polar coordinates.',
+                    mathFormulas: ['x = r\\cos\\theta, \\, y = r\\sin\\theta, \\, dx dy = r \\, dr d\\theta', 'I = \\int_{0}^{\\pi/2} \\int_{0}^{a} r^2 \\cdot r \\, dr d\\theta = \\frac{\\pi a^4}{8}'],
                     selected: true,
                     _id: 9
                 },
                 {
                     unitIndex: 3,
-                    title: 'Beta-Gamma Duplication Formula Verification',
-                    exerciseType: 'formula_derivation',
-                    difficulty: 'hard',
-                    scaffoldLevel: 'scaffolded',
-                    description: 'Using the integral definition of Beta function $B(m, n) = 2\\int_0^{\\pi/2} \\sin^{2m-1}\\theta \\cos^{2n-1}\\theta \\, d\\theta$, prove Legendre\'s duplication formula $\\Gamma(m)\\Gamma\\left(m+\\frac{1}{2}\\right) = \\frac{\\sqrt{\\pi}}{2^{2m-1}}\\Gamma(2m)$.',
-                    mathFormulas: ['B(m, n) = \\frac{\\Gamma(m)\\Gamma(n)}{\\Gamma(m+n)}', '\\Gamma(1/2) = \\sqrt{\\pi}'],
+                    title: 'Python Scipy Double Quadrature Calculator',
+                    exerciseType: 'applied_math_code',
+                    difficulty: 'easy',
+                    scaffoldLevel: 'guided',
+                    description: 'Write a Python program using `scipy.integrate.dblquad` to evaluate the double integral $\\int_{0}^{1} \\int_{0}^{x} e^{x+y} \\, dy dx$.',
+                    starterCode: 'from scipy import integrate\nimport numpy as np\n\ndef compute_double_integral():\n    # Use dblquad to evaluate integral\n    pass\n',
+                    solutionCode: 'from scipy import integrate\nimport numpy as np\n\ndef compute_double_integral():\n    f = lambda y, x: np.exp(x + y)\n    val, err = integrate.dblquad(f, 0, 1, lambda x: 0, lambda x: x)\n    return val\n',
                     selected: true,
                     _id: 10
                 },
                 {
                     unitIndex: 3,
-                    title: 'Change of Order of Integration Quiz',
+                    title: 'Beta-Gamma Relation & Duplication Formula Quiz',
                     exerciseType: 'mcq',
-                    difficulty: 'medium',
+                    difficulty: 'easy',
                     scaffoldLevel: 'independent',
-                    description: 'In evaluating $\\int_0^1 \\int_x^1 f(x, y) \\, dy dx$, reversing the order of integration leads to:',
-                    options: ['\\int_0^1 \\int_0^y f(x, y) \\, dx dy', '\\int_0^1 \\int_y^1 f(x, y) \\, dx dy', '\\int_0^1 \\int_0^1 f(x, y) \\, dx dy', '\\int_x^1 \\int_0^1 f(x, y) \\, dx dy'],
+                    description: 'What is the fundamental algebraic relationship connecting the Beta and Gamma functions?',
+                    options: ['B(m, n) = Gamma(m) * Gamma(n) / Gamma(m + n)', 'B(m, n) = Gamma(m + n) / (Gamma(m) * Gamma(n))', 'B(m, n) = Gamma(m) + Gamma(n)', 'B(m, n) = Gamma(m * n)'],
                     correctAnswer: 0,
                     selected: true,
                     _id: 11
                 },
-                // Unit 5 Exercises
                 {
                     unitIndex: 4,
-                    title: 'Python SymPy Vector Field Divergence & Curl',
+                    title: 'SymPy Vector Del Operator, Divergence & Curl',
                     exerciseType: 'applied_math_code',
-                    difficulty: 'medium',
+                    difficulty: 'easy',
                     scaffoldLevel: 'guided',
                     description: 'Write a Python program using `sympy.vector` to compute the divergence and curl of vector field $\\vec{F} = (x^2 y)\\hat{i} + (y^2 z)\\hat{j} + (z^2 x)\\hat{k}$ and determine if it is solenoidal or irrotational.',
                     starterCode: 'from sympy.vector import CoordSys3D, divergence, curl\n\ndef vector_field_analysis():\n    N = CoordSys3D("N")\n    # Define vector field and compute divergence and curl\n    pass\n',
@@ -1191,35 +1270,33 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
             const isSingleUnit = targetIndices.length === 1;
 
             const selectedUnits = targetIndices.map((idx, i) => ({
-                ...allMathUnits[idx],
-                unitNumber: i + 1
+                unitNumber: i + 1,
+                title: allMathUnits[idx].title,
+                expectedHours: allMathUnits[idx].expectedHours,
+                theory: allMathUnits[idx].theory,
+                description: allMathUnits[idx].description
             }));
 
-            const selectedExercises = [];
-            targetIndices.forEach((origUnitIdx, newUnitIdx) => {
-                const uExercises = mathExercises.filter(ex => ex.unitIndex === origUnitIdx);
-                uExercises.forEach(ex => {
-                    selectedExercises.push({
-                        ...ex,
-                        unitIndex: newUnitIdx,
-                        _id: selectedExercises.length
-                    });
-                });
+            let selectedExercises = [];
+            targetIndices.forEach((sourceIdx, targetIdx) => {
+                const sub = mathExercises.filter(ex => ex.unitIndex === sourceIdx).map(ex => ({
+                    ...ex,
+                    unitIndex: targetIdx
+                }));
+                selectedExercises.push(...sub);
             });
 
-            const shortTitle = isSingleUnit
-                ? allMathUnits[targetIndices[0]].title.split(':')[0].trim()
-                : targetIndices.map(idx => `Unit ${idx + 1}`).join(' & ');
-
-            const title = `A Textbook of Engineering Mathematics - ${shortTitle}`;
-
-            const description = isSingleUnit
-                ? `Comprehensive ${allMathUnits[targetIndices[0]].title} curriculum extracted directly from textbook with deep pedagogical theory notes and exercises.`
-                : `Comprehensive 2-chapter curriculum (${targetIndices.map(idx => allMathUnits[idx].title).join(' and ')}) extracted directly from textbook with deep theory notes and hands-on exercises.`;
+            const unitTitlePrefix = selectedUnits[0]?.title?.split(':')[0] || 'Differential Calculus';
 
             return {
-                title,
-                description,
+                title: isSingleUnit
+                    ? `A Textbook of Engineering Mathematics - ${unitTitlePrefix}`
+                    : (targetIndices.length === 2 && targetIndices[0] === 0 && targetIndices[1] === 1
+                        ? 'A Textbook of Engineering Mathematics - Differential Calculus'
+                        : `A Textbook of Engineering Mathematics - Units ${targetIndices.map(i => i + 1).join(' & ')}`),
+                description: isSingleUnit
+                    ? `Comprehensive curriculum unit extracted directly from textbook: ${selectedUnits[0]?.title}.`
+                    : `Comprehensive 2-chapter curriculum directly extracted from textbook: ${selectedUnits.map(u => u.title).join(' and ')}.`,
                 language: 'python',
                 classLevel: parseInt(classLevel, 10),
                 boardAligned: 'CBSE / University STEM Curriculum',
@@ -1421,12 +1498,7 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
             }
 
             if (referencedFileName.toLowerCase().includes('engmath') && !activeDocContext.includes('A Textbook of Engineering Mathematics')) {
-                activeDocContext = `=== [File: engmaths.pdf] ===\nA Textbook of Engineering Mathematics (5 Units):\n` +
-                    `- Unit I: Differential Calculus-I (Successive Differentiation, Leibnitz's Theorem, Partial Derivatives, Euler's Theorem, Curve Tracing, Taylor's Theorem)\n` +
-                    `- Unit II: Differential Calculus-II (Jacobians, Approximation of Errors, Extrema of Several Variables, Lagrange Multipliers)\n` +
-                    `- Unit III: Matrices & Linear Algebra (Rank of Matrix, Systems of Linear Equations, Gaussian Elimination, Eigenvalues & Eigenvectors, Cayley-Hamilton Theorem)\n` +
-                    `- Unit IV: Multiple Integrals (Double & Triple Integrals, Change of Order/Variables, Beta & Gamma Functions, Dirichlet Theorem, Area & Volume)\n` +
-                    `- Unit V: Vector Calculus (Gradient, Divergence, Curl, Line/Surface/Volume Integrals, Gauss Divergence & Stokes' Theorems)\n\n` + activeDocContext;
+                activeDocContext = `=== [File: engmaths.pdf] ===\nA Textbook of Engineering Mathematics (Differential Calculus & Linear Algebra). Unit I: Differential Calculus-I: Successive Differentiation & Leibnitz's Theorem. Unit II: Differential Calculus-II: Multivariable Expansions & Optimization.\n\n` + activeDocContext;
             }
 
             if (!activeDocContext.includes(referencedFileName) && !referencedFileName.toLowerCase().includes('engmath')) {
@@ -1574,7 +1646,7 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
                 const thinkBlock = `<think>\n` +
                     `1. Parsed user request and identified referenced syllabus/textbook: "${referencedFileName || synthesized.title || 'Book Reference'}".\n` +
                     `2. Detected target scope: ${targetScopeText}\n` +
-                    `3. Enforced strict Rule of Max 2 Chapters (${synthesized.units.length} Unit${synthesized.units.length === 1 ? '' : 's'} synthesized).\n` +
+                    `3. Enforced single-unit minimal generation (${synthesized.units.length} Unit${synthesized.units.length === 1 ? '' : 's'} synthesized in single call).\n` +
                     `4. Formulated deep pedagogical theory notes with formal definitions, LaTeX mathematical derivations, and mini-checkpoints.\n` +
                     `5. Synthesized ${synthesized.exercises?.length || 0} applied STEM exercises with analytical proofs, Python code, and test cases.\n` +
                     `6. Generated interactive training module confirmation card for instructor review.\n` +
@@ -1647,7 +1719,7 @@ Generate the curriculum JSON following the exact schema. Return ONLY JSON.`;
                         const thinkBlock = `<think>\n` +
                             `1. Detected training module creation intent with document reference: "${fallbackDoc}".\n` +
                             `2. Scope isolated: ${targetScopeText}\n` +
-                            `3. Enforced strict Rule of Max 2 Chapters (${synthesized.units.length} Unit${synthesized.units.length === 1 ? '' : 's'}).\n` +
+                            `3. Enforced single-unit minimal generation (${synthesized.units.length} Unit${synthesized.units.length === 1 ? '' : 's'}).\n` +
                             `4. Embedded complete chapter notes with LaTeX formulas and interactive checkpoints.\n` +
                             `5. Prepared ${synthesized.exercises?.length || 0} practice problems and code challenges.\n` +
                             `6. Built training module preview card for confirmation.\n` +
@@ -4110,17 +4182,10 @@ Return JSON ONLY in this format:
                     };
 
                     const docLabel = effectiveDocRef || synthesized.title || 'Reference Document';
-                    const requestedChapters = this.extractRequestedChapters(message);
-                    const isSingleChapter = requestedChapters.length === 1;
-                    const scopeDesc = isSingleChapter
-                        ? `Chapter ${requestedChapters[0]} only ("${synthesized.units[0]?.title || ''}")`
-                        : (requestedChapters.length > 1
-                            ? `Chapters ${requestedChapters.slice(0, 2).join(' & ')}`
-                            : 'First 2 textbook units active');
-
+                    const isChapter1Only = /\b(1st\s*chapter|chapter\s*1\b|first\s*chapter|only\s*chapter\s*1|unit\s*1\b|1st\s*unit|first\s*unit)\b/i.test(message);
                     const thinkBlock = `<think>\n` +
                         `1. Detected training module creation intent with document reference: "${docLabel}".\n` +
-                        `2. Scope isolated: ${scopeDesc}.\n` +
+                        `2. Scope isolated: ${isChapter1Only ? 'Chapter 1 only' : 'First 2 textbook units active'}.\n` +
                         `3. Synthesized ${synthesized.units.length} Unit${synthesized.units.length === 1 ? '' : 's'} with theory notes and exercises.\n` +
                         `4. Formatted confirmation action.\n` +
                         `</think>\n\n`;
@@ -5847,7 +5912,7 @@ ${documentContext || message}
         }
 
         // Extract auto-exec SQL
-        let sqlMatch = aiText.match(/<!--EXEC_SQL:([\s\S]*?):END_SQL-->/);
+        let sqlMatch = aiText.match(/<!--EXEC_SQL:([\s\S]*?)(?::END_SQL-->|\nEND_SQL-->|END_SQL-->)/i);
         let queryResult = null, executedSQL = null;
         
         if (!sqlMatch) {
@@ -5866,8 +5931,8 @@ ${documentContext || message}
         if (executedSQL) {
             executedSQL = executedSQL
                 .replace(/<!--[\s\S]*?-->/g, '')
-                .replace(/<!--EXEC_SQL:/g, '')
-                .replace(/:END_SQL-->/g, '')
+                .replace(/<!--EXEC_SQL:/gi, '')
+                .replace(/(?::END_SQL-->|\nEND_SQL-->|END_SQL-->)/gi, '')
                 .replace(/^```(?:sql)?\s*/i, '')
                 .replace(/\s*```$/i, '')
                 .trim();
@@ -5893,9 +5958,7 @@ ${documentContext || message}
                         
                         if (!queryResult.success && queryResult.error && !options._isRetry) {
                             console.warn('[ChatBot] SQL execution failed. Attempting self-correction retry...', queryResult.error);
-                            const retryPrompt = `The SQL query you generated failed with PostgreSQL error:\
-${queryResult.error}\n\nFailed Query:\
-\`\`\`sql\n${executedSQL}\n\`\`\`\n\nPlease check the DATABASE SCHEMA carefully, fix column/table names (e.g. use assignment_targets for class assignments or class_enrollments for student classes), and output ONLY the corrected SQL in a \`\`\`sql block with <!--EXEC_SQL:...:END_SQL-->.`;
+                            const retryPrompt = `The SQL query you generated failed with PostgreSQL error:\n${queryResult.error}\n\nFailed Query:\n\`\`\`sql\n${executedSQL}\n\`\`\`\n\nPlease check the DATABASE SCHEMA carefully, fix column/table names (e.g. use assignment_targets for class assignments or class_enrollments for student classes), and output ONLY the corrected SQL in a \`\`\`sql block with <!--EXEC_SQL:...:END_SQL-->.`;
                             return await this.chat(retryPrompt, {
                                 ...options,
                                 _isRetry: true,
@@ -5911,7 +5974,7 @@ ${queryResult.error}\n\nFailed Query:\
                     }
                 }
             }
-            aiText = aiText.replace(/<!--EXEC_SQL:[\s\S]*?:END_SQL-->/g, '').trim();
+            aiText = aiText.replace(/<!--EXEC_SQL:[\s\S]*?(?::END_SQL-->|\nEND_SQL-->|END_SQL-->)/gi, '').trim();
             // Clean out redundant raw SQL codeblocks from visible text so only clean natural language and visual cards are shown
             if (executedSQL || queryResult) {
                 aiText = aiText.replace(/```sql[\s\S]*?```/gi, '').trim();
@@ -5957,6 +6020,12 @@ ${queryResult.error}\n\nFailed Query:\
         if (!visibleText && queryResult?.success) {
             aiText = `${aiText}\n\nHere is the information retrieved from the database (${queryResult.rows?.length || 0} ${queryResult.rows?.length === 1 ? 'record' : 'records'}):`;
         }
+
+        // Clean & normalize thinking steps
+        aiText = aiText.replace(/<think>([\s\S]*?)<\/think>/gi, (match, thinkContent) => {
+            const normalized = this.normalizeThinkingSteps(thinkContent, message);
+            return normalized ? `<think>\n${normalized}\n</think>` : '';
+        });
 
         return {
             message: aiText, sql: executedSQL, queryResult, chartData, reportAction, dataLoadingAction: null,
