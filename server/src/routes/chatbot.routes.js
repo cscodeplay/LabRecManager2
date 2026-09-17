@@ -58,7 +58,9 @@ router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor',
         referencedFiles = [], 
         referencedFileName = '',
         imageUrls = [],
-        attachedImages = []
+        attachedImages = [],
+        defaultChartColors = null,
+        defaultChartType = 'auto'
     } = req.body;
 
     if (!message || typeof message !== 'string' || message.trim().length < 1) {
@@ -81,7 +83,9 @@ router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor',
             referencedFiles,
             referencedFileName,
             imageUrls,
-            attachedImages
+            attachedImages,
+            defaultChartColors,
+            defaultChartType
         });
 
         // Log AI chatbot usage
@@ -686,6 +690,9 @@ router.post('/load-data', authenticate, authorize('admin', 'principal', 'instruc
             }).catch(err => console.warn('[ImportHistory] Log failed:', err.message));
         }
 
+        // Invalidate and refresh chatbot schema cache after data imports
+        chatbotService.refreshSchema().catch(e => console.warn('[ChatBot] Post-import schema refresh failed:', e.message));
+
         const labName = targetLab?.name || 'Lab';
         return res.json({
             success: true,
@@ -807,14 +814,34 @@ router.get('/sessions', authenticate, asyncHandler(async (req, res) => {
 router.post('/sessions', authenticate, asyncHandler(async (req, res) => {
     const { sessionId, title, messages } = req.body;
     
+    // Auto-generate human readable title from the first user request if not explicitly provided
+    const generateChatTitle = (firstMessage) => {
+        if (!firstMessage || typeof firstMessage !== 'string') return 'New Chat';
+        let clean = firstMessage.trim();
+        clean = clean.replace(/\\+[a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]{2,5}/gi, '').trim();
+        clean = clean.replace(/^(can you (please )?|please |tell me |show me |find |give me |i want to |i need to |i need |generate (a |the )?(graph|chart)? (for|of|to show)?|plot |what is |what are |how many |display )/i, '').trim();
+        clean = clean.replace(/[?.!]+$/, '').trim();
+        if (!clean) clean = firstMessage.trim();
+        clean = clean.charAt(0).toUpperCase() + clean.slice(1);
+        if (clean.length > 38) {
+            clean = clean.substring(0, 36).trim() + '...';
+        }
+        return clean || 'New Chat';
+    };
+
+    const firstUserMsg = Array.isArray(messages) ? messages.find(m => m.role === 'user')?.content : null;
+    const resolvedTitle = (title && title !== 'New Chat') ? title : (firstUserMsg ? generateChatTitle(firstUserMsg) : 'New Chat');
+
     if (sessionId) {
         // Try to update existing
         const existing = await prisma.activityLog.findFirst({ where: { id: sessionId, userId: req.user.id } });
         if (existing) {
+            const currentDesc = existing.description;
+            const updatedDesc = (currentDesc && currentDesc !== 'New Chat') ? currentDesc : resolvedTitle;
             const updated = await prisma.activityLog.update({
                 where: { id: sessionId },
                 data: {
-                    description: title || existing.description,
+                    description: updatedDesc,
                     metadata: { messages }
                 }
             });
@@ -829,7 +856,7 @@ router.post('/sessions', authenticate, asyncHandler(async (req, res) => {
             schoolId: req.user.schoolId,
             actionType: 'other',
             action_type: 'ai_chat_session',
-            description: title || 'New Chat',
+            description: resolvedTitle,
             metadata: { messages }
         }
     });

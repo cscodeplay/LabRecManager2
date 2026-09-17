@@ -12,7 +12,7 @@ import {
     Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket,
     ShoppingBag, Code, Terminal, Award, Package, Zap, Wifi, Network, Headphones, ScanLine, Cable, Camera,
     Share2, Folder, Truck, ArrowRight, UsersRound, Search, RotateCcw, UserCheck, ShieldAlert, FolderPlus, Square,
-    GripHorizontal, FileSpreadsheet
+    GripHorizontal, FileSpreadsheet, Settings, Palette, Sliders
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
@@ -264,9 +264,9 @@ function SQLCardItem({ row, cols }) {
 }
 
 /* ─── SQL result panel: Graphic Card View, Chart View, Table View, SQL query inspection, CSV export ─── */
-function SQLResult({ sql, result, onRerun, hasDedicatedChart = false, dedicatedChartData = null }) {
+function SQLResult({ sql, result, onRerun, hasDedicatedChart = false, dedicatedChartData = null, activeColors = null, defaultViewMode = 'cards' }) {
     const [isCollapsed, setIsCollapsed] = useState(Boolean(hasDedicatedChart));
-    const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'chart' | 'table'
+    const [viewMode, setViewMode] = useState(defaultViewMode || 'cards'); // 'cards' | 'chart' | 'table'
     const [sqlOpen, setSqlOpen] = useState(false);
     if (!result) return null;
 
@@ -314,7 +314,7 @@ function SQLResult({ sql, result, onRerun, hasDedicatedChart = false, dedicatedC
                 [valCol]: val
             })),
             seriesKeys: [valCol],
-            colors: DEFAULT_COLORS
+            colors: activeColors || DEFAULT_COLORS
         };
     })() : null);
 
@@ -523,7 +523,7 @@ function SQLResult({ sql, result, onRerun, hasDedicatedChart = false, dedicatedC
                         ) : viewMode === 'chart' && inlineChartData ? (
                             /* Inline Chart View */
                             <div className="p-2 bg-white rounded-xl border border-slate-200">
-                                <ChatChart chartData={inlineChartData} />
+                                <ChatChart chartData={inlineChartData} activeColors={activeColors} />
                             </div>
                         ) : viewMode === 'cards' ? (
                             /* Graphic Cards View */
@@ -616,21 +616,91 @@ function SQLResult({ sql, result, onRerun, hasDedicatedChart = false, dedicatedC
     );
 }
 
-/* ─── Chart component with solid colors matching image reference ─── */
-const DEFAULT_COLORS = [
-    '#F5B027', // Rich Golden Amber (Image Series 1)
-    '#538D4E', // Forest Sage Green (Image Series 2)
-    '#2563EB', // Royal Blue
-    '#DC2626', // Crimson Red
-    '#7C3AED', // Purple
-    '#0D9488', // Deep Teal
-    '#EA580C', // Burnt Orange
-    '#0284C7', // Sky Blue
-    '#475569', // Slate Gray
-    '#DB2777'  // Rose Pink
+/* ─── Admin Configurable Graph Palettes & Bot Settings ─── */
+export const GRAPH_PALETTES = [
+    {
+        id: 'amber-emerald',
+        name: 'Golden Amber & Sage',
+        description: 'Warm pedagogical standard',
+        colors: ['#F5B027', '#538D4E', '#2563EB', '#DC2626', '#7C3AED', '#0D9488', '#EA580C', '#0284C7', '#475569', '#DB2777']
+    },
+    {
+        id: 'indigo-emerald',
+        name: 'Modern Indigo & Emerald',
+        description: 'Vibrant modern SaaS analytics',
+        colors: ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#EC4899', '#3B82F6', '#64748B', '#14B8A6']
+    },
+    {
+        id: 'ocean-cyan',
+        name: 'Ocean Blue & Teal',
+        description: 'Fresh aquatic high-contrast palette',
+        colors: ['#0284C7', '#06B6D4', '#2563EB', '#0D9488', '#38BDF8', '#14B8A6', '#6366F1', '#0EA5E9', '#475569', '#059669']
+    },
+    {
+        id: 'sunset-warm',
+        name: 'Sunset Coral & Amber',
+        description: 'Warm energetic gradient spectrum',
+        colors: ['#F43F5E', '#FB923C', '#FBBF24', '#A855F7', '#EC4899', '#E11D48', '#EA580C', '#D97706', '#9333EA', '#BE185D']
+    },
+    {
+        id: 'cyber-neon',
+        name: 'Cyberpunk Neon',
+        description: 'High-impact vivid neon tones',
+        colors: ['#A855F7', '#06B6D4', '#22C55E', '#F43F5E', '#FACC15', '#3B82F6', '#EC4899', '#10B981', '#8B5CF6', '#F97316']
+    },
+    {
+        id: 'slate-corporate',
+        name: 'Classic Corporate Slate',
+        description: 'Subtle institutional grayscale tones',
+        colors: ['#334155', '#475569', '#64748B', '#0284C7', '#059669', '#D97706', '#94A3B8', '#1E293B', '#4B5563', '#6B7280']
+    }
 ];
 
-function RenderMessage({ content, hasQueryResult, model, provider }) {
+export const DEFAULT_BOT_SETTINGS = {
+    paletteId: 'amber-emerald',
+    customColors: ['#F5B027', '#538D4E', '#2563EB', '#DC2626', '#7C3AED', '#0D9488'],
+    defaultModel: 'auto',
+    thinkingVisibility: 'collapsed',
+    defaultChartType: 'auto',
+    defaultViewMode: 'cards'
+};
+
+export const loadBotSettings = () => {
+    if (typeof window === 'undefined') return DEFAULT_BOT_SETTINGS;
+    try {
+        const saved = localStorage.getItem('lrm_bot_settings');
+        if (saved) return { ...DEFAULT_BOT_SETTINGS, ...JSON.parse(saved) };
+    } catch (e) {
+        console.warn('Failed to load bot settings:', e);
+    }
+    return DEFAULT_BOT_SETTINGS;
+};
+
+export const getActivePaletteColors = (settings) => {
+    if (settings?.paletteId === 'custom' && Array.isArray(settings?.customColors) && settings.customColors.length > 0) {
+        return settings.customColors;
+    }
+    const found = GRAPH_PALETTES.find(p => p.id === settings?.paletteId);
+    return found ? found.colors : GRAPH_PALETTES[0].colors;
+};
+
+export function generateChatTitle(firstMessage) {
+    if (!firstMessage || typeof firstMessage !== 'string') return 'New Chat';
+    let clean = firstMessage.trim();
+    clean = clean.replace(/\\+[a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]{2,5}/gi, '').trim();
+    clean = clean.replace(/^(can you (please )?|please |tell me |show me |find |give me |i want to |i need to |i need |generate (a |the )?(graph|chart)? (for|of|to show)?|plot |what is |what are |how many |display )/i, '').trim();
+    clean = clean.replace(/[?.!]+$/, '').trim();
+    if (!clean) clean = firstMessage.trim();
+    clean = clean.charAt(0).toUpperCase() + clean.slice(1);
+    if (clean.length > 38) {
+        clean = clean.substring(0, 36).trim() + '...';
+    }
+    return clean || 'New Chat';
+}
+
+const DEFAULT_COLORS = GRAPH_PALETTES[0].colors;
+
+function RenderMessage({ content, hasQueryResult, model, provider, defaultOpenThinking = false }) {
     if (!content) return null;
     let cleanContent = content;
     // When structured query results are present, hide redundant raw SQL codeblocks from message body
@@ -648,15 +718,13 @@ function RenderMessage({ content, hasQueryResult, model, provider }) {
                 if (part.startsWith('```')) {
                     const m = part.match(/```(\w+)?\n?([\s\S]*?)```/);
                     if (m) {
-                        const lang = (m[1] || '').toLowerCase();
-                        // For raw SQL blocks in chat, render a compact collapsed accordion
-                        if (lang === 'sql') {
+                        if (m[1] === 'sql') {
                             return (
-                                <details key={i} className="my-1.5 group border border-slate-700 rounded-xl bg-slate-900 overflow-hidden text-[11px]">
-                                    <summary className="px-3 py-1.5 text-[10.5px] font-mono text-indigo-300 cursor-pointer hover:bg-slate-800 flex items-center justify-between select-none">
+                                <details key={i} className="my-2 rounded-lg border border-slate-700 bg-slate-900 text-xs overflow-hidden">
+                                    <summary className="px-3 py-1.5 bg-slate-800 text-slate-300 font-mono text-[11px] cursor-pointer hover:bg-slate-750 flex items-center justify-between">
                                         <div className="flex items-center gap-1.5">
                                             <Database className="w-3.5 h-3.5 text-indigo-400" />
-                                            <span>View SQL Query</span>
+                                            <span>Generated Database Query</span>
                                         </div>
                                         <span className="text-[9px] text-slate-400">Click to expand</span>
                                     </summary>
@@ -671,7 +739,7 @@ function RenderMessage({ content, hasQueryResult, model, provider }) {
                 }
                 
                 if (part.startsWith('<think>')) {
-                    return <ThinkingStepsCollapsible key={i} thinkContent={part} model={model} provider={provider} />;
+                    return <ThinkingStepsCollapsible key={i} thinkContent={part} model={model} provider={provider} defaultOpen={defaultOpenThinking} />;
                 }
 
                 const html = part
@@ -691,9 +759,10 @@ function RenderMessage({ content, hasQueryResult, model, provider }) {
     );
 }
 
-function ChatChart({ chartData }) {
+export function ChatChart({ chartData, activeColors = null }) {
     const echartsRef = useRef(null);
-    const { type, title, data, seriesKeys = ['value'], colors = DEFAULT_COLORS } = chartData || {};
+    const { type, title, data, seriesKeys = ['value'], colors } = chartData || {};
+    const chartColors = activeColors || colors || DEFAULT_COLORS;
 
     const [activeType, setActiveType] = useState(type || 'bar');
     useEffect(() => { if (type) setActiveType(type); }, [type]);
@@ -782,7 +851,7 @@ function ChatChart({ chartData }) {
                 axisLine: { show: true, lineStyle: { color: '#64748b', width: 1.5 } },
                 splitLine: { lineStyle: { type: 'dashed', color: '#cbd5e1' } }
             },
-            color: colors,
+            color: chartColors,
             series: []
         };
 
@@ -7607,6 +7676,312 @@ function GroupActionCard({ action }) {
     );
 }
 
+/* ─── Admin Bot Settings Modal (Palette, Model Defaults, Thinking State, Display) ─── */
+export function BotSettingsModal({ settings, onSave, onClose, isDialog = false }) {
+    const [temp, setTemp] = useState({ ...settings });
+    const activePaletteColors = getActivePaletteColors(temp);
+
+    const handlePaletteSelect = (palId) => {
+        setTemp(prev => ({
+            ...prev,
+            paletteId: palId
+        }));
+    };
+
+    const handleCustomColorChange = (index, color) => {
+        setTemp(prev => {
+            const newCustom = [...(prev.customColors || DEFAULT_BOT_SETTINGS.customColors)];
+            newCustom[index] = color;
+            return {
+                ...prev,
+                paletteId: 'custom',
+                customColors: newCustom
+            };
+        });
+    };
+
+    const handleReset = () => {
+        setTemp({ ...DEFAULT_BOT_SETTINGS });
+        toast.success('Reset to default settings');
+    };
+
+    const handleApply = () => {
+        onSave(temp);
+        toast.success('Bot & chart settings saved successfully!');
+        onClose();
+    };
+
+    const content = (
+        <div className={isDialog
+            ? "bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+            : "absolute inset-0 top-[52px] bg-white z-50 flex flex-col shadow-2xl overflow-hidden animate-in fade-in duration-200"
+        }>
+            {/* Header */}
+            <div className="p-3.5 border-b border-slate-200 flex justify-between items-center bg-gradient-to-r from-slate-50 via-indigo-50/50 to-violet-50/50">
+                <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                        <Settings className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                            Bot & Graph Default Settings
+                            <span className="text-[9.5px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-semibold">Admin</span>
+                        </h3>
+                        <p className="text-[10px] text-slate-500">Customize graph color palettes, AI providers, and visual preferences</p>
+                    </div>
+                </div>
+                <button onClick={onClose} className="p-1 hover:bg-slate-200/80 rounded-lg transition text-slate-400 hover:text-slate-600">
+                    <X className="w-4 h-4" />
+                </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 text-slate-700 text-xs">
+                {/* Section 1: Default Graph Colors */}
+                <div>
+                    <div className="flex items-center justify-between mb-2">
+                        <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                            <Palette className="w-3.5 h-3.5 text-indigo-600" />
+                            Default Graph Color Palette
+                        </label>
+                        <span className="text-[10px] text-slate-400">Used across all generated charts</span>
+                    </div>
+
+                    {/* Live Preview Bar */}
+                    <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 mb-3">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-1.5 flex justify-between">
+                            <span>Active Color Spectrum Preview:</span>
+                            <span className="font-mono text-slate-600">{temp.paletteId === 'custom' ? 'Custom Palette' : GRAPH_PALETTES.find(p => p.id === temp.paletteId)?.name}</span>
+                        </div>
+                        <div className="flex h-5 rounded-lg overflow-hidden shadow-2xs border border-slate-200/60">
+                            {activePaletteColors.slice(0, 6).map((c, idx) => (
+                                <div key={idx} className="flex-1 transition-all duration-300 relative group" style={{ backgroundColor: c }}>
+                                    <span className="opacity-0 group-hover:opacity-100 absolute inset-0 flex items-center justify-center text-[9px] font-mono text-white font-bold bg-black/40">
+                                        {c}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Palettes Grid */}
+                    <div className="grid grid-cols-2 gap-2">
+                        {GRAPH_PALETTES.map(p => {
+                            const isSelected = temp.paletteId === p.id;
+                            return (
+                                <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => handlePaletteSelect(p.id)}
+                                    className={`p-2.5 rounded-xl border text-left transition relative ${
+                                        isSelected
+                                            ? 'border-indigo-600 bg-indigo-50/40 shadow-xs ring-1 ring-indigo-600'
+                                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <span className="font-bold text-[11px] text-slate-800 truncate pr-1">{p.name}</span>
+                                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
+                                    </div>
+                                    <div className="flex h-3 rounded-md overflow-hidden gap-0.5">
+                                        {p.colors.slice(0, 6).map((c, i) => (
+                                            <div key={i} className="flex-1 rounded-xs" style={{ backgroundColor: c }} />
+                                        ))}
+                                    </div>
+                                    <p className="text-[9.5px] text-slate-500 mt-1.5 leading-tight">{p.description}</p>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Custom Color Editor */}
+                    <div className="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50/50">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-slate-800 text-[11px] flex items-center gap-1.5">
+                                <Sliders className="w-3 h-3 text-indigo-600" />
+                                Custom Palette Editor
+                            </span>
+                            <span className="text-[10px] text-slate-400">Pick specific hex colors for series</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            {(temp.customColors || DEFAULT_BOT_SETTINGS.customColors).slice(0, 6).map((c, idx) => (
+                                <div key={idx} className="flex items-center gap-1.5 bg-white p-1.5 rounded-lg border border-slate-200">
+                                    <input
+                                        type="color"
+                                        value={c}
+                                        onChange={(e) => handleCustomColorChange(idx, e.target.value)}
+                                        className="w-6 h-6 rounded cursor-pointer border-0 p-0 shrink-0"
+                                        title={`Series ${idx + 1} color`}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                        <span className="text-[8.5px] uppercase font-bold text-slate-400 block">S{idx + 1}</span>
+                                        <input
+                                            type="text"
+                                            value={c}
+                                            onChange={(e) => handleCustomColorChange(idx, e.target.value)}
+                                            className="w-full text-[10px] font-mono text-slate-700 bg-transparent border-0 outline-none p-0"
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Section 2: Default AI Provider */}
+                <div className="pt-2 border-t border-slate-100">
+                    <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5 mb-1.5">
+                        <Bot className="w-3.5 h-3.5 text-indigo-600" />
+                        Default AI Model Engine
+                    </label>
+                    <select
+                        value={temp.defaultModel || 'auto'}
+                        onChange={(e) => setTemp(prev => ({ ...prev, defaultModel: e.target.value }))}
+                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500"
+                    >
+                        <option value="auto">Auto (Gemini & Groq intelligent routing)</option>
+                        <option value="groq">Groq (Llama-3.3-70b - Ultra Fast)</option>
+                        <option value="gemini">Gemini (Gemini-2.5-flash - Deep Context)</option>
+                        <option value="sambanova">SambaNova (Meta-Llama-3.1-70B)</option>
+                        <option value="github">GPT-4o (GitHub Models)</option>
+                    </select>
+                </div>
+
+                {/* Section 3: Default Thinking Process State */}
+                <div className="pt-2 border-t border-slate-100">
+                    <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5 mb-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                        Thinking Process Visibility
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setTemp(prev => ({ ...prev, thinkingVisibility: 'collapsed' }))}
+                            className={`p-2 rounded-xl border text-left transition ${
+                                temp.thinkingVisibility === 'collapsed'
+                                    ? 'border-indigo-600 bg-indigo-50/50 ring-1 ring-indigo-600'
+                                    : 'border-slate-200 hover:border-slate-300'
+                            }`}
+                        >
+                            <div className="font-bold text-slate-800 text-[11px]">Collapsed (Default)</div>
+                            <div className="text-[9.5px] text-slate-500 mt-0.5">Shows step badge; expand on click</div>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setTemp(prev => ({ ...prev, thinkingVisibility: 'expanded' }))}
+                            className={`p-2 rounded-xl border text-left transition ${
+                                temp.thinkingVisibility === 'expanded'
+                                    ? 'border-indigo-600 bg-indigo-50/50 ring-1 ring-indigo-600'
+                                    : 'border-slate-200 hover:border-slate-300'
+                            }`}
+                        >
+                            <div className="font-bold text-slate-800 text-[11px]">Always Expanded</div>
+                            <div className="text-[9.5px] text-slate-500 mt-0.5">Automatically open reasoning steps</div>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Section 4: Default Chart Type Preference */}
+                <div className="pt-2 border-t border-slate-100">
+                    <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5 mb-1.5">
+                        <BarChart2 className="w-3.5 h-3.5 text-indigo-600" />
+                        Default Chart Type Preference
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                            { id: 'auto', label: 'Auto' },
+                            { id: 'bar', label: 'Bar Chart' },
+                            { id: 'doughnut', label: 'Doughnut' },
+                            { id: 'line', label: 'Line Chart' },
+                            { id: 'area', label: 'Area Chart' }
+                        ].map(t => (
+                            <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => setTemp(prev => ({ ...prev, defaultChartType: t.id }))}
+                                className={`py-1.5 px-2 rounded-lg border text-center font-semibold text-[10.5px] transition ${
+                                    (temp.defaultChartType || 'auto') === t.id
+                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                }`}
+                            >
+                                {t.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Section 5: Default Data View Mode */}
+                <div className="pt-2 border-t border-slate-100">
+                    <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5 mb-1.5">
+                        <LayoutGrid className="w-3.5 h-3.5 text-indigo-600" />
+                        Default Query Data View
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                            { id: 'cards', label: 'Cards' },
+                            { id: 'chart', label: 'Chart' },
+                            { id: 'table', label: 'Table' }
+                        ].map(m => (
+                            <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => setTemp(prev => ({ ...prev, defaultViewMode: m.id }))}
+                                className={`py-1.5 px-2 rounded-lg border text-center font-semibold text-[10.5px] transition ${
+                                    (temp.defaultViewMode || 'cards') === m.id
+                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                }`}
+                            >
+                                {m.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 border-t border-slate-200 flex items-center justify-between bg-slate-50">
+                <button
+                    type="button"
+                    onClick={handleReset}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-200 text-xs font-semibold transition flex items-center gap-1"
+                >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Reset Defaults
+                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 text-xs font-semibold transition"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleApply}
+                        className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+                    >
+                        <Save className="w-3.5 h-3.5" />
+                        Save Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
+    if (isDialog) {
+        return (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                {content}
+            </div>
+        );
+    }
+
+    return content;
+}
+
 /* ═══════════════════════════════════════════════════════
    MAIN FLOATING CHATBOT COMPONENT
    ═══════════════════════════════════════════════════════ */
@@ -7620,7 +7995,32 @@ export default function FloatingChatbot() {
     const [uploadedDocs, setUploadedDocs] = useState([]);
     const [isUploading, setIsUploading] = useState(false);
     const [unread, setUnread] = useState(0);
-    const [preferredModel, setPreferredModel] = useState('auto');
+    const [botSettings, setBotSettings] = useState(loadBotSettings);
+    const [showSettings, setShowSettings] = useState(false);
+    const [preferredModel, setPreferredModel] = useState(() => {
+        const s = loadBotSettings();
+        return s.defaultModel || 'auto';
+    });
+    const activeColors = getActivePaletteColors(botSettings);
+
+    const handleSaveBotSettings = (newSettings) => {
+        setBotSettings(newSettings);
+        setPreferredModel(newSettings.defaultModel || 'auto');
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('lrm_bot_settings', JSON.stringify(newSettings));
+        }
+    };
+
+    const handleModelChange = (newModel) => {
+        setPreferredModel(newModel);
+        setBotSettings(prev => {
+            const updated = { ...prev, defaultModel: newModel };
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('lrm_bot_settings', JSON.stringify(updated));
+            }
+            return updated;
+        });
+    };
     const [sessions, setSessions] = useState([]);
     const [currentSessionId, setCurrentSessionId] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -7632,6 +8032,26 @@ export default function FloatingChatbot() {
     const [showHelp, setShowHelp] = useState(false);
     const [loadingPhase, setLoadingPhase] = useState(0);
     const [activePromptForLoading, setActivePromptForLoading] = useState('');
+    const abortControllerRef = useRef(null);
+
+    const handleStopGeneration = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
+        setIsLoading(false);
+        toast('AI response generation stopped', { icon: '⏹️' });
+        setMessages(prev => {
+            if (prev.length > 0 && prev[prev.length - 1].role === 'user') {
+                return [...prev, {
+                    role: 'assistant',
+                    content: '⏹️ *AI response generation was stopped by user.*',
+                    timestamp: new Date().toISOString()
+                }];
+            }
+            return prev;
+        });
+    };
 
     const getInFlightStages = (prompt = '') => {
         const p = (prompt || '').toLowerCase();
@@ -8033,15 +8453,22 @@ export default function FloatingChatbot() {
     const saveSession = async (msgs, title = null) => {
         if (!isAdmin) return null;
         try {
+            const firstUserMsg = Array.isArray(msgs) ? msgs.find(m => m.role === 'user')?.content : null;
+            const resolvedTitle = (title && title !== 'New Chat') ? title : (firstUserMsg ? generateChatTitle(firstUserMsg) : 'New Chat');
+
             const res = await api.post('/admin/chatbot/sessions', {
                 sessionId: currentSessionId,
-                title,
+                title: resolvedTitle,
                 messages: msgs
             });
             if (res.data.success) {
-                setCurrentSessionId(res.data.data.id);
+                const newId = res.data.data.id;
+                setCurrentSessionId(newId);
+                if (typeof window !== 'undefined') {
+                    localStorage.setItem('ulrms_chatbot_session_id', newId);
+                }
                 loadSessions();
-                return res.data.data.id;
+                return newId;
             }
         } catch (err) {
             console.error('Failed to save session', err);
@@ -8125,9 +8552,14 @@ export default function FloatingChatbot() {
         setSelectedFileRefs([]);
         setAttachedImages([]);
         setIsLoading(true);
+        abortControllerRef.current = new AbortController();
 
         try {
-            const history = messages.slice(-10).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', content: m.content }));
+            const history = messages.slice(-10).map(m => ({ 
+                role: m.role === 'assistant' ? 'model' : 'user', 
+                content: m.content,
+                sql: m.sql || null
+            }));
             const docCtx = uploadedDocs.map(d => `--- ${d.fileName} ---\n${(d.extractedText || '').substring(0, 15000)}`).join('\n\n');
 
             const res = await api.post('/admin/chatbot/chat', { 
@@ -8137,15 +8569,19 @@ export default function FloatingChatbot() {
                 referencedFiles: activeRefs,
                 referencedFileName: activeRefs[0]?.fileName || '',
                 attachedImages: activeImages.map(img => ({ name: img.name, dataUrl: img.dataUrl })),
-                provider: preferredModel
+                provider: preferredModel,
+                defaultChartColors: activeColors,
+                defaultChartType: botSettings.defaultChartType
             }, {
+                signal: abortControllerRef.current.signal,
                 timeout: 120000
             });
             if (res.data.success) {
                 const d = res.data.data;
                 let title = null;
-                if (messages.length === 0) {
-                    title = msg.length > 30 ? msg.substring(0, 30) + '...' : msg;
+                const isInitialQuery = !currentSessionId || messages.filter(m => m.role === 'user').length === 0;
+                if (isInitialQuery) {
+                    title = generateChatTitle(msg);
                 }
                 
                 setMessages(prev => {
@@ -8190,6 +8626,10 @@ export default function FloatingChatbot() {
                 if (!isOpen) setUnread(u => u + 1);
             }
         } catch (err) {
+            if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED' || err.message === 'canceled') {
+                console.log('[ChatBot] Generation was stopped by user');
+                return;
+            }
             const is502 = err.response?.status === 502 || (err.message && err.message.includes('502'));
             const isServerError = [500, 502, 503, 504].includes(err.response?.status) || /\b(500|502|503|504)\b/.test(err.message);
             const isTimeout = err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'));
@@ -8285,7 +8725,15 @@ export default function FloatingChatbot() {
     };
 
     const clearChat = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
+        setIsLoading(false);
         setCurrentSessionId(null);
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem('ulrms_chatbot_session_id');
+        }
         setMessages([{ role: 'assistant', content: '🗑️ Chat cleared. How can I help?', timestamp: new Date().toISOString() }]);
         setUploadedDocs([]);
         setSelectedFileRefs([]);
@@ -8431,7 +8879,7 @@ export default function FloatingChatbot() {
                                 )}
                                 <select 
                                     value={preferredModel}
-                                    onChange={(e) => setPreferredModel(e.target.value)}
+                                    onChange={(e) => handleModelChange(e.target.value)}
                                     className="bg-white/15 border border-white/25 text-white text-[10px] rounded px-1.5 py-0.5 outline-none focus:bg-white/25 max-w-[100px] truncate cursor-pointer"
                                 >
                                     <option value="auto" className="text-black">Auto</option>
@@ -8443,14 +8891,22 @@ export default function FloatingChatbot() {
                             </div>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
-                            <button onClick={() => setShowHelp(true)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title="Prompt Guide">
-                                <HelpCircle className="w-3.5 h-3.5" />
+                            <button onClick={clearChat} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title="New Chat">
+                                <FilePlus className="w-3.5 h-3.5" />
                             </button>
                             <button onClick={() => setShowHistory(!showHistory)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title="Chat History">
                                 <History className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={clearChat} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title="New Chat">
-                                <FilePlus className="w-3.5 h-3.5" />
+                            <button onClick={() => setShowHelp(true)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title="Prompt Guide">
+                                <HelpCircle className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                                type="button"
+                                onClick={() => setShowSettings(true)} 
+                                className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/20 hover:bg-white/35 text-white shadow-2xs border border-white/25 transition" 
+                                title="Bot & Graph Settings (Palette, AI Engine, Thinking)"
+                            >
+                                <Settings className="w-4 h-4" />
                             </button>
                             <button onClick={() => setIsExpanded(!isExpanded)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition text-white/90" title={isExpanded ? "Restore Size" : "Maximize"}>
                                 {isExpanded ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
@@ -8460,6 +8916,15 @@ export default function FloatingChatbot() {
                             </button>
                         </div>
                     </div>
+
+                    {/* Bot Settings Modal */}
+                    {showSettings && (
+                        <BotSettingsModal
+                            settings={botSettings}
+                            onSave={handleSaveBotSettings}
+                            onClose={() => setShowSettings(false)}
+                        />
+                    )}
 
                     {/* Help Modal: Google PARTS Prompt Framework */}
                     {showHelp && (
@@ -8673,7 +9138,7 @@ export default function FloatingChatbot() {
                                     {msg.role === 'user' ? (
                                         <UserMessageContent content={msg.content} referencedFiles={msg.referencedFiles} />
                                     ) : (
-                                        <RenderMessage content={msg.content} hasQueryResult={Boolean(msg.queryResult || msg.sql)} model={msg.model} provider={msg.provider} />
+                                        <RenderMessage content={msg.content} hasQueryResult={Boolean(msg.queryResult || msg.sql)} model={msg.model} provider={msg.provider} defaultOpenThinking={botSettings.thinkingVisibility === 'expanded'} />
                                     )}
                                     {msg.imageUrl && (
                                         <div 
@@ -8703,7 +9168,7 @@ export default function FloatingChatbot() {
                                             ))}
                                         </div>
                                     )}
-                                    {msg.chartData && <ChatChart chartData={msg.chartData} />}
+                                    {msg.chartData && <ChatChart chartData={msg.chartData} activeColors={activeColors} />}
                                     {msg.queryResult && (
                                         <SQLResult 
                                             sql={msg.sql} 
@@ -8711,6 +9176,8 @@ export default function FloatingChatbot() {
                                             onRerun={() => handleRerunSQL(msg.sql)}
                                             hasDedicatedChart={Boolean(msg.chartData)}
                                             dedicatedChartData={msg.chartData}
+                                            activeColors={activeColors}
+                                            defaultViewMode={botSettings.defaultViewMode}
                                         />
                                     )}
                                     {msg.reportAction && <ReportActionCard action={msg.reportAction} />}
@@ -8749,7 +9216,7 @@ export default function FloatingChatbot() {
 
                                 {isLoading && (
                                     <div className="flex justify-start">
-                                        <div className="bg-white border border-indigo-100 rounded-2xl rounded-bl-sm px-3.5 py-2.5 shadow-xs max-w-[85%]">
+                                        <div className="bg-white border border-indigo-100 rounded-2xl rounded-bl-sm px-3.5 py-2.5 shadow-xs max-w-[85%] space-y-2">
                                             <div className="flex items-center gap-2.5">
                                                 <Loader2 className="w-3.5 h-3.5 text-indigo-600 animate-spin flex-shrink-0" />
                                                 <div className="flex flex-col">
@@ -8761,6 +9228,18 @@ export default function FloatingChatbot() {
                                                         <span>Thinking with <strong className="text-indigo-600 font-semibold">{preferredModel === 'auto' ? 'Auto (Gemini / Groq)' : preferredModel.toUpperCase()}</strong>...</span>
                                                     </span>
                                                 </div>
+                                            </div>
+                                            <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                                                <span className="text-[10px] text-slate-400">Taking too long?</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleStopGeneration}
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[10.5px] font-bold transition shadow-2xs group cursor-pointer"
+                                                    title="Stop AI Response Generation"
+                                                >
+                                                    <Square className="w-2.5 h-2.5 fill-rose-600 text-rose-600 group-hover:scale-110 transition" />
+                                                    <span>Stop AI response generation</span>
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
@@ -8943,10 +9422,21 @@ export default function FloatingChatbot() {
                                             style={{ minHeight: '36px', maxHeight: '80px' }}
                                         />
                                     </div>
-                                    <button onClick={handleSend} disabled={(!input.trim() && selectedFileRefs.length === 0 && attachedImages.length === 0) || isLoading}
-                                        className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center hover:from-indigo-600 hover:to-violet-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-indigo-500/20">
-                                        {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                                    </button>
+                                    {isLoading ? (
+                                        <button 
+                                            type="button" 
+                                            onClick={handleStopGeneration} 
+                                            className="flex-shrink-0 w-8 h-8 rounded-lg bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center transition shadow-md shadow-rose-600/20 cursor-pointer"
+                                            title="Stop AI Response Generation"
+                                        >
+                                            <Square className="w-3.5 h-3.5 fill-current" />
+                                        </button>
+                                    ) : (
+                                        <button onClick={handleSend} disabled={(!input.trim() && selectedFileRefs.length === 0 && attachedImages.length === 0)}
+                                            className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center hover:from-indigo-600 hover:to-violet-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-indigo-500/20">
+                                            <Send className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </>

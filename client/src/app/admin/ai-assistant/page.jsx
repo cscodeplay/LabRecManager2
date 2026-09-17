@@ -6,7 +6,7 @@ import {
     Bot, Send, Upload, Database, ChevronDown, ChevronRight, Trash2,
     Sparkles, FileText, AlertTriangle, Copy, Check, RefreshCw, X, Download, Loader2,
     GraduationCap, Clock, CheckCircle2, Edit3, XCircle, Undo2, ExternalLink, Plus, Calendar,
-    FileSpreadsheet, BookOpen
+    FileSpreadsheet, BookOpen, Settings, Square
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api, { classesAPI, timetableAPI } from '@/lib/api';
@@ -16,13 +16,20 @@ import FileReferenceDropdown from '@/components/FileReferenceDropdown';
 import GenericDataImportConfirmCard from '@/components/GenericDataImportConfirmCard';
 import TrainingModuleConfirmCard from '@/components/TrainingModuleConfirmCard';
 import ThinkingStepsCollapsible from '@/components/ThinkingStepsCollapsible';
+import { ChatChart, BotSettingsModal, loadBotSettings, getActivePaletteColors, DEFAULT_BOT_SETTINGS, GRAPH_PALETTES } from '@/components/FloatingChatbot';
 import { formatTime } from '@/lib/dateUtils';
 
 // Markdown-like renderer for AI messages
-function RenderMessage({ content, model, provider }) {
+function RenderMessage({ content, model, provider, defaultOpenThinking = false, hasQueryResult = false }) {
     if (!content) return null;
 
-    const parts = content.split(new RegExp('(`{3}[\\s\\S]*?`{3}|<think>[\\s\\S]*?<\\/think>)', 'g'));
+    let cleanContent = content;
+    if (hasQueryResult) {
+        cleanContent = cleanContent.replace(/```sql[\s\S]*?```/gi, '').trim();
+    }
+    if (!cleanContent) return null;
+
+    const parts = cleanContent.split(new RegExp('(`{3}[\\s\\S]*?`{3}|<think>[\\s\\S]*?<\\/think>)', 'g'));
 
     return (
         <div className="prose prose-sm max-w-none dark:prose-invert">
@@ -37,7 +44,7 @@ function RenderMessage({ content, model, provider }) {
                     }
                 }
                 if (part.startsWith('<think>')) {
-                    return <ThinkingStepsCollapsible key={i} thinkContent={part} model={model} provider={provider} />;
+                    return <ThinkingStepsCollapsible key={i} thinkContent={part} model={model} provider={provider} defaultOpen={defaultOpenThinking} />;
                 }
                 // Convert basic markdown
                 const html = part
@@ -1170,6 +1177,46 @@ export default function AIAssistantPage() {
     const fileInputRef = useRef(null);
     const inputRef = useRef(null);
 
+    // ── Bot Settings & Graph Color Preferences ──
+    const [botSettings, setBotSettings] = useState(DEFAULT_BOT_SETTINGS);
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+    useEffect(() => {
+        setBotSettings(loadBotSettings());
+    }, []);
+
+    const handleSaveSettings = (newSettings) => {
+        setBotSettings(newSettings);
+        if (typeof window !== 'undefined') {
+            try {
+                localStorage.setItem('lrm_bot_settings', JSON.stringify(newSettings));
+            } catch (e) {
+                console.error('Failed to save bot settings:', e);
+            }
+        }
+    };
+
+    const abortControllerRef = useRef(null);
+
+    const handleStopGeneration = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
+        setIsLoading(false);
+        toast('AI response generation stopped', { icon: '⏹️' });
+        setMessages(prev => {
+            if (prev.length > 0 && prev[prev.length - 1].role === 'user') {
+                return [...prev, {
+                    role: 'assistant',
+                    content: '⏹️ *AI response generation was stopped by user.*',
+                    timestamp: new Date().toISOString()
+                }];
+            }
+            return prev;
+        });
+    };
+
     // ── File Reference Popover State (\ trigger) ──
     const [fileRefOpen, setFileRefOpen] = useState(false);
     const [fileRefQuery, setFileRefQuery] = useState('');
@@ -1300,6 +1347,7 @@ export default function AIAssistantPage() {
         setInput('');
         setSelectedFileRefs([]);
         setIsLoading(true);
+        abortControllerRef.current = new AbortController();
 
         try {
             // Build conversation history (last 10 messages for context)
@@ -1310,14 +1358,19 @@ export default function AIAssistantPage() {
 
             // Build document context
             const docContext = uploadedDocs.map(d => `--- Document: ${d.fileName} ---\n${d.extractedText}`).join('\n\n');
+            const activeColors = getActivePaletteColors(botSettings);
 
             const res = await api.post('/admin/chatbot/chat', {
                 message: msg,
                 conversationHistory: history,
                 documentContext: docContext,
                 referencedFiles: activeRefs,
-                referencedFileName: activeRefs[0]?.fileName || ''
+                referencedFileName: activeRefs[0]?.fileName || '',
+                provider: botSettings.defaultModel || 'auto',
+                defaultChartColors: activeColors,
+                defaultChartType: botSettings.defaultChartType || 'auto'
             }, {
+                signal: abortControllerRef.current.signal,
                 timeout: 120000
             });
 
@@ -1328,6 +1381,9 @@ export default function AIAssistantPage() {
                     content: data.message,
                     sql: data.sql,
                     queryResult: data.queryResult,
+                    chartData: data.chartData,
+                    model: data.model,
+                    provider: data.provider,
                     reportAction: data.reportAction,
                     classAction: data.classAction,
                     timetableAction: data.timetableAction,
@@ -1341,6 +1397,10 @@ export default function AIAssistantPage() {
                 }]);
             }
         } catch (err) {
+            if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED' || err.message === 'canceled') {
+                console.log('[ChatBot] Generation was stopped by user');
+                return;
+            }
             const is502 = err.response?.status === 502 || (err.message && err.message.includes('502'));
             const isServerError = [500, 502, 503, 504].includes(err.response?.status) || /\b(500|502|503|504)\b/.test(err.message);
             const isTimeout = err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'));
@@ -1434,12 +1494,18 @@ export default function AIAssistantPage() {
     };
 
     const clearChat = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
+        setIsLoading(false);
         setMessages([{
             role: 'assistant',
             content: '🗑️ Chat cleared. How can I help you?',
             timestamp: new Date().toISOString()
         }]);
         setUploadedDocs([]);
+        setSelectedFileRefs([]);
     };
 
     const suggestions = [
@@ -1463,6 +1529,14 @@ export default function AIAssistantPage() {
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/20">
             <PageHeader title="AI Assistant" titleHindi="AI सहायक">
                 <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setShowSettingsModal(true)}
+                        title="Bot & Graph Default Settings"
+                        className="btn btn-ghost text-sm flex items-center justify-center gap-1.5 text-slate-600 hover:text-indigo-600 dark:text-slate-300"
+                    >
+                        <Settings className="w-5 h-5" />
+                    </button>
                     <button title="Clear" onClick={clearChat} className="btn btn-ghost text-sm flex items-center justify-center gap-1.5">
                         <Trash2 className="w-5 h-5" />
                     </button>
@@ -1470,6 +1544,37 @@ export default function AIAssistantPage() {
             </PageHeader>
 
             <main className="max-w-5xl mx-auto px-4 pb-4 flex flex-col" style={{ height: 'calc(100vh - 80px)' }}>
+                {/* Chat Card Header Bar */}
+                <div className="flex items-center justify-between py-2 px-1 border-b border-slate-100 dark:border-slate-800 text-xs mb-2">
+                    <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                            <Bot className="w-4 h-4 text-indigo-600" /> Database AI Assistant
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-mono text-[10.5px] border border-indigo-200 dark:border-indigo-800 font-semibold">
+                            Engine: {botSettings.defaultModel?.toUpperCase() || 'AUTO'}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            type="button"
+                            onClick={() => setShowSettingsModal(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:hover:bg-indigo-900 dark:text-indigo-300 font-bold transition text-xs border border-indigo-200 dark:border-indigo-800 shadow-2xs cursor-pointer"
+                            title="Bot & Graph Settings (Palette, Defaults)"
+                        >
+                            <Settings className="w-3.5 h-3.5" />
+                            <span>Bot Settings</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={clearChat}
+                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-red-600 transition"
+                            title="Clear Chat"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
+
                 {/* Document badges */}
                 {uploadedDocs.length > 0 && (
                     <div className="flex flex-wrap gap-2 py-2">
@@ -1504,7 +1609,18 @@ export default function AIAssistantPage() {
                                     <UserMessageContent content={msg.content} referencedFiles={msg.referencedFiles} />
                                 ) : (
                                     <>
-                                        <RenderMessage content={msg.content} model={msg.model} provider={msg.provider} />
+                                        <RenderMessage
+                                            content={msg.content}
+                                            model={msg.model}
+                                            provider={msg.provider}
+                                            hasQueryResult={Boolean(msg.queryResult)}
+                                            defaultOpenThinking={botSettings.thinkingVisibility === 'expanded'}
+                                        />
+                                        {msg.chartData && (
+                                            <div className="mt-3">
+                                                <ChatChart chartData={msg.chartData} activeColors={getActivePaletteColors(botSettings)} />
+                                            </div>
+                                        )}
                                         {msg.classAction && <ClassActionCard action={msg.classAction} />}
                                         {msg.timetableAction && <TimetableActionCard action={msg.timetableAction} />}
                                         {msg.periodTimingAction && <PeriodTimingActionCard action={msg.periodTimingAction} />}
@@ -1529,20 +1645,36 @@ export default function AIAssistantPage() {
 
                     {isLoading && (
                         <div className="flex justify-start">
-                            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl rounded-bl-md px-5 py-4 shadow-sm">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
-                                        <Bot className="w-3.5 h-3.5 text-white" />
+                            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl rounded-bl-md px-5 py-4 shadow-sm min-w-[280px]">
+                                <div className="flex items-center justify-between gap-3 mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
+                                            <Bot className="w-3.5 h-3.5 text-white" />
+                                        </div>
+                                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                                            Thinking with {botSettings?.preferredModel === 'auto' ? 'Auto (Gemini / Groq)' : (botSettings?.preferredModel?.toUpperCase() || 'AI')}...
+                                        </span>
                                     </div>
-                                    <span className="text-xs font-medium text-slate-500">Thinking...</span>
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 mb-3">
                                     <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
                                     <div className="flex gap-1">
                                         <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                                         <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                                         <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                                     </div>
+                                </div>
+                                <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between gap-3">
+                                    <span className="text-[11px] text-slate-400">Taking too long?</span>
+                                    <button
+                                        type="button"
+                                        onClick={handleStopGeneration}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold transition shadow-xs group cursor-pointer"
+                                        title="Stop AI Response Generation"
+                                    >
+                                        <Square className="w-3 h-3 fill-rose-600 dark:fill-rose-400 text-rose-600 dark:text-rose-400 group-hover:scale-110 transition" />
+                                        <span>Stop AI response generation</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -1625,17 +1757,37 @@ export default function AIAssistantPage() {
                             />
                         </div>
 
-                        {/* Send button */}
-                        <button onClick={handleSend} disabled={(!input.trim() && selectedFileRefs.length === 0) || isLoading}
-                            className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center hover:from-indigo-600 hover:to-violet-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20">
-                            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                        </button>
+                        {/* Send / Stop button */}
+                        {isLoading ? (
+                            <button
+                                type="button"
+                                onClick={handleStopGeneration}
+                                className="flex-shrink-0 w-10 h-10 rounded-xl bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center transition shadow-lg shadow-rose-600/20 cursor-pointer"
+                                title="Stop AI Response Generation"
+                            >
+                                <Square className="w-4 h-4 fill-current" />
+                            </button>
+                        ) : (
+                            <button onClick={handleSend} disabled={(!input.trim() && selectedFileRefs.length === 0)}
+                                className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center hover:from-indigo-600 hover:to-violet-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20">
+                                <Send className="w-4 h-4" />
+                            </button>
+                        )}
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1.5 text-center">
                         AI can make mistakes. Always verify SQL before running destructive queries. Press Enter to send, Shift+Enter for new line.
                     </p>
                 </div>
             </main>
+
+            {showSettingsModal && (
+                <BotSettingsModal
+                    settings={botSettings}
+                    onSave={handleSaveSettings}
+                    onClose={() => setShowSettingsModal(false)}
+                    isDialog={true}
+                />
+            )}
         </div>
     );
 }

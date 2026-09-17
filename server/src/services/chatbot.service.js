@@ -27,7 +27,7 @@ class ChatbotService {
         this.cachedSchema = null;
         this.cachedCompactSchema = null;
         this.schemaCachedAt = null;
-        this.SCHEMA_TTL_MS = 30 * 60 * 1000;
+        this.SCHEMA_TTL_MS = 5 * 60 * 1000;
         this.initialize();
     }
 
@@ -78,12 +78,13 @@ class ChatbotService {
     // ═══ SCHEMA INTROSPECTION ═══
     async introspectSchema() {
         try {
-            const [colsRes, fksRes, enumsRes] = await Promise.allSettled([
+            const [colsRes, fksRes, enumsRes, pksRes] = await Promise.allSettled([
                 prisma.$queryRawUnsafe(`
-                    SELECT table_name, column_name, data_type, is_nullable, character_maximum_length
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public'
-                    ORDER BY table_name, ordinal_position
+                    SELECT c.table_name, c.column_name, c.data_type, c.is_nullable, c.character_maximum_length
+                    FROM information_schema.columns c
+                    JOIN information_schema.tables t ON c.table_name = t.table_name AND t.table_schema = 'public'
+                    WHERE c.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+                    ORDER BY c.table_name, c.ordinal_position
                 `),
                 prisma.$queryRawUnsafe(`
                     SELECT tc.table_name AS source_table, kcu.column_name AS source_column,
@@ -98,12 +99,20 @@ class ChatbotService {
                     SELECT t.typname AS enum_name, array_agg(e.enumlabel ORDER BY e.enumsortorder) AS values
                     FROM pg_type t JOIN pg_enum e ON t.oid = e.enumtypid
                     GROUP BY t.typname ORDER BY t.typname
+                `),
+                prisma.$queryRawUnsafe(`
+                    SELECT tc.table_name, kcu.column_name
+                    FROM information_schema.table_constraints tc
+                    JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+                    WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public'
                 `)
             ]);
 
             const allCols = colsRes.status === 'fulfilled' && Array.isArray(colsRes.value) ? colsRes.value : [];
             const fks = fksRes.status === 'fulfilled' && Array.isArray(fksRes.value) ? fksRes.value : [];
             const enums = enumsRes.status === 'fulfilled' && Array.isArray(enumsRes.value) ? enumsRes.value : [];
+            const pks = pksRes.status === 'fulfilled' && Array.isArray(pksRes.value) ? pksRes.value : [];
+            const pkSet = new Set(pks.map(p => `${p.table_name}.${p.column_name}`));
 
             if (allCols.length === 0) {
                 return this.getFallbackSchema();
@@ -115,6 +124,7 @@ class ChatbotService {
                 let def = `  ${c.column_name} ${c.data_type}`;
                 if (c.character_maximum_length) def += `(${c.character_maximum_length})`;
                 if (c.is_nullable === 'NO') def += ' NOT NULL';
+                if (pkSet.has(`${c.table_name}.${c.column_name}`)) def += ' [PRIMARY KEY]';
                 tableMap[c.table_name].push(def);
             }
 
@@ -387,6 +397,9 @@ TABLE tickets:
                 : [];
             return { success: true, rows, rowCount: rows.length, fields, command: sql.trim().split(/\s+/)[0].toUpperCase() };
         } catch (error) {
+            if (error.message && (error.message.includes('does not exist') || error.message.includes('UndefinedTable') || error.message.includes('UndefinedColumn'))) {
+                this.refreshSchema().catch(e => console.warn('[ChatBot] Background schema refresh failed:', e.message));
+            }
             return { success: false, error: error.message, detail: error.meta?.message, hint: error.meta?.hint };
         }
     }
@@ -405,7 +418,11 @@ DATABASE SCHEMA:
 ${schema}
 
 RESPONSE FORMAT RULES:
-1. When the user asks for data/stats, generate SQL queries in a \`\`\`sql block.
+1. When the user asks for data/stats/counts/charts/graphs, generate SQL queries in a \`\`\`sql block.
+1b. ⚠️ MANDATORY SQL GENERATION ON REPEATED / FOLLOW-UP QUERIES:
+EVEN IF the user repeats a query (e.g. asking for the same graph or data again), asks a follow-up, or references earlier output:
+YOU MUST ALWAYS OUTPUT THE COMPLETE \`\`\`sql ... \`\`\` BLOCK WITH <!--EXEC_SQL:...:END_SQL--> IN YOUR CURRENT RESPONSE.
+NEVER omit the \`\`\`sql block. NEVER assume the previous query is cached or will re-run automatically. The backend execution engine ONLY executes SQL if you emit the \`\`\`sql block in the current turn. If you omit the SQL block, NO DATA WILL BE RETRIEVED AND NO CHART WILL BE GENERATED!
 \${userRole === 'admin' ? '2. You are allowed to generate INSERT, UPDATE, or DELETE queries to import or modify data. You MUST wrap them in <!--EXEC_SQL:...:END_SQL--> just like SELECT queries.' : '2. DO NOT generate INSERT, UPDATE, or DELETE SQL queries under any circumstances.'}
 3. Add <!--EXEC_SQL:your_query_here:END_SQL--> at the end of ANY generated SQL (both SELECT and INSERT/UPDATE) for auto-execution.
 3b. When inserting a new Class, construct the \`name\` column exactly in the order of "Grade Stream Section" (e.g., "12 Non-Medical C").
@@ -523,6 +540,16 @@ NEVER search for the user's exact word if it doesn't match a known DB value. ALW
   * ALWAYS query the \`role\` column and alias it as \`user_type\` or \`type\`:
     \`SELECT INITCAP(REPLACE(role::text, '_', ' ')) AS user_type, COUNT(*) AS count FROM users GROUP BY role ORDER BY count DESC;\`
   * Never write \`SELECT type FROM users\` or \`GROUP BY type\` on the \`users\` table!
+
+16. **AUTOMATIC FUTURE TABLE & COLUMN INTERPRETATION**:
+- The DATABASE SCHEMA section above is introspected live from the PostgreSQL database.
+- Any newly created tables, columns, foreign keys, or enum types added across this application appear directly in the schema above.
+- You are fully authorized to query ANY table listed in the DATABASE SCHEMA, including newly added custom tables, modules, or imported datasets.
+- When the user asks about a table, entity, or feature:
+  1. Inspect the TABLE definition in the schema to identify relevant column names, data types, and primary keys.
+  2. Inspect the FOREIGN KEYS section to determine relationships and foreign key joins to other tables.
+  3. Generate standard PostgreSQL queries using proper joins, case-insensitive matching (\`ILIKE\`), and grouping (\`INITCAP(TRIM(...))\`).
+  4. Always output the complete \`\`\`sql block with <!--EXEC_SQL:...:END_SQL--> so the application executes it and visualizes the result.
 ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
     }
 
@@ -5999,10 +6026,21 @@ ${documentContext || message}
             throw new Error('No AI provider configured. Set GEMINI_API_KEY, GROQ_API_KEY, SAMBANOVA_API_KEY, or GITHUB_TOKEN in your .env');
         }
 
+        const isChartExplicitlyRequested = /\b(chart|graph|plot|visualize|visualization|pie|bar\s*chart|line\s*chart|area\s*chart|donut\s*chart|doughnut|histogram)\b/i.test(msgLower);
+        const isAnalyticsOrChartQuery = /\b(graph|chart|plot|count|list|show|how many|records?|modules?|users?|students?|assignments?|inventory|pcs?|labs?|tickets?|distribution|breakdown|statistics|stats|visualize)\b/i.test(msgLower);
+
         let lastError = null;
         for (const tryProvider of providers) {
             try {
                 aiResult = await tryProvider();
+                // In Auto mode on explicit chart/graph requests: if provider omitted SQL, try next available provider
+                if (provider === 'auto' && isChartExplicitlyRequested && providers.length > 1) {
+                    const hasSQL = /<!--EXEC_SQL:/i.test(aiResult.text) || /```sql\s*[\s\S]*?```/i.test(aiResult.text);
+                    if (!hasSQL && tryProvider !== providers[providers.length - 1]) {
+                        console.warn(`[ChatBot] Auto provider (${aiResult.provider}) omitted SQL on chart request. Trying next provider...`);
+                        continue;
+                    }
+                }
                 break;
             } catch (err) {
                 lastError = err;
@@ -6101,6 +6139,38 @@ ${documentContext || message}
             executedSQL = sqlMatch[1].trim();
         }
 
+        // ─── SQL OMISSION RECOVERY (Ensures charts/data queries never fail due to missing SQL block) ───
+        if (!executedSQL && (isChartExplicitlyRequested || isAnalyticsOrChartQuery) && !options._isSqlRecovery) {
+            console.warn('[ChatBot] Data/chart requested but model omitted SQL. Attempting recovery...');
+            // 1. Check if conversation history has a recent SQL query on the same intent
+            const recentSqlMsg = [...conversationHistory].reverse().find(m => m.sql || (m.role === 'model' && /```sql[\s\S]*?```/i.test(m.content)));
+            if (recentSqlMsg?.sql) {
+                executedSQL = recentSqlMsg.sql;
+                console.log('[ChatBot] Recovered SQL from recent history:', executedSQL.substring(0, 60));
+            } else {
+                // 2. Fast 1-shot prompt to generate the SQL query
+                try {
+                    const fastSqlPrompt = `The user asked: "${message}". Generate ONLY the executable PostgreSQL SQL query inside \`\`\`sql ... \`\`\` with <!--EXEC_SQL:...:END_SQL-->. Follow database schema rules strictly. Do not output any other text or reasoning.`;
+                    let recoveryResult = null;
+                    if (this.groqClient) {
+                        recoveryResult = await this.callGroq([{ role: 'user', content: fastSqlPrompt }]);
+                    } else if (this.geminiModels.length) {
+                        recoveryResult = await this.callGemini([{ role: 'user', parts: [{ text: fastSqlPrompt }] }]);
+                    }
+                    if (recoveryResult?.text) {
+                        const m = recoveryResult.text.match(/<!--EXEC_SQL:([\s\S]*?)(?::END_SQL-->|\nEND_SQL-->|END_SQL-->)/i) ||
+                                  recoveryResult.text.match(/```sql\s*([\s\S]*?)\s*```/i);
+                        if (m) {
+                            executedSQL = m[1].trim();
+                            console.log('[ChatBot] Recovered SQL via fast 1-shot prompt:', executedSQL.substring(0, 60));
+                        }
+                    }
+                } catch (recErr) {
+                    console.warn('[ChatBot] SQL recovery prompt failed:', recErr.message);
+                }
+            }
+        }
+
         if (executedSQL) {
             executedSQL = executedSQL
                 .replace(/<!--[\s\S]*?-->/g, '')
@@ -6174,9 +6244,6 @@ ${documentContext || message}
             }
         }
 
-        // Check if user explicitly asked for a chart or graph
-        const isChartExplicitlyRequested = /\b(chart|graph|plot|visualize|visualization|pie|bar\s*chart|line\s*chart|area\s*chart|donut\s*chart|doughnut|histogram)\b/i.test(msgLower);
-
         // Extract chart data ONLY IF explicitly requested by the user
         let chartData = null;
         const chartMatch = aiText.match(/```chart\n?([\s\S]*?)```/);
@@ -6189,7 +6256,10 @@ ${documentContext || message}
 
         // If user explicitly asked for a chart/graph and we have query results to visualize
         if (isChartExplicitlyRequested && queryResult?.success && queryResult.rows?.length >= 1) {
-            const autoChart = this.autoGenerateChart(queryResult);
+            const autoChart = this.autoGenerateChart(queryResult, {
+                defaultChartColors: options.defaultChartColors,
+                defaultChartType: options.defaultChartType
+            });
             if (autoChart) {
                 if (chartData) {
                     // AI requested a chart but might have fake/empty data
@@ -6200,7 +6270,9 @@ ${documentContext || message}
                         chartData.type = 'bar';
                     }
                     if (!chartData.title || chartData.title === 'Chart Title') chartData.title = autoChart.title;
-                    if (!chartData.colors) chartData.colors = autoChart.colors;
+                    chartData.colors = (Array.isArray(options.defaultChartColors) && options.defaultChartColors.length > 0)
+                        ? options.defaultChartColors
+                        : (chartData.colors || autoChart.colors);
                 } else {
                     chartData = autoChart;
                 }
@@ -6227,7 +6299,7 @@ ${documentContext || message}
         };
     }
 
-    autoGenerateChart(result) {
+    autoGenerateChart(result, options = {}) {
         if (!result.rows || result.rows.length < 1) return null;
         const fields = result.fields?.map(f => f.name) || Object.keys(result.rows[0]);
         if (fields.length < 2 && (result.rows.length === 0 || !fields.length)) return null;
@@ -6238,6 +6310,14 @@ ${documentContext || message}
             if (!s) return 'Unknown';
             return s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
         };
+
+        const defaultPalette = Array.isArray(options.defaultChartColors) && options.defaultChartColors.length > 0
+            ? options.defaultChartColors
+            : ['#F5B027', '#538D4E', '#2563EB', '#DC2626', '#7C3AED', '#0D9488', '#EA580C', '#0284C7', '#475569', '#DB2777'];
+
+        const preferredType = (options.defaultChartType && options.defaultChartType !== 'auto')
+            ? options.defaultChartType
+            : null;
 
         const numCols = fields.filter(f => {
             const val = result.rows[0][f];
@@ -6264,12 +6344,13 @@ ${documentContext || message}
                     numCols.forEach(col => { existing[col] = (existing[col] || 0) + (Number(row[col]) || 0); });
                 }
             });
+            const type = (preferredType && preferredType !== 'doughnut' && preferredType !== 'pie') ? preferredType : 'bar';
             return {
-                type: 'bar',
+                type,
                 title: `${numCols.join(' and ')} by ${labelCol}`,
                 data: Array.from(mergedMap.values()),
                 seriesKeys: numCols,
-                colors: ['#F5B027', '#538D4E', '#2563EB', '#DC2626', '#7C3AED', '#0D9488', '#EA580C', '#0284C7', '#475569', '#DB2777']
+                colors: defaultPalette
             };
         }
 
@@ -6291,12 +6372,13 @@ ${documentContext || message}
                 seriesKeys.add(series);
             });
             
+            const type = (preferredType && preferredType !== 'doughnut' && preferredType !== 'pie') ? preferredType : 'bar';
             return {
-                type: 'bar',
+                type,
                 title: `${valueCol} by ${groupCol} and ${seriesCol}`,
                 data: Object.values(pivot).slice(0, 20),
                 seriesKeys: Array.from(seriesKeys),
-                colors: ['#F5B027', '#538D4E', '#2563EB', '#DC2626', '#7C3AED', '#0D9488', '#EA580C', '#0284C7', '#475569', '#DB2777']
+                colors: defaultPalette
             };
         }
 
@@ -6313,11 +6395,11 @@ ${documentContext || message}
         });
 
         const data = Array.from(mergedMap.entries()).slice(0, 15).map(([label, value]) => ({ label, value }));
-        const type = data.length <= 6 ? 'doughnut' : 'bar';
+        const type = preferredType || (data.length <= 6 ? 'doughnut' : 'bar');
         return {
             type, title: `${valueCol} by ${labelCol}`, data,
             seriesKeys: ['value'],
-            colors: ['#F5B027', '#538D4E', '#2563EB', '#DC2626', '#7C3AED', '#0D9488', '#EA580C', '#0284C7', '#475569', '#DB2777']
+            colors: defaultPalette
         };
     }
 
