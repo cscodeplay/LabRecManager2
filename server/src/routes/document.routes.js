@@ -231,10 +231,6 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
         return res.status(400).json({ success: false, message: 'No file provided' });
     }
 
-    if (!cloudinary.isConfigured()) {
-        return res.status(503).json({ success: false, message: 'File storage not configured' });
-    }
-
     // Check storage quota before upload
     const user = await prisma.user.findUnique({
         where: { id: req.user.id },
@@ -266,12 +262,37 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
         }
     }
 
-    // Upload to Cloudinary
-    const result = await cloudinary.uploadFile(
-        req.file.buffer,
-        req.file.originalname,
-        req.file.mimetype
-    );
+    // Save file locally to /uploads to guarantee file is never lost and allow local serving
+    const uploadDir = path.join(__dirname, '../../uploads');
+    if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    const safeBaseName = req.file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const diskFileName = `doc_${Date.now()}_${safeBaseName}`;
+    const diskPath = path.join(uploadDir, diskFileName);
+    fs.writeFileSync(diskPath, req.file.buffer);
+
+    let finalPublicId = `local_${diskFileName}`;
+    let finalUrl = `/uploads/${diskFileName}`;
+
+    // If Cloudinary is configured and file size <= 10MB (Cloudinary raw free tier limit is 10MB), attempt Cloudinary upload
+    if (cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
+        try {
+            const result = await cloudinary.uploadFile(
+                req.file.buffer,
+                req.file.originalname,
+                req.file.mimetype
+            );
+            if (result && (result.secureUrl || result.url)) {
+                finalPublicId = result.publicId;
+                finalUrl = result.secureUrl || result.url;
+            }
+        } catch (cloudErr) {
+            console.warn('[Documents Upload] Cloudinary upload failed. Falling back to local storage:', cloudErr.message);
+        }
+    } else if (req.file.size > 10 * 1024 * 1024) {
+        console.log(`[Documents Upload] File size is ${(req.file.size / (1024*1024)).toFixed(1)} MB (> 10 MB). Stored locally in /uploads to prevent Cloudinary payload rejection.`);
+    }
 
     // Create document record
     const doc = await prisma.document.create({
@@ -285,8 +306,8 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
             fileType: getFileType(req.file.mimetype),
             mimeType: req.file.mimetype,
             fileSize: req.file.size,
-            cloudinaryId: result.publicId,
-            url: result.secureUrl,
+            cloudinaryId: finalPublicId,
+            url: finalUrl,
             isPublic: isPublic === 'true' || isPublic === true,
             category: category || null
         },
@@ -341,24 +362,43 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
     };
 
     if (req.file) {
-        try {
-            await cloudinary.deleteFile(doc.cloudinaryId, 'raw');
-        } catch (err) {
-            console.error('Failed to delete old file from Cloudinary:', err);
+        const uploadDir = path.join(__dirname, '../../uploads');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
         }
+        const safeBaseName = req.file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
+        const diskFileName = `doc_${Date.now()}_${safeBaseName}`;
+        const diskPath = path.join(uploadDir, diskFileName);
+        fs.writeFileSync(diskPath, req.file.buffer);
 
-        const result = await cloudinary.uploadFile(
-            req.file.buffer,
-            req.file.originalname,
-            req.file.mimetype
-        );
+        let finalPublicId = `local_${diskFileName}`;
+        let finalUrl = `/uploads/${diskFileName}`;
+
+        if (cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
+            try {
+                if (doc.cloudinaryId && !doc.cloudinaryId.startsWith('local_')) {
+                    await cloudinary.deleteFile(doc.cloudinaryId, 'raw').catch(() => {});
+                }
+                const result = await cloudinary.uploadFile(
+                    req.file.buffer,
+                    req.file.originalname,
+                    req.file.mimetype
+                );
+                if (result && (result.secureUrl || result.url)) {
+                    finalPublicId = result.publicId;
+                    finalUrl = result.secureUrl || result.url;
+                }
+            } catch (cloudErr) {
+                console.warn('[Documents Update] Cloudinary upload failed. Falling back to local storage:', cloudErr.message);
+            }
+        }
 
         updateData.fileName = req.file.originalname;
         updateData.fileType = getFileType(req.file.mimetype);
         updateData.mimeType = req.file.mimetype;
         updateData.fileSize = req.file.size;
-        updateData.cloudinaryId = result.publicId;
-        updateData.url = result.secureUrl;
+        updateData.cloudinaryId = finalPublicId;
+        updateData.url = finalUrl;
     }
 
     const updated = await prisma.document.update({

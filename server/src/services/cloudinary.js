@@ -60,11 +60,12 @@ class CloudinaryService {
             }
 
             // Create upload stream
+            const cleanName = (fileName || 'doc').replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
             const uploadStream = cloudinary.uploader.upload_stream(
                 {
                     resource_type: resourceType,
                     folder: 'ulrms',
-                    public_id: `${Date.now()}_${fileName.replace(/\.[^.]+$/, '')}`,
+                    public_id: `${Date.now()}_${cleanName}`,
                     // For images, apply transformations
                     ...(resourceType === 'image' && {
                         transformation: [
