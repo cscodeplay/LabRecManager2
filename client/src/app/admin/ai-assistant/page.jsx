@@ -6,15 +6,16 @@ import {
     Bot, Send, Upload, Database, ChevronDown, ChevronRight, Trash2,
     Sparkles, FileText, AlertTriangle, Copy, Check, RefreshCw, X, Download, Loader2,
     GraduationCap, Clock, CheckCircle2, Edit3, XCircle, Undo2, ExternalLink, Plus, Calendar,
-    FileSpreadsheet, BookOpen, Settings, Square
+    FileSpreadsheet, BookOpen, Settings, Square, Folder
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import api, { classesAPI, timetableAPI } from '@/lib/api';
+import api, { classesAPI, timetableAPI, foldersAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import FileReferenceDropdown from '@/components/FileReferenceDropdown';
 import GenericDataImportConfirmCard from '@/components/GenericDataImportConfirmCard';
 import TrainingModuleConfirmCard from '@/components/TrainingModuleConfirmCard';
+import { DocumentSaveToFolderCard, DocumentMoveFolderCard } from '@/components/DocumentFolderActionCards';
 import ThinkingStepsCollapsible from '@/components/ThinkingStepsCollapsible';
 import { ChatChart, BotSettingsModal, loadBotSettings, getActivePaletteColors, DEFAULT_BOT_SETTINGS, GRAPH_PALETTES } from '@/components/FloatingChatbot';
 import { formatTime } from '@/lib/dateUtils';
@@ -1217,6 +1218,21 @@ export default function AIAssistantPage() {
         });
     };
 
+    // ── Document Folders & Direct Upload Target State ──
+    const [availableDocumentFolders, setAvailableDocumentFolders] = useState([]);
+    const [uploadTargetFolderId, setUploadTargetFolderId] = useState(null);
+    const [uploadProgress, setUploadProgress] = useState(null); // { percent, loadedMb, totalMb }
+
+    useEffect(() => {
+        foldersAPI.getAll().then(res => {
+            if (res.data?.success && Array.isArray(res.data.data)) {
+                setAvailableDocumentFolders(res.data.data);
+            }
+        }).catch(err => {
+            console.error('Failed to load document folders in AI Assistant:', err);
+        });
+    }, []);
+
     // ── File Reference Popover State (\ trigger) ──
     const [fileRefOpen, setFileRefOpen] = useState(false);
     const [fileRefQuery, setFileRefQuery] = useState('');
@@ -1393,6 +1409,8 @@ export default function AIAssistantPage() {
                     inventoryImportAction: data.inventoryImportAction,
                     trainingModuleGenerateAction: data.trainingModuleGenerateAction,
                     trainingAction: data.trainingAction,
+                    documentSaveAction: data.documentSaveAction,
+                    documentMoveAction: data.documentMoveAction,
                     timestamp: data.timestamp
                 }]);
             }
@@ -1451,24 +1469,56 @@ export default function AIAssistantPage() {
     };
 
     const handleFileUpload = async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+        const fileList = Array.from(e.target.files || []);
+        if (fileList.length === 0) return;
 
         setIsUploading(true);
+        setUploadProgress({ percent: 0, loadedMb: '0.0', totalMb: '0.0' });
+
         try {
             const formData = new FormData();
-            formData.append('document', file);
+            fileList.forEach(file => {
+                formData.append('files', file);
+            });
+
+            if (uploadTargetFolderId) {
+                formData.append('folderId', uploadTargetFolderId);
+                formData.append('saveToFolder', 'true');
+            }
 
             const res = await api.post('/admin/chatbot/upload', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+                headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 90000,
+                onUploadProgress: (progressEvent) => {
+                    if (progressEvent.total) {
+                        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                        const loadedMb = (progressEvent.loaded / (1024 * 1024)).toFixed(1);
+                        const totalMb = (progressEvent.total / (1024 * 1024)).toFixed(1);
+                        setUploadProgress({ percent, loadedMb, totalMb });
+                    }
+                }
             });
 
             if (res.data.success) {
                 const docData = res.data.data;
-                setUploadedDocs(prev => [...prev, docData]);
-                const action = docData.dataImportAction || docData.dataLoadingAction;
+                const fileItems = Array.isArray(docData.files) ? docData.files : [docData];
+                setUploadedDocs(prev => [...prev, ...fileItems]);
 
-                if (action) {
+                const action = docData.dataImportAction || docData.dataLoadingAction;
+                const saveAction = docData.documentSaveAction;
+
+                const sizeMb = ((docData.fileSize || 0) / (1024*1024)).toFixed(1);
+                const docInfo = docData.charCount ? `*Extracted ${docData.charCount.toLocaleString()} characters for AI reference.*` : `*${sizeMb} MB • Ready for AI questions & folder saving.*`;
+
+                if (saveAction) {
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        content: `📁 **Document Ready & Cataloged:** ${docData.fileName || fileItems[0]?.fileName || 'Uploaded file'}\n\n${docInfo}\n\nYou can save or file this document directly into your folders below:`,
+                        documentSaveAction: saveAction,
+                        timestamp: new Date().toISOString()
+                    }]);
+                    toast.success('Document uploaded and ready to save to folder');
+                } else if (action) {
                     setMessages(prev => [...prev, {
                         role: 'assistant',
                         content: `📊 **Data Table Detected & Analyzed:** ${docData.fileName}\n\nI have auto-analyzed your uploaded file and mapped it to the **${action.targetTableName || action.targetTable || 'data'}** schema. Please review the column mapping and data preview below, select your destination, and confirm to import.`,
@@ -1479,7 +1529,7 @@ export default function AIAssistantPage() {
                 } else {
                     setMessages(prev => [...prev, {
                         role: 'assistant',
-                        content: `📄 **Document loaded:** ${docData.fileName}\n\n*${docData.charCount ? docData.charCount.toLocaleString() : '0'} characters extracted.* You can now ask me questions about this document.`,
+                        content: `📄 **Document loaded:** ${docData.fileName || fileItems[0]?.fileName || 'Uploaded file'}\n\n${docInfo}\n\nYou can now ask me questions or instruct me to process this document.`,
                         timestamp: new Date().toISOString()
                     }]);
                     toast.success('Document uploaded');
@@ -1489,6 +1539,7 @@ export default function AIAssistantPage() {
             toast.error('Upload failed: ' + (err.response?.data?.message || err.message));
         } finally {
             setIsUploading(false);
+            setUploadProgress(null);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
@@ -1630,6 +1681,12 @@ export default function AIAssistantPage() {
                                         {(msg.trainingModuleGenerateAction || (msg.trainingAction?.actionType === 'training_module_create')) && (
                                             <TrainingModuleConfirmCard action={msg.trainingModuleGenerateAction || msg.trainingAction} />
                                         )}
+                                        {msg.documentSaveAction && (
+                                            <DocumentSaveToFolderCard action={msg.documentSaveAction} />
+                                        )}
+                                        {msg.documentMoveAction && (
+                                            <DocumentMoveFolderCard action={msg.documentMoveAction} />
+                                        )}
                                     </>
                                 )}
                                 {msg.queryResult && (
@@ -1711,10 +1768,58 @@ export default function AIAssistantPage() {
                         </div>
                     )}
 
+                    {/* Upload Progress Indicator */}
+                    {uploadProgress && (
+                        <div className="px-3 py-2 mb-2 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 rounded-xl flex items-center justify-between text-xs text-indigo-800 dark:text-indigo-200 animate-in fade-in">
+                            <div className="flex items-center gap-2.5 flex-1 mr-3">
+                                <Loader2 className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+                                <div className="flex-1">
+                                    <div className="flex justify-between text-[11px] mb-1 font-medium">
+                                        <span>Uploading {uploadProgress.loadedMb} MB of {uploadProgress.totalMb} MB...</span>
+                                        <span>{uploadProgress.percent}%</span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-indigo-200 dark:bg-indigo-900 rounded-full overflow-hidden">
+                                        <div className="h-full bg-indigo-600 dark:bg-indigo-400 transition-all duration-200" style={{ width: `${uploadProgress.percent}%` }} />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Folder Target Bar (if folders exist) */}
+                    {availableDocumentFolders.length > 0 && (
+                        <div className="px-3 py-1.5 mb-2 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-xl">
+                            <div className="flex items-center gap-2 truncate">
+                                <Folder className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                                <span className="font-medium text-slate-700 dark:text-slate-300 flex-shrink-0">Destination Folder:</span>
+                                <select
+                                    value={uploadTargetFolderId || ''}
+                                    onChange={(e) => setUploadTargetFolderId(e.target.value || null)}
+                                    className="text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md px-2 py-0.5 text-slate-700 dark:text-slate-200 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer max-w-[200px] truncate"
+                                    title="Choose destination folder for uploads"
+                                >
+                                    <option value="">(No folder / General)</option>
+                                    {availableDocumentFolders.map(f => (
+                                        <option key={f.id} value={f.id}>{f.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            {uploadTargetFolderId && (
+                                <button
+                                    type="button"
+                                    onClick={() => setUploadTargetFolderId(null)}
+                                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline ml-2 font-medium"
+                                >
+                                    Clear target
+                                </button>
+                            )}
+                        </div>
+                    )}
+
                     <div className="flex items-end gap-2">
                         {/* Upload button */}
-                        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden"
-                            accept=".txt,.csv,.json,.pdf,.md,.sql,.log" />
+                        <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} className="hidden"
+                            accept=".txt,.csv,.json,.pdf,.md,.sql,.log,.png,.jpg,.jpeg,.webp,.bmp" />
                         <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
                             className="flex-shrink-0 w-10 h-10 rounded-xl bg-violet-50 dark:bg-violet-950 border border-violet-200 dark:border-violet-800 flex items-center justify-center text-violet-500 hover:bg-violet-100 dark:hover:bg-violet-900 transition disabled:opacity-50"
                             title="Upload document">

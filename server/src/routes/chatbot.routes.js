@@ -9,12 +9,15 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const chatbotService = require('../services/chatbot.service');
 const prisma = require('../config/database');
 const bcrypt = require('bcryptjs');
 const { detectTableAndMapping, applyMapping, TABLE_SCHEMAS } = require('../utils/tableSchemaDetector');
+const cloudinary = require('../services/cloudinary');
 
 // File upload config — 100MB limit
 const upload = multer({
@@ -138,7 +141,18 @@ router.post('/chat', authenticate, authorize('admin', 'principal', 'instructor',
  */
 router.post('/upload', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant', 'student'), upload.any(), asyncHandler(async (req, res) => {
     const rawFiles = req.files || (req.file ? [req.file] : []);
-    const files = rawFiles.slice(0, 5); // Max 5 files
+    
+    // Deduplicate incoming files by originalname + size to prevent duplicate processing
+    const seenFiles = new Set();
+    const uniqueFiles = [];
+    for (const f of rawFiles) {
+        const key = `${f.originalname}_${f.size}`;
+        if (!seenFiles.has(key)) {
+            seenFiles.add(key);
+            uniqueFiles.push(f);
+        }
+    }
+    const files = uniqueFiles.slice(0, 5); // Max 5 unique files
 
     if (files.length === 0) {
         return res.status(400).json({
@@ -147,33 +161,88 @@ router.post('/upload', authenticate, authorize('admin', 'principal', 'instructor
         });
     }
 
+    const { folderId, saveToFolder, documentCategory, documentName } = req.body;
+
     try {
+        const uploadDir = path.join(__dirname, '../../uploads');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+
         const processedResults = [];
         let combinedText = '';
 
         for (let i = 0; i < files.length; i++) {
             const f = files[i];
-            const text = await chatbotService.extractDocumentText(
-                f.buffer,
-                f.mimetype,
-                f.originalname
-            );
+            
+            // Save file to disk in uploads folder for fast serving and future reference
+            const ext = path.extname(f.originalname) || '';
+            const safeName = f.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
+            const diskFileName = `doc_${Date.now()}_${i}_${safeName}`;
+            const diskPath = path.join(uploadDir, diskFileName);
+            fs.writeFileSync(diskPath, f.buffer);
+
+            // Determine if parsing should be instant (small text/CSV/JSON) vs lazy on-demand (PDF/large)
+            const isTextOrCsv = f.mimetype.includes('text/') || f.mimetype.includes('csv') || f.originalname.match(/\.(csv|tsv|txt|json)$/i);
+            const isSmallFile = f.size < 512 * 1024; // < 500 KB
+
+            let text = '';
+            let isParsed = false;
+
+            if (isTextOrCsv && isSmallFile) {
+                // Instant sync extraction for small text/CSV (< 5ms) to detect table columns immediately
+                text = await chatbotService.extractDocumentText(
+                    f.buffer,
+                    f.mimetype,
+                    f.originalname
+                );
+                isParsed = true;
+                try {
+                    fs.writeFileSync(`${diskPath}.txt`, text, 'utf8');
+                } catch (cErr) {}
+            } else {
+                // Lazy / On-Demand for PDFs, large spreadsheets, and binary files:
+                // DO NOT block the upload HTTP response!
+                isParsed = false;
+                const sizeMb = (f.size / (1024 * 1024)).toFixed(1);
+                text = `📄 [Document: ${f.originalname} (${sizeMb} MB). Uploaded and ready. Text indexed for queries & folders.]`;
+
+                // Asynchronous background pre-warming of disk cache
+                setImmediate(async () => {
+                    try {
+                        console.log(`[ChatBot] Background parsing initiated for ${diskFileName}...`);
+                        const extracted = await chatbotService.extractDocumentText(f.buffer, f.mimetype, f.originalname);
+                        fs.writeFileSync(`${diskPath}.txt`, extracted, 'utf8');
+                        console.log(`[ChatBot] Background parsing completed for ${diskFileName} (${extracted.length} chars cached)`);
+                    } catch (bgErr) {
+                        console.warn(`[ChatBot] Background parsing warning for ${diskFileName}:`, bgErr.message);
+                    }
+                });
+            }
 
             let imageUrl = null;
             if (f.mimetype.startsWith('image/')) {
-                imageUrl = `data:${f.mimetype};base64,${f.buffer.toString('base64')}`;
+                // If small image, can use inline data, otherwise use fast local URL to avoid huge JSON payloads
+                if (f.size < 1024 * 1024) {
+                    imageUrl = `data:${f.mimetype};base64,${f.buffer.toString('base64')}`;
+                } else {
+                    imageUrl = `/uploads/${diskFileName}`;
+                }
             }
 
             combinedText += `\n\n=== [File ${i + 1}/${files.length}: ${f.originalname}] ===\n${text}`;
 
             processedResults.push({
                 fileName: f.originalname,
+                localFileName: diskFileName,
+                fileUrl: `/uploads/${diskFileName}`,
                 fileSize: f.size,
                 mimeType: f.mimetype,
                 imageUrl,
                 extractedText: text,
-                charCount: text.length,
-                preview: text.substring(0, 500) + (text.length > 500 ? '...' : '')
+                isParsed,
+                charCount: isParsed ? text.length : null,
+                preview: isParsed ? (text.substring(0, 500) + (text.length > 500 ? '...' : '')) : `Document uploaded and ready (${(f.size / (1024 * 1024)).toFixed(1)} MB). Content will be analyzed on-demand when referenced in chat.`
             });
         }
 
@@ -356,6 +425,69 @@ router.post('/upload', authenticate, authorize('admin', 'principal', 'instructor
             }
         }
 
+        // Fetch folders for user's school so user can save document to any folder
+        const availableFolders = await prisma.documentFolder.findMany({
+            where: {
+                ...(req.user.schoolId ? { schoolId: req.user.schoolId } : {}),
+                deletedAt: null
+            },
+            select: { id: true, name: true, parentId: true },
+            orderBy: { name: 'asc' }
+        });
+
+        // If folderId was provided or saveToFolder requested, save documents to DB immediately
+        let savedDocuments = [];
+        if (saveToFolder === 'true' || saveToFolder === true || (folderId && folderId !== 'null' && folderId !== 'undefined')) {
+            const targetFolderId = (folderId && folderId !== 'null' && folderId !== 'undefined') ? folderId : null;
+            
+            for (const f of processedResults) {
+                try {
+                    const docName = documentName || f.fileName.replace(/\.[^.]+$/, '');
+                    const newDoc = await prisma.document.create({
+                        data: {
+                            schoolId: req.user.schoolId,
+                            uploadedById: req.user.id,
+                            folderId: targetFolderId,
+                            name: docName,
+                            fileName: f.fileName,
+                            fileType: (f.fileName.split('.').pop() || 'pdf').toLowerCase(),
+                            mimeType: f.mimeType,
+                            fileSize: f.fileSize,
+                            cloudinaryId: `local_${f.localFileName}`,
+                            url: f.fileUrl,
+                            category: documentCategory || 'other',
+                            isPublic: false
+                        }
+                    });
+                    savedDocuments.push(newDoc);
+
+                    // Update user storage
+                    await prisma.user.update({
+                        where: { id: req.user.id },
+                        data: { storageUsedBytes: { increment: f.fileSize } }
+                    }).catch(() => {});
+                } catch (dbErr) {
+                    console.error('[ChatBot Save Document Error]:', dbErr);
+                }
+            }
+        }
+
+        const isSaved = savedDocuments.length > 0;
+        const targetFolder = availableFolders.find(f => f.id === folderId);
+        const documentSaveAction = {
+            actionType: 'save_to_folder',
+            fileName: isMulti ? `${processedResults.length} Documents` : mainResult.fileName,
+            localFileName: mainResult.localFileName,
+            fileSize: processedResults.reduce((acc, f) => acc + f.fileSize, 0),
+            mimeType: isMulti ? 'multipart/mixed' : mainResult.mimeType,
+            folderId: targetFolder ? targetFolder.id : null,
+            folderName: targetFolder ? targetFolder.name : 'Root Folder (All Documents)',
+            availableFolders: availableFolders.map(f => ({ id: f.id, name: f.name })),
+            category: documentCategory || 'other',
+            savedDocumentId: savedDocuments[0]?.id || null,
+            isConfirmed: isSaved
+        };
+
         res.json({
             success: true,
             data: {
@@ -365,11 +497,14 @@ router.post('/upload', authenticate, authorize('admin', 'principal', 'instructor
                 imageUrl: mainResult.imageUrl,
                 imageUrls: processedResults.map(p => p.imageUrl).filter(Boolean),
                 files: processedResults,
+                isParsed: processedResults.every(p => p.isParsed),
                 extractedText: combinedText.trim(),
-                charCount: combinedText.length,
+                charCount: processedResults.some(p => p.isParsed) ? combinedText.length : null,
                 preview: combinedText.substring(0, 600) + (combinedText.length > 600 ? '...' : ''),
                 dataLoadingAction,
-                dataImportAction
+                dataImportAction,
+                documentSaveAction,
+                availableFolders: availableFolders.map(f => ({ id: f.id, name: f.name }))
             }
         });
     } catch (error) {
@@ -862,6 +997,119 @@ router.post('/sessions', authenticate, asyncHandler(async (req, res) => {
     });
     
     res.json({ success: true, data: created });
+}));
+
+/**
+ * @route   POST /api/admin/chatbot/save-to-folder
+ * @desc    Save an uploaded file or document into a specific folder in the Document Repository
+ * @access  Private (All authenticated users)
+ */
+router.post('/save-to-folder', authenticate, asyncHandler(async (req, res) => {
+    const { fileName, localFileName, folderId, name, category, isPublic, description } = req.body;
+
+    if (!fileName && !localFileName) {
+        return res.status(400).json({ success: false, message: 'File name or reference is required' });
+    }
+
+    const uploadDir = path.join(__dirname, '../../uploads');
+    const targetLocalName = localFileName || fileName;
+    const localPath = path.join(uploadDir, path.basename(targetLocalName));
+
+    let fileUrl = `/uploads/${path.basename(targetLocalName)}`;
+    let fileSize = 1024;
+    let mimeType = 'application/pdf';
+
+    if (fs.existsSync(localPath)) {
+        const stat = fs.statSync(localPath);
+        fileSize = stat.size;
+    }
+
+    // Validate folder if provided
+    let matchedFolder = null;
+    if (folderId && folderId !== 'null' && folderId !== 'undefined') {
+        matchedFolder = await prisma.documentFolder.findFirst({
+            where: { id: folderId, schoolId: req.user.schoolId, deletedAt: null }
+        });
+        if (!matchedFolder) {
+            return res.status(404).json({ success: false, message: 'Target folder not found' });
+        }
+    }
+
+    const ext = (fileName || targetLocalName).split('.').pop().toLowerCase() || 'pdf';
+    const docName = name || (fileName || targetLocalName).replace(/\.[^.]+$/, '');
+
+    const doc = await prisma.document.create({
+        data: {
+            schoolId: req.user.schoolId,
+            uploadedById: req.user.id,
+            folderId: matchedFolder ? matchedFolder.id : null,
+            name: docName,
+            description: description || null,
+            fileName: fileName || path.basename(targetLocalName),
+            fileType: ext,
+            mimeType: mimeType,
+            fileSize: fileSize,
+            cloudinaryId: `local_${path.basename(targetLocalName)}`,
+            url: fileUrl,
+            isPublic: isPublic === true || isPublic === 'true',
+            category: category || 'other'
+        }
+    });
+
+    // Increment user storage
+    await prisma.user.update({
+        where: { id: req.user.id },
+        data: { storageUsedBytes: { increment: fileSize } }
+    }).catch(() => {});
+
+    res.status(201).json({
+        success: true,
+        message: `Document "${docName}" saved to ${matchedFolder ? matchedFolder.name : 'Root Folder'} successfully`,
+        data: { document: doc }
+    });
+}));
+
+/**
+ * @route   POST /api/admin/chatbot/move-document
+ * @desc    Move an existing document to a target folder via chatbot action
+ * @access  Private (All authenticated users)
+ */
+router.post('/move-document', authenticate, asyncHandler(async (req, res) => {
+    const { documentId, targetFolderId } = req.body;
+
+    if (!documentId) {
+        return res.status(400).json({ success: false, message: 'Document ID is required' });
+    }
+
+    const doc = await prisma.document.findFirst({
+        where: { id: documentId, schoolId: req.user.schoolId, deletedAt: null }
+    });
+
+    if (!doc) {
+        return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    let targetFolderName = 'Root Folder (All Documents)';
+    if (targetFolderId && targetFolderId !== 'null' && targetFolderId !== 'undefined') {
+        const folder = await prisma.documentFolder.findFirst({
+            where: { id: targetFolderId, schoolId: req.user.schoolId, deletedAt: null }
+        });
+        if (!folder) {
+            return res.status(404).json({ success: false, message: 'Target folder not found' });
+        }
+        targetFolderName = folder.name;
+    }
+
+    const updated = await prisma.document.update({
+        where: { id: documentId },
+        data: { folderId: (targetFolderId && targetFolderId !== 'null' && targetFolderId !== 'undefined') ? targetFolderId : null }
+    });
+
+    res.json({
+        success: true,
+        message: `Document "${doc.name}" moved to "${targetFolderName}" successfully`,
+        data: { document: updated }
+    });
 }));
 
 /**

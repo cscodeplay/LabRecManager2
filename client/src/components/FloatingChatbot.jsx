@@ -22,6 +22,7 @@ import FileReferenceDropdown from './FileReferenceDropdown';
 import GenericDataImportConfirmCard from './GenericDataImportConfirmCard';
 import TrainingModuleConfirmCard from './TrainingModuleConfirmCard';
 import ThinkingStepsCollapsible from './ThinkingStepsCollapsible';
+import { DocumentSaveToFolderCard, DocumentMoveFolderCard } from './DocumentFolderActionCards';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
@@ -8033,6 +8034,20 @@ export default function FloatingChatbot() {
     const [loadingPhase, setLoadingPhase] = useState(0);
     const [activePromptForLoading, setActivePromptForLoading] = useState('');
     const abortControllerRef = useRef(null);
+    const [uploadProgress, setUploadProgress] = useState(null);
+    const [uploadTargetFolderId, setUploadTargetFolderId] = useState('');
+    const [availableDocumentFolders, setAvailableDocumentFolders] = useState([]);
+
+    useEffect(() => {
+        if (isOpen && isAdmin) {
+            foldersAPI.getAll()
+                .then(res => {
+                    const list = res.data?.data?.folders || res.data?.folders || [];
+                    setAvailableDocumentFolders(list.map(f => ({ id: f.id, name: f.name })));
+                })
+                .catch(() => {});
+        }
+    }, [isOpen, isAdmin]);
 
     const handleStopGeneration = () => {
         if (abortControllerRef.current) {
@@ -8679,19 +8694,43 @@ export default function FloatingChatbot() {
         }
 
         setIsUploading(true);
+        const totalBytes = files.reduce((acc, f) => acc + f.size, 0);
+        setUploadProgress({
+            percent: 0,
+            loadedMb: '0.0',
+            totalMb: (totalBytes / (1024 * 1024)).toFixed(1)
+        });
+
         try {
             const fd = new FormData();
+            // Single append per file (resolves the 3x duplicate payload bug for 12MB+ files)
             files.forEach(f => {
-                fd.append('documents', f);
                 fd.append('files', f);
             });
-            fd.append('document', files[0]); // Backward compatibility
+            if (uploadTargetFolderId) {
+                fd.append('folderId', uploadTargetFolderId);
+                fd.append('saveToFolder', 'true');
+            }
 
-            const res = await api.post('/admin/chatbot/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+            const res = await api.post('/admin/chatbot/upload', fd, { 
+                headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 120000,
+                onUploadProgress: (progressEvent) => {
+                    if (progressEvent.total) {
+                        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                        const loadedMb = (progressEvent.loaded / (1024 * 1024)).toFixed(1);
+                        const totalMb = (progressEvent.total / (1024 * 1024)).toFixed(1);
+                        setUploadProgress({ percent, loadedMb, totalMb });
+                    }
+                }
+            });
+
             if (res.data.success) {
                 const docData = res.data.data;
                 setUploadedDocs(prev => [...prev, docData]);
                 const isImg = docData.mimeType?.startsWith('image/') || Boolean(docData.imageUrl) || (docData.imageUrls && docData.imageUrls.length > 0);
+                const targetFolderObj = availableDocumentFolders.find(f => f.id === uploadTargetFolderId);
+                const isSaved = Boolean(docData.documentSaveAction?.isConfirmed);
 
                 if (docData.dataImportAction || docData.dataLoadingAction) {
                     const action = docData.dataImportAction || docData.dataLoadingAction;
@@ -8700,26 +8739,31 @@ export default function FloatingChatbot() {
                         content: `📊 **Data Extraction Complete (${files.length} file(s) processed):**\n\nI have auto-analyzed your uploaded file and detected the **${action.targetTableName || action.targetTable || 'data'}** table schema with column mapping. Please review the column mapping and data preview below, choose the destination, and click **Confirm & Import** to load into the database.`,
                         dataImportAction: action,
                         dataLoadingAction: action,
+                        documentSaveAction: docData.documentSaveAction || null,
                         imageUrl: docData.imageUrl || null,
                         timestamp: new Date().toISOString()
                     }]);
                     toast.success('Tabular data analyzed & ready for import confirmation!');
                 } else {
+                    const sizeMb = ((docData.fileSize || 0) / (1024*1024)).toFixed(1);
+                    const docInfo = docData.charCount ? `${sizeMb} MB, ${docData.charCount.toLocaleString()} chars` : `${sizeMb} MB • Ready`;
                     setMessages(prev => [...prev, {
                         role: 'assistant',
                         content: isImg
-                            ? `🖼️ **${files.length > 1 ? `${files.length} Images` : 'Image'} Loaded & Analyzed:** ${docData.fileName}\n\n*OCR Text / Visual Analysis Preview:*\n> ${docData.preview || 'Ready for queries.'}\n\nYou can now ask me questions or instruct me to create records based on this image.`
-                            : `📄 **Loaded:** ${docData.fileName} (${docData.charCount.toLocaleString()} chars).\nAsk me anything about it.`,
+                            ? `🖼️ **${files.length > 1 ? `${files.length} Images` : 'Image'} Loaded & Analyzed:** ${docData.fileName}\n\n*OCR Text / Visual Analysis Preview:*\n> ${docData.preview || 'Ready for queries.'}\n\nYou can now ask me questions or instruct me to create records based on this image.${isSaved ? `\n\n📁 *Saved to Folder: **${targetFolderObj?.name || 'Selected Folder'}***` : ''}`
+                            : `📄 **Loaded:** ${docData.fileName} (${docInfo}).${isSaved ? `\n\n📁 *Successfully saved to folder: **${targetFolderObj?.name || 'Root Folder'}***` : '\n*You can ask queries about it, or choose a folder to save it permanently below:*'}`,
                         imageUrl: docData.imageUrl || null,
+                        documentSaveAction: docData.documentSaveAction || null,
                         timestamp: new Date().toISOString()
                     }]);
-                    toast.success(isImg ? (files.length > 1 ? `${files.length} images analyzed successfully!` : 'Image analyzed successfully!') : 'Document loaded');
+                    toast.success(isSaved ? 'File analyzed and saved to folder!' : (isImg ? (files.length > 1 ? `${files.length} images analyzed successfully!` : 'Image analyzed successfully!') : 'Document loaded successfully!'));
                 }
             }
         } catch (err) { 
             toast.error(err.response?.data?.message || err.message); 
         } finally { 
             setIsUploading(false); 
+            setUploadProgress(null);
             if (fileInputRef.current) fileInputRef.current.value = ''; 
         }
     };
@@ -9205,6 +9249,8 @@ export default function FloatingChatbot() {
                                     {msg.shiftAction && <ShiftActionCard action={msg.shiftAction} />}
                                     {msg.documentShareAction && <DocumentShareActionCard action={msg.documentShareAction} />}
                                     {msg.documentUnshareAction && <DocumentUnshareActionCard action={msg.documentUnshareAction} />}
+                                    {msg.documentSaveAction && <DocumentSaveToFolderCard action={msg.documentSaveAction} />}
+                                    {msg.documentMoveAction && <DocumentMoveFolderCard action={msg.documentMoveAction} />}
                                     {msg.folderAction && <FolderActionCard action={msg.folderAction} />}
                                     {msg.laptopIssueAction && <LaptopIssueActionCard action={msg.laptopIssueAction} />}
                                     {msg.laptopReturnAction && <LaptopReturnActionCard action={msg.laptopReturnAction} />}
@@ -9359,6 +9405,54 @@ export default function FloatingChatbot() {
                                         </div>
                                     </div>
                                 )}
+
+                                 {/* Upload Progress Indicator */}
+                                 {uploadProgress && (
+                                     <div className="px-3 py-1.5 bg-indigo-50 border-t border-b border-indigo-100 flex items-center justify-between text-[11px] text-indigo-800 animate-in fade-in">
+                                         <div className="flex items-center gap-2 flex-1 mr-2">
+                                             <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 flex-shrink-0" />
+                                             <div className="flex-1">
+                                                 <div className="flex justify-between text-[10px] mb-1 font-medium">
+                                                     <span>Uploading {uploadProgress.loadedMb}MB of {uploadProgress.totalMb}MB...</span>
+                                                     <span>{uploadProgress.percent}%</span>
+                                                 </div>
+                                                 <div className="w-full h-1.5 bg-indigo-200 rounded-full overflow-hidden">
+                                                     <div className="h-full bg-indigo-600 transition-all duration-200" style={{ width: `${uploadProgress.percent}%` }} />
+                                                 </div>
+                                             </div>
+                                         </div>
+                                     </div>
+                                 )}
+
+                                 {/* Folder Target Bar (if folders exist) */}
+                                 {availableDocumentFolders.length > 0 && (
+                                     <div className="px-3 pt-1.5 pb-0.5 flex items-center justify-between text-[10.5px] text-slate-500 bg-slate-50/50 border-t border-slate-100">
+                                         <div className="flex items-center gap-1.5 truncate">
+                                             <Folder className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                                             <span className="flex-shrink-0">Folder:</span>
+                                             <select
+                                                 value={uploadTargetFolderId || ''}
+                                                 onChange={(e) => setUploadTargetFolderId(e.target.value || null)}
+                                                 className="text-[11px] bg-white border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer max-w-[150px] truncate"
+                                                 title="Choose destination folder for uploads"
+                                             >
+                                                 <option value="">(No folder / General)</option>
+                                                 {availableDocumentFolders.map(f => (
+                                                     <option key={f.id} value={f.id}>{f.name}</option>
+                                                 ))}
+                                             </select>
+                                         </div>
+                                         {uploadTargetFolderId && (
+                                             <button
+                                                 type="button"
+                                                 onClick={() => setUploadTargetFolderId(null)}
+                                                 className="text-[10px] text-indigo-600 hover:text-indigo-800 ml-2 font-medium"
+                                             >
+                                                 Clear
+                                             </button>
+                                         )}
+                                     </div>
+                                 )}
 
                                 <div className="flex items-end gap-2 px-3 py-2.5">
                                     <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".txt,.csv,.json,.pdf,.md,.sql,.log,.png,.jpg,.jpeg,.webp,.bmp" />

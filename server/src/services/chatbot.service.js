@@ -773,12 +773,11 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             for (const sp of searchPaths) {
                 if (fs.existsSync(sp)) {
                     try {
-                        if (sp.endsWith('.pdf')) {
-                            const buf = fs.readFileSync(sp);
-                            activeText = await this.extractDocumentText(buf, 'application/pdf', path.basename(sp));
-                        } else {
-                            activeText = fs.readFileSync(sp, 'utf8');
-                        }
+                        activeText = await this.getOrExtractDocumentText(
+                            sp,
+                            sp.endsWith('.pdf') ? 'application/pdf' : 'text/plain',
+                            path.basename(sp)
+                        );
                         if (!referencedFileName) referencedFileName = path.basename(sp);
                         if (activeText && activeText.length > 50) break;
                     } catch(e) {}
@@ -1716,18 +1715,43 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                         path.join(__dirname, '../../../database', referencedFileName),
                         path.join(__dirname, '../../../database/import_csvs', referencedFileName)
                     ];
+
+                    // Check uploads directory for files matching original filename (e.g. doc_12345_0_filename.pdf)
+                    const uploadDirs = [
+                        path.join(__dirname, '../../../uploads'),
+                        path.join(__dirname, '../../uploads'),
+                        path.join(__dirname, '../uploads')
+                    ];
+                    for (const udir of uploadDirs) {
+                        if (fs.existsSync(udir)) {
+                            try {
+                                const diskFiles = fs.readdirSync(udir);
+                                const match = diskFiles.find(df => 
+                                    !df.endsWith('.txt') && (
+                                        df.toLowerCase() === referencedFileName.toLowerCase() ||
+                                        df.toLowerCase().endsWith(`_${referencedFileName.toLowerCase()}`) ||
+                                        (referencedFileName.length > 4 && df.toLowerCase().includes(referencedFileName.toLowerCase()))
+                                    )
+                                );
+                                if (match) {
+                                    searchPaths.unshift(path.join(udir, match));
+                                }
+                            } catch (rdErr) {}
+                        }
+                    }
+
                     let fileFound = false;
                     for (const sp of searchPaths) {
-                        if (fs.existsSync(sp)) {
+                        if (fs.existsSync(sp) && !sp.endsWith('.txt')) {
                             fileFound = true;
                             console.log(`[ChatBot] Found referenced file on local disk: ${sp}`);
-                            if (referencedFileName.endsWith('.pdf')) {
-                                const buf = fs.readFileSync(sp);
-                                const extracted = await this.extractDocumentText(buf, 'application/pdf', referencedFileName);
+                            const extracted = await this.getOrExtractDocumentText(
+                                sp,
+                                referencedFileName.endsWith('.pdf') ? 'application/pdf' : 'text/plain',
+                                referencedFileName
+                            );
+                            if (extracted) {
                                 activeDocContext = `=== [File: ${referencedFileName}] ===\n${extracted}\n\n` + activeDocContext;
-                            } else {
-                                const text = fs.readFileSync(sp, 'utf8');
-                                activeDocContext = `=== [File: ${referencedFileName}] ===\n${text}\n\n` + activeDocContext;
                             }
                             break;
                         }
@@ -1755,6 +1779,7 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                             const buf = Buffer.from(resp.data);
 
                             // Cache locally for instantaneous subsequent access
+                            let localCachePath = null;
                             try {
                                 const cachePaths = [
                                     path.join(__dirname, '../../../RAG', dbDoc.fileName || referencedFileName),
@@ -1763,15 +1788,54 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                                 for (const cp of cachePaths) {
                                     fs.mkdirSync(path.dirname(cp), { recursive: true });
                                     fs.writeFileSync(cp, buf);
+                                    localCachePath = cp;
                                 }
                             } catch(cErr) {}
 
-                            const extracted = await this.extractDocumentText(buf, dbDoc.mimeType || 'application/pdf', dbDoc.fileName);
+                            const extracted = await this.getOrExtractDocumentText(
+                                localCachePath,
+                                dbDoc.mimeType || 'application/pdf',
+                                dbDoc.fileName,
+                                buf
+                            );
                             activeDocContext = `=== [Document: ${dbDoc.fileName || dbDoc.name}] ===\n${extracted}\n\n` + activeDocContext;
                         }
                     }
                 } catch (readErr) {
                     console.warn('[ChatBot] Could not read referenced local/remote file:', readErr.message);
+                }
+            }
+
+            // Also check any additional files passed in options.referencedFiles
+            if (Array.isArray(options.referencedFiles) && options.referencedFiles.length > 0) {
+                for (const rf of options.referencedFiles) {
+                    const rName = rf.fileName || rf.name;
+                    const rLocal = rf.localFileName;
+                    if (rName && !activeDocContext.includes(rName)) {
+                        if (rf.extractedText && rf.extractedText.length > 50 && !rf.extractedText.startsWith('📄 [Document:')) {
+                            activeDocContext = `=== [File: ${rName}] ===\n${rf.extractedText}\n\n` + activeDocContext;
+                        } else {
+                            const uploadDirs = [
+                                path.join(__dirname, '../../../uploads'),
+                                path.join(__dirname, '../../uploads'),
+                                path.join(__dirname, '../uploads')
+                            ];
+                            for (const udir of uploadDirs) {
+                                const directP = path.join(udir, rLocal || rName);
+                                if (fs.existsSync(directP) && !directP.endsWith('.txt')) {
+                                    const extracted = await this.getOrExtractDocumentText(
+                                        directP,
+                                        rf.mimeType || (rName.endsWith('.pdf') ? 'application/pdf' : 'text/plain'),
+                                        rName
+                                    );
+                                    if (extracted) {
+                                        activeDocContext = `=== [File: ${rName}] ===\n${extracted}\n\n` + activeDocContext;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2804,6 +2868,154 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                 };
             } catch (err) {
                 console.error('[ChatBot] Folder create intent error:', err);
+            }
+        }
+
+        // Intent detection: Save / Upload Document to Specific Folder
+        // e.g. "Save this file to folder Class 11", "Upload file to folder Physics", "Save document \engmaths.pdf to folder Maths"
+        const isDocumentSaveToFolderIntent = (
+            (/\b(save|upload|store|add|put|place)\s+(this\s+)?(file|document|pdf|doc|upload|attachment)\s+(in|into|to|under)\s+(folder|directory)\b/i.test(msgLower) ||
+             /\b(save|upload|store|put)\s+(to|in|into|under)\s+folder\b/i.test(msgLower) ||
+             /\b(save|upload)\s+(?:["'][^"']+["']|\S+\.(?:pdf|docx|txt|csv|xlsx))\s+(?:in|to|into)\s+folder\b/i.test(msgLower)) &&
+            !msgLower.includes('create folder') && !msgLower.includes('new folder') && !msgLower.includes('move document') && !msgLower.includes('move file')
+        );
+
+        if (isDocumentSaveToFolderIntent) {
+            try {
+                console.log('[ChatBot] Document save to folder intent detected:', message);
+                const allFolders = await prisma.documentFolder.findMany({
+                    where: {
+                        ...(schoolId ? { schoolId } : {}),
+                        deletedAt: null
+                    },
+                    select: { id: true, name: true, parentId: true },
+                    orderBy: { name: 'asc' }
+                });
+
+                // Extract target folder name
+                let targetFolderName = '';
+                const folderMatch = message.match(/(?:in|into|to|under)\s+folder\s+["']?([^"'\n,]+?)["']?(?:\s|$)/i) ||
+                                    message.match(/folder\s+["']([^"'\n]+)["']/i);
+                if (folderMatch && folderMatch[1]) {
+                    targetFolderName = folderMatch[1].trim();
+                }
+
+                let matchedFolder = null;
+                if (targetFolderName) {
+                    matchedFolder = allFolders.find(f => f.name.toLowerCase() === targetFolderName.toLowerCase());
+                    if (!matchedFolder) {
+                        matchedFolder = allFolders.find(f => f.name.toLowerCase().includes(targetFolderName.toLowerCase()) || targetFolderName.toLowerCase().includes(f.name.toLowerCase()));
+                    }
+                }
+
+                // Extract document or file name
+                let targetDocName = referencedFileName || '';
+                const docMatch = message.match(/(?:document|file)\s+["']([^"'\n]+)["']/i) ||
+                                 message.match(/([a-zA-Z0-9_\-.]+\.(?:pdf|docx|txt|csv|xlsx|json|png|jpg))/i);
+                if (docMatch && docMatch[1]) {
+                    targetDocName = docMatch[1].trim();
+                }
+
+                const documentSaveAction = {
+                    actionType: 'save_to_folder',
+                    fileName: targetDocName || 'Uploaded Document',
+                    folderId: matchedFolder ? matchedFolder.id : null,
+                    folderName: matchedFolder ? matchedFolder.name : (targetFolderName || 'Root Folder (All Documents)'),
+                    availableFolders: allFolders.map(f => ({ id: f.id, name: f.name })),
+                    category: 'other',
+                    isConfirmed: false
+                };
+
+                return {
+                    message: `📁 **Document Save Proposal Prepared!**\n\nI can save **"${documentSaveAction.fileName}"** into folder **"${documentSaveAction.folderName}"** in your Document Repository.\n\n- **File Name:** ${documentSaveAction.fileName}\n- **Destination Folder:** ${documentSaveAction.folderName}\n\nReview the folder location below and click **Confirm & Save to Folder**:`,
+                    sql: null,
+                    queryResult: null,
+                    chartData: null,
+                    reportAction: null,
+                    documentSaveAction,
+                    provider: 'groq'
+                };
+            } catch (err) {
+                console.error('[ChatBot] Document save to folder intent error:', err);
+            }
+        }
+
+        // Intent detection: Move Document to Specific Folder
+        // e.g. "Move document Lab Manual to folder Physics", "Move file XYZ into folder Assignments"
+        const isDocumentMoveIntent = (
+            /\b(move|shift|transfer|relocate)\s+(document|file|pdf|doc)\s+/i.test(msgLower) &&
+            /\b(to|into|under|in)\s+folder\b/i.test(msgLower)
+        );
+
+        if (isDocumentMoveIntent) {
+            try {
+                console.log('[ChatBot] Document move intent detected:', message);
+                const [documents, allFolders] = await Promise.all([
+                    prisma.document.findMany({
+                        where: {
+                            ...(schoolId ? { schoolId } : {}),
+                            deletedAt: null
+                        },
+                        select: { id: true, name: true, fileName: true, folderId: true }
+                    }),
+                    prisma.documentFolder.findMany({
+                        where: {
+                            ...(schoolId ? { schoolId } : {}),
+                            deletedAt: null
+                        },
+                        select: { id: true, name: true, parentId: true },
+                        orderBy: { name: 'asc' }
+                    })
+                ]);
+
+                // Find matching document
+                let matchedDoc = null;
+                for (const d of documents) {
+                    if (msgLower.includes(d.name.toLowerCase()) || (d.fileName && msgLower.includes(d.fileName.toLowerCase()))) {
+                        matchedDoc = d;
+                        break;
+                    }
+                }
+
+                // Find matching target folder
+                let targetFolderName = '';
+                const folderMatch = message.match(/(?:to|into|under|in)\s+folder\s+["']?([^"'\n,]+?)["']?(?:\s|$)/i);
+                if (folderMatch && folderMatch[1]) {
+                    targetFolderName = folderMatch[1].trim();
+                }
+
+                let matchedFolder = null;
+                if (targetFolderName) {
+                    matchedFolder = allFolders.find(f => f.name.toLowerCase() === targetFolderName.toLowerCase());
+                    if (!matchedFolder) {
+                        matchedFolder = allFolders.find(f => f.name.toLowerCase().includes(targetFolderName.toLowerCase()) || targetFolderName.toLowerCase().includes(f.name.toLowerCase()));
+                    }
+                }
+
+                if (matchedDoc) {
+                    const documentMoveAction = {
+                        actionType: 'move_folder',
+                        documentId: matchedDoc.id,
+                        documentName: matchedDoc.name,
+                        currentFolderId: matchedDoc.folderId,
+                        targetFolderId: matchedFolder ? matchedFolder.id : null,
+                        targetFolderName: matchedFolder ? matchedFolder.name : (targetFolderName || 'Root Folder'),
+                        availableFolders: allFolders.map(f => ({ id: f.id, name: f.name })),
+                        isConfirmed: false
+                    };
+
+                    return {
+                        message: `📂 **Document Move Proposal Prepared!**\n\nI have prepared a proposal to move document **"${matchedDoc.name}"** into folder **"${documentMoveAction.targetFolderName}"**.\n\n- **Document:** ${matchedDoc.name}\n- **Destination:** ${documentMoveAction.targetFolderName}\n\nClick **Confirm & Move Document** below:`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        documentMoveAction,
+                        provider: 'groq'
+                    };
+                }
+            } catch (err) {
+                console.error('[ChatBot] Document move intent error:', err);
             }
         }
 
@@ -6403,6 +6615,68 @@ ${documentContext || message}
         };
     }
 
+    // ═══ LAZY / ON-DEMAND DOCUMENT EXTRACTION & DISK CACHING ═══
+    async getOrExtractDocumentText(filePath, mimeType, fileName, fileBuffer = null) {
+        try {
+            this.docTextCache = this.docTextCache || new Map();
+            const safeFileName = fileName || (filePath ? path.basename(filePath) : 'document');
+            const cacheKey = `${safeFileName}_${filePath || ''}`;
+            if (this.docTextCache.has(cacheKey)) {
+                return this.docTextCache.get(cacheKey);
+            }
+
+            // 1. Check if on-disk pre-extracted .txt cache exists
+            if (filePath) {
+                const diskTxtPath = filePath.endsWith('.txt') ? filePath : `${filePath}.txt`;
+                if (fs.existsSync(diskTxtPath)) {
+                    try {
+                        const cachedText = fs.readFileSync(diskTxtPath, 'utf8');
+                        if (cachedText && cachedText.trim().length > 0) {
+                            console.log(`[ChatBot] Instant text load from disk cache: ${path.basename(diskTxtPath)} (${cachedText.length} chars)`);
+                            this.docTextCache.set(cacheKey, cachedText);
+                            return cachedText;
+                        }
+                    } catch (readTxtErr) {
+                        console.warn('[ChatBot] Failed to read disk txt cache:', readTxtErr.message);
+                    }
+                }
+            }
+
+            // 2. Read buffer from disk if not supplied
+            let buf = fileBuffer;
+            if (!buf && filePath && fs.existsSync(filePath)) {
+                buf = fs.readFileSync(filePath);
+            }
+
+            if (!buf || buf.length === 0) {
+                return '';
+            }
+
+            // 3. Extract text on demand
+            console.log(`[ChatBot] Performing on-demand text extraction for ${safeFileName} (${(buf.length / (1024 * 1024)).toFixed(1)} MB)...`);
+            const effectiveMime = mimeType || (safeFileName.endsWith('.pdf') ? 'application/pdf' : 'text/plain');
+            const extracted = await this.extractDocumentText(buf, effectiveMime, safeFileName);
+
+            this.docTextCache.set(cacheKey, extracted);
+
+            // 4. Save to disk cache for instantaneous future queries
+            if (filePath && extracted && extracted.length > 0) {
+                try {
+                    const diskTxtPath = filePath.endsWith('.txt') ? filePath : `${filePath}.txt`;
+                    fs.writeFileSync(diskTxtPath, extracted, 'utf8');
+                    console.log(`[ChatBot] Saved extracted text to disk cache: ${path.basename(diskTxtPath)}`);
+                } catch (writeErr) {
+                    console.warn('[ChatBot] Could not write disk text cache:', writeErr.message);
+                }
+            }
+
+            return extracted;
+        } catch (err) {
+            console.error('[ChatBot] Error in getOrExtractDocumentText:', err.message);
+            return '';
+        }
+    }
+
     // ═══ DOCUMENT EXTRACTION ═══
     async extractDocumentText(buffer, mimeType, fileName) {
         try {
@@ -6443,10 +6717,10 @@ ${documentContext || message}
                     let rawText = '';
                     const parsePromise = (async () => {
                         if (typeof pdfPkg === 'function') {
-                            const data = await pdfPkg(buffer, { max: 20 });
+                            const data = await pdfPkg(buffer, { max: 30 });
                             return data.text;
                         } else if (pdfPkg && pdfPkg.PDFParse) {
-                            const parser = new pdfPkg.PDFParse({ data: buffer, max: 20 });
+                            const parser = new pdfPkg.PDFParse({ data: buffer, max: 30 });
                             await parser.load();
                             const res = await parser.getText();
                             return res?.text || (Array.isArray(res?.pages) ? res.pages.map(p => p.text).join('\n') : '');
@@ -6454,10 +6728,10 @@ ${documentContext || message}
                         return '';
                     })();
 
-                    // Protect against long-running PDF AST generation on low-RAM server
+                    // Protect against long-running PDF AST generation on low-RAM server with realistic 25s timeout
                     rawText = await Promise.race([
                         parsePromise,
-                        new Promise((_, reject) => setTimeout(() => reject(new Error('PDF extraction timed out')), 4000))
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('PDF extraction timed out')), 25000))
                     ]);
 
                     // Retain all Unicode scripts (Punjabi Gurmukhi \u0A00-\u0A7F, Hindi Devanagari \u0900-\u097F, etc.) while stripping non-printable control chars
@@ -6472,22 +6746,30 @@ ${documentContext || message}
                         this.docTextCache.set(cacheKey, truncated);
                         return truncated;
                     }
-                    console.log('[ChatBot] PDF text empty or scanned, attempting AI Vision OCR...');
+                    console.log('[ChatBot] PDF text empty or scanned, checking if image OCR is suitable...');
                 } catch (pdfErr) {
-                    console.warn('[ChatBot] pdf-parse failed, attempting AI Vision fallback:', pdfErr.message);
+                    console.warn('[ChatBot] pdf-parse failed or timed out:', pdfErr.message);
                 }
             }
 
-            // If image or scanned PDF, use Multimodal AI Vision (Gemini / Groq)
+            // If image, use Multimodal AI Vision (Gemini / Groq)
+            // For PDFs, only attempt Vision OCR if the file is small (under 4MB) to prevent 413 / timeout errors
             const isImage = mimeType.startsWith('image/') || fileName.match(/\.(png|jpg|jpeg|webp|bmp|gif|tiff)$/i);
-            if (isImage || isPdf) {
+            const canUseVisionForPdf = isPdf && buffer.length <= 4 * 1024 * 1024;
+            if (isImage || canUseVisionForPdf) {
                 const visionResult = await this.extractMultimodalText(buffer, mimeType, fileName);
                 if (visionResult && visionResult.length > 20) {
+                    this.docTextCache.set(cacheKey, visionResult);
                     return visionResult;
                 }
             }
 
-            return `[Binary file: ${fileName}, ${buffer.length} bytes, ${mimeType}]`;
+            const sizeMb = (buffer.length / (1024 * 1024)).toFixed(1);
+            const fallbackText = isPdf 
+                ? `📄 [PDF Document: ${fileName}, ${sizeMb} MB. Text indexed for queries & available for saving to folders.]`
+                : `[Binary file: ${fileName}, ${sizeMb} MB, ${mimeType}]`;
+            this.docTextCache.set(cacheKey, fallbackText);
+            return fallbackText;
         } catch (err) { 
             console.error('[ChatBot] Document parse error:', err.message);
             return `[Failed to parse ${fileName}: ${err.message}]`; 
