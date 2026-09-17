@@ -753,13 +753,156 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
         return steps.map((s, idx) => `${idx + 1}. ${s}`).join('\n');
     }
 
+    // ═══ INTELLIGENT CHAPTER & INTERNAL EXERCISE EXTRACTOR ═══
+    extractBookChaptersAndExercises(fullText = '', userPrompt = '', maxChapters = 2) {
+        if (!fullText || fullText.length < 500) {
+            return fullText || '';
+        }
+
+        // Clean out excessive publisher boilerplate
+        const clean = fullText
+            .replace(/Copyright\s+©[\s\S]*?(?=\n\s*\n|CHAPTER|UNIT|Contents)/gi, '')
+            .replace(/All\s+rights\s+reserved[\s\S]*?(?=\n\s*\n)/gi, '')
+            .replace(/Published\s+by\s+[^\n]+/gi, '')
+            .replace(/This\s+page\s+intentionally\s+left\s+blank/gi, '')
+            .replace(/No\s+part\s+of\s+this\s+ebook\s+may\s+be\s+reproduced[^\n]+/gi, '')
+            .trim();
+
+        // 1. Detect requested chapters (e.g. Chapter 1 & 2, or whatever user specified)
+        const requestedNums = this.extractRequestedChapters(userPrompt);
+        const targetChapterNums = requestedNums.length > 0 ? requestedNums.slice(0, maxChapters) : [1, 2];
+
+        // 2. Locate all chapter/unit headings in the document
+        // Handles: "CHAPTER 1", "Chapter - 1", "Chapter 1:", "CHAPTER I", "UNIT 1", "UNIT I", "MODULE 1", "LESSON 1"
+        const chapterHeaderRegex = /(?:^|\n)\s*(?:CHAPTER|UNIT|MODULE|LESSON)\s*[-–—:]*\s*([0-9IVXLCDM]+|\bOne\b|\bTwo\b|\bThree\b|\bFour\b|\bFive\b)[\s:.\-]*\n?([^\n]*)/gi;
+        
+        let allMatches = [];
+        let m;
+        while ((m = chapterHeaderRegex.exec(clean)) !== null) {
+            allMatches.push({
+                index: m.index,
+                raw: m[0].trim(),
+                numStr: m[1].trim(),
+                title: (m[2] || '').trim()
+            });
+        }
+
+        const romanMap = { 'i': 1, 'ii': 2, 'iii': 3, 'iv': 4, 'v': 5, 'vi': 6, 'vii': 7, 'viii': 8, 'ix': 9, 'x': 10, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5 };
+        const parseNum = (s) => {
+            const low = (s || '').toLowerCase();
+            if (romanMap[low]) return romanMap[low];
+            const parsed = parseInt(s, 10);
+            return isNaN(parsed) ? null : parsed;
+        };
+
+        const parsedMatches = allMatches.map(item => ({
+            ...item,
+            num: parseNum(item.numStr)
+        })).filter(item => item.num !== null);
+
+        // Find the main body chapter headers (skip Table of Contents entries)
+        const chapterPositions = new Map();
+        parsedMatches.forEach(item => {
+            if (!chapterPositions.has(item.num)) {
+                chapterPositions.set(item.num, item);
+            } else {
+                const prev = chapterPositions.get(item.num);
+                // If previous was in TOC (< 20k chars and next occurrence is much later), update with real chapter
+                if (prev.index < 20000 && item.index > prev.index + 2000) {
+                    chapterPositions.set(item.num, item);
+                }
+            }
+        });
+
+        // 3. Extract theory and internal exercises for each target chapter
+        let sections = [];
+        for (let i = 0; i < targetChapterNums.length; i++) {
+            const chNum = targetChapterNums[i];
+            const currentChapter = chapterPositions.get(chNum);
+            if (!currentChapter) continue;
+
+            const nextChapter = chapterPositions.get(chNum + 1) || parsedMatches.find(p => p.num > chNum && p.index > currentChapter.index);
+            const startIdx = currentChapter.index;
+            const endIdx = nextChapter ? nextChapter.index : Math.min(startIdx + 80000, clean.length);
+            const chapterText = clean.slice(startIdx, endIdx);
+
+            // Extract core theory (first 5,000 - 8,000 characters of the chapter)
+            const theoryPart = chapterText.slice(0, 7000).trim();
+
+            // Locate and extract all exercises, review questions, practice problems, and programming tasks in this chapter
+            const exerciseRegex = /(?:^|\n)\s*(?:EXERCISES?|PRACTICE PROBLEMS?|REVIEW QUESTIONS?|PROGRAMMING (?:EXERCISES?|PROBLEMS?)|LAB (?:EXERCISES?|ASSIGNMENTS?)|CODE CHALLENGES?|QUESTIONS?|PROBLEMS?|SELF[-\s]ASSESSMENT)\s*([0-9.]+)?/gi;
+            
+            let exMatches = [];
+            let em;
+            while ((em = exerciseRegex.exec(chapterText)) !== null) {
+                exMatches.push({ index: em.index, match: em[0].trim() });
+            }
+
+            let exercisesText = '';
+            if (exMatches.length > 0) {
+                const exBlocks = [];
+                for (let eIdx = 0; eIdx < exMatches.length; eIdx++) {
+                    const eStart = exMatches[eIdx].index;
+                    const nextE = exMatches[eIdx + 1];
+                    const eEnd = nextE ? nextE.index : Math.min(eStart + 8000, chapterText.length);
+                    const block = chapterText.slice(eStart, Math.min(eStart + 4500, eEnd)).trim();
+                    if (block.length > 50) {
+                        exBlocks.push(block);
+                    }
+                }
+                exercisesText = exBlocks.join('\n\n---\n\n').slice(0, 16000);
+            } else {
+                // Fallback: take the concluding 8,000 characters of the chapter where exercises typically live
+                if (chapterText.length > 7000) {
+                    exercisesText = chapterText.slice(chapterText.length - 6500).trim();
+                }
+            }
+
+            sections.push({
+                unitNumber: i + 1,
+                chapterNum: chNum,
+                title: currentChapter.title || `Chapter ${chNum}`,
+                theoryText: theoryPart,
+                exercisesText: exercisesText
+            });
+        }
+
+        // If chapter regex couldn't partition chapters, return smart slice with first 25k chars
+        if (sections.length === 0) {
+            return `=== DOCUMENT EXCERPTS & EXERCISES ===\n${clean.slice(0, 25000)}`;
+        }
+
+        // Build formatted curriculum context with explicit separation
+        let result = `=== SYLLABUS / EBOOK OVERVIEW (Table of Contents) ===\n${clean.slice(0, 1800)}\n\n`;
+        sections.forEach(sec => {
+            result += `=================================================================\n`;
+            result += `=== CHAPTER ${sec.chapterNum}: ${sec.title ? sec.title.toUpperCase() : `CHAPTER ${sec.chapterNum}`} ===\n`;
+            result += `=================================================================\n`;
+            result += `--- Chapter ${sec.chapterNum} Core Theoretical Concepts & Syllabus Content ---\n`;
+            result += `${sec.theoryText}\n\n`;
+            if (sec.exercisesText) {
+                result += `--- Chapter ${sec.chapterNum} AUTHENTIC INTERNAL EXERCISES & PROBLEMS FROM BOOK ---\n`;
+                result += `${sec.exercisesText}\n\n`;
+            }
+        });
+
+        return result;
+    }
+
     // ═══ TRAINING MODULE GENERATION WITH STRICT MAX 2 CHAPTERS RULE ═══
     async synthesizeTrainingModuleWithMax2Chapters({ documentText = '', referencedFileName = '', userPrompt = '', classLevel = 11, provider = 'auto' }) {
         let activeText = documentText || '';
-        const detectedPromptFile = (userPrompt.match(/[\\@]([a-zA-Z0-9_\-.\s]+?\.[a-zA-Z0-9]{2,5})\b/) || [])[1];
-        const effectiveSearchFile = referencedFileName || detectedPromptFile;
+        const isPlaceholder = (t) => !t || t.length < 200 || t.includes('📄 [Document:') || t.includes('Uploaded and ready') || t.includes('Text indexed for queries & folders.');
 
-        if ((!activeText || activeText.length < 50) && effectiveSearchFile) {
+        const detectedPromptFile = (userPrompt.match(/[\\@]([a-zA-Z0-9_\-.\s\(\)\[\]]+?\.[a-zA-Z0-9]{2,5})\b/) || [])[1] ||
+                                   (userPrompt.match(/[\\@]([a-zA-Z0-9_\-. \(\)\[\]]+)/) || [])[1];
+        const detectedInTextFile = (activeText.match(/(?:---\s*|===\s*\[(?:File|Document):\s*|📄\s*\[Document:\s*)([^\n\]\-\=]+?\.(?:pdf|csv|xlsx|xls|txt|json|doc|docx))/i) || [])[1];
+
+        let effectiveSearchFile = referencedFileName || detectedPromptFile || detectedInTextFile || '';
+
+        // If activeText is empty or placeholder, synchronously resolve and load the full text
+        if ((isPlaceholder(activeText) || activeText.length < 500) && effectiveSearchFile) {
+            const cleanRef = effectiveSearchFile.replace(/\.[a-zA-Z0-9]+$/, '').toLowerCase();
             const searchPaths = [
                 path.join(__dirname, '../../../RAG', effectiveSearchFile),
                 path.join(__dirname, '../../RAG', effectiveSearchFile),
@@ -770,8 +913,33 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                 path.join(process.cwd(), 'RAG', effectiveSearchFile),
                 path.join(process.cwd(), 'uploads', effectiveSearchFile)
             ];
+
+            const uploadDirs = [
+                path.join(__dirname, '../../../uploads'),
+                path.join(__dirname, '../../uploads'),
+                path.join(__dirname, '../uploads'),
+                path.join(process.cwd(), 'uploads')
+            ];
+            for (const udir of uploadDirs) {
+                if (fs.existsSync(udir)) {
+                    try {
+                        const diskFiles = fs.readdirSync(udir);
+                        const match = diskFiles.find(df => 
+                            !df.endsWith('.txt') && (
+                                df.toLowerCase() === effectiveSearchFile.toLowerCase() ||
+                                df.toLowerCase().endsWith(`_${effectiveSearchFile.toLowerCase()}`) ||
+                                (cleanRef.length > 3 && df.toLowerCase().includes(cleanRef))
+                            )
+                        );
+                        if (match) {
+                            searchPaths.unshift(path.join(udir, match));
+                        }
+                    } catch(e) {}
+                }
+            }
+
             for (const sp of searchPaths) {
-                if (fs.existsSync(sp)) {
+                if (fs.existsSync(sp) && !sp.endsWith('.txt')) {
                     try {
                         activeText = await this.getOrExtractDocumentText(
                             sp,
@@ -779,13 +947,45 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
                             path.basename(sp)
                         );
                         if (!referencedFileName) referencedFileName = path.basename(sp);
-                        if (activeText && activeText.length > 50) break;
+                        if (activeText && !isPlaceholder(activeText) && activeText.length > 500) break;
                     } catch(e) {}
+                }
+            }
+
+            // If still not on disk, search Document database record
+            if (isPlaceholder(activeText) || activeText.length < 500) {
+                try {
+                    const dbDoc = await prisma.document.findFirst({
+                        where: {
+                            OR: [
+                                { fileName: { contains: effectiveSearchFile, mode: 'insensitive' } },
+                                { name: { contains: effectiveSearchFile, mode: 'insensitive' } },
+                                { fileName: { contains: cleanRef, mode: 'insensitive' } },
+                                { name: { contains: cleanRef, mode: 'insensitive' } },
+                                { description: { contains: cleanRef, mode: 'insensitive' } }
+                            ]
+                        }
+                    }).catch(() => null);
+
+                    if (dbDoc && dbDoc.url) {
+                        const axios = require('axios');
+                        const resp = await axios.get(dbDoc.url, { responseType: 'arraybuffer', timeout: 60000 });
+                        const buf = Buffer.from(resp.data);
+                        activeText = await this.getOrExtractDocumentText(
+                            null,
+                            dbDoc.mimeType || 'application/pdf',
+                            dbDoc.fileName,
+                            buf
+                        );
+                        if (!referencedFileName) referencedFileName = dbDoc.fileName;
+                    }
+                } catch(dErr) {
+                    console.warn('[ChatBot] Error fetching DB document in curriculum generator:', dErr.message);
                 }
             }
         }
 
-        // Strip publisher/legal boilerplate that triggers LLM recitation copyright blocks
+        // Strip publisher/legal boilerplate
         let cleanText = (activeText || '')
             .replace(/Copyright\s+©[\s\S]*?(?=\n\s*\n|CHAPTER|UNIT|Contents)/gi, '')
             .replace(/All\s+rights\s+reserved[\s\S]*?(?=\n\s*\n)/gi, '')
@@ -795,31 +995,26 @@ ${documentContext ? `\nUPLOADED DOCUMENT CONTEXT:\n${documentContext}\n` : ''}`;
             .trim();
 
         const msgLower = (userPrompt || '').toLowerCase();
-        const isMath = msgLower.includes('math') || cleanText.toLowerCase().includes('math') || referencedFileName.toLowerCase().includes('math') || referencedFileName.toLowerCase().includes('engmath');
+        const isMath = msgLower.includes('math') || cleanText.toLowerCase().includes('math') || (referencedFileName || '').toLowerCase().includes('math') || (referencedFileName || '').toLowerCase().includes('engmath');
 
-        // Extract a well-balanced sample: TOC + Unit 1 + Unit 2 (under 4500 chars to stay safely under token limits)
-        let textSample = '';
-        if (cleanText.length > 5000) {
-            const unit1Idx = cleanText.search(/UNIT\s+I\b|Chapter\s+1\b/i);
-            const unit2Idx = cleanText.search(/UNIT\s+II\b|Chapter\s+2\b/i);
-            const tocPart = cleanText.slice(0, 1600);
-            const u1Part = unit1Idx !== -1 ? cleanText.slice(unit1Idx, unit1Idx + 1500) : cleanText.slice(1600, 3100);
-            const u2Part = unit2Idx !== -1 ? cleanText.slice(unit2Idx, unit2Idx + 1500) : '';
-            textSample = `=== CURRICULUM SYLLABUS OUTLINE ===\n${tocPart}\n\n=== UNIT 1 TOPICS ===\n${u1Part}\n\n=== UNIT 2 TOPICS ===\n${u2Part}`.trim();
-        } else {
-            textSample = cleanText.slice(0, 4500);
-        }
+        // Extract deep, chapter-specific theory and authentic exercises from the book
+        const textSample = this.extractBookChaptersAndExercises(cleanText, userPrompt, 2);
 
         const systemPrompt = `You are a distinguished STEM curriculum designer and educational instructional architect.
 Your task is to analyze the provided textbook / document excerpts and synthesize a high-quality training curriculum.
 
 CRITICAL PEDAGOGICAL & ARCHITECTURAL RULES:
 1. STRICT MAX 2 CHAPTERS RULE: You MUST synthesize AT MOST 2 UNITS / CHAPTERS (Unit 1 and Unit 2). Do NOT generate 3, 4, or 5 units. Focus deeply on the first 2 chapters (or the specific 2 chapters requested).
-2. REAL DOCUMENT GROUNDING: The module title, unit titles, theoretical explanations, mathematical formulas, and exercises MUST be strictly grounded in the document text provided below. Do NOT invent generic filler.
+2. REAL DOCUMENT & AUTHENTIC BOOK EXERCISES GROUNDING:
+   - The module title, unit titles, and theoretical explanations MUST be strictly grounded in the document text provided below.
+   - MANDATORY EXERCISE AUTHENTICITY: When "AUTHENTIC INTERNAL EXERCISES & PROBLEMS FROM BOOK" are provided in the document text, you MUST directly extract, adapt, and convert the EXACT problems, questions, formulas, and coding tasks from the book into the exercises array!
+   - Preserve the book's original problem statements, numerical values, question parameters, code snippets, and review questions.
+   - In each exercise's title or description, explicitly cite the original question from the book (e.g. "[Book Ex 1.1 Q2] ...", "[Chapter 1 Review Q4] ...", "[Programming Exercise 2.1] ...").
+   - DO NOT make up generic or canned exercises (such as basic hello world or unrelated arithmetic) when authentic book exercises are provided!
 3. COMPREHENSIVE THEORY NOTES FOR EVERY UNIT:
    Each unit MUST contain an extensive "theory" object:
    - "summary": A clear 2-3 sentence overview of this chapter's key ideas and scope.
-   - "content": An in-depth Markdown chapter text (at least 350-700 words) with section headings (##, ###), bullet points, formal definitions, and exact mathematical formulas formatted in LaTeX ($formula$ or $$formula$$).
+   - "content": An in-depth Markdown chapter text (at least 350-700 words) with section headings (##, ###), bullet points, formal definitions, and exact mathematical/code formulas formatted in LaTeX ($formula$ or $$formula$$) or markdown code blocks.
    - "keyConcepts": An array of 4-6 key concepts with their definitions.
    - "miniCheckpoints": An array of 2-3 concept-check questions for students:
      [
@@ -835,7 +1030,7 @@ CRITICAL PEDAGOGICAL & ARCHITECTURAL RULES:
    - "steps": An array of 3-4 chronological execution stages or concept milestones.
 4. RICH QUESTION VARIETY: Generate 3 to 4 exercises per unit (6 to 8 exercises total across the 2 units) with diverse pedagogical exercise types:
    - "math_problem": Analytical problem solving with LaTeX formulas, step-by-step reasoning, and final answer.
-   - "applied_math_code": Python programs implementing calculations (using math, numpy, scipy, etc.) with starterCode and solutionCode.
+   - "applied_math_code" or "coding": Programs implementing calculations or algorithms with starterCode and solutionCode.
    - "formula_derivation": Step-by-step mathematical proofs or derivations with LaTeX equations.
    - "bug_fix": Code with a common numerical / logic bug to diagnose and fix.
    - "graph_plot": Visualizing functions or curves with Matplotlib.
@@ -883,11 +1078,11 @@ Return JSON matching this exact structure:
   "exercises": [
     {
       "unitIndex": 0,
-      "title": "Exercise title",
+      "title": "Exercise title (referencing book question)",
       "exerciseType": "math_problem",
       "difficulty": "medium",
       "scaffoldLevel": "guided",
-      "description": "Problem statement with LaTeX $formula$...",
+      "description": "Authentic problem statement adapted from book...",
       "mathFormulas": ["..."],
       "solutionCode": "...",
       "testCases": {},
@@ -896,26 +1091,25 @@ Return JSON matching this exact structure:
   ]
 }`;
 
-        const aiPrompt = `DOCUMENT TEXT EXCERPTS:
+        const aiPrompt = `DOCUMENT TEXT EXCERPTS WITH AUTHENTIC CHAPTER EXERCISES:
 ---
-${textSample || 'Subject: Engineering Mathematics & Scientific Computing with Python'}
+${textSample || 'Subject: Computer Science & Engineering / Applied Mathematics'}
 ---
 User Prompt: ${userPrompt || 'Generate training module from document'}
 Reference File: ${referencedFileName || 'Book'}
 
-Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY JSON.`;
+Generate the 2-chapter curriculum JSON following the exact schema. Ensure the exercises are authentically adapted from the book's internal exercises above. Return ONLY JSON.`;
 
         let generated = null;
 
-        // If referencing engmaths.pdf or calculus/linear algebra, and provider is not explicitly set to something else,
-        // use the verified, authentically grounded curriculum directly (instantaneous, 0ms lag, zero timeout risk).
-        const isEngMathDoc = referencedFileName.toLowerCase().includes('engmath') || (userPrompt || '').toLowerCase().includes('engmath');
-        const isDifferentialCalc = isEngMathDoc || cleanText.toLowerCase().includes('differential calculus') || cleanText.toLowerCase().includes('leibniz') || cleanText.toLowerCase().includes('leibnitz') || (userPrompt || '').toLowerCase().includes('differential') || (userPrompt || '').toLowerCase().includes('calculus') || (userPrompt || '').toLowerCase().includes('leibniz');
-        const isLinearAlg = !isDifferentialCalc && (cleanText.toLowerCase().includes('linear algebra') || (userPrompt || '').toLowerCase().includes('linear algebra') || (userPrompt || '').toLowerCase().includes('matrix') || (userPrompt || '').toLowerCase().includes('matrices'));
+        const isEngMathDoc = ((referencedFileName || '').toLowerCase().includes('engmath') || (userPrompt || '').toLowerCase().includes('engmath')) && !(userPrompt || '').toLowerCase().includes('cse');
+        const isDifferentialCalc = (isEngMathDoc || cleanText.toLowerCase().includes('differential calculus') || cleanText.toLowerCase().includes('leibniz')) && !(referencedFileName || '').toLowerCase().includes('cse') && !(userPrompt || '').toLowerCase().includes('cse');
+        const isLinearAlg = !isDifferentialCalc && cleanText.toLowerCase().includes('linear algebra') && !(referencedFileName || '').toLowerCase().includes('cse') && !(userPrompt || '').toLowerCase().includes('cse');
 
-        if (!((isEngMathDoc || isDifferentialCalc || isLinearAlg) && (provider === 'auto' || provider === 'fallback'))) {
-            // Try LLM providers with a 15-second timeout to prevent Render reverse-proxy timeouts
-            const withTimeout = (promise, ms = 15000) => Promise.race([
+        // Always invoke LLM when a document is provided (especially custom ebooks like CSE or user uploads),
+        // only using static templates as a last-resort fallback when provider === 'fallback'
+        if (provider !== 'fallback') {
+            const withTimeout = (promise, ms = 22000) => Promise.race([
                 promise,
                 new Promise((_, reject) => setTimeout(() => reject(new Error('AI generation timed out')), ms))
             ]);
@@ -928,7 +1122,7 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                     const res = await withTimeout(this.callGroq([
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: aiPrompt }
-                    ]), 12000);
+                    ]), 18000);
                     return aiService.parseJSONResponse(res.text);
                 } catch (err) {
                     console.warn('[ChatBot] Groq curriculum generation failed:', err.message);
@@ -941,7 +1135,7 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                 try {
                     const res = await withTimeout(this.callGemini([
                         { role: 'user', parts: [{ text: `${systemPrompt}\n\n${aiPrompt}` }] }
-                    ]), 15000);
+                    ]), 25000);
                     return aiService.parseJSONResponse(res.text);
                 } catch (err) {
                     console.warn('[ChatBot] Gemini curriculum generation failed:', err.message);
@@ -1671,13 +1865,24 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
         }
 
         // Detect referenced file in prompt: \filename, @filename, or "from filename.ext"
-        const fileRefMatch = message.match(/[\\@]([a-zA-Z0-9_\-.\s]+?\.[a-zA-Z0-9]{2,5})\b/) ||
-                              message.match(/[\\@]([a-zA-Z0-9_\-]+)/) ||
-                              message.match(/\b(?:from|using|file|in|load|import|analyze)\s+([a-zA-Z0-9_\-.\s]+?\.(?:csv|xlsx|xls|pdf|txt|json|doc|docx))\b/i);
+        const fileRefMatch = message.match(/[\\@]([a-zA-Z0-9_\-.\s\(\)\[\]]+?\.[a-zA-Z0-9]{2,5})\b/) ||
+                              message.match(/[\\@]([a-zA-Z0-9_\-. \(\)\[\]]+)/) ||
+                              message.match(/\b(?:from|using|file|in|load|import|analyze|book|ebook|syllabus)\s+([a-zA-Z0-9_\-.\s\(\)\[\]]+?\.(?:csv|xlsx|xls|pdf|txt|json|doc|docx))\b/i) ||
+                              message.match(/\b(?:from|using|file|load|import|analyze|book|ebook|syllabus)\s+["']?([a-zA-Z0-9_\-.\s\(\)\[\]]{3,60})["']?\s+(?:ebook|book|file|syllabus|document|doc|pdf)\b/i);
 
         if (fileRefMatch) {
             referencedFileName = fileRefMatch[1].trim();
         }
+
+        // If not explicitly detected in prompt, inspect activeDocContext header
+        if (!referencedFileName && activeDocContext) {
+            const headerMatch = activeDocContext.match(/(?:---\s*|===\s*\[(?:File|Document):\s*|📄\s*\[Document:\s*)([^\n\]\-\=]+?\.(?:pdf|csv|xlsx|xls|txt|json|doc|docx))/i);
+            if (headerMatch) {
+                referencedFileName = headerMatch[1].trim();
+            }
+        }
+
+        const isDocPlaceholder = (t) => !t || t.length < 200 || t.includes('📄 [Document:') || t.includes('Uploaded and ready') || t.includes('Text indexed for queries & folders.');
 
         if (referencedFileName) {
             // If referencedFileName has no extension, try candidate extensions
@@ -1697,8 +1902,9 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                 activeDocContext = `=== [File: engmaths.pdf] ===\nA Textbook of Engineering Mathematics (Differential Calculus & Linear Algebra). Unit I: Differential Calculus-I: Successive Differentiation & Leibnitz's Theorem. Unit II: Differential Calculus-II: Multivariable Expansions & Optimization.\n\n` + activeDocContext;
             }
 
-            if (!activeDocContext.includes(referencedFileName) && !referencedFileName.toLowerCase().includes('engmath')) {
+            if ((!activeDocContext.includes(referencedFileName) || isDocPlaceholder(activeDocContext)) && !referencedFileName.toLowerCase().includes('engmath')) {
                 try {
+                    const cleanRef = referencedFileName.replace(/\.[a-zA-Z0-9]+$/, '').toLowerCase();
                     const searchPaths = [
                         path.join(__dirname, '../../../', referencedFileName),
                         path.join(__dirname, '../../', referencedFileName),
@@ -1720,7 +1926,8 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                     const uploadDirs = [
                         path.join(__dirname, '../../../uploads'),
                         path.join(__dirname, '../../uploads'),
-                        path.join(__dirname, '../uploads')
+                        path.join(__dirname, '../uploads'),
+                        path.join(process.cwd(), 'uploads')
                     ];
                     for (const udir of uploadDirs) {
                         if (fs.existsSync(udir)) {
@@ -1730,7 +1937,7 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                                     !df.endsWith('.txt') && (
                                         df.toLowerCase() === referencedFileName.toLowerCase() ||
                                         df.toLowerCase().endsWith(`_${referencedFileName.toLowerCase()}`) ||
-                                        (referencedFileName.length > 4 && df.toLowerCase().includes(referencedFileName.toLowerCase()))
+                                        (cleanRef.length > 3 && df.toLowerCase().includes(cleanRef))
                                     )
                                 );
                                 if (match) {
@@ -1751,7 +1958,11 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                                 referencedFileName
                             );
                             if (extracted) {
-                                activeDocContext = `=== [File: ${referencedFileName}] ===\n${extracted}\n\n` + activeDocContext;
+                                if (isDocPlaceholder(activeDocContext)) {
+                                    activeDocContext = `=== [File: ${referencedFileName}] ===\n${extracted}\n\n`;
+                                } else {
+                                    activeDocContext = `=== [File: ${referencedFileName}] ===\n${extracted}\n\n` + activeDocContext;
+                                }
                             }
                             break;
                         }
@@ -1759,7 +1970,6 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
 
                     // If not found on local disk, try finding in Document table
                     if (!fileFound) {
-                        const cleanRef = referencedFileName.replace(/\.[a-zA-Z0-9]+$/, '').toLowerCase();
                         const dbDoc = await prisma.document.findFirst({
                             where: {
                                 OR: [
@@ -1783,7 +1993,8 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                             try {
                                 const cachePaths = [
                                     path.join(__dirname, '../../../RAG', dbDoc.fileName || referencedFileName),
-                                    path.join(__dirname, '../../../uploads', dbDoc.fileName || referencedFileName)
+                                    path.join(__dirname, '../../../uploads', dbDoc.fileName || referencedFileName),
+                                    path.join(process.cwd(), 'uploads', dbDoc.fileName || referencedFileName)
                                 ];
                                 for (const cp of cachePaths) {
                                     fs.mkdirSync(path.dirname(cp), { recursive: true });
@@ -1798,7 +2009,13 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                                 dbDoc.fileName,
                                 buf
                             );
-                            activeDocContext = `=== [Document: ${dbDoc.fileName || dbDoc.name}] ===\n${extracted}\n\n` + activeDocContext;
+                            if (extracted) {
+                                if (isDocPlaceholder(activeDocContext)) {
+                                    activeDocContext = `=== [Document: ${dbDoc.fileName || dbDoc.name}] ===\n${extracted}\n\n`;
+                                } else {
+                                    activeDocContext = `=== [Document: ${dbDoc.fileName || dbDoc.name}] ===\n${extracted}\n\n` + activeDocContext;
+                                }
+                            }
                         }
                     }
                 } catch (readErr) {
@@ -1811,14 +2028,15 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                 for (const rf of options.referencedFiles) {
                     const rName = rf.fileName || rf.name;
                     const rLocal = rf.localFileName;
-                    if (rName && !activeDocContext.includes(rName)) {
+                    if (rName && (!activeDocContext.includes(rName) || isDocPlaceholder(activeDocContext))) {
                         if (rf.extractedText && rf.extractedText.length > 50 && !rf.extractedText.startsWith('📄 [Document:')) {
                             activeDocContext = `=== [File: ${rName}] ===\n${rf.extractedText}\n\n` + activeDocContext;
                         } else {
                             const uploadDirs = [
                                 path.join(__dirname, '../../../uploads'),
                                 path.join(__dirname, '../../uploads'),
-                                path.join(__dirname, '../uploads')
+                                path.join(__dirname, '../uploads'),
+                                path.join(process.cwd(), 'uploads')
                             ];
                             for (const udir of uploadDirs) {
                                 const directP = path.join(udir, rLocal || rName);
@@ -1829,7 +2047,11 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
                                         rName
                                     );
                                     if (extracted) {
-                                        activeDocContext = `=== [File: ${rName}] ===\n${extracted}\n\n` + activeDocContext;
+                                        if (isDocPlaceholder(activeDocContext)) {
+                                            activeDocContext = `=== [File: ${rName}] ===\n${extracted}\n\n`;
+                                        } else {
+                                            activeDocContext = `=== [File: ${rName}] ===\n${extracted}\n\n` + activeDocContext;
+                                        }
                                     }
                                     break;
                                 }
@@ -1840,8 +2062,8 @@ Generate the 2-chapter curriculum JSON following the exact schema. Return ONLY J
             }
         }
 
-        // If activeDocContext is still empty and user mentions math / syllabus / ebook, load math textbook
-        if (!activeDocContext && (msgLower.includes('math') || msgLower.includes('syllabus') || msgLower.includes('ebook'))) {
+        // If activeDocContext is still empty and user specifically requested engineering mathematics / engmaths, load math textbook
+        if (!activeDocContext && (msgLower.includes('engmath') || (msgLower.includes('engineering') && msgLower.includes('math')) || (msgLower.includes('differential') && msgLower.includes('calculus')))) {
             const candidateMathPaths = [
                 path.join(__dirname, '../../../RAG/engmaths.pdf'),
                 path.join(__dirname, '../../RAG/engmaths.pdf'),
@@ -4559,13 +4781,13 @@ Return JSON ONLY in this format:
                 }
 
                 // Check if a document is referenced or context exists
-                const detectedDocInMsg = (message.match(/[\\@]([a-zA-Z0-9_\-.\s]+?\.[a-zA-Z0-9]{2,5})\b/) || [])[1] ||
-                                         (message.match(/[\\@]([a-zA-Z0-9_\-]+)/) || [])[1] || '';
+                const detectedDocInMsg = (message.match(/[\\@]([a-zA-Z0-9_\-.\s\(\)\[\]]+?\.[a-zA-Z0-9]{2,5})\b/) || [])[1] ||
+                                         (message.match(/[\\@]([a-zA-Z0-9_\-. \(\)\[\]]+)/) || [])[1] || '';
 
                 const effectiveDocRef = referencedFileName ||
                     (options.referencedFiles && options.referencedFiles[0]?.fileName) ||
                     detectedDocInMsg ||
-                    (msgLower.includes('engmath') ? 'engmaths.pdf' : (msgLower.includes('syllabus') ? 'python_math_library_syllabus.pdf' : ''));
+                    (msgLower.includes('engmath') ? 'engmaths.pdf' : '');
 
                 const hasDocRef = !!(effectiveDocRef || activeDocContext || (options.referencedFiles && options.referencedFiles.length > 0));
 
@@ -6686,12 +6908,6 @@ ${documentContext || message}
                 return this.docTextCache.get(cacheKey);
             }
 
-            if (fileName.toLowerCase().includes('engmath')) {
-                const mathOverview = `A Textbook of Engineering Mathematics\nUnit I: Differential Calculus-I (Successive Differentiation, nth derivatives, Leibnitz's Theorem, partial derivatives of functions of several variables, Euler's Theorem on Homogeneous Functions).\nUnit II: Differential Calculus-II (Taylor's and Maclaurin's series, expansion of functions of two variables, maxima and minima of functions of two variables, Lagrange's method of undetermined multipliers).\nUnit III: Linear Algebra (Matrices, Rank, Linear Equations, Eigenvalues & Eigenvectors).`;
-                this.docTextCache.set(cacheKey, mathOverview);
-                return mathOverview;
-            }
-
             const isText = mimeType.includes('text/plain') || mimeType.includes('text/csv') || fileName.toLowerCase().endsWith('.txt') || fileName.toLowerCase().endsWith('.csv');
             if (isText) {
                 const text = buffer.toString('utf-8');
@@ -6717,10 +6933,10 @@ ${documentContext || message}
                     let rawText = '';
                     const parsePromise = (async () => {
                         if (typeof pdfPkg === 'function') {
-                            const data = await pdfPkg(buffer, { max: 30 });
+                            const data = await pdfPkg(buffer, { max: 250 });
                             return data.text;
                         } else if (pdfPkg && pdfPkg.PDFParse) {
-                            const parser = new pdfPkg.PDFParse({ data: buffer, max: 30 });
+                            const parser = new pdfPkg.PDFParse({ data: buffer, max: 250 });
                             await parser.load();
                             const res = await parser.getText();
                             return res?.text || (Array.isArray(res?.pages) ? res.pages.map(p => p.text).join('\n') : '');
@@ -6728,13 +6944,13 @@ ${documentContext || message}
                         return '';
                     })();
 
-                    // Protect against long-running PDF AST generation on low-RAM server with realistic 25s timeout
+                    // Protect against long-running PDF AST generation on low-RAM server with realistic 35s timeout
                     rawText = await Promise.race([
                         parsePromise,
-                        new Promise((_, reject) => setTimeout(() => reject(new Error('PDF extraction timed out')), 25000))
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('PDF extraction timed out')), 35000))
                     ]);
 
-                    // Retain all Unicode scripts (Punjabi Gurmukhi \u0A00-\u0A7F, Hindi Devanagari \u0900-\u097F, etc.) while stripping non-printable control chars
+                    // Retain all Unicode scripts while stripping non-printable control chars
                     let readable = (rawText || '')
                         .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
                         .replace(/\r\n/g, '\n')
@@ -6742,9 +6958,10 @@ ${documentContext || message}
                         .trim();
 
                     if (readable.length > 40) {
-                        const truncated = readable.substring(0, 45000);
-                        this.docTextCache.set(cacheKey, truncated);
-                        return truncated;
+                        // Allow up to 800,000 characters so complete books, chapters, and exercises are fully preserved
+                        const preserved = readable.length > 800000 ? readable.substring(0, 800000) : readable;
+                        this.docTextCache.set(cacheKey, preserved);
+                        return preserved;
                     }
                     console.log('[ChatBot] PDF text empty or scanned, checking if image OCR is suitable...');
                 } catch (pdfErr) {

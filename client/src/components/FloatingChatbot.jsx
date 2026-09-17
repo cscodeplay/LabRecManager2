@@ -8575,12 +8575,20 @@ export default function FloatingChatbot() {
             }));
             const docCtx = uploadedDocs.map(d => `--- ${d.fileName} ---\n${(d.extractedText || '').substring(0, 15000)}`).join('\n\n');
 
+            const allFileRefs = [...activeRefs];
+            uploadedDocs.forEach(ud => {
+                const udName = ud.fileName || ud.name;
+                if (udName && !allFileRefs.some(f => (f.fileName || f.name) === udName)) {
+                    allFileRefs.push(ud);
+                }
+            });
+
             const res = await api.post('/admin/chatbot/chat', { 
                 message: msg, 
                 conversationHistory: history, 
                 documentContext: docCtx,
-                referencedFiles: activeRefs,
-                referencedFileName: activeRefs[0]?.fileName || '',
+                referencedFiles: allFileRefs,
+                referencedFileName: activeRefs[0]?.fileName || uploadedDocs[uploadedDocs.length - 1]?.fileName || '',
                 attachedImages: activeImages.map(img => ({ name: img.name, dataUrl: img.dataUrl })),
                 provider: preferredModel,
                 defaultChartColors: activeColors,
