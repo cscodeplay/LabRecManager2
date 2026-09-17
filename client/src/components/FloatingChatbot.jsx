@@ -7988,6 +7988,7 @@ export function BotSettingsModal({ settings, onSave, onClose, isDialog = false }
    ═══════════════════════════════════════════════════════ */
 export default function FloatingChatbot() {
     const { user, isAuthenticated } = useAuthStore();
+    const isAdmin = user?.role === 'admin' || user?.role === 'principal' || user?.role === 'instructor';
     const [isOpen, setIsOpen] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
     const [messages, setMessages] = useState([]);
@@ -8425,9 +8426,6 @@ export default function FloatingChatbot() {
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, [position]);
-
-    // Only render for admin/principal
-    const isAdmin = user?.role === 'admin' || user?.role === 'principal' || user?.role === 'instructor';
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
