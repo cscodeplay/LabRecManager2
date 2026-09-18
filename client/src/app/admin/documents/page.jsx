@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuthStore } from '@/lib/store';
@@ -150,6 +150,14 @@ export default function DocumentsPage() {
         loadShareOptions();
         loadStorage();
     }, [_hasHydrated, isAuthenticated]);
+
+    useEffect(() => {
+        const handleRefresh = () => {
+            loadDocuments();
+        };
+        window.addEventListener('documents:refresh', handleRefresh);
+        return () => window.removeEventListener('documents:refresh', handleRefresh);
+    }, []);
 
     const loadDocuments = async () => {
         try {
@@ -336,38 +344,47 @@ export default function DocumentsPage() {
 
     const loadShareOptions = async () => {
         try {
-            const classRes = await api.get('/classes', { params: { all: true } });
-            const classes = classRes.data.data.classes || [];
+            const [classRes, userRes, adminRes, principalRes, studentRes] = await Promise.allSettled([
+                api.get('/classes', { params: { all: true } }),
+                api.get('/users', { params: { role: 'instructor', limit: 500 } }),
+                api.get('/users', { params: { role: 'admin', limit: 100 } }),
+                api.get('/users', { params: { role: 'principal', limit: 20 } }),
+                api.get('/users', { params: { role: 'student', limit: 1000 } })
+            ]);
+
+            const classes = (classRes.status === 'fulfilled' && classRes.value?.data?.data?.classes) || [];
             setAvailableClasses(classes);
 
-            const allGroups = [];
-            const seenGroupIds = new Set();
-            for (const cls of classes) {
-                try {
-                    const groupRes = await api.get(`/classes/${cls.id}/groups`);
-                    const groups = groupRes.data.data.groups || [];
+            const allInstructors = [
+                ...((userRes.status === 'fulfilled' && userRes.value?.data?.data?.users) || []),
+                ...((adminRes.status === 'fulfilled' && adminRes.value?.data?.data?.users) || []),
+                ...((principalRes.status === 'fulfilled' && principalRes.value?.data?.data?.users) || [])
+            ];
+            setAvailableInstructors(allInstructors);
+
+            const students = (studentRes.status === 'fulfilled' && studentRes.value?.data?.data?.users) || [];
+            setAvailableStudents(students);
+
+            // Fetch groups for classes in parallel
+            if (classes.length > 0) {
+                const groupPromises = classes.map(cls =>
+                    api.get(`/classes/${cls.id}/groups`)
+                        .then(res => ({ cls, groups: res?.data?.data?.groups || [] }))
+                        .catch(() => ({ cls, groups: [] }))
+                );
+                const groupResults = await Promise.all(groupPromises);
+                const allGroups = [];
+                const seenGroupIds = new Set();
+                groupResults.forEach(({ cls, groups }) => {
                     groups.forEach(g => {
-                        if (!seenGroupIds.has(g.id)) {
+                        if (g && g.id && !seenGroupIds.has(g.id)) {
                             seenGroupIds.add(g.id);
                             allGroups.push({ ...g, className: cls.name || `Grade ${cls.gradeLevel}-${cls.section}` });
                         }
                     });
-                } catch (e) { }
+                });
+                setAvailableGroups(allGroups);
             }
-            setAvailableGroups(allGroups);
-
-            const userRes = await api.get('/users', { params: { role: 'instructor', limit: 500 } });
-            const adminRes = await api.get('/users', { params: { role: 'admin', limit: 100 } });
-            const principalRes = await api.get('/users', { params: { role: 'principal', limit: 20 } });
-            const allInstructors = [
-                ...(userRes.data.data.users || []),
-                ...(adminRes.data.data.users || []),
-                ...(principalRes.data.data.users || [])
-            ];
-            setAvailableInstructors(allInstructors);
-
-            const studentRes = await api.get('/users', { params: { role: 'student', limit: 1000 } });
-            setAvailableStudents(studentRes.data.data.users || []);
         } catch (err) {
             console.error('Failed to load share options:', err);
         }
@@ -667,11 +684,62 @@ export default function DocumentsPage() {
     };
 
     const toggleShareTarget = (type, id) => {
+        if (!type || !id) return;
         const exists = shareTargets.find(t => t.type === type && t.id === id);
         if (exists) {
             setShareTargets(shareTargets.filter(t => !(t.type === type && t.id === id)));
         } else {
             setShareTargets([...shareTargets, { type, id }]);
+        }
+    };
+
+    const getCurrentTypeVisibleItems = () => {
+        if (shareTargetType === 'class') {
+            return (availableClasses || [])
+                .filter(cls => {
+                    const name = cls?.name || `Grade ${cls?.gradeLevel || ''}-${cls?.section || ''}`;
+                    return name.toLowerCase().includes((shareSearch || '').toLowerCase());
+                })
+                .map(cls => ({ type: 'class', id: cls.id }));
+        }
+        if (shareTargetType === 'group') {
+            return (availableGroups || [])
+                .filter(grp => (grp?.name || '').toLowerCase().includes((shareSearch || '').toLowerCase()))
+                .map(grp => ({ type: 'group', id: grp.id }));
+        }
+        if (shareTargetType === 'instructor') {
+            return (availableInstructors || [])
+                .filter(usr => `${usr?.firstName || ''} ${usr?.lastName || ''}`.toLowerCase().includes((shareSearch || '').toLowerCase()))
+                .map(usr => ({
+                    type: (usr?.role === 'admin' || usr?.role === 'principal') ? 'admin' : 'instructor',
+                    id: usr.id
+                }));
+        }
+        if (shareTargetType === 'student') {
+            return (availableStudents || [])
+                .filter(stu => `${stu?.firstName || ''} ${stu?.lastName || ''} ${stu?.email || ''} ${stu?.studentId || stu?.admissionNumber || ''}`.toLowerCase().includes((shareSearch || '').toLowerCase()))
+                .map(stu => ({ type: 'student', id: stu.id }));
+        }
+        return [];
+    };
+
+    const isAllCurrentTypeSelected = () => {
+        const visible = getCurrentTypeVisibleItems();
+        if (visible.length === 0) return false;
+        return visible.every(item => shareTargets.some(t => t.type === item.type && t.id === item.id));
+    };
+
+    const toggleSelectAllCurrentType = () => {
+        const visible = getCurrentTypeVisibleItems();
+        if (visible.length === 0) return;
+        const allSelected = isAllCurrentTypeSelected();
+        if (allSelected) {
+            const visibleSet = new Set(visible.map(v => `${v.type}_${v.id}`));
+            setShareTargets(shareTargets.filter(t => !visibleSet.has(`${t.type}_${t.id}`)));
+        } else {
+            const existingKeys = new Set(shareTargets.map(t => `${t.type}_${t.id}`));
+            const toAdd = visible.filter(v => !existingKeys.has(`${v.type}_${v.id}`));
+            setShareTargets([...shareTargets, ...toAdd]);
         }
     };
 
@@ -2556,16 +2624,25 @@ export default function DocumentsPage() {
                                         ) : (
                                             /* Step 2: Show list with search */
                                             <div className="space-y-3">
-                                                <div className="flex items-center justify-between">
+                                                <div className="flex items-center justify-between gap-2">
                                                     <button
                                                         onClick={() => { setShareTargetType(''); setShareSearch(''); }}
-                                                        className="text-sm text-primary-600 hover:underline flex items-center gap-1"
+                                                        className="text-sm text-primary-600 hover:underline flex items-center gap-1 flex-shrink-0"
                                                     >
                                                         ← Back
                                                     </button>
-                                                    <span className="text-sm font-medium capitalize">
+                                                    <span className="text-sm font-semibold capitalize truncate">
                                                         {shareTargetType === 'class' ? 'Classes' : shareTargetType === 'group' ? 'Groups' : shareTargetType === 'student' ? 'Students' : 'Instructors/Admins'}
                                                     </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={toggleSelectAllCurrentType}
+                                                        className="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium flex items-center gap-1.5 transition flex-shrink-0 border border-slate-200"
+                                                        title={isAllCurrentTypeSelected() ? 'Deselect All visible' : 'Select All visible'}
+                                                    >
+                                                        <CheckCheck className="w-3.5 h-3.5 text-primary-600" />
+                                                        <span>{isAllCurrentTypeSelected() ? 'Deselect All' : 'Select All'}</span>
+                                                    </button>
                                                 </div>
 
                                                 {/* Search Box */}
@@ -2585,8 +2662,8 @@ export default function DocumentsPage() {
                                                     {shareTargetType === 'class' && (
                                                         availableClasses
                                                             .filter(cls => {
-                                                                const name = cls.name || `Grade ${cls.gradeLevel}-${cls.section}`;
-                                                                return name.toLowerCase().includes(shareSearch.toLowerCase());
+                                                                const name = cls?.name || `Grade ${cls?.gradeLevel || ''}-${cls?.section || ''}`;
+                                                                return name.toLowerCase().includes((shareSearch || '').toLowerCase());
                                                             })
                                                             .map(cls => (
                                                                 <label key={cls.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
@@ -2596,7 +2673,7 @@ export default function DocumentsPage() {
                                                                         onChange={() => toggleShareTarget('class', cls.id)}
                                                                         className="rounded text-primary-600"
                                                                     />
-                                                                    <span className="text-sm">{cls.name || `Grade ${cls.gradeLevel}-${cls.section}`}</span>
+                                                                    <span className="text-sm">{cls?.name || `Grade ${cls?.gradeLevel || ''}-${cls?.section || ''}`}</span>
                                                                 </label>
                                                             ))
                                                     )}
@@ -2607,7 +2684,7 @@ export default function DocumentsPage() {
                                                             </div>
                                                         ) : (
                                                             availableGroups
-                                                                .filter(grp => grp.name.toLowerCase().includes(shareSearch.toLowerCase()))
+                                                                .filter(grp => (grp?.name || '').toLowerCase().includes((shareSearch || '').toLowerCase()))
                                                                 .map(grp => (
                                                                     <label key={grp.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
                                                                         <input
@@ -2617,8 +2694,8 @@ export default function DocumentsPage() {
                                                                             className="rounded text-primary-600"
                                                                         />
                                                                         <div>
-                                                                            <span className="text-sm">{grp.name}</span>
-                                                                            <span className="text-xs text-slate-400 ml-2">({grp.className})</span>
+                                                                            <span className="text-sm">{grp?.name || 'Group'}</span>
+                                                                            <span className="text-xs text-slate-400 ml-2">({grp?.className || 'Group'})</span>
                                                                         </div>
                                                                     </label>
                                                                 ))
@@ -2626,17 +2703,17 @@ export default function DocumentsPage() {
                                                     )}
                                                     {shareTargetType === 'instructor' && (
                                                         availableInstructors
-                                                            .filter(usr => `${usr.firstName} ${usr.lastName}`.toLowerCase().includes(shareSearch.toLowerCase()))
+                                                            .filter(usr => `${usr?.firstName || ''} ${usr?.lastName || ''}`.toLowerCase().includes((shareSearch || '').toLowerCase()))
                                                             .map(usr => (
                                                                 <label key={usr.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
                                                                     <input
                                                                         type="checkbox"
                                                                         checked={shareTargets.some(t => (t.type === 'instructor' || t.type === 'admin') && t.id === usr.id)}
-                                                                        onChange={() => toggleShareTarget(usr.role === 'admin' || usr.role === 'principal' ? 'admin' : 'instructor', usr.id)}
+                                                                        onChange={() => toggleShareTarget((usr?.role === 'admin' || usr?.role === 'principal') ? 'admin' : 'instructor', usr.id)}
                                                                         className="rounded text-primary-600"
                                                                     />
-                                                                    <span className="text-sm">{usr.firstName} {usr.lastName}</span>
-                                                                    <span className="text-xs text-slate-400 capitalize">({usr.role})</span>
+                                                                    <span className="text-sm">{usr?.firstName || ''} {usr?.lastName || ''}</span>
+                                                                    <span className="text-xs text-slate-400 capitalize">({usr?.role || 'instructor'})</span>
                                                                 </label>
                                                             ))
                                                     )}
@@ -2647,7 +2724,7 @@ export default function DocumentsPage() {
                                                             </div>
                                                         ) : (
                                                             availableStudents
-                                                                .filter(stu => `${stu.firstName} ${stu.lastName} ${stu.email || ''} ${stu.studentId || stu.admissionNumber || ''}`.toLowerCase().includes(shareSearch.toLowerCase()))
+                                                                .filter(stu => `${stu?.firstName || ''} ${stu?.lastName || ''} ${stu?.email || ''} ${stu?.studentId || stu?.admissionNumber || ''}`.toLowerCase().includes((shareSearch || '').toLowerCase()))
                                                                 .map(stu => (
                                                                     <label key={stu.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
                                                                         <input
@@ -2657,9 +2734,9 @@ export default function DocumentsPage() {
                                                                             className="rounded text-primary-600"
                                                                         />
                                                                         <div className="flex-1">
-                                                                            <span className="text-sm">{stu.firstName} {stu.lastName}</span>
-                                                                            {(stu.studentId || stu.admissionNumber) && (
-                                                                                <span className="text-xs text-slate-400 ml-2">({stu.studentId || stu.admissionNumber})</span>
+                                                                            <span className="text-sm">{stu?.firstName || ''} {stu?.lastName || ''}</span>
+                                                                            {(stu?.studentId || stu?.admissionNumber) && (
+                                                                                <span className="text-xs text-slate-400 ml-2">({stu?.studentId || stu?.admissionNumber})</span>
                                                                             )}
                                                                         </div>
                                                                     </label>
@@ -2735,19 +2812,19 @@ export default function DocumentsPage() {
                                                         // First check shareInfo for already-shared items (has the name already)
                                                         const existingShare = sharingDoc?.shareInfo?.find(s => s.type === t.type && s.targetId === t.id);
                                                         if (existingShare) {
-                                                            name = existingShare.targetName;
+                                                            name = existingShare.targetName || t.id;
                                                         } else if (t.type === 'class') {
-                                                            const cls = availableClasses.find(c => c.id === t.id);
+                                                            const cls = (availableClasses || []).find(c => c.id === t.id);
                                                             name = cls ? (cls.name || `Grade ${cls.gradeLevel}-${cls.section}`) : t.id;
                                                         } else if (t.type === 'group') {
-                                                            const grp = availableGroups.find(g => g.id === t.id);
-                                                            name = grp ? `${grp.name} (${grp.className})` : t.id;
+                                                            const grp = (availableGroups || []).find(g => g.id === t.id);
+                                                            name = grp ? `${grp.name || 'Group'} (${grp.className || ''})` : t.id;
                                                         } else if (t.type === 'student') {
-                                                            const stu = availableStudents.find(s => s.id === t.id);
-                                                            name = stu ? `${stu.firstName} ${stu.lastName}` : t.id;
+                                                            const stu = (availableStudents || []).find(s => s.id === t.id);
+                                                            name = stu ? `${stu.firstName || ''} ${stu.lastName || ''}`.trim() || t.id : t.id;
                                                         } else {
-                                                            const usr = availableInstructors.find(u => u.id === t.id);
-                                                            name = usr ? `${usr.firstName} ${usr.lastName}` : t.id;
+                                                            const usr = (availableInstructors || []).find(u => u.id === t.id);
+                                                            name = usr ? `${usr.firstName || ''} ${usr.lastName || ''}`.trim() || t.id : t.id;
                                                         }
                                                         return <span key={i}>{i > 0 ? ', ' : ''}{name}</span>;
                                                     })}

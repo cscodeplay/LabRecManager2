@@ -3272,21 +3272,76 @@ Generate the 2-chapter curriculum JSON following the exact schema. Ensure the ex
                     })
                 ]);
 
-                // Resolution
+                // Resolution via AI
                 const resolution = await aiService.parseDocumentShareTargets(message, { documents, classes, groups, students }, 'groq');
 
                 let matchedDoc = null;
                 if (resolution.matchedDocumentId) {
                     matchedDoc = documents.find(d => d.id === resolution.matchedDocumentId);
                 }
+
                 if (!matchedDoc && documents.length > 0) {
+                    // 1. Direct clean name substring match
                     for (const d of documents) {
-                        if (msgLower.includes(d.name.toLowerCase())) {
+                        const cleanName = (d.name || '').replace(/\.[^.]+$/, '').toLowerCase().trim();
+                        if (cleanName.length > 2 && (msgLower.includes(cleanName) || msgLower.includes((d.name || '').toLowerCase()))) {
                             matchedDoc = d;
                             break;
                         }
                     }
-                    if (!matchedDoc) matchedDoc = documents[0];
+
+                    // 2. Token-overlap scoring
+                    if (!matchedDoc) {
+                        const msgTokens = msgLower
+                            .replace(/[^a-z0-9\s]/g, ' ')
+                            .split(/\s+/)
+                            .filter(w => w.length > 1 && !['share', 'send', 'document', 'file', 'pdf', 'doc', 'notes', 'manual', 'with', 'all', 'the', 'and', 'for', 'to', 'in', 'of', 'please'].includes(w));
+
+                        let bestScore = 0;
+                        let bestDoc = null;
+
+                        for (const d of documents) {
+                            const docTokens = (d.name || '')
+                                .replace(/\.[^.]+$/, '')
+                                .replace(/[^a-zA-Z0-9\s]/g, ' ')
+                                .toLowerCase()
+                                .split(/\s+/)
+                                .filter(w => w.length > 1);
+
+                            let score = 0;
+                            for (const mt of msgTokens) {
+                                if (docTokens.some(dt => dt === mt || dt.includes(mt) || mt.includes(dt))) {
+                                    score += (mt.length > 3 ? 2 : 1);
+                                }
+                            }
+
+                            if (score > bestScore) {
+                                bestScore = score;
+                                bestDoc = d;
+                            }
+                        }
+
+                        if (bestScore > 0) {
+                            matchedDoc = bestDoc;
+                        }
+                    }
+
+                    // Fallback to first document ONLY if there's only 1 document in total
+                    if (!matchedDoc && documents.length === 1) {
+                        matchedDoc = documents[0];
+                    }
+                }
+
+                if (!matchedDoc) {
+                    return {
+                        message: `🔍 I found your request to share a document, but could not identify which document to share from your library.\n\nAvailable documents:\n${documents.slice(0, 5).map(d => `- **${d.name}**`).join('\n')}\n\nPlease try again with the document name (e.g. *"Share document ${documents[0]?.name || 'Physics Notes'} with Class 12"*).`,
+                        sql: null,
+                        queryResult: null,
+                        chartData: null,
+                        reportAction: null,
+                        documentShareAction: null,
+                        provider: 'groq'
+                    };
                 }
 
                 if (matchedDoc) {
@@ -3294,32 +3349,75 @@ Generate the 2-chapter curriculum JSON following the exact schema. Ensure the ex
                     let targetGroupIds = resolution.matchedGroupIds || [];
                     let targetStudentIds = resolution.matchedStudentIds || [];
 
-                    // Deterministic heuristic fallback for student/user matching
-                    if (targetStudentIds.length === 0) {
+                    // Check if user intended "all" / "everyone" / "all classes" / "all students" / grade-specific "all"
+                    const isAllIntent = /\b(all|everyone|everybody|whole school|entire school|all classes|all sections|all students|all batches)\b/i.test(message);
+                    const isAllStudentsIntent = /\b(all students|every student|all learners|all kids)\b/i.test(message);
+                    const isAllClassesIntent = /\b(all classes|every class|all sections|all grades|all batches)\b/i.test(message);
+
+                    // Check if a specific grade is mentioned: e.g. "12th", "class 12", "grade 12", "11th", "10th"
+                    const gradeMatch = message.match(/\b(1[0-2]|[1-9])(?:th|st|nd|rd)?\s*(?:grade|class)?\b/i) || message.match(/\b(?:grade|class)\s*(1[0-2]|[1-9])\b/i);
+                    const matchedGrade = gradeMatch ? parseInt(gradeMatch[1]) : null;
+
+                    if (isAllIntent) {
+                        if (matchedGrade) {
+                            // Find classes matching this grade level
+                            const gradeClasses = classes.filter(c => c.gradeLevel === matchedGrade || (c.name || '').includes(String(matchedGrade)));
+                            if (gradeClasses.length > 0) {
+                                targetClassIds = gradeClasses.map(c => c.id);
+                                targetStudentIds = []; // Clear student false-positives
+                                targetGroupIds = [];
+                            } else {
+                                targetClassIds = classes.map(c => c.id);
+                            }
+                        } else if (isAllClassesIntent || (!isAllStudentsIntent && classes.length > 0)) {
+                            // "with all" or "all classes" -> Target all classes (which covers all enrolled students)
+                            targetClassIds = classes.map(c => c.id);
+                            targetStudentIds = [];
+                            targetGroupIds = [];
+                        } else if (isAllStudentsIntent) {
+                            targetStudentIds = students.filter(s => s.role === 'student').map(s => s.id);
+                        }
+                    }
+
+                    // Deterministic heuristic fallback for student/user matching (only if NOT an "all" request and target lists are empty)
+                    if (!isAllIntent && targetClassIds.length === 0 && targetGroupIds.length === 0 && targetStudentIds.length === 0) {
+                        const stopWords = new Set(['all', 'the', 'and', 'for', 'not', 'are', 'may', 'out', 'cse', 'doc', 'pdf', 'wit', 'with', 'set', 'get', 'can', 'has', 'had', 'her', 'him', 'his', 'how', 'its', 'now', 'our', 'see', 'way', 'who', 'boy', 'did', 'put', 'say', 'she', 'too', 'use', 'ebook', 'book', 'class', 'grade', 'share', 'send']);
                         for (const s of students) {
                             const first = (s.firstName || '').trim().toLowerCase();
                             const last = (s.lastName || '').trim().toLowerCase();
                             const full = `${first} ${last}`.trim();
-                            if (full && msgLower.includes(full)) {
+                            
+                            if (full && new RegExp(`\\b${full.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(message)) {
                                 if (!targetStudentIds.includes(s.id)) targetStudentIds.push(s.id);
-                            } else if (first && first.length > 2 && msgLower.includes(first)) {
-                                if (!targetStudentIds.includes(s.id)) targetStudentIds.push(s.id);
+                            } else if (first && first.length >= 3 && !stopWords.has(first)) {
+                                if (new RegExp(`\\b${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(message)) {
+                                    if (!targetStudentIds.includes(s.id)) targetStudentIds.push(s.id);
+                                }
                             }
                         }
                     }
 
                     // Deterministic heuristic fallback for class matching
                     if (targetClassIds.length === 0 && targetGroupIds.length === 0 && targetStudentIds.length === 0) {
-                        for (const c of classes) {
-                            if (msgLower.includes(c.name.toLowerCase())) {
-                                if (!targetClassIds.includes(c.id)) targetClassIds.push(c.id);
+                        if (matchedGrade) {
+                            const gradeClasses = classes.filter(c => c.gradeLevel === matchedGrade || (c.name || '').includes(String(matchedGrade)));
+                            if (gradeClasses.length > 0) {
+                                targetClassIds = gradeClasses.map(c => c.id);
+                            }
+                        }
+                        if (targetClassIds.length === 0) {
+                            for (const c of classes) {
+                                const cName = (c.name || '').toLowerCase();
+                                if (cName.length > 2 && new RegExp(`\\b${cName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(message)) {
+                                    if (!targetClassIds.includes(c.id)) targetClassIds.push(c.id);
+                                }
                             }
                         }
                     }
 
-                    // If still empty and classes available, default to first class
+                    // If still empty and classes available, default to all classes if "all" was mentioned, or first class
                     if (targetClassIds.length === 0 && targetGroupIds.length === 0 && targetStudentIds.length === 0 && classes.length > 0) {
-                        targetClassIds.push(classes[0].id);
+                        targetClassIds = isAllIntent ? classes.map(c => c.id) : [classes[0].id];
                     }
 
                     const targetNames = [

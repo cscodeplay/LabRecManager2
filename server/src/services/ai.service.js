@@ -330,9 +330,13 @@ Return ONLY valid JSON matching this schema:
 }
 
 RULES:
-1. Match Document and Class names liberally.
+1. Match Document and Class names liberally (e.g., "12th CSE ebook" matches "12th CSE Ebook.pdf" or "CSE(Eng) ebook").
 2. Return null for matchedDocumentId if no matching document is found in the Documents list.
-3. Output MUST be valid JSON only.`;
+3. If the user asks to share with "all", "everyone", "all classes", or mentions a grade level (e.g. "12th", "Class 12", "Grade 12"):
+   - If a specific grade is mentioned (e.g. "12th"), include all class IDs for that grade in matchedClassIds.
+   - If "all" or "all classes" or "everyone" is mentioned, include all class IDs in matchedClassIds.
+   - Do NOT select 2 or 3 random students when the user says "all" or "everyone".
+4. Output MUST be valid JSON only.`;
 
         // 1. Try Groq (Primary)
         if ((preferredProvider === 'groq' || preferredProvider === 'auto') && this.groq) {

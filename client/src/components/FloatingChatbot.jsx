@@ -12,7 +12,7 @@ import {
     Monitor, Printer, Building2, Tv, Hash, PieChart, TrendingUp, Cpu, CheckCircle2, Ticket,
     ShoppingBag, Code, Terminal, Award, Package, Zap, Wifi, Network, Headphones, ScanLine, Cable, Camera,
     Share2, Folder, Truck, ArrowRight, UsersRound, Search, RotateCcw, UserCheck, ShieldAlert, FolderPlus, Square,
-    GripHorizontal, FileSpreadsheet, Settings, Palette, Sliders
+    GripHorizontal, FileSpreadsheet, Settings, Palette, Sliders, CheckCheck, UserPlus
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
@@ -4556,6 +4556,73 @@ function DocumentShareActionCard({ action }) {
         setTargetStudentIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
     };
 
+    // Select all / deselect all helpers for edit mode
+    const getVisibleStudents = () => (availableStudents || []).filter(s =>
+        !filterQuery || (s?.name || '').toLowerCase().includes(filterQuery.toLowerCase()) ||
+        (s?.admissionNumber && s.admissionNumber.toLowerCase().includes(filterQuery.toLowerCase()))
+    );
+
+    const getVisibleClasses = () => (availableClasses || []).filter(c =>
+        !filterQuery || (c?.name || '').toLowerCase().includes(filterQuery.toLowerCase())
+    );
+
+    const getVisibleGroups = () => (availableGroups || []).filter(g =>
+        !filterQuery || (g?.name || '').toLowerCase().includes(filterQuery.toLowerCase())
+    );
+
+    const isAllCurrentTabSelected = () => {
+        if (editTab === 'students') {
+            const visible = getVisibleStudents();
+            return visible.length > 0 && visible.every(s => targetStudentIds.includes(s.id));
+        }
+        if (editTab === 'classes') {
+            const visible = getVisibleClasses();
+            return visible.length > 0 && visible.every(c => targetClassIds.includes(c.id));
+        }
+        if (editTab === 'groups') {
+            const visible = getVisibleGroups();
+            return visible.length > 0 && visible.every(g => targetGroupIds.includes(g.id));
+        }
+        return false;
+    };
+
+    const toggleSelectAllCurrentTab = () => {
+        if (editTab === 'students') {
+            const visible = getVisibleStudents();
+            if (visible.length === 0) return;
+            const allSelected = visible.every(s => targetStudentIds.includes(s.id));
+            if (allSelected) {
+                const visibleIds = new Set(visible.map(s => s.id));
+                setTargetStudentIds(prev => prev.filter(id => !visibleIds.has(id)));
+            } else {
+                const toAdd = visible.map(s => s.id).filter(id => !targetStudentIds.includes(id));
+                setTargetStudentIds(prev => [...prev, ...toAdd]);
+            }
+        } else if (editTab === 'classes') {
+            const visible = getVisibleClasses();
+            if (visible.length === 0) return;
+            const allSelected = visible.every(c => targetClassIds.includes(c.id));
+            if (allSelected) {
+                const visibleIds = new Set(visible.map(c => c.id));
+                setTargetClassIds(prev => prev.filter(id => !visibleIds.has(id)));
+            } else {
+                const toAdd = visible.map(c => c.id).filter(id => !targetClassIds.includes(id));
+                setTargetClassIds(prev => [...prev, ...toAdd]);
+            }
+        } else if (editTab === 'groups') {
+            const visible = getVisibleGroups();
+            if (visible.length === 0) return;
+            const allSelected = visible.every(g => targetGroupIds.includes(g.id));
+            if (allSelected) {
+                const visibleIds = new Set(visible.map(g => g.id));
+                setTargetGroupIds(prev => prev.filter(id => !visibleIds.has(id)));
+            } else {
+                const toAdd = visible.map(g => g.id).filter(id => !targetGroupIds.includes(id));
+                setTargetGroupIds(prev => [...prev, ...toAdd]);
+            }
+        }
+    };
+
     const handleConfirm = async () => {
         if (!documentId) {
             toast.error('Document ID is required');
@@ -4587,6 +4654,7 @@ function DocumentShareActionCard({ action }) {
                 setIsConfirmed(true);
                 setIsEditing(false);
                 toast.success('Document shared successfully!');
+                window.dispatchEvent(new Event('documents:refresh'));
             } else {
                 toast.error(res.data?.message || 'Failed to share document');
             }
@@ -4602,7 +4670,7 @@ function DocumentShareActionCard({ action }) {
 
     if (isCancelled) {
         return (
-            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3.5 shadow-xs space-y-2 text-[12px] animate-in fade-in">
+            <div className="mt-2.5 rounded-2xl border border-slate-200 bg-slate-50/90 p-3 shadow-xs space-y-1.5 text-[12px] animate-in fade-in">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 font-semibold text-slate-700">
                         <XCircle className="w-4 h-4 text-slate-400" />
@@ -4611,13 +4679,14 @@ function DocumentShareActionCard({ action }) {
                     <button
                         type="button"
                         onClick={() => setIsCancelled(false)}
-                        className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold hover:underline flex items-center gap-1 transition"
+                        title="Restore Draft"
+                        className="p-1 rounded-md text-primary-600 hover:text-primary-700 hover:bg-primary-50 transition"
                     >
-                        <Undo2 className="w-3 h-3" /> Restore Draft
+                        <Undo2 className="w-3.5 h-3.5" />
                     </button>
                 </div>
-                <p className="text-[11px] text-slate-500">
-                    Sharing proposal for "{documentName}" was discarded.
+                <p className="text-[11px] text-slate-500 truncate">
+                    Draft for "{documentName}" was discarded.
                 </p>
             </div>
         );
@@ -4626,12 +4695,12 @@ function DocumentShareActionCard({ action }) {
     return (
         <div className="mt-2.5 rounded-2xl border border-violet-200/90 bg-gradient-to-br from-violet-50/70 via-white to-purple-50/50 shadow-sm overflow-hidden text-xs animate-in fade-in">
             {/* Header */}
-            <div className="px-3.5 py-2 bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white flex items-center justify-between">
-                <div className="flex items-center gap-2 font-semibold text-xs tracking-tight">
-                    <Share2 className="w-4 h-4 text-violet-100" />
-                    <span>{isConfirmed ? 'Document Shared' : 'Share Document Proposal'}</span>
+            <div className="px-3 py-2 bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-semibold text-xs tracking-tight">
+                    <Share2 className="w-3.5 h-3.5 text-violet-100" />
+                    <span>{isConfirmed ? 'Document Shared' : 'Share Proposal'}</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30">
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30">
                     {fileType.toUpperCase()}
                 </span>
             </div>
@@ -4639,22 +4708,22 @@ function DocumentShareActionCard({ action }) {
             {/* Body */}
             <div className="p-3 space-y-2.5">
                 {/* Document Information */}
-                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center flex-shrink-0">
-                            <FileText className="w-4 h-4" />
+                <div className="p-2 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <div className="w-7 h-7 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center flex-shrink-0">
+                            <FileText className="w-3.5 h-3.5" />
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                             <div className="font-bold text-slate-900 truncate text-xs">{documentName}</div>
-                            <div className="text-[10px] text-slate-500 font-mono">Permission: View & Download</div>
+                            <div className="text-[10px] text-slate-500 truncate">Permission: View & Download</div>
                         </div>
                     </div>
                     {!isConfirmed && (
                         <button
                             type="button"
                             onClick={() => setIsEditing(!isEditing)}
-                            className="p-1 rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition"
-                            title="Edit Target Recipients"
+                            className="p-1 rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition flex-shrink-0"
+                            title={isEditing ? 'Close Editor' : 'Edit Recipients'}
                         >
                             <Edit3 className="w-3.5 h-3.5" />
                         </button>
@@ -4663,44 +4732,61 @@ function DocumentShareActionCard({ action }) {
 
                 {/* Edit Mode: Tabs for Students, Classes, Groups */}
                 {isEditing && !isConfirmed ? (
-                    <div className="space-y-2.5 bg-slate-50/90 p-2.5 rounded-xl border border-slate-200">
-                        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                            <div className="flex gap-1">
+                    <div className="space-y-2 bg-slate-50/90 p-2.5 rounded-xl border border-slate-200">
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-2 gap-1">
+                            <div className="flex gap-1 items-center">
                                 <button
                                     type="button"
                                     onClick={() => { setEditTab('students'); setFilterQuery(''); }}
-                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition ${
-                                        editTab === 'students' ? 'bg-violet-600 text-white' : 'text-slate-600 hover:bg-slate-200'
+                                    title={`Students (${targetStudentIds.length} selected)`}
+                                    className={`px-2 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
+                                        editTab === 'students' ? 'bg-violet-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
                                     }`}
                                 >
-                                    Students ({targetStudentIds.length})
+                                    <GraduationCap className="w-3.5 h-3.5" />
+                                    <span>{targetStudentIds.length}</span>
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => { setEditTab('classes'); setFilterQuery(''); }}
-                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition ${
-                                        editTab === 'classes' ? 'bg-violet-600 text-white' : 'text-slate-600 hover:bg-slate-200'
+                                    title={`Classes (${targetClassIds.length} selected)`}
+                                    className={`px-2 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
+                                        editTab === 'classes' ? 'bg-violet-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
                                     }`}
                                 >
-                                    Classes ({targetClassIds.length})
+                                    <Users className="w-3.5 h-3.5" />
+                                    <span>{targetClassIds.length}</span>
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => { setEditTab('groups'); setFilterQuery(''); }}
-                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition ${
-                                        editTab === 'groups' ? 'bg-violet-600 text-white' : 'text-slate-600 hover:bg-slate-200'
+                                    title={`Groups (${targetGroupIds.length} selected)`}
+                                    className={`px-2 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
+                                        editTab === 'groups' ? 'bg-violet-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
                                     }`}
                                 >
-                                    Groups ({targetGroupIds.length})
+                                    <UsersRound className="w-3.5 h-3.5" />
+                                    <span>{targetGroupIds.length}</span>
                                 </button>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => setIsEditing(false)}
-                                className="px-2 py-0.5 rounded-md bg-violet-100 text-violet-700 font-semibold text-[11px] hover:bg-violet-200 flex items-center gap-1"
-                            >
-                                <Check className="w-3 h-3" /> Done
-                            </button>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    onClick={toggleSelectAllCurrentTab}
+                                    title={isAllCurrentTabSelected() ? `Deselect All ${editTab}` : `Select All ${editTab}`}
+                                    className="p-1 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition"
+                                >
+                                    <CheckCheck className="w-3.5 h-3.5 text-violet-600" />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditing(false)}
+                                    title="Done"
+                                    className="p-1 rounded-md bg-violet-100 text-violet-700 hover:bg-violet-200 transition"
+                                >
+                                    <Check className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Search Filter */}
@@ -4719,7 +4805,7 @@ function DocumentShareActionCard({ action }) {
                         <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
                             {editTab === 'students' && (
                                 availableStudents
-                                    .filter(s => !filterQuery || s.name.toLowerCase().includes(filterQuery.toLowerCase()) || (s.admissionNumber && s.admissionNumber.toLowerCase().includes(filterQuery.toLowerCase())))
+                                    .filter(s => !filterQuery || (s?.name || '').toLowerCase().includes(filterQuery.toLowerCase()) || (s?.admissionNumber && s.admissionNumber.toLowerCase().includes(filterQuery.toLowerCase())))
                                     .map(s => {
                                         const selected = targetStudentIds.includes(s.id);
                                         return (
@@ -4743,7 +4829,7 @@ function DocumentShareActionCard({ action }) {
 
                             {editTab === 'classes' && (
                                 availableClasses
-                                    .filter(c => !filterQuery || c.name.toLowerCase().includes(filterQuery.toLowerCase()))
+                                    .filter(c => !filterQuery || (c?.name || '').toLowerCase().includes(filterQuery.toLowerCase()))
                                     .map(cls => {
                                         const selected = targetClassIds.includes(cls.id);
                                         return (
@@ -4767,7 +4853,7 @@ function DocumentShareActionCard({ action }) {
 
                             {editTab === 'groups' && (
                                 availableGroups
-                                    .filter(g => !filterQuery || g.name.toLowerCase().includes(filterQuery.toLowerCase()))
+                                    .filter(g => !filterQuery || (g?.name || '').toLowerCase().includes(filterQuery.toLowerCase()))
                                     .map(g => {
                                         const selected = targetGroupIds.includes(g.id);
                                         return (
@@ -4799,9 +4885,10 @@ function DocumentShareActionCard({ action }) {
                                 <button
                                     type="button"
                                     onClick={() => setIsEditing(true)}
-                                    className="text-[10px] text-violet-600 hover:text-violet-800 font-semibold flex items-center gap-0.5 hover:underline"
+                                    title="Add or Edit Recipients"
+                                    className="p-1 rounded-md text-violet-600 hover:text-violet-800 hover:bg-violet-50 transition"
                                 >
-                                    <Plus className="w-3 h-3" /> Add / Edit
+                                    <UserPlus className="w-3.5 h-3.5" />
                                 </button>
                             )}
                         </div>
@@ -4815,7 +4902,7 @@ function DocumentShareActionCard({ action }) {
                                         <Users className="w-3 h-3 text-violet-600" />
                                         <span>Class {c?.name || id}</span>
                                         {!isConfirmed && (
-                                            <button type="button" onClick={() => handleToggleClass(id)} className="hover:text-red-500 ml-0.5">
+                                            <button type="button" onClick={() => handleToggleClass(id)} className="hover:text-red-500 ml-0.5" title="Remove">
                                                 <X className="w-2.5 h-2.5" />
                                             </button>
                                         )}
@@ -4831,7 +4918,7 @@ function DocumentShareActionCard({ action }) {
                                         <UsersRound className="w-3 h-3 text-cyan-600" />
                                         <span>Group {g?.name || id}</span>
                                         {!isConfirmed && (
-                                            <button type="button" onClick={() => handleToggleGroup(id)} className="hover:text-red-500 ml-0.5">
+                                            <button type="button" onClick={() => handleToggleGroup(id)} className="hover:text-red-500 ml-0.5" title="Remove">
                                                 <X className="w-2.5 h-2.5" />
                                             </button>
                                         )}
@@ -4848,7 +4935,7 @@ function DocumentShareActionCard({ action }) {
                                         <User className="w-3 h-3 text-emerald-600" />
                                         <span>{name}</span>
                                         {!isConfirmed && (
-                                            <button type="button" onClick={() => handleToggleStudent(id)} className="hover:text-red-500 ml-0.5">
+                                            <button type="button" onClick={() => handleToggleStudent(id)} className="hover:text-red-500 ml-0.5" title="Remove">
                                                 <X className="w-2.5 h-2.5" />
                                             </button>
                                         )}
@@ -4865,7 +4952,7 @@ function DocumentShareActionCard({ action }) {
                             ))}
 
                             {totalSelected === 0 && targetNames.length === 0 && (
-                                <span className="text-slate-400 italic text-[11px]">No recipients specified. Click "Add / Edit" above.</span>
+                                <span className="text-slate-400 italic text-[11px]">No recipients specified.</span>
                             )}
                         </div>
                     </div>
@@ -4874,44 +4961,44 @@ function DocumentShareActionCard({ action }) {
                 {/* Confirmed State */}
                 {isConfirmed && (
                     <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-in fade-in">
-                        <div className="flex items-center gap-2 text-emerald-800 font-bold">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                            <span>Document Shared Successfully!</span>
-                        </div>
-                        <p className="text-[11px] text-emerald-700">
-                            Students and instructors in the selected groups can now access and download "{documentName}".
-                        </p>
-                        <div className="pt-1 flex items-center gap-2">
+                        <div className="flex items-center justify-between text-emerald-800 font-bold">
+                            <div className="flex items-center gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                <span>Shared Successfully!</span>
+                            </div>
                             <a
                                 href="/documents"
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-100/80 hover:bg-emerald-200 px-2.5 py-1 rounded-lg transition"
+                                title="Open Documents"
+                                className="p-1 rounded-lg text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100 transition"
                             >
-                                <Folder className="w-3 h-3" /> Open Documents
+                                <Folder className="w-4 h-4" />
                             </a>
                         </div>
+                        <p className="text-[11px] text-emerald-700">
+                            Selected classes and students can now access and download "{documentName}".
+                        </p>
                     </div>
                 )}
 
-                {/* Footer Action Buttons */}
+                {/* Footer Action Buttons - Icon Only with Tooltips to save space */}
                 {!isConfirmed && !isEditing && (
                     <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
                         <button
                             type="button"
                             onClick={() => setIsCancelled(true)}
-                            title="Cancel / Discard Draft"
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                            title="Discard Draft"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
                         >
-                            <X className="w-4 h-4" />
+                            <Trash2 className="w-4 h-4" />
                         </button>
                         <button
                             type="button"
                             onClick={handleConfirm}
                             disabled={loading || totalSelected === 0}
                             title="Confirm & Share Document"
-                            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white font-semibold flex items-center gap-1.5 shadow-sm shadow-violet-500/20 transition disabled:opacity-50 text-xs"
+                            className="p-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white font-semibold flex items-center justify-center shadow-sm shadow-violet-500/20 transition disabled:opacity-50"
                         >
-                            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                            <span>Confirm & Share</span>
+                            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                         </button>
                     </div>
                 )}

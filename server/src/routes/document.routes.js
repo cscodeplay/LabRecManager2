@@ -816,12 +816,31 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
         return res.status(400).json({ success: false, message: 'Targets array is required' });
     }
 
+    const whereDoc = { id: req.params.id, deletedAt: null };
+    if (req.user.schoolId) whereDoc.schoolId = req.user.schoolId;
     const doc = await prisma.document.findFirst({
-        where: { id: req.params.id, schoolId: req.user.schoolId }
+        where: whereDoc
     });
 
     if (!doc) {
         return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    // Deduplicate targets by type + id
+    const seenTargetKeys = new Set();
+    const uniqueTargets = [];
+    for (const t of targets) {
+        if (t && t.type && t.id) {
+            const key = `${t.type}_${t.id}`;
+            if (!seenTargetKeys.has(key)) {
+                seenTargetKeys.add(key);
+                uniqueTargets.push(t);
+            }
+        }
+    }
+
+    if (uniqueTargets.length === 0) {
+        return res.status(400).json({ success: false, message: 'At least one valid target is required' });
     }
 
     const shares = [];
@@ -830,7 +849,9 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
     // Valid target types
     const VALID_TYPES = ['class', 'group', 'instructor', 'admin', 'student'];
 
-    for (const target of targets) {
+    const parsedExpiresAt = (expiresAt && !isNaN(new Date(expiresAt).getTime())) ? new Date(expiresAt) : null;
+
+    for (const target of uniqueTargets) {
         // Validate target type
         if (!VALID_TYPES.includes(target.type)) {
             console.error('Invalid target type:', target.type);
@@ -842,7 +863,7 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
             sharedById: req.user.id,
             targetType: target.type,
             message: message || null,
-            expiresAt: expiresAt ? new Date(expiresAt) : null,
+            expiresAt: parsedExpiresAt,
             permission: permission || 'download'
         };
 
@@ -850,46 +871,44 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
         if (target.type === 'class') {
             shareData.targetClassId = target.id;
 
-            // Get all students in the class for notifications
-            const enrollments = await prisma.classEnrollment.findMany({
-                where: { classId: target.id, status: 'active' },
-                select: { studentId: true }
-            });
-            enrollments.forEach(e => {
-                if (!notifications.find(n => n.userId === e.studentId)) {
-                    notifications.push({
-                        userId: e.studentId,
-                        title: 'Document Shared with You',
-                        message: `"${doc.name}" has been shared with your class.`
-                    });
-                }
-            });
+            try {
+                const enrollments = await prisma.classEnrollment.findMany({
+                    where: { classId: target.id, status: 'active' },
+                    select: { studentId: true }
+                });
+                enrollments.forEach(e => {
+                    if (e.studentId && !notifications.find(n => n.userId === e.studentId)) {
+                        notifications.push({
+                            userId: e.studentId,
+                            title: 'Document Shared with You',
+                            message: `"${doc.name}" has been shared with your class.`
+                        });
+                    }
+                });
+            } catch (err) {
+                console.warn('[DocShare] Failed to fetch class enrollments for notifications:', err.message);
+            }
         } else if (target.type === 'group') {
             shareData.targetGroupId = target.id;
 
-            // Get all members of the group for notifications
-            const members = await prisma.groupMember.findMany({
-                where: { groupId: target.id },
-                select: { studentId: true }
-            });
-            members.forEach(m => {
-                if (!notifications.find(n => n.userId === m.studentId)) {
-                    notifications.push({
-                        userId: m.studentId,
-                        title: 'Document Shared with You',
-                        message: `"${doc.name}" has been shared with your group.`
-                    });
-                }
-            });
-        } else if (target.type === 'instructor' || target.type === 'admin') {
-            shareData.targetUserId = target.id;
-
-            notifications.push({
-                userId: target.id,
-                title: 'Document Shared with You',
-                message: `"${doc.name}" has been shared with you by ${req.user.firstName} ${req.user.lastName}.`
-            });
-        } else if (target.type === 'student') {
+            try {
+                const members = await prisma.groupMember.findMany({
+                    where: { groupId: target.id },
+                    select: { studentId: true }
+                });
+                members.forEach(m => {
+                    if (m.studentId && !notifications.find(n => n.userId === m.studentId)) {
+                        notifications.push({
+                            userId: m.studentId,
+                            title: 'Document Shared with You',
+                            message: `"${doc.name}" has been shared with your group.`
+                        });
+                    }
+                });
+            } catch (err) {
+                console.warn('[DocShare] Failed to fetch group members for notifications:', err.message);
+            }
+        } else if (target.type === 'instructor' || target.type === 'admin' || target.type === 'student') {
             shareData.targetUserId = target.id;
 
             notifications.push({
@@ -902,33 +921,35 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
         shares.push(shareData);
     }
 
-    // Create all shares
-    console.log('Creating shares:', JSON.stringify(shares, null, 2));
     try {
-        // Delete existing shares before creating new ones to avoid duplicates
-        await prisma.documentShare.deleteMany({
-            where: { documentId: doc.id }
-        });
+        // Atomic execution: Delete old shares and create new ones together in transaction
+        const [deletedShares, createdShares] = await prisma.$transaction([
+            prisma.documentShare.deleteMany({
+                where: { documentId: doc.id }
+            }),
+            prisma.documentShare.createMany({
+                data: shares
+            })
+        ]);
 
-        const createdShares = await prisma.documentShare.createMany({
-            data: shares
-        });
-
-        // Create notifications for recipients
+        // Create notifications safely (non-blocking)
         if (notifications.length > 0) {
-            await prisma.notification.createMany({
-                data: notifications
-            });
+            try {
+                await prisma.notification.createMany({
+                    data: notifications
+                });
+            } catch (notifErr) {
+                console.warn('[DocShare] Notification create error (non-fatal):', notifErr.message);
+            }
         }
 
         res.status(201).json({
             success: true,
-            message: `Document shared with ${targets.length} target(s)`,
+            message: `Document shared with ${shares.length} target(s)`,
             data: { sharesCreated: createdShares.count }
         });
     } catch (dbError) {
         console.error('Document share error:', dbError);
-        console.error('Share data:', JSON.stringify(shares, null, 2));
         return res.status(500).json({
             success: false,
             message: dbError.message || 'Failed to share document',
@@ -1007,7 +1028,7 @@ router.get('/shared', authenticate, asyncHandler(async (req, res) => {
                 OR: orConditions,
                 sharedById: { not: userId },
                 document: {
-                    schoolId,
+                    ...(schoolId ? { schoolId } : {}),
                     uploadedById: { not: userId },
                     deletedAt: null
                 },

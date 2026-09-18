@@ -189,6 +189,54 @@ async function initTables() {
         `);
 
         console.log('Whiteboard and Meeting tables verified/created successfully.');
+
+        // Ensure document_shares schema is up to date with 'student' target type and permissions
+        try {
+            console.log('Ensuring document_shares schema & constraints are up to date...');
+            await prisma.$executeRawUnsafe(`
+                DO $$ BEGIN
+                    ALTER TYPE "document_share_target_type" ADD VALUE IF NOT EXISTS 'student';
+                EXCEPTION WHEN duplicate_object THEN null;
+                END $$;
+            `);
+
+            await prisma.$executeRawUnsafe(`
+                DO $$ BEGIN
+                    ALTER TABLE "document_shares" DROP CONSTRAINT IF EXISTS "valid_target";
+                    ALTER TABLE "document_shares" ADD CONSTRAINT "valid_target" CHECK (
+                        (target_type = 'class' AND target_class_id IS NOT NULL) OR
+                        (target_type = 'group' AND target_group_id IS NOT NULL) OR
+                        (target_type IN ('instructor', 'admin', 'student') AND target_user_id IS NOT NULL)
+                    );
+                EXCEPTION WHEN others THEN
+                    RAISE NOTICE 'Could not update valid_target constraint: %', SQLERRM;
+                END $$;
+            `);
+
+            await prisma.$executeRawUnsafe(`
+                DO $$ BEGIN
+                    CREATE TYPE "share_permission" AS ENUM ('view', 'download');
+                EXCEPTION WHEN duplicate_object THEN null;
+                END $$;
+            `);
+
+            await prisma.$executeRawUnsafe(`
+                DO $$ BEGIN
+                    ALTER TABLE "document_shares" ADD COLUMN IF NOT EXISTS "permission" "share_permission" NOT NULL DEFAULT 'download';
+                EXCEPTION WHEN others THEN null;
+                END $$;
+            `);
+
+            await prisma.$executeRawUnsafe(`
+                DO $$ BEGIN
+                    ALTER TABLE "folder_shares" ADD COLUMN IF NOT EXISTS "permission" "share_permission" NOT NULL DEFAULT 'download';
+                EXCEPTION WHEN others THEN null;
+                END $$;
+            `);
+            console.log('Document sharing schema & constraints verified successfully.');
+        } catch (docShareErr) {
+            console.warn('Document sharing schema update notice:', docShareErr.message);
+        }
     } catch (e) {
         console.error('Error creating whiteboard tables:', e);
     }
