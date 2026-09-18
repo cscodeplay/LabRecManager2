@@ -153,6 +153,36 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
 
     return (
         <div className="space-y-4">
+            {/* Google Drive Status & Live Folder Link */}
+            <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-indigo-500/10 border border-emerald-200 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                        <HardDrive className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-slate-800">Connected to Google Drive</span>
+                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                                <Check className="w-2.5 h-2.5" /> ULRMS Shared Folder
+                            </span>
+                        </div>
+                        <p className="text-slate-500 text-[11px] mt-0.5">
+                            Files placed in your <strong>ULRMS</strong> Google Drive folder appear here automatically. To add new documents, drop them into your folder on Google Drive.
+                        </p>
+                    </div>
+                </div>
+                <a
+                    href={currentFolderId ? `https://drive.google.com/drive/folders/${currentFolderId}` : "https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition shadow-xs flex-shrink-0 text-xs"
+                    title="Open Google Drive folder in a new tab"
+                >
+                    <span>Open in Google Drive</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+            </div>
+
             {/* Top Bar: Breadcrumbs, Destination Folder, View Controls */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
                 {/* Breadcrumbs & Navigation */}

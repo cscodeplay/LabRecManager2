@@ -25,6 +25,7 @@ import ThinkingStepsCollapsible from './ThinkingStepsCollapsible';
 import { DocumentSaveToFolderCard, DocumentMoveFolderCard } from './DocumentFolderActionCards';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 
 /* ─── Markdown-ish renderer ─── */
 
@@ -65,12 +66,38 @@ function CodeBlock({ code, language }) {
         try {
             const ext = language ? language.toLowerCase() : 'txt';
             const filename = `snippet_${Date.now()}.${ext}`;
-            await googleDriveAPI.upload({
+
+            // Save locally to user machine
+            const blob = new Blob([code], { type: 'text/plain;charset=utf-8;' });
+            saveAs(blob, filename);
+
+            const res = await googleDriveAPI.upload({
                 content: code,
                 fileName: filename,
                 mimeType: ext === 'csv' ? 'text/csv' : 'text/plain'
             });
-            toast.success('Saved to Google Drive');
+
+            if (res.data?.isLiveGoogleDrive) {
+                toast.success('Saved to Google Drive');
+            } else {
+                toast((t) => (
+                    <div className="flex flex-col gap-1 text-xs">
+                        <span className="font-semibold text-slate-800">File downloaded to your device!</span>
+                        <span className="text-slate-500 text-[11px]">
+                            Google restricts Service Accounts on personal folders. Drop this file into your ULRMS folder.
+                        </span>
+                        <a
+                            href="https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-emerald-600 font-bold underline mt-0.5 inline-flex items-center gap-1"
+                            onClick={() => toast.dismiss(t.id)}
+                        >
+                            Open ULRMS Google Drive Folder ↗
+                        </a>
+                    </div>
+                ), { duration: 6500, icon: '📄' });
+            }
         } catch (err) {
             toast.error('Failed to save to Google Drive');
         }
@@ -416,12 +443,39 @@ function SQLResult({ sql, result, onRerun, hasDedicatedChart = false, dedicatedC
             const rowLines = rows.map(row => cols.map(c => escape(row[c])).join(','));
             const csv = [header, ...rowLines].join('\n');
             const fileName = `query_data_${new Date().toISOString().slice(0, 10)}.csv`;
-            await googleDriveAPI.upload({
+
+            // 1. Download file directly so user has it immediately
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            saveAs(blob, fileName);
+
+            // 2. Also register via Drive API
+            const res = await googleDriveAPI.upload({
                 content: csv,
                 fileName,
                 mimeType: 'text/csv'
             });
-            toast.success('Table saved to Google Drive as CSV');
+
+            if (res.data?.isLiveGoogleDrive) {
+                toast.success('Table saved directly to Google Drive as CSV');
+            } else {
+                toast((t) => (
+                    <div className="flex flex-col gap-1 text-xs">
+                        <span className="font-semibold text-slate-800">CSV downloaded to your device!</span>
+                        <span className="text-slate-500 text-[11px]">
+                            Google restricts Service Accounts on personal @gmail folders. Drop this CSV into your ULRMS folder.
+                        </span>
+                        <a
+                            href="https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-emerald-600 font-bold underline mt-0.5 inline-flex items-center gap-1"
+                            onClick={() => toast.dismiss(t.id)}
+                        >
+                            Open ULRMS Google Drive Folder ↗
+                        </a>
+                    </div>
+                ), { duration: 6500, icon: '💾' });
+            }
         } catch (err) {
             console.error('Failed to save to Google Drive:', err);
             toast.error('Failed to save table to Google Drive');
@@ -951,12 +1005,44 @@ export function ChatChart({ chartData, activeColors = null }) {
         if (!url) { toast.error('No chart to export'); return; }
         try {
             const safeName = (title || 'chart').replace(/[^a-zA-Z0-9_\-]/g, '_').toLowerCase();
-            await googleDriveAPI.upload({
+            const fileName = `${safeName}.png`;
+
+            // 1. Trigger PNG download directly
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            // 2. Also register via Drive API
+            const res = await googleDriveAPI.upload({
                 fileData: url,
-                fileName: `${safeName}.png`,
+                fileName: fileName,
                 mimeType: 'image/png'
             });
-            toast.success('Chart saved to Google Drive');
+
+            if (res.data?.isLiveGoogleDrive) {
+                toast.success('Chart saved directly to Google Drive');
+            } else {
+                toast((t) => (
+                    <div className="flex flex-col gap-1 text-xs">
+                        <span className="font-semibold text-slate-800">Chart downloaded to your device!</span>
+                        <span className="text-slate-500 text-[11px]">
+                            Google restricts Service Accounts on personal @gmail folders. Drop this image into your ULRMS folder.
+                        </span>
+                        <a
+                            href="https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-emerald-600 font-bold underline mt-0.5 inline-flex items-center gap-1"
+                            onClick={() => toast.dismiss(t.id)}
+                        >
+                            Open ULRMS Google Drive Folder ↗
+                        </a>
+                    </div>
+                ), { duration: 6500, icon: '📊' });
+            }
         } catch (err) {
             console.error('Failed to save chart to drive:', err);
             toast.error('Failed to save chart to Google Drive');

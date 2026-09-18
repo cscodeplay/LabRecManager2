@@ -233,6 +233,7 @@ class GoogleDriveService {
     async uploadFile(fileBuffer, fileName, mimeType = 'application/octet-stream', targetFolderId = null) {
         const destFolder = targetFolderId || this.folderId;
         const cleanName = fileName || `file_${Date.now()}`;
+        let uploadError = null;
 
         // Attempt Google Drive upload first
         if (this.drive) {
@@ -270,6 +271,7 @@ class GoogleDriveService {
                 };
             } catch (err) {
                 console.warn(`[GoogleDrive] Live Google Drive upload notice: ${err.message}. Falling back to synchronized drive storage.`);
+                uploadError = err.message;
             }
         }
 
@@ -287,7 +289,8 @@ class GoogleDriveService {
             size: fileBuffer.length,
             isGoogleDrive: true,
             isLocalSync: true,
-            storageMode: 'local_sync'
+            storageMode: 'local_sync',
+            warning: 'Google Drive quota limit for Service Accounts on personal folders: Service Accounts cannot write directly to personal @gmail accounts. File is saved in synchronized storage.'
         };
     }
 

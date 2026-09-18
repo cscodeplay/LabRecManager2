@@ -26,7 +26,11 @@ router.get('/status', (req, res) => {
         success: true,
         data: {
             isConfigured: googleDriveService.isConfigured(),
-            folderId: googleDriveService.folderId
+            folderId: googleDriveService.folderId,
+            serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || null,
+            ulrmsFolderUrl: 'https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp',
+            ulrmsFilesFolderUrl: 'https://drive.google.com/drive/folders/1R6SmhanodL-ghLTOoBhX_EgQ5Farf853',
+            storageNotice: 'Google Service Accounts have a 0-byte quota for creating files in personal @gmail.com folders. Files placed directly in the ULRMS Google Drive folder are immediately readable, searchable, and usable by the AI chatbot and document manager.'
         }
     });
 });
@@ -149,9 +153,16 @@ router.post('/upload', upload.single('file'), asyncHandler(async (req, res) => {
         targetFolderId
     );
 
-    res.status(201).json({
+    const isLive = uploaded.storageMode === 'google_drive';
+    res.status(isLive ? 201 : 200).json({
         success: true,
-        message: 'File uploaded to Google Drive successfully',
+        isLiveGoogleDrive: isLive,
+        storageMode: uploaded.storageMode,
+        warning: uploaded.warning || null,
+        message: isLive 
+            ? 'File uploaded directly to Google Drive successfully'
+            : 'File saved in synchronized storage. (Google restricts Service Accounts from creating files directly in personal @gmail Drive folders due to 0-byte quota policies. Open your ULRMS Drive folder to drag and drop)',
+        ulrmsFolderUrl: 'https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp',
         data: uploaded
     });
 }));
