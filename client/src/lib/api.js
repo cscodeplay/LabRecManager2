@@ -733,3 +733,20 @@ export const implementationPlansAPI = {
     sendEmail: (data) => api.post('/admin/implementation-plans/export/email', data),
 };
 
+// Google Drive API
+export const googleDriveAPI = {
+    getStatus: () => api.get('/drive/status'),
+    listFiles: (params) => api.get('/drive/files', { params }),
+    getFile: (id) => api.get(`/drive/files/${id}`),
+    getFileText: (id) => api.get(`/drive/files/${id}/text`),
+    downloadContent: (id) => api.get(`/drive/files/${id}/content`, { responseType: 'blob' }),
+    upload: (formDataOrJson) => {
+        const isFormData = typeof FormData !== 'undefined' && formDataOrJson instanceof FormData;
+        return api.post('/drive/upload', formDataOrJson, {
+            headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : { 'Content-Type': 'application/json' }
+        });
+    },
+    importToDocuments: (data) => api.post('/drive/import-to-documents', data),
+};
+
+

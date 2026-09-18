@@ -15,7 +15,7 @@ import {
     X,
     Folder
 } from 'lucide-react';
-import { documentsAPI } from '@/lib/api';
+import { documentsAPI, googleDriveAPI } from '@/lib/api';
 
 /**
  * Built-in / preset files available in the workspace and sample libraries
@@ -103,10 +103,11 @@ export default function FileReferenceDropdown({
     uploadedDocs = []
 }) {
     const [dbDocuments, setDbDocuments] = useState([]);
+    const [driveDocuments, setDriveDocuments] = useState([]);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const listRef = useRef(null);
 
-    // Fetch documents from system Document table
+    // Fetch documents from system Document table and Google Drive
     useEffect(() => {
         if (!isOpen) return;
 
@@ -128,6 +129,28 @@ export default function FileReferenceDropdown({
                             ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
                             : 'bg-indigo-100 text-indigo-700 border-indigo-200',
                         isDbDoc: true
+                    })));
+                }
+            })
+            .catch(() => {});
+
+        googleDriveAPI.listFiles({ mimeType: 'document', pageSize: 30 })
+            .then(res => {
+                const files = res.data?.data?.files || [];
+                if (Array.isArray(files)) {
+                    setDriveDocuments(files.map(d => ({
+                        id: d.id,
+                        driveFileId: d.id,
+                        fileName: d.name,
+                        name: d.name,
+                        fileType: (d.name?.split('.').pop() || 'pdf').toLowerCase(),
+                        category: 'Google Drive',
+                        description: d.size ? `${Math.round(d.size / 1024)} KB` : 'Google Drive File',
+                        aiCapability: (d.name || '').match(/\.(csv|xlsx|xls)$/i)
+                            ? '📊 Delimited table data from Drive'
+                            : '📄 Text / PDF ready for reasoning from Drive',
+                        badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+                        isGoogleDrive: true
                     })));
                 }
             })
@@ -171,8 +194,15 @@ export default function FileReferenceDropdown({
             }
         });
 
+        // 4. Google Drive documents
+        driveDocuments.forEach(f => {
+            if (!map.has(f.fileName.toLowerCase())) {
+                map.set(f.fileName.toLowerCase(), f);
+            }
+        });
+
         return Array.from(map.values());
-    }, [dbDocuments, uploadedDocs]);
+    }, [dbDocuments, driveDocuments, sessionDocs]);
 
     // Filter files by user search query
     const filteredFiles = React.useMemo(() => {

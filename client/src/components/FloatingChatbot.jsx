@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useAuthStore } from '@/lib/store';
-import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI, classesAPI, timetableAPI, usersAPI, ticketsAPI, labsAPI, procurementAPI, trainingAPI, documentsAPI, foldersAPI } from '@/lib/api';
+import api, { reportsAPI, meetingAPI, calendarAPI, assignmentsAPI, classesAPI, timetableAPI, usersAPI, ticketsAPI, labsAPI, procurementAPI, trainingAPI, documentsAPI, foldersAPI, googleDriveAPI } from '@/lib/api';
 import VoiceInputButton from './VoiceInputButton';
 import FileReferenceDropdown from './FileReferenceDropdown';
 import GenericDataImportConfirmCard from './GenericDataImportConfirmCard';
@@ -44,18 +44,58 @@ function CodeBlock({ code, language }) {
         toast.success(`Downloaded ${filename}`);
     };
 
+    const handleSaveToDocuments = async () => {
+        try {
+            const ext = language ? language.toLowerCase() : 'txt';
+            const filename = `snippet_${Date.now()}.${ext}`;
+            const blob = new Blob([code], { type: ext === 'csv' ? 'text/csv' : 'text/plain' });
+            const formData = new FormData();
+            formData.append('file', blob, filename);
+            formData.append('name', `Snippet (${ext.toUpperCase()})`);
+            formData.append('category', 'other');
+            formData.append('description', 'Saved code snippet from AI Chatbot');
+            await documentsAPI.upload(formData);
+            toast.success('Saved to Documents');
+        } catch (err) {
+            toast.error('Failed to save to Documents');
+        }
+    };
+
+    const handleSaveToDrive = async () => {
+        try {
+            const ext = language ? language.toLowerCase() : 'txt';
+            const filename = `snippet_${Date.now()}.${ext}`;
+            await googleDriveAPI.upload({
+                content: code,
+                fileName: filename,
+                mimeType: ext === 'csv' ? 'text/csv' : 'text/plain'
+            });
+            toast.success('Saved to Google Drive');
+        } catch (err) {
+            toast.error('Failed to save to Google Drive');
+        }
+    };
+
     return (
         <div className="my-2 rounded-lg overflow-hidden border border-slate-700 bg-slate-900 text-[11px]">
             <div className="flex items-center justify-between px-3 py-1.5 bg-slate-800">
                 <span className="text-slate-400 font-mono uppercase text-[10px]">{language || 'code'}</span>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                    <button onClick={handleSaveToDocuments}
+                        className="text-slate-400 hover:text-indigo-300 p-1 transition" title="Save to Documents">
+                        <FolderPlus className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={handleSaveToDrive}
+                        className="text-slate-400 hover:text-emerald-300 p-1 transition" title="Save to Google Drive">
+                        <HardDrive className="w-3.5 h-3.5" />
+                    </button>
                     <button onClick={handleDownload}
-                        className="text-slate-400 hover:text-white flex items-center gap-1 text-[10px]">
-                        <Download className="w-3 h-3" /> Download
+                        className="text-slate-400 hover:text-white p-1 transition" title="Download file">
+                        <Download className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={() => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-                        className="text-slate-400 hover:text-white flex items-center gap-1 text-[10px]">
-                        {copied ? <><Check className="w-3 h-3 text-emerald-400" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+                        className="text-slate-400 hover:text-white p-1 transition" title="Copy code">
+                        {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                 </div>
             </div>
@@ -338,6 +378,56 @@ function SQLResult({ sql, result, onRerun, hasDedicatedChart = false, dedicatedC
         toast.success(`Exported ${rows.length} rows`);
     };
 
+    const saveCSVToDocuments = async () => {
+        if (!rows.length) return;
+        try {
+            const escape = (v) => {
+                if (v === null || v === undefined) return '';
+                const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+            };
+            const header = cols.map(escape).join(',');
+            const rowLines = rows.map(row => cols.map(c => escape(row[c])).join(','));
+            const csv = [header, ...rowLines].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const fileName = `query_data_${new Date().toISOString().slice(0, 10)}.csv`;
+            const formData = new FormData();
+            formData.append('file', blob, fileName);
+            formData.append('name', `Data Table (${rows.length} rows)`);
+            formData.append('category', 'report');
+            formData.append('description', `Table export of ${rows.length} records generated by AI Chatbot`);
+            await documentsAPI.upload(formData);
+            toast.success('Table saved to Documents as CSV');
+        } catch (err) {
+            console.error('Failed to save to documents:', err);
+            toast.error('Failed to save table to Documents');
+        }
+    };
+
+    const saveCSVToDrive = async () => {
+        if (!rows.length) return;
+        try {
+            const escape = (v) => {
+                if (v === null || v === undefined) return '';
+                const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+            };
+            const header = cols.map(escape).join(',');
+            const rowLines = rows.map(row => cols.map(c => escape(row[c])).join(','));
+            const csv = [header, ...rowLines].join('\n');
+            const fileName = `query_data_${new Date().toISOString().slice(0, 10)}.csv`;
+            await googleDriveAPI.upload({
+                content: csv,
+                fileName,
+                mimeType: 'text/csv'
+            });
+            toast.success('Table saved to Google Drive as CSV');
+        } catch (err) {
+            console.error('Failed to save to Google Drive:', err);
+            toast.error('Failed to save table to Google Drive');
+        }
+    };
+
     return (
         <div className="mt-2.5 rounded-2xl border border-indigo-200/90 shadow-sm overflow-hidden bg-gradient-to-b from-indigo-50/40 via-white to-slate-50/30 text-[12px] animate-in fade-in">
             {/* Header bar */}
@@ -409,16 +499,34 @@ function SQLResult({ sql, result, onRerun, hasDedicatedChart = false, dedicatedC
                         </div>
                     )}
 
-                    {/* Export CSV button */}
+                    {/* Export & Save Action buttons */}
                     {rows.length > 0 && (
-                        <button
-                            type="button"
-                            onClick={exportCSV}
-                            title="Export CSV"
-                            className="p-1 rounded-lg bg-indigo-500/30 hover:bg-indigo-500/50 text-indigo-100 hover:text-white transition"
-                        >
-                            <Download className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                            <button
+                                type="button"
+                                onClick={saveCSVToDocuments}
+                                title="Save table as CSV to Documents"
+                                className="p-1 rounded-lg bg-indigo-500/30 hover:bg-indigo-500/50 text-indigo-100 hover:text-white transition"
+                            >
+                                <FolderPlus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={saveCSVToDrive}
+                                title="Save table as CSV to Google Drive"
+                                className="p-1 rounded-lg bg-indigo-500/30 hover:bg-indigo-500/50 text-indigo-100 hover:text-white transition"
+                            >
+                                <HardDrive className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={exportCSV}
+                                title="Export CSV download"
+                                className="p-1 rounded-lg bg-indigo-500/30 hover:bg-indigo-500/50 text-indigo-100 hover:text-white transition"
+                            >
+                                <Download className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
                     )}
 
                     {/* SQL query toggle */}
@@ -818,6 +926,43 @@ export function ChatChart({ chartData, activeColors = null }) {
         }
     };
 
+    const saveChartToDocuments = async () => {
+        const url = getImgData();
+        if (!url) { toast.error('No chart to export'); return; }
+        try {
+            const res = await fetch(url);
+            const blob = await res.blob();
+            const safeName = (title || 'chart').replace(/[^a-zA-Z0-9_\-]/g, '_').toLowerCase();
+            const formData = new FormData();
+            formData.append('file', blob, `${safeName}.png`);
+            formData.append('name', title || 'Generated Chart');
+            formData.append('category', 'report');
+            formData.append('description', 'Visual chart saved from AI Chatbot');
+            await documentsAPI.upload(formData);
+            toast.success('Chart saved to Documents');
+        } catch (err) {
+            console.error('Failed to save chart to documents:', err);
+            toast.error('Failed to save chart to Documents');
+        }
+    };
+
+    const saveChartToDrive = async () => {
+        const url = getImgData();
+        if (!url) { toast.error('No chart to export'); return; }
+        try {
+            const safeName = (title || 'chart').replace(/[^a-zA-Z0-9_\-]/g, '_').toLowerCase();
+            await googleDriveAPI.upload({
+                fileData: url,
+                fileName: `${safeName}.png`,
+                mimeType: 'image/png'
+            });
+            toast.success('Chart saved to Google Drive');
+        } catch (err) {
+            console.error('Failed to save chart to drive:', err);
+            toast.error('Failed to save chart to Google Drive');
+        }
+    };
+
     const renderChart = () => {
         const option = {
             backgroundColor: '#ffffff',
@@ -925,6 +1070,12 @@ export function ChatChart({ chartData, activeColors = null }) {
                         {seriesKeys.length > 1 && <option value="composed">Composed</option>}
                     </select>
                     <div className="flex items-center gap-1 border-l border-slate-200 pl-2">
+                        <button onClick={saveChartToDocuments} className="p-1 hover:bg-indigo-100 rounded transition text-indigo-600" title="Save chart to Documents">
+                            <FolderPlus className="w-3 h-3" />
+                        </button>
+                        <button onClick={saveChartToDrive} className="p-1 hover:bg-indigo-100 rounded transition text-emerald-600" title="Save chart to Google Drive">
+                            <HardDrive className="w-3 h-3" />
+                        </button>
                         <button onClick={copyChart} className="p-1 hover:bg-indigo-100 rounded transition" title="Copy as image">
                             <ImageIcon className="w-3 h-3 text-indigo-500" />
                         </button>
@@ -8246,6 +8397,11 @@ export default function FloatingChatbot() {
     const [fileRefOpen, setFileRefOpen] = useState(false);
     const [fileRefQuery, setFileRefQuery] = useState('');
     const [selectedFileRefs, setSelectedFileRefs] = useState([]);
+    const [copiedMsgIdx, setCopiedMsgIdx] = useState(null);
+    const [showDrivePicker, setShowDrivePicker] = useState(false);
+    const [drivePickerFiles, setDrivePickerFiles] = useState([]);
+    const [drivePickerLoading, setDrivePickerLoading] = useState(false);
+    const [drivePickerSearch, setDrivePickerSearch] = useState('');
 
     const handleInputChange = (e) => {
         const val = e.target.value;
@@ -8299,6 +8455,47 @@ export default function FloatingChatbot() {
         }, 50);
 
         toast.success(`Referenced: \\${file.fileName}`);
+    };
+
+    const handleCopyResponse = (text, idx) => {
+        if (!text) return;
+        try {
+            navigator.clipboard.writeText(text);
+            setCopiedMsgIdx(idx);
+            toast.success('Copied to clipboard');
+            setTimeout(() => setCopiedMsgIdx(null), 2000);
+        } catch (e) {
+            toast.error('Failed to copy text');
+        }
+    };
+
+    const handleOpenDrivePicker = async () => {
+        setShowDrivePicker(true);
+        setDrivePickerLoading(true);
+        try {
+            const res = await googleDriveAPI.listFiles({ mimeType: 'document', pageSize: 60 });
+            const files = res.data?.data?.files || [];
+            setDrivePickerFiles(Array.isArray(files) ? files : []);
+        } catch (err) {
+            toast.error('Failed to load Google Drive files');
+        } finally {
+            setDrivePickerLoading(false);
+        }
+    };
+
+    const handleSelectDriveFileForChat = (file) => {
+        if (!file || !file.name) return;
+        handleSelectFileRef({
+            id: file.id,
+            driveFileId: file.id,
+            fileName: file.name,
+            name: file.name,
+            fileType: (file.name?.split('.').pop() || 'pdf').toLowerCase(),
+            category: 'Google Drive',
+            description: file.size ? `${Math.round(file.size / 1024)} KB` : 'Google Drive File',
+            isGoogleDrive: true
+        });
+        setShowDrivePicker(false);
     };
 
     const handleRemoveFileRef = (fileToRemove) => {
@@ -8760,6 +8957,115 @@ export default function FloatingChatbot() {
                 timestamp: new Date().toISOString(),
                 isError: true
             }]);
+        } finally {
+            setIsLoading(false);
+            inputRef.current?.focus();
+        }
+    };
+
+    const handleRegenerateResponse = async (assistantIdx) => {
+        if (isLoading) return;
+        let userMsg = null;
+        let userIdx = -1;
+        for (let i = assistantIdx - 1; i >= 0; i--) {
+            if (messages[i]?.role === 'user') {
+                userMsg = messages[i];
+                userIdx = i;
+                break;
+            }
+        }
+        if (!userMsg) {
+            toast.error('No previous prompt found to regenerate');
+            return;
+        }
+
+        const historyMsgs = messages.slice(0, userIdx);
+        const history = historyMsgs.slice(-10).map(m => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            content: m.content,
+            sql: m.sql || null
+        }));
+
+        const baseMessages = messages.slice(0, assistantIdx);
+        setMessages(baseMessages);
+
+        setIsLoading(true);
+        setActivePromptForLoading(userMsg.content);
+        abortControllerRef.current = new AbortController();
+
+        try {
+            const docCtx = uploadedDocs.map(d => `--- ${d.fileName} ---\n${(d.extractedText || '').substring(0, 15000)}`).join('\n\n');
+            const activeRefs = userMsg.referencedFiles || [];
+            const allFileRefs = [...activeRefs];
+            uploadedDocs.forEach(ud => {
+                const udName = ud.fileName || ud.name;
+                if (udName && !allFileRefs.some(f => (f.fileName || f.name) === udName)) {
+                    allFileRefs.push(ud);
+                }
+            });
+
+            const res = await api.post('/admin/chatbot/chat', {
+                message: userMsg.content,
+                conversationHistory: history,
+                documentContext: docCtx,
+                referencedFiles: allFileRefs,
+                referencedFileName: activeRefs[0]?.fileName || uploadedDocs[uploadedDocs.length - 1]?.fileName || '',
+                attachedImages: (userMsg.attachedImages || []).map(img => ({ name: img.name, dataUrl: img.dataUrl })),
+                provider: preferredModel,
+                defaultChartColors: activeColors,
+                defaultChartType: botSettings.defaultChartType
+            }, {
+                signal: abortControllerRef.current.signal,
+                timeout: 120000
+            });
+
+            if (res.data.success) {
+                const d = res.data.data;
+                const newAssistantMsg = {
+                    role: 'assistant',
+                    content: d.message || d.text || '',
+                    sql: d.sql,
+                    queryResult: d.queryResult,
+                    chartData: d.chartData,
+                    reportAction: d.reportAction,
+                    dataLoadingAction: d.dataLoadingAction,
+                    dataImportAction: d.dataImportAction,
+                    studentImportAction: d.studentImportAction,
+                    inventoryImportAction: d.inventoryImportAction,
+                    trainingModuleGenerateAction: d.trainingModuleGenerateAction,
+                    meetingAction: d.meetingAction,
+                    calendarAction: d.calendarAction,
+                    assignmentAction: d.assignmentAction,
+                    noteAction: d.noteAction,
+                    classAction: d.classAction,
+                    userAction: d.userAction,
+                    ticketAction: d.ticketAction,
+                    procurementAction: d.procurementAction,
+                    trainingAction: d.trainingAction,
+                    trainingAssignmentAction: d.trainingAssignmentAction,
+                    timetableAction: d.timetableAction,
+                    periodTimingAction: d.periodTimingAction,
+                    shiftAction: d.shiftAction,
+                    documentShareAction: d.documentShareAction,
+                    documentUnshareAction: d.documentUnshareAction,
+                    folderAction: d.folderAction,
+                    laptopIssueAction: d.laptopIssueAction,
+                    laptopReturnAction: d.laptopReturnAction,
+                    groupAction: d.groupAction,
+                    model: d.model,
+                    provider: d.provider,
+                    timestamp: d.timestamp || new Date().toISOString()
+                };
+                const updated = [...baseMessages, newAssistantMsg];
+                setMessages(updated);
+                saveSession(updated);
+                toast.success('Regenerated response');
+            }
+        } catch (err) {
+            if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED' || err.message === 'canceled') {
+                return;
+            }
+            toast.error('Failed to regenerate response');
         } finally {
             setIsLoading(false);
             inputRef.current?.focus();
@@ -9348,7 +9654,38 @@ export default function FloatingChatbot() {
                                     {msg.laptopIssueAction && <LaptopIssueActionCard action={msg.laptopIssueAction} />}
                                     {msg.laptopReturnAction && <LaptopReturnActionCard action={msg.laptopReturnAction} />}
                                     {msg.groupAction && <GroupActionCard action={msg.groupAction} />}
-                                    {msg.provider && <div className="mt-1 text-[9px] text-slate-400 text-right">{msg.provider}/{msg.model}</div>}
+                                    {msg.role === 'assistant' && (
+                                        <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between gap-1 text-slate-400">
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCopyResponse(msg.content, idx)}
+                                                    className="p-1 rounded hover:bg-slate-100 hover:text-slate-700 transition"
+                                                    title="Copy response"
+                                                >
+                                                    {copiedMsgIdx === idx ? (
+                                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                                    ) : (
+                                                        <Copy className="w-3.5 h-3.5" />
+                                                    )}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRegenerateResponse(idx)}
+                                                    disabled={isLoading}
+                                                    className="p-1 rounded hover:bg-indigo-50 hover:text-indigo-600 transition disabled:opacity-40"
+                                                    title="Regenerate response"
+                                                >
+                                                    <RotateCcw className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                            {msg.provider && (
+                                                <div className="text-[9px] text-slate-400">
+                                                    {msg.provider}/{msg.model}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}
@@ -9583,6 +9920,15 @@ export default function FloatingChatbot() {
                                         title="Speak voice command"
                                     />
 
+                                    <button
+                                        type="button"
+                                        onClick={handleOpenDrivePicker}
+                                        className="flex-shrink-0 w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 hover:bg-emerald-100 transition shadow-2xs cursor-pointer"
+                                        title="Select file from Google Drive"
+                                    >
+                                        <HardDrive className="w-3.5 h-3.5" />
+                                    </button>
+
                                     <div className="flex-1 relative">
                                         <textarea ref={inputRef} value={input}
                                             onChange={handleInputChange}
@@ -9730,6 +10076,101 @@ export default function FloatingChatbot() {
                             alt="Zoom Preview" 
                             className="max-h-[85vh] max-w-full object-contain rounded-xl border border-white/10 shadow-2xl"
                         />
+                    </div>
+                </div>
+            )}
+
+            {/* Google Drive Document Picker Modal */}
+            {showDrivePicker && (
+                <div className="fixed inset-0 z-[100001] bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+                    <div className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 flex flex-col max-h-[85vh]">
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/80">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                                    <HardDrive className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-800">Select from Google Drive</h3>
+                                    <p className="text-[11px] text-slate-500">Attach text or PDF documents to chat reasoning</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowDrivePicker(false)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                                title="Close"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="p-3 border-b border-slate-100 bg-white">
+                            <div className="relative">
+                                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input
+                                    type="text"
+                                    value={drivePickerSearch}
+                                    onChange={(e) => setDrivePickerSearch(e.target.value)}
+                                    placeholder="Search Google Drive files..."
+                                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-3 divide-y divide-slate-100">
+                            {drivePickerLoading ? (
+                                <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
+                                    <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+                                    <span className="text-xs font-medium">Loading Google Drive files...</span>
+                                </div>
+                            ) : drivePickerFiles.filter(f => !drivePickerSearch || f.name.toLowerCase().includes(drivePickerSearch.toLowerCase())).length === 0 ? (
+                                <div className="py-12 text-center text-slate-400 text-xs">
+                                    No Google Drive documents found
+                                </div>
+                            ) : (
+                                drivePickerFiles
+                                    .filter(f => !drivePickerSearch || f.name.toLowerCase().includes(drivePickerSearch.toLowerCase()))
+                                    .map(file => {
+                                        const isPdf = (file.name || '').toLowerCase().endsWith('.pdf');
+                                        const isSpreadsheet = (file.name || '').match(/\.(csv|xlsx|xls)$/i);
+                                        return (
+                                            <div
+                                                key={file.id}
+                                                onClick={() => handleSelectDriveFileForChat(file)}
+                                                className="p-2.5 flex items-center justify-between hover:bg-emerald-50/60 rounded-xl cursor-pointer group transition"
+                                            >
+                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                                        isPdf ? 'bg-rose-100 text-rose-600' :
+                                                        isSpreadsheet ? 'bg-emerald-100 text-emerald-600' :
+                                                        'bg-indigo-100 text-indigo-600'
+                                                    }`}>
+                                                        {isPdf ? <FileText className="w-4 h-4" /> :
+                                                         isSpreadsheet ? <FileSpreadsheet className="w-4 h-4" /> :
+                                                         <File className="w-4 h-4" />}
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-xs font-semibold text-slate-800 truncate group-hover:text-emerald-700">
+                                                            {file.name}
+                                                        </p>
+                                                        <p className="text-[10px] text-slate-400">
+                                                            {file.size ? `${Math.round(file.size / 1024)} KB` : 'Google Doc'}
+                                                            {file.modifiedTime && ` • ${new Date(file.modifiedTime).toLocaleDateString()}`}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    className="p-1.5 rounded-lg text-emerald-600 opacity-0 group-hover:opacity-100 hover:bg-emerald-100 transition flex-shrink-0"
+                                                    title="Attach to Chat"
+                                                >
+                                                    <Plus className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        );
+                                    })
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

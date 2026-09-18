@@ -167,6 +167,7 @@ app.use('/api/admin/chatbot', chatbotRoutes);
 app.use('/api/compiler', compilerRoutes);
 app.use('/api/search', require('./routes/search.routes'));
 app.use('/api/admin/implementation-plans', implementationPlansRoutes);
+app.use('/api/drive', require('./routes/drive.routes'));
 
 const prisma = require('./config/database');
 

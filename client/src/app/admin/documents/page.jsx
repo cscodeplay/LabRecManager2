@@ -14,6 +14,7 @@ import { formatDateTime } from '@/lib/dateUtils';
 import FileViewer from '@/components/FileViewer';
 import PdfViewer from '@/components/PdfViewer';
 import HtmlPreview from '@/components/HtmlPreview';
+import GoogleDriveBrowser from '@/components/GoogleDriveBrowser';
 import GenericDataImportConfirmCard from '@/components/GenericDataImportConfirmCard';
 import QRCode from 'qrcode';
 
@@ -1258,59 +1259,70 @@ export default function DocumentsPage() {
                         </button>
                     )
                 }
+                <button
+                    onClick={() => setActiveTab('drive')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${activeTab === 'drive'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                >
+                    <HardDrive className="w-4 h-4" />
+                    Google Drive
+                </button>
             </div >
 
-            < div className="flex flex-col gap-3 mb-6" >
-                <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="input pl-10 w-full"
-                            placeholder="Search documents..."
-                        />
-                    </div>
-                    <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="input w-full sm:w-48">
-                        {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                    </select>
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-                    <div className="flex flex-wrap gap-2 items-center">
-                        <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4 text-slate-400" />
-                            <span className="text-sm text-slate-500">From:</span>
-                            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="input py-1.5 text-sm" />
+            {activeTab !== 'drive' && (
+                <div className="flex flex-col gap-3 mb-6">
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="input pl-10 w-full"
+                                placeholder="Search documents..."
+                            />
                         </div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm text-slate-500">To:</span>
-                            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="input py-1.5 text-sm" />
-                        </div>
-                        {(dateFrom || dateTo) && (
-                            <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="text-sm text-red-500 hover:underline">Clear</button>
-                        )}
+                        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="input w-full sm:w-48">
+                            {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                        </select>
                     </div>
 
-                    <div className="flex bg-slate-100 rounded-lg p-1">
-                        <button
-                            onClick={() => setViewMode('grid')}
-                            className={`p-2 rounded ${viewMode === 'grid' ? 'bg-white shadow-sm' : 'text-slate-500'}`}
-                            title="Grid View"
-                        >
-                            <Grid3X3 className="w-4 h-4" />
-                        </button>
-                        <button
-                            onClick={() => setViewMode('list')}
-                            className={`p-2 rounded ${viewMode === 'list' ? 'bg-white shadow-sm' : 'text-slate-500'}`}
-                            title="List View"
-                        >
-                            <List className="w-4 h-4" />
-                        </button>
+                    <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                        <div className="flex flex-wrap gap-2 items-center">
+                            <div className="flex items-center gap-2">
+                                <Calendar className="w-4 h-4 text-slate-400" />
+                                <span className="text-sm text-slate-500">From:</span>
+                                <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="input py-1.5 text-sm" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm text-slate-500">To:</span>
+                                <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="input py-1.5 text-sm" />
+                            </div>
+                            {(dateFrom || dateTo) && (
+                                <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="text-sm text-red-500 hover:underline">Clear</button>
+                            )}
+                        </div>
+
+                        <div className="flex bg-slate-100 rounded-lg p-1">
+                            <button
+                                onClick={() => setViewMode('grid')}
+                                className={`p-2 rounded ${viewMode === 'grid' ? 'bg-white shadow-sm' : 'text-slate-500'}`}
+                                title="Grid View"
+                            >
+                                <Grid3X3 className="w-4 h-4" />
+                            </button>
+                            <button
+                                onClick={() => setViewMode('list')}
+                                className={`p-2 rounded ${viewMode === 'list' ? 'bg-white shadow-sm' : 'text-slate-500'}`}
+                                title="List View"
+                            >
+                                <List className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </div >
+            )}
 
             {
                 activeTab === 'my' && (
@@ -1346,6 +1358,14 @@ export default function DocumentsPage() {
             {
                 loading ? (
                     <div className="text-center py-12 text-slate-500">Loading...</div>
+                ) : activeTab === 'drive' ? (
+                    <GoogleDriveBrowser
+                        availableFolders={folders}
+                        onImportSuccess={() => {
+                            fetchDocuments();
+                            fetchStorageInfo();
+                        }}
+                    />
                 ) : activeTab === 'trash' ? (
                     trashDocuments.length === 0 ? (
                         <div className="text-center py-12">

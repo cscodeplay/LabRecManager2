@@ -2031,6 +2031,28 @@ Generate the 2-chapter curriculum JSON following the exact schema. Ensure the ex
                     if (rName && (!activeDocContext.includes(rName) || isDocPlaceholder(activeDocContext))) {
                         if (rf.extractedText && rf.extractedText.length > 50 && !rf.extractedText.startsWith('📄 [Document:')) {
                             activeDocContext = `=== [File: ${rName}] ===\n${rf.extractedText}\n\n` + activeDocContext;
+                        } else if (rf.isGoogleDrive || rf.driveFileId) {
+                            try {
+                                const driveService = require('./googleDrive');
+                                const driveBuf = await driveService.downloadFileBuffer(rf.driveFileId || rf.id);
+                                if (driveBuf && driveBuf.length > 0) {
+                                    const extracted = await this.getOrExtractDocumentText(
+                                        null,
+                                        rf.mimeType || (rName.endsWith('.pdf') ? 'application/pdf' : 'text/plain'),
+                                        rName,
+                                        driveBuf
+                                    );
+                                    if (extracted) {
+                                        if (isDocPlaceholder(activeDocContext)) {
+                                            activeDocContext = `=== [Google Drive File: ${rName}] ===\n${extracted}\n\n`;
+                                        } else {
+                                            activeDocContext = `=== [Google Drive File: ${rName}] ===\n${extracted}\n\n` + activeDocContext;
+                                        }
+                                    }
+                                }
+                            } catch (driveErr) {
+                                console.warn('[ChatBot] Failed to load Google Drive file:', driveErr.message);
+                            }
                         } else {
                             const uploadDirs = [
                                 path.join(__dirname, '../../../uploads'),
