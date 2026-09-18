@@ -717,3 +717,19 @@ export const subjectsAPI = {
     getAll: () => api.get('/subjects'),
 };
 
+// Implementation Plans API
+export const implementationPlansAPI = {
+    getAll: (params) => api.get('/admin/implementation-plans', { params }),
+    getById: (id) => api.get(`/admin/implementation-plans/${id}`),
+    create: (data) => api.post('/admin/implementation-plans', data),
+    update: (id, data) => api.put(`/admin/implementation-plans/${id}`, data),
+    delete: (id) => api.delete(`/admin/implementation-plans/${id}`),
+    start: (id) => api.post(`/admin/implementation-plans/${id}/start`),
+    complete: (id, data) => api.post(`/admin/implementation-plans/${id}/complete`, data),
+    toggleTask: (id, taskIndex, completed) => api.post(`/admin/implementation-plans/${id}/toggle-task`, { taskIndex, completed }),
+    exportPdf: (params) => api.get('/admin/implementation-plans/export/pdf', { params, responseType: 'blob' }),
+    exportXlsx: (params) => api.get('/admin/implementation-plans/export/xlsx', { params, responseType: 'blob' }),
+    exportCsv: (params) => api.get('/admin/implementation-plans/export/csv', { params, responseType: 'blob' }),
+    sendEmail: (data) => api.post('/admin/implementation-plans/export/email', data),
+};
+

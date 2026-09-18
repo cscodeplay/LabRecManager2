@@ -45,6 +45,7 @@ const trainingRoutes = require('./routes/training.routes');
 const chatbotRoutes = require('./routes/chatbot.routes');
 const adminNotesRoutes = require('./routes/admin-notes.routes');
 const compilerRoutes = require('./routes/compiler.routes');
+const implementationPlansRoutes = require('./routes/implementation-plans.routes');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -165,6 +166,7 @@ app.use('/api/training', trainingRoutes);
 app.use('/api/admin/chatbot', chatbotRoutes);
 app.use('/api/compiler', compilerRoutes);
 app.use('/api/search', require('./routes/search.routes'));
+app.use('/api/admin/implementation-plans', implementationPlansRoutes);
 
 const prisma = require('./config/database');
 

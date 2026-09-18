@@ -237,6 +237,121 @@ async function initTables() {
         } catch (docShareErr) {
             console.warn('Document sharing schema update notice:', docShareErr.message);
         }
+
+        // Ensure implementation_plans table exists
+        try {
+            console.log('Ensuring implementation_plans table exists...');
+            await prisma.$executeRawUnsafe(`
+                CREATE TABLE IF NOT EXISTS "implementation_plans" (
+                    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+                    "school_id" UUID,
+                    "created_by_id" UUID,
+                    "title" VARCHAR(255) NOT NULL,
+                    "description" TEXT,
+                    "category" VARCHAR(100) DEFAULT 'General',
+                    "status" VARCHAR(50) NOT NULL DEFAULT 'draft',
+                    "started_at" TIMESTAMP(6),
+                    "ended_at" TIMESTAMP(6),
+                    "tasks" JSONB DEFAULT '[]'::jsonb,
+                    "outcomes" TEXT,
+                    "metadata" JSONB DEFAULT '{}'::jsonb,
+                    "created_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+                    "updated_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT "implementation_plans_pkey" PRIMARY KEY ("id")
+                );
+            `);
+
+            await prisma.$executeRawUnsafe(`
+                CREATE INDEX IF NOT EXISTS "idx_implementation_plans_status" ON "implementation_plans"("status")
+            `);
+            await prisma.$executeRawUnsafe(`
+                CREATE INDEX IF NOT EXISTS "idx_implementation_plans_dates" ON "implementation_plans"("started_at", "ended_at")
+            `);
+            await prisma.$executeRawUnsafe(`
+                CREATE INDEX IF NOT EXISTS "idx_implementation_plans_category" ON "implementation_plans"("category")
+            `);
+
+            const countResult = await prisma.$queryRawUnsafe(`SELECT COUNT(*)::int as count FROM "implementation_plans"`);
+            const currentCount = countResult?.[0]?.count || 0;
+            if (currentCount === 0) {
+                console.log('Seeding initial implementation plans...');
+                const seedPlans = [
+                    {
+                        title: 'Document Sharing & Permissions Architecture Fix',
+                        description: 'Resolved chatbot entity resolution, check constraints on PostgreSQL for student targets, and parallelized option fetching with 1-click select all.',
+                        category: 'Documents & Sharing',
+                        status: 'completed',
+                        started_at: '2026-09-18 10:30:00',
+                        ended_at: '2026-09-18 12:15:00',
+                        tasks: JSON.stringify([
+                            { title: 'Update valid_target CHECK constraint on document_shares table', completed: true, completedAt: '2026-09-18T10:45:00Z' },
+                            { title: 'Implement fuzzy token overlap scoring in chatbot service', completed: true, completedAt: '2026-09-18T11:10:00Z' },
+                            { title: 'Add "Select All" / "Deselect All" options in Step 2 of Share modal', completed: true, completedAt: '2026-09-18T11:40:00Z' },
+                            { title: 'Convert confirmation card to compact icon-only buttons with tooltips', completed: true, completedAt: '2026-09-18T12:00:00Z' },
+                            { title: 'Verify student document retrieval filter when schoolId is null', completed: true, completedAt: '2026-09-18T12:15:00Z' }
+                        ]),
+                        outcomes: 'Zero false-positive student matches, robust multi-target sharing with transaction safety, and instant UI table refresh.'
+                    },
+                    {
+                        title: 'Interactive Realtime Whiteboard & Sockets Engine',
+                        description: 'Built multi-user collaborative canvas with socket broadcasting, stroke persistence, shapes engine, and WebM session recording.',
+                        category: 'Whiteboard & Collab',
+                        status: 'completed',
+                        started_at: '2026-09-17 14:00:00',
+                        ended_at: '2026-09-17 17:30:00',
+                        tasks: JSON.stringify([
+                            { title: 'Architect Socket.IO room lifecycle and authentication', completed: true, completedAt: '2026-09-17T14:30:00Z' },
+                            { title: 'Build canvas rendering pipeline with brush, highlighter, eraser', completed: true, completedAt: '2026-09-17T15:15:00Z' },
+                            { title: 'Implement sticky notes and geometric shape connectors', completed: true, completedAt: '2026-09-17T16:00:00Z' },
+                            { title: 'Add in-browser screen and audio recording with WebM export', completed: true, completedAt: '2026-09-17T17:10:00Z' },
+                            { title: 'Verify live participant permissions and host controls', completed: true, completedAt: '2026-09-17T17:30:00Z' }
+                        ]),
+                        outcomes: 'Smooth 60fps real-time collaboration with zero stroke lag, session persistence, and recording playback.'
+                    },
+                    {
+                        title: 'AI Training Curriculum & Socratic Practice Copilot',
+                        description: 'Engineered automated multi-unit syllabus generation from textbook content with test runner and Socratic hints.',
+                        category: 'AI & Training',
+                        status: 'completed',
+                        started_at: '2026-09-16 09:00:00',
+                        ended_at: '2026-09-16 16:45:00',
+                        tasks: JSON.stringify([
+                            { title: 'Integrate Groq and Gemini SDKs with JSON schema output', completed: true, completedAt: '2026-09-16T10:30:00Z' },
+                            { title: 'Create Chapter exercise generator targeting textbook topics', completed: true, completedAt: '2026-09-16T12:00:00Z' },
+                            { title: 'Implement automated code execution test runner', completed: true, completedAt: '2026-09-16T14:30:00Z' },
+                            { title: 'Build student code editor with Monaco and Socratic hints', completed: true, completedAt: '2026-09-16T16:45:00Z' }
+                        ]),
+                        outcomes: 'Generated aligned coding modules with automated test cases and instantaneous student feedback.'
+                    },
+                    {
+                        title: 'Multi-Tenant Cloud Storage Quota & Archival System',
+                        description: 'Optimizing file uploads, Cloudinary/Render bucket usage tracking, and automated quota re-calculation.',
+                        category: 'Storage & Infra',
+                        status: 'in_progress',
+                        started_at: '2026-09-18 11:00:00',
+                        ended_at: null,
+                        tasks: JSON.stringify([
+                            { title: 'Implement chunked multipart upload for files > 50MB', completed: true, completedAt: '2026-09-18T11:45:00Z' },
+                            { title: 'Add real-time storage quota gauges in admin dashboard', completed: true, completedAt: '2026-09-18T12:00:00Z' },
+                            { title: 'Automate weekly storage quota reports via email', completed: false, completedAt: null }
+                        ]),
+                        outcomes: 'In progress - Storage calculation active with real-time tracking.'
+                    }
+                ];
+
+                for (const plan of seedPlans) {
+                    await prisma.$executeRawUnsafe(`
+                        INSERT INTO "implementation_plans" 
+                        ("title", "description", "category", "status", "started_at", "ended_at", "tasks", "outcomes")
+                        VALUES ($1, $2, $3, $4, $5::timestamp, $6::timestamp, $7::jsonb, $8)
+                    `, plan.title, plan.description, plan.category, plan.status, plan.started_at, plan.ended_at, plan.tasks, plan.outcomes);
+                }
+                console.log('Seeded initial implementation plans successfully.');
+            }
+            console.log('implementation_plans table verified successfully.');
+        } catch (planErr) {
+            console.warn('Implementation plans table init notice:', planErr.message);
+        }
     } catch (e) {
         console.error('Error creating whiteboard tables:', e);
     }
