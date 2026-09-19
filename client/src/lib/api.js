@@ -750,6 +750,7 @@ export const googleDriveAPI = {
     getAuthUrl: () => api.get('/drive/auth/url'),
     saveOAuthConfig: (data) => api.post('/drive/auth/config', data),
     disconnect: () => api.post('/drive/auth/disconnect'),
+    createFolder: (data) => api.post('/drive/folders', data),
 };
 
 

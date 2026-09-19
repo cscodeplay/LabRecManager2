@@ -565,6 +565,26 @@ class GoogleDriveService {
         await this.drive.files.delete({ fileId, supportsAllDrives: true });
         return true;
     }
+
+    /**
+     * Create a new folder in Google Drive
+     */
+    async createFolder(name, parentFolderId = null) {
+        if (!this.drive) throw new Error('Google Drive not configured');
+        const targetParent = parentFolderId || this.folderId;
+        const metadata = {
+            name,
+            mimeType: 'application/vnd.google-apps.folder',
+            ...(targetParent && targetParent !== 'root' && targetParent !== 'all' ? { parents: [targetParent] } : {})
+        };
+        const res = await this.drive.files.create({
+            requestBody: metadata,
+            fields: 'id, name, mimeType, webViewLink',
+            supportsAllDrives: true
+        });
+        console.log(`[GoogleDrive] Folder created: ${name} (${res.data.id})`);
+        return res.data;
+    }
 }
 
 module.exports = new GoogleDriveService();

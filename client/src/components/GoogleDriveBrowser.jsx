@@ -34,6 +34,12 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const [uploading, setUploading] = useState(false);
     const fileUploadRef = useRef(null);
 
+    // Scope & New Folder state
+    const [driveScope, setDriveScope] = useState('ulrms'); // 'ulrms' or 'all'
+    const [showNewFolderModal, setShowNewFolderModal] = useState(false);
+    const [newFolderName, setNewFolderName] = useState('');
+    const [creatingFolder, setCreatingFolder] = useState(false);
+
     // Fetch integration status
     const refreshStatus = useCallback(async () => {
         try {
@@ -179,6 +185,42 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         } finally {
             setUploading(false);
             if (fileUploadRef.current) fileUploadRef.current.value = '';
+        }
+    };
+
+    // Switch between ULRMS workspace and entire 5TB Google Drive
+    const handleSwitchScope = (scope) => {
+        setDriveScope(scope);
+        if (scope === 'all') {
+            setCurrentFolderId('root');
+            setBreadcrumbs([{ id: 'root', name: 'My Drive (All 5 TB)' }]);
+        } else {
+            setCurrentFolderId(null);
+            setBreadcrumbs([{ id: null, name: 'ULRMS Workspace' }]);
+        }
+        setSearchQuery('');
+    };
+
+    // Create a new folder in current Google Drive location
+    const handleCreateFolder = async (e) => {
+        e?.preventDefault();
+        if (!newFolderName.trim()) return;
+        setCreatingFolder(true);
+        try {
+            const targetParent = currentFolderId && currentFolderId !== 'root' ? currentFolderId : (driveScope === 'all' ? 'root' : null);
+            await googleDriveAPI.createFolder({
+                name: newFolderName.trim(),
+                parentFolderId: targetParent
+            });
+            toast.success(`Folder "${newFolderName.trim()}" created in Google Drive!`);
+            setShowNewFolderModal(false);
+            setNewFolderName('');
+            fetchFiles();
+        } catch (err) {
+            console.error('Failed to create folder:', err);
+            toast.error(err.response?.data?.message || 'Failed to create folder');
+        } finally {
+            setCreatingFolder(false);
         }
     };
 
@@ -419,8 +461,32 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
 
             {/* Top Bar: Breadcrumbs, Destination Folder, View Controls */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-                {/* Breadcrumbs & Navigation */}
-                <div className="flex items-center gap-1.5 flex-wrap text-sm">
+                {/* Scope Switcher & Breadcrumbs Navigation */}
+                <div className="flex items-center gap-2 flex-wrap text-sm">
+                    {/* Workspace Scope Toggle */}
+                    <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs mr-1">
+                        <button
+                            type="button"
+                            onClick={() => handleSwitchScope('ulrms')}
+                            className={`px-2.5 py-1 rounded-md font-semibold transition ${
+                                driveScope === 'ulrms' ? 'bg-white shadow-xs text-emerald-700' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                            title="Focus on ULRMS dedicated workspace folder"
+                        >
+                            ULRMS Folder
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => handleSwitchScope('all')}
+                            className={`px-2.5 py-1 rounded-md font-semibold transition ${
+                                driveScope === 'all' ? 'bg-white shadow-xs text-indigo-700' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                            title="Browse all folders across your 5TB Google Drive"
+                        >
+                            All 5TB Drive
+                        </button>
+                    </div>
+
                     {breadcrumbs.length > 1 && (
                         <button
                             type="button"
@@ -483,6 +549,17 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                             className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 w-44 sm:w-56"
                         />
                     </div>
+
+                    {/* New Folder Button */}
+                    <button
+                        type="button"
+                        onClick={() => setShowNewFolderModal(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition"
+                        title="Create new folder in current Google Drive location"
+                    >
+                        <FolderPlus className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="hidden sm:inline">New Folder</span>
+                    </button>
 
                     {/* Refresh */}
                     <button
@@ -857,6 +934,71 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                 >
                                     {savingConfig ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                                     <span>Save & Connect</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Create New Folder Modal */}
+            {showNewFolderModal && (
+                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="px-5 py-4 bg-emerald-600 text-white flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <FolderPlus className="w-5 h-5 text-emerald-100" />
+                                <h3 className="font-bold text-sm">New Folder</h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowNewFolderModal(false);
+                                    setNewFolderName('');
+                                }}
+                                className="p-1 rounded-lg hover:bg-emerald-500 text-emerald-100 hover:text-white transition"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleCreateFolder} className="p-5 space-y-4 text-xs">
+                            <div>
+                                <label className="block text-slate-700 font-bold mb-1">Folder Name</label>
+                                <input
+                                    type="text"
+                                    value={newFolderName}
+                                    onChange={(e) => setNewFolderName(e.target.value)}
+                                    placeholder="e.g. Research Papers, Invoices, Chemistry Lab"
+                                    autoFocus
+                                    required
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                    This folder will be created directly in your Google Drive under{' '}
+                                    <span className="font-semibold text-slate-700">
+                                        {breadcrumbs[breadcrumbs.length - 1]?.name || 'current directory'}
+                                    </span>.
+                                </p>
+                            </div>
+
+                            <div className="pt-2 flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowNewFolderModal(false);
+                                        setNewFolderName('');
+                                    }}
+                                    className="px-3.5 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={creatingFolder || !newFolderName.trim()}
+                                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs transition disabled:opacity-50 flex items-center gap-1.5"
+                                >
+                                    {creatingFolder ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderPlus className="w-3.5 h-3.5" />}
+                                    <span>Create Folder</span>
                                 </button>
                             </div>
                         </form>

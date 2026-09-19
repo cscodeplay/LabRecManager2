@@ -17,15 +17,27 @@ const upload = multer({
 function getClientBaseUrl(req) {
     const host = req.get('host') || '';
     if (host.includes('localhost') || host.includes('127.0.0.1')) {
-        return 'http://localhost:3000';
+        return process.env.CLIENT_URL || 'http://localhost:3000';
     }
-    return process.env.CLIENT_URL || 'http://localhost:3000';
+    if (process.env.CLIENT_URL && !process.env.CLIENT_URL.includes('localhost')) {
+        return process.env.CLIENT_URL;
+    }
+    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    return `${protocol}://${host}`;
 }
 
 function getCallbackUrl(req) {
-    if (process.env.GOOGLE_REDIRECT_URI) return process.env.GOOGLE_REDIRECT_URI;
+    const host = req.get('host') || '';
     const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-    return `${protocol}://${req.get('host')}/api/drive/auth/callback`;
+
+    if (!host.includes('localhost') && !host.includes('127.0.0.1')) {
+        if (process.env.GOOGLE_REDIRECT_URI && !process.env.GOOGLE_REDIRECT_URI.includes('localhost')) {
+            return process.env.GOOGLE_REDIRECT_URI;
+        }
+        return `${protocol}://${host}/api/drive/auth/callback`;
+    }
+
+    return process.env.GOOGLE_REDIRECT_URI || `${protocol}://${host}/api/drive/auth/callback`;
 }
 
 /**
@@ -331,6 +343,23 @@ router.post('/import-to-documents', asyncHandler(async (req, res) => {
         success: true,
         message: `Successfully imported "${docName}" into Documents`,
         data: doc
+    });
+}));
+
+/**
+ * @route   POST /api/drive/folders
+ * @desc    Create a new folder in Google Drive
+ */
+router.post('/folders', asyncHandler(async (req, res) => {
+    const { name, parentFolderId } = req.body;
+    if (!name || !name.trim()) {
+        return res.status(400).json({ success: false, message: 'Folder name is required' });
+    }
+    const folder = await googleDriveService.createFolder(name.trim(), parentFolderId || null);
+    res.status(201).json({
+        success: true,
+        data: folder,
+        message: `Folder "${name.trim()}" created successfully in Google Drive`
     });
 }));
 
