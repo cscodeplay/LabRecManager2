@@ -238,6 +238,27 @@ async function initTables() {
             console.warn('Document sharing schema update notice:', docShareErr.message);
         }
 
+        // Ensure system_settings table exists for persistent OAuth tokens and configurations
+        try {
+            console.log('Ensuring system_settings table exists...');
+            await prisma.$executeRawUnsafe(`
+                CREATE TABLE IF NOT EXISTS "system_settings" (
+                    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+                    "key" VARCHAR(100) UNIQUE NOT NULL,
+                    "value" JSONB NOT NULL,
+                    "created_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+                    "updated_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT "system_settings_pkey" PRIMARY KEY ("id")
+                );
+            `);
+            await prisma.$executeRawUnsafe(`
+                CREATE INDEX IF NOT EXISTS "idx_system_settings_key" ON "system_settings"("key");
+            `);
+            console.log('system_settings table verified successfully.');
+        } catch (setErr) {
+            console.warn('system_settings table init notice:', setErr.message);
+        }
+
         // Ensure implementation_plans table exists
         try {
             console.log('Ensuring implementation_plans table exists...');

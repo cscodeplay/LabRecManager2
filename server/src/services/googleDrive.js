@@ -2,6 +2,7 @@ const { google } = require('googleapis');
 const stream = require('stream');
 const fs = require('fs');
 const path = require('path');
+const prisma = require('../config/database');
 
 function formatBytes(bytes) {
     if (!bytes || isNaN(bytes) || bytes === 0) return '0 Bytes';
@@ -18,14 +19,18 @@ class GoogleDriveService {
         this.oauth2Client = null;
         this.authType = 'none'; // 'oauth_user', 'service_account', or 'local_sync'
         this.folderId = process.env.GOOGLE_DRIVE_FOLDER_ID || '1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp';
-        this.localSyncDir = path.join(__dirname, '../../../uploads/google_drive');
+        this.localSyncDir = path.join(__dirname, '../../uploads/google_drive');
         this.tokenPath = path.join(__dirname, '../../uploads/google_oauth_tokens.json');
         this.configPath = path.join(__dirname, '../../uploads/google_oauth_client_config.json');
+        this._cachedTokens = null;
+        this._initializingPromise = null;
 
         if (!fs.existsSync(this.localSyncDir)) {
             try { fs.mkdirSync(this.localSyncDir, { recursive: true }); } catch (e) {}
         }
         this.initialize();
+        // Asynchronously attempt to restore OAuth from persistent PostgreSQL database
+        this.initFromDb().catch(() => {});
     }
 
     /**
@@ -48,7 +53,7 @@ class GoogleDriveService {
     /**
      * Save OAuth 2.0 Client credentials (allows setup via UI without manually editing .env)
      */
-    saveOAuthConfig({ clientId, clientSecret, redirectUri }) {
+    async saveOAuthConfig({ clientId, clientSecret, redirectUri }) {
         const dir = path.dirname(this.configPath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         const existing = this.getOAuthConfig();
@@ -58,32 +63,93 @@ class GoogleDriveService {
             redirectUri: (redirectUri && redirectUri.trim()) || existing.redirectUri
         };
         fs.writeFileSync(this.configPath, JSON.stringify(updated, null, 2), 'utf8');
+
+        // Persist to PostgreSQL database
+        try {
+            await prisma.$executeRawUnsafe(`
+                INSERT INTO "system_settings" ("key", "value", "updated_at")
+                VALUES ('google_drive_oauth_config', $1::jsonb, CURRENT_TIMESTAMP)
+                ON CONFLICT ("key") 
+                DO UPDATE SET "value" = $1::jsonb, "updated_at" = CURRENT_TIMESTAMP
+            `, JSON.stringify(updated));
+        } catch (dbErr) {
+            console.warn('[GoogleDrive] Failed to persist OAuth config to DB:', dbErr.message);
+        }
+
         this.initialize();
+        await this.initFromDb();
         return updated;
     }
 
     /**
-     * Save tokens to disk
+     * Save tokens to disk and PostgreSQL database (preserves refresh token permanently across Render restarts)
      */
-    saveTokens(tokens) {
+    async saveTokens(tokens) {
+        const current = this._cachedTokens || this.loadTokens() || {};
+        const merged = {
+            ...current,
+            ...tokens,
+            refresh_token: tokens.refresh_token || current.refresh_token
+        };
+        this._cachedTokens = merged;
+
+        // 1. Save to local file
         try {
             const dir = path.dirname(this.tokenPath);
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(this.tokenPath, JSON.stringify(tokens, null, 2), 'utf8');
-            console.log('[GoogleDrive] OAuth tokens saved successfully');
+            fs.writeFileSync(this.tokenPath, JSON.stringify(merged, null, 2), 'utf8');
+            console.log('[GoogleDrive] OAuth tokens saved to local file');
         } catch (e) {
             console.warn('[GoogleDrive] Failed to save tokens file:', e.message);
+        }
+
+        // 2. Persist to PostgreSQL database (survives container re-deployments)
+        try {
+            await prisma.$executeRawUnsafe(`
+                INSERT INTO "system_settings" ("key", "value", "updated_at")
+                VALUES ('google_drive_oauth_tokens', $1::jsonb, CURRENT_TIMESTAMP)
+                ON CONFLICT ("key") 
+                DO UPDATE SET "value" = $1::jsonb, "updated_at" = CURRENT_TIMESTAMP
+            `, JSON.stringify(merged));
+            console.log('✅ [GoogleDrive] OAuth tokens persisted to PostgreSQL database successfully');
+        } catch (dbErr) {
+            console.warn('[GoogleDrive] Failed to save tokens to database:', dbErr.message);
         }
     }
 
     /**
-     * Load saved OAuth tokens
+     * Load saved OAuth tokens from PostgreSQL database
+     */
+    async loadTokensFromDb() {
+        try {
+            const rows = await prisma.$queryRawUnsafe(`
+                SELECT "value" FROM "system_settings" WHERE "key" = 'google_drive_oauth_tokens' LIMIT 1
+            `);
+            if (rows && rows.length > 0 && rows[0].value) {
+                const dbTokens = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
+                if (dbTokens && (dbTokens.refresh_token || dbTokens.access_token)) {
+                    this._cachedTokens = dbTokens;
+                    return dbTokens;
+                }
+            }
+        } catch (err) {}
+        return null;
+    }
+
+    /**
+     * Load saved OAuth tokens from in-memory cache, file, or environment
      */
     loadTokens() {
+        if (this._cachedTokens && (this._cachedTokens.refresh_token || this._cachedTokens.access_token)) {
+            return this._cachedTokens;
+        }
+
         try {
             if (fs.existsSync(this.tokenPath)) {
                 const raw = fs.readFileSync(this.tokenPath, 'utf8');
-                return JSON.parse(raw);
+                const parsed = JSON.parse(raw);
+                this._cachedTokens = parsed;
+                return parsed;
             }
         } catch (e) {
             console.warn('[GoogleDrive] Failed to load tokens file:', e.message);
@@ -97,12 +163,20 @@ class GoogleDriveService {
     /**
      * Disconnect OAuth credentials
      */
-    disconnectOAuth() {
+    async disconnectOAuth() {
+        this._cachedTokens = null;
         try {
             if (fs.existsSync(this.tokenPath)) {
                 fs.unlinkSync(this.tokenPath);
             }
         } catch (e) {}
+
+        try {
+            await prisma.$executeRawUnsafe(`
+                DELETE FROM "system_settings" WHERE "key" = 'google_drive_oauth_tokens'
+            `);
+        } catch (e) {}
+
         this.drive = null;
         this.oauth2Client = null;
         this.authType = 'none';
@@ -127,7 +201,7 @@ class GoogleDriveService {
     }
 
     /**
-     * Generate Google OAuth consent URL
+     * Generate Google OAuth consent URL requesting full Google Drive access
      */
     generateAuthUrl(redirectUri = null) {
         const client = this.getOAuth2Client(redirectUri);
@@ -136,9 +210,11 @@ class GoogleDriveService {
         }
         return client.generateAuthUrl({
             access_type: 'offline',
-            prompt: 'consent', // guarantees refresh_token on initial consent
+            prompt: 'consent', // guarantees refresh_token on consent
+            include_granted_scopes: true,
             scope: [
                 'https://www.googleapis.com/auth/drive',
+                'https://www.googleapis.com/auth/drive.file',
                 'https://www.googleapis.com/auth/userinfo.email',
                 'https://www.googleapis.com/auth/userinfo.profile'
             ]
@@ -156,14 +232,19 @@ class GoogleDriveService {
         const { tokens } = await client.getToken(code);
         client.setCredentials(tokens);
 
-        this.saveTokens(tokens);
+        await this.saveTokens(tokens);
         this.drive = google.drive({ version: 'v3', auth: client });
         this.authType = 'oauth_user';
         this.oauth2Client = client;
 
-        client.on('tokens', (newTokens) => {
-            const current = this.loadTokens() || {};
-            this.saveTokens({ ...current, ...newTokens });
+        client.on('tokens', async (newTokens) => {
+            const current = (await this.loadTokensFromDb()) || this.loadTokens() || {};
+            const merged = {
+                ...current,
+                ...newTokens,
+                refresh_token: newTokens.refresh_token || current.refresh_token
+            };
+            await this.saveTokens(merged);
         });
 
         console.log('✅ Google Drive OAuth 2.0 user authorization successful (5TB personal quota unlocked)');
@@ -171,11 +252,11 @@ class GoogleDriveService {
     }
 
     /**
-     * Initialize Drive client (Priority: 1. OAuth2 User Token, 2. Service Account, 3. Local Sync)
+     * Initialize Drive client synchronously (Priority: 1. OAuth2 User Token, 2. Service Account, 3. Local Sync)
      */
     initialize() {
         try {
-            // 1. Check for saved OAuth 2.0 User Tokens (Highest Priority - gives full 5TB quota)
+            // 1. Check for saved OAuth 2.0 User Tokens
             const savedTokens = this.loadTokens();
             const config = this.getOAuthConfig();
             if (config.clientId && config.clientSecret && savedTokens && (savedTokens.refresh_token || savedTokens.access_token)) {
@@ -185,9 +266,14 @@ class GoogleDriveService {
                     config.redirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5001/api/drive/auth/callback'
                 );
                 oauth2Client.setCredentials(savedTokens);
-                oauth2Client.on('tokens', (newTokens) => {
-                    const current = this.loadTokens() || {};
-                    this.saveTokens({ ...current, ...newTokens });
+                oauth2Client.on('tokens', async (newTokens) => {
+                    const current = (await this.loadTokensFromDb()) || this.loadTokens() || {};
+                    const merged = {
+                        ...current,
+                        ...newTokens,
+                        refresh_token: newTokens.refresh_token || current.refresh_token
+                    };
+                    await this.saveTokens(merged);
                 });
                 this.drive = google.drive({ version: 'v3', auth: oauth2Client });
                 this.authType = 'oauth_user';
@@ -223,6 +309,61 @@ class GoogleDriveService {
         }
     }
 
+    /**
+     * Restore OAuth tokens from persistent PostgreSQL database
+     */
+    async initFromDb() {
+        try {
+            const dbTokens = (await this.loadTokensFromDb()) || this.loadTokens();
+            const config = this.getOAuthConfig();
+            if (config.clientId && config.clientSecret && dbTokens && (dbTokens.refresh_token || dbTokens.access_token)) {
+                const oauth2Client = new google.auth.OAuth2(
+                    config.clientId,
+                    config.clientSecret,
+                    config.redirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5001/api/drive/auth/callback'
+                );
+                oauth2Client.setCredentials(dbTokens);
+                oauth2Client.on('tokens', async (newTokens) => {
+                    const current = (await this.loadTokensFromDb()) || this.loadTokens() || {};
+                    const merged = {
+                        ...current,
+                        ...newTokens,
+                        refresh_token: newTokens.refresh_token || current.refresh_token
+                    };
+                    await this.saveTokens(merged);
+                });
+                this.drive = google.drive({ version: 'v3', auth: oauth2Client });
+                this.authType = 'oauth_user';
+                this.oauth2Client = oauth2Client;
+                console.log('✅ Google Drive restored with OAuth 2.0 User Token from PostgreSQL (5TB quota active)');
+                return true;
+            }
+        } catch (e) {
+            console.warn('[GoogleDrive] initFromDb notice:', e.message);
+        }
+        return false;
+    }
+
+    /**
+     * Guarantee OAuth client is restored before any Drive operation
+     */
+    async ensureInitialized() {
+        if (this.authType === 'oauth_user' && this.drive) {
+            return;
+        }
+        if (this._initializingPromise) {
+            return this._initializingPromise;
+        }
+        this._initializingPromise = (async () => {
+            try {
+                await this.initFromDb();
+            } finally {
+                this._initializingPromise = null;
+            }
+        })();
+        return this._initializingPromise;
+    }
+
     isConfigured() {
         return Boolean(this.drive);
     }
@@ -231,6 +372,7 @@ class GoogleDriveService {
      * Retrieve storage quota and user account info from Google Drive API
      */
     async getStorageQuota() {
+        await this.ensureInitialized();
         if (!this.drive) {
             return {
                 isConfigured: false,
@@ -291,6 +433,7 @@ class GoogleDriveService {
      * List files and folders accessible from Google Drive
      */
     async listFiles({ folderId = null, query = '', mimeType = null, pageSize = 50 } = {}) {
+        await this.ensureInitialized();
         const results = [];
 
         // 1. Fetch from Google Drive API if configured
@@ -402,6 +545,7 @@ class GoogleDriveService {
      * Get file metadata
      */
     async getFileMetadata(fileId) {
+        await this.ensureInitialized();
         if (fileId.startsWith('local_drive_')) {
             const fileName = Buffer.from(fileId.replace('local_drive_', ''), 'hex').toString('utf8');
             const fullPath = path.join(this.localSyncDir, fileName);
@@ -433,6 +577,7 @@ class GoogleDriveService {
      * Download binary buffer of a file from Google Drive
      */
     async downloadFileBuffer(fileId) {
+        await this.ensureInitialized();
         if (fileId.startsWith('local_drive_')) {
             const fileName = Buffer.from(fileId.replace('local_drive_', ''), 'hex').toString('utf8');
             const fullPath = path.join(this.localSyncDir, fileName);
@@ -482,6 +627,7 @@ class GoogleDriveService {
      * Upload a file to Google Drive (with personal 5TB quota when OAuth connected)
      */
     async uploadFile(fileBuffer, fileName, mimeType = 'application/octet-stream', targetFolderId = null) {
+        await this.ensureInitialized();
         const destFolder = targetFolderId || this.folderId;
         const cleanName = fileName || `file_${Date.now()}`;
         let uploadError = null;
@@ -554,6 +700,7 @@ class GoogleDriveService {
      * Delete a file from Google Drive
      */
     async deleteFile(fileId) {
+        await this.ensureInitialized();
         if (fileId.startsWith('local_drive_')) {
             const fileName = Buffer.from(fileId.replace('local_drive_', ''), 'hex').toString('utf8');
             const fullPath = path.join(this.localSyncDir, fileName);
@@ -570,6 +717,7 @@ class GoogleDriveService {
      * Create a new folder in Google Drive
      */
     async createFolder(name, parentFolderId = null) {
+        await this.ensureInitialized();
         if (!this.drive) throw new Error('Google Drive not configured');
         const targetParent = parentFolderId || this.folderId;
         const metadata = {
@@ -590,6 +738,7 @@ class GoogleDriveService {
      * Recursively calculate total files and bytes inside a Google Drive folder
      */
     async getFolderStats(folderId) {
+        await this.ensureInitialized();
         if (!this.drive) return { totalFiles: 0, totalBytes: 0, files: [] };
         try {
             const items = await this.listFiles({ folderId, pageSize: 100 });

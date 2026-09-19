@@ -565,11 +565,16 @@ router.delete('/:id/permanent', authenticate, authorize('admin', 'principal', 'i
         return res.status(403).json({ success: false, message: 'Not authorized to permanently delete this document' });
     }
 
-    // Delete from Cloudinary
+    // Delete from Cloudinary or local disk
     try {
-        await cloudinary.deleteFile(doc.cloudinaryId, 'raw');
+        if (doc.cloudinaryId && !doc.cloudinaryId.startsWith('local_') && !doc.cloudinaryId.startsWith('gdrive_')) {
+            await cloudinary.deleteFile(doc.cloudinaryId, 'raw');
+        } else if (doc.url && doc.url.startsWith('/uploads/')) {
+            const diskPath = path.join(__dirname, '../../uploads', path.basename(doc.url));
+            if (fs.existsSync(diskPath)) fs.unlinkSync(diskPath);
+        }
     } catch (err) {
-        console.error('Cloudinary delete error:', err.message);
+        console.error('Document file cleanup notice:', err.message);
     }
 
     // Decrement storage used for the document owner

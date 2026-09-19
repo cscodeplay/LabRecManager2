@@ -580,13 +580,17 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                             </div>
                             <div className="min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-bold text-slate-800 text-sm">Connect 5TB Personal Google Account</span>
-                                    <span className="bg-amber-100 text-amber-800 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-amber-200">
-                                        Service Account (0 MB quota)
+                                    <span className="font-bold text-slate-800 text-sm">
+                                        {status?.authError ? 'Re-authorize 5TB Personal Google Account' : 'Connect 5TB Personal Google Account'}
+                                    </span>
+                                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${status?.authError ? 'bg-rose-100 text-rose-800 border-rose-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>
+                                        {status?.authError ? 'Permission Update Required' : 'Service Account (0 MB quota)'}
                                     </span>
                                 </div>
                                 <p className="text-slate-600 text-[11px] mt-0.5">
-                                    Connect your <strong>@gmail.com</strong> account to unlock your full <strong>5 TB Google One AI Pro quota</strong>, upload files directly, and sync with iPhone Files app.
+                                    {status?.authError
+                                        ? `Notice: ${status.authError}. Click below to grant full Google Drive permissions so your session stays permanently connected.`
+                                        : 'Connect your @gmail.com account to unlock your full 5 TB Google One AI Pro quota, upload files directly, and sync with iPhone Files app.'}
                                 </p>
                             </div>
                         </div>
@@ -598,7 +602,7 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                 className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition shadow-xs text-xs disabled:opacity-50"
                             >
                                 <Sparkles className="w-3.5 h-3.5" />
-                                <span>{connectingOAuth ? 'Connecting...' : 'Connect 5TB Drive'}</span>
+                                <span>{connectingOAuth ? 'Connecting...' : (status?.authError ? 'Re-authorize 5TB Drive' : 'Connect 5TB Drive')}</span>
                             </button>
                             <a
                                 href={currentFolderId ? `https://drive.google.com/drive/folders/${currentFolderId}` : "https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp"}

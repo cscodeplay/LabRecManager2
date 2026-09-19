@@ -8,6 +8,7 @@ const { authenticate } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const googleDriveService = require('../services/googleDrive');
 const chatbotService = require('../services/chatbot.service');
+const cloudinary = require('../services/cloudinary');
 
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -71,6 +72,12 @@ router.get('/auth/callback', asyncHandler(async (req, res) => {
 // Require authentication for all protected Google Drive routes below
 router.use(authenticate);
 
+// Auto-restore Google Drive OAuth from persistent DB if needed
+router.use(asyncHandler(async (req, res, next) => {
+    await googleDriveService.ensureInitialized();
+    next();
+}));
+
 /**
  * @route   GET /api/drive/status
  * @desc    Check Google Drive integration status, auth mode, and storage quota
@@ -84,7 +91,8 @@ router.get('/status', asyncHandler(async (req, res) => {
         data: {
             isConfigured: googleDriveService.isConfigured(),
             authType: googleDriveService.authType,
-            isOAuthConnected: googleDriveService.authType === 'oauth_user',
+            isOAuthConnected: googleDriveService.authType === 'oauth_user' && !quotaData.error,
+            authError: quotaData.error || null,
             hasOAuthConfig: Boolean(oauthConfig.clientId && oauthConfig.clientSecret),
             clientId: oauthConfig.clientId ? `${oauthConfig.clientId.substring(0, 16)}...` : null,
             user: quotaData.user || null,
@@ -93,9 +101,11 @@ router.get('/status', asyncHandler(async (req, res) => {
             serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || null,
             ulrmsFolderUrl: 'https://drive.google.com/drive/folders/1fzuxLH580TlkwJyATBbrjv7LBnFnC1Qp',
             ulrmsFilesFolderUrl: 'https://drive.google.com/drive/folders/1R6SmhanodL-ghLTOoBhX_EgQ5Farf853',
-            storageNotice: googleDriveService.authType === 'oauth_user'
+            storageNotice: googleDriveService.authType === 'oauth_user' && !quotaData.error
                 ? `Connected to personal Google Drive (${quotaData.user?.emailAddress || 'User'}). 5 TB storage quota active.`
-                : 'Google Service Accounts have a 0-byte quota for creating files in personal @gmail.com folders. Connect your personal Google account via OAuth 2.0 to upload directly using your 5 TB storage plan.'
+                : (quotaData.error
+                    ? `Google Drive authorization notice: ${quotaData.error}`
+                    : 'Google Service Accounts have a 0-byte quota for creating files in personal @gmail.com folders. Connect your personal Google account via OAuth 2.0 to upload directly using your 5 TB storage plan.')
         }
     });
 }));
@@ -286,7 +296,22 @@ router.post('/upload', upload.single('file'), asyncHandler(async (req, res) => {
  * Helper: Import a single Google Drive file to Documents repository with storage quota validation
  */
 async function importSingleDriveFile({ fileId, folderId, name, category, description, userId, schoolId }) {
+    await googleDriveService.ensureInitialized();
     const metadata = await googleDriveService.getFileMetadata(fileId);
+
+    // Resolve valid schoolId
+    let targetSchoolId = schoolId;
+    if (!targetSchoolId) {
+        const u = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { schoolId: true }
+        });
+        targetSchoolId = u?.schoolId;
+        if (!targetSchoolId) {
+            const firstSchool = await prisma.school.findFirst({ select: { id: true } });
+            targetSchoolId = firstSchool?.id;
+        }
+    }
 
     // Check user storage quota
     const user = await prisma.user.findUnique({
@@ -313,8 +338,8 @@ async function importSingleDriveFile({ fileId, folderId, name, category, descrip
         throw new Error(`Storage quota exceeded for "${fileName}" (${(fileSize / (1024 * 1024)).toFixed(1)} MB)`);
     }
 
-    // Save locally in uploads folder
-    const uploadsDir = path.join(__dirname, '../../../uploads');
+    // Save locally in server/uploads folder
+    const uploadsDir = path.join(__dirname, '../../uploads');
     if (!fs.existsSync(uploadsDir)) {
         try { fs.mkdirSync(uploadsDir, { recursive: true }); } catch (e) {}
     }
@@ -324,12 +349,27 @@ async function importSingleDriveFile({ fileId, folderId, name, category, descrip
     const localFilePath = path.join(uploadsDir, savedDiskName);
     fs.writeFileSync(localFilePath, buffer);
 
-    const fileUrl = `/uploads/${savedDiskName}`;
+    let finalPublicId = `local_${savedDiskName}`;
+    let fileUrl = `/uploads/${savedDiskName}`;
+
+    // If Cloudinary is configured and file size <= 10MB, also upload to Cloudinary for cloud persistence
+    if (cloudinary && typeof cloudinary.isConfigured === 'function' && cloudinary.isConfigured() && fileSize <= 10 * 1024 * 1024) {
+        try {
+            const result = await cloudinary.uploadFile(buffer, fileName, mimeType);
+            if (result && (result.secureUrl || result.url)) {
+                finalPublicId = result.publicId;
+                fileUrl = result.secureUrl || result.url;
+            }
+        } catch (cloudErr) {
+            console.warn('[Drive Import] Cloudinary backup notice (using local /uploads):', cloudErr.message);
+        }
+    }
+
     const ext = path.extname(fileName).toLowerCase().replace('.', '') || 'pdf';
 
     const doc = await prisma.document.create({
         data: {
-            schoolId,
+            schoolId: targetSchoolId,
             uploadedById: userId,
             folderId: folderId || null,
             name: docName,
@@ -338,6 +378,7 @@ async function importSingleDriveFile({ fileId, folderId, name, category, descrip
             fileType: ext,
             mimeType,
             fileSize,
+            cloudinaryId: finalPublicId,
             url: fileUrl,
             category: category || 'Google Drive',
             isPublic: false
@@ -400,7 +441,19 @@ router.post('/import-to-documents', asyncHandler(async (req, res) => {
 router.post('/import-batch', asyncHandler(async (req, res) => {
     const { items = [], targetFolderId = null } = req.body;
     const userId = req.user.id;
-    const schoolId = req.user.schoolId || null;
+    let schoolId = req.user.schoolId || null;
+
+    if (!schoolId) {
+        const u = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { schoolId: true }
+        });
+        schoolId = u?.schoolId;
+        if (!schoolId) {
+            const firstSchool = await prisma.school.findFirst({ select: { id: true } });
+            schoolId = firstSchool?.id;
+        }
+    }
 
     if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ success: false, message: 'No items provided for import' });
