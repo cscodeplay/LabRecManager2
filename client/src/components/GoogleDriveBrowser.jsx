@@ -5,11 +5,13 @@ import {
     HardDrive, Folder, FileText, FileSpreadsheet, File, Search, RefreshCw,
     Download, Eye, ExternalLink, ChevronRight, CornerUpLeft, Grid3X3, List,
     FolderPlus, Loader2, Check, AlertCircle, X, Clock, Database, Sparkles,
-    Upload, LogOut, Settings, Key, ShieldCheck, User
+    Upload, LogOut, Settings, Key, ShieldCheck, User, Bot, CheckSquare, Square
 } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { googleDriveAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import MediaPreviewModal from './MediaPreviewModal';
+import ImportProgressModal from './ImportProgressModal';
 
 export default function GoogleDriveBrowser({ onImportSuccess, availableFolders = [] }) {
     const [status, setStatus] = useState(null);
@@ -22,8 +24,20 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
     const [importingId, setImportingId] = useState(null);
     const [selectedTargetFolderId, setSelectedTargetFolderId] = useState('');
     const [previewFile, setPreviewFile] = useState(null);
-    const [previewContent, setPreviewContent] = useState(null);
-    const [previewLoading, setPreviewLoading] = useState(false);
+
+    // Multi-Selection State
+    const [selectedIds, setSelectedIds] = useState(new Set());
+
+    // Batch Import & Progress State
+    const [showProgressModal, setShowProgressModal] = useState(false);
+    const [isBatchImporting, setIsBatchImporting] = useState(false);
+    const [importQueue, setImportQueue] = useState([]);
+    const [importProgress, setImportProgress] = useState(0);
+    const [importCurrentIndex, setImportCurrentIndex] = useState(0);
+
+    // Quota Alert Modal state
+    const [showQuotaAlert, setShowQuotaAlert] = useState(false);
+    const [quotaAlertInfo, setQuotaAlertInfo] = useState(null);
 
     // OAuth & Direct Upload state
     const [connectingOAuth, setConnectingOAuth] = useState(false);
@@ -245,27 +259,184 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         handleNavigateBreadcrumb(breadcrumbs.length - 2);
     };
 
-    // 1-Click Import to ULRMS Documents
-    const handleImportToDocuments = async (file) => {
-        setImportingId(file.id);
+    // Multi-Selection Helpers
+    const toggleSelectItem = (id) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === files.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(files.map(f => f.id)));
+        }
+    };
+
+    const clearSelection = () => {
+        setSelectedIds(new Set());
+    };
+
+    const selectedItems = files.filter(f => selectedIds.has(f.id));
+    const selectedTotalBytes = selectedItems.reduce((acc, f) => acc + (parseInt(f.size, 10) || 0), 0);
+
+    // Pre-Import Space Check & Multi-Item Import Engine
+    const executeImport = async (itemsToImport, targetFolder) => {
+        if (!itemsToImport || itemsToImport.length === 0) return;
+
+        toast.loading('Checking storage quota...', { id: 'drive-space-check' });
         try {
-            const res = await googleDriveAPI.importToDocuments({
-                fileId: file.id,
-                folderId: selectedTargetFolderId || null,
-                name: file.name
-            });
-            if (res.data.success) {
-                toast.success(`Imported "${file.name}" to Documents!`);
-                if (onImportSuccess) onImportSuccess(res.data.data);
-            } else {
-                toast.error(res.data.message || 'Import failed');
+            const checkRes = await googleDriveAPI.checkStorage();
+            const { remainingBytes, quotaMb } = checkRes.data?.data || {};
+
+            let totalBytesNeeded = 0;
+            const preparedItems = [];
+
+            for (const item of itemsToImport) {
+                const isFolder = item.isFolder || item.mimeType === 'application/vnd.google-apps.folder';
+                if (isFolder) {
+                    try {
+                        const statsRes = await googleDriveAPI.getFolderStats(item.id);
+                        const folderBytes = statsRes.data?.data?.totalBytes || 0;
+                        totalBytesNeeded += folderBytes;
+                        preparedItems.push({
+                            ...item,
+                            isFolder: true,
+                            size: folderBytes,
+                            status: 'pending'
+                        });
+                    } catch (e) {
+                        preparedItems.push({
+                            ...item,
+                            isFolder: true,
+                            size: 0,
+                            status: 'pending'
+                        });
+                    }
+                } else {
+                    const sz = parseInt(item.size, 10) || 0;
+                    totalBytesNeeded += sz;
+                    preparedItems.push({
+                        ...item,
+                        isFolder: false,
+                        size: sz,
+                        status: 'pending'
+                    });
+                }
+            }
+
+            toast.dismiss('drive-space-check');
+
+            // Quota Guard: Block if insufficient space
+            if (remainingBytes !== undefined && totalBytesNeeded > remainingBytes) {
+                setQuotaAlertInfo({
+                    requiredBytes: totalBytesNeeded,
+                    remainingBytes,
+                    quotaMb
+                });
+                setShowQuotaAlert(true);
+                return;
+            }
+
+            // Space OK: Launch live progress modal
+            setImportQueue(preparedItems);
+            setImportProgress(0);
+            setImportCurrentIndex(0);
+            setIsBatchImporting(true);
+            setShowProgressModal(true);
+
+            let succeeded = 0;
+            let failed = 0;
+
+            for (let i = 0; i < preparedItems.length; i++) {
+                setImportCurrentIndex(i);
+                setImportQueue(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'importing' } : it));
+
+                const item = preparedItems[i];
+                try {
+                    if (item.isFolder) {
+                        const res = await googleDriveAPI.importBatch({
+                            items: [{ id: item.id, name: item.name, isFolder: true, size: item.size }],
+                            targetFolderId: targetFolder || null
+                        });
+                        if (res.data?.summary?.failed > 0) {
+                            throw new Error(res.data.results?.find(r => r.status === 'failed')?.error || 'Some items inside folder failed');
+                        }
+                    } else {
+                        await googleDriveAPI.importToDocuments({
+                            fileId: item.id,
+                            folderId: targetFolder || null,
+                            name: item.name
+                        });
+                    }
+
+                    succeeded++;
+                    setImportQueue(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'success' } : it));
+                } catch (err) {
+                    failed++;
+                    const errMsg = err.response?.data?.message || err.message || 'Import failed';
+                    setImportQueue(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'failed', error: errMsg } : it));
+                }
+
+                setImportProgress(Math.round(((i + 1) / preparedItems.length) * 100));
+            }
+
+            setIsBatchImporting(false);
+            if (succeeded > 0) {
+                toast.success(`Imported ${succeeded} item${succeeded > 1 ? 's' : ''} to Documents!`);
+                if (onImportSuccess) onImportSuccess();
+            }
+            if (failed > 0) {
+                toast.error(`${failed} item${failed > 1 ? 's' : ''} failed to import`);
             }
         } catch (err) {
-            console.error('Import error:', err);
-            toast.error(err.response?.data?.message || 'Failed to import document');
-        } finally {
-            setImportingId(null);
+            toast.dismiss('drive-space-check');
+            toast.error(err.response?.data?.message || 'Failed to check storage space');
         }
+    };
+
+    const handleRetryFailed = async () => {
+        const failedItems = importQueue.filter(i => i.status === 'failed');
+        if (failedItems.length === 0) return;
+        executeImport(failedItems, selectedTargetFolderId);
+    };
+
+    // Attach file to Floating AI Copilot
+    const handleAttachFileToBot = (file, customPrompt = '') => {
+        window.dispatchEvent(new CustomEvent('attach-to-bot', {
+            detail: {
+                file,
+                prompt: customPrompt || `I have attached "${file.name}". Please summarize its key concepts and suggest 3 teaching ideas.`
+            }
+        }));
+    };
+
+    // Attach all selected files to Bot
+    const handleAttachSelectedToBot = () => {
+        if (selectedItems.length === 0) return;
+        selectedItems.forEach(file => {
+            window.dispatchEvent(new CustomEvent('attach-to-bot', {
+                detail: {
+                    file,
+                    prompt: `I have attached ${selectedItems.length} documents. Please analyze them.`
+                }
+            }));
+        });
+        clearSelection();
+    };
+
+    // Open Preview (Rich Instant Preview)
+    const handlePreview = (file) => {
+        setPreviewFile(file);
+    };
+
+    // 1-Click Import to ULRMS Documents
+    const handleImportToDocuments = (file) => {
+        executeImport([file], selectedTargetFolderId);
     };
 
     // Download file
@@ -279,21 +450,6 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
         } catch (err) {
             console.error('Download error:', err);
             toast.error('Failed to download file from Google Drive', { id: 'drive-download' });
-        }
-    };
-
-    // Open Preview
-    const handlePreview = async (file) => {
-        setPreviewFile(file);
-        setPreviewLoading(true);
-        setPreviewContent(null);
-        try {
-            const res = await googleDriveAPI.getFileText(file.id);
-            setPreviewContent(res.data?.data?.text || 'No text content available.');
-        } catch (err) {
-            setPreviewContent('Unable to preview content directly. Please download or open in Google Drive.');
-        } finally {
-            setPreviewLoading(false);
         }
     };
 
@@ -613,16 +769,30 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
                     {files.map(file => {
                         const isFolder = file.isFolder || file.mimeType === 'application/vnd.google-apps.folder';
-                        const isImporting = importingId === file.id;
 
                         if (isFolder) {
                             return (
                                 <div
                                     key={file.id}
                                     onClick={() => handleOpenFolder(file)}
-                                    className="p-3.5 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50/40 to-white hover:border-amber-400 hover:shadow-md transition cursor-pointer flex items-center justify-between group"
+                                    className={`p-3.5 rounded-xl border transition cursor-pointer flex items-center justify-between group relative ${
+                                        selectedIds.has(file.id)
+                                            ? 'border-amber-400 bg-amber-50 shadow-xs'
+                                            : 'border-amber-200/80 bg-gradient-to-b from-amber-50/40 to-white hover:border-amber-400 hover:shadow-md'
+                                    }`}
                                 >
                                     <div className="flex items-center gap-2.5 min-w-0">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedIds.has(file.id)}
+                                            onChange={(e) => {
+                                                e.stopPropagation();
+                                                toggleSelectItem(file.id);
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4 flex-shrink-0 mr-0.5"
+                                            title="Select folder"
+                                        />
                                         <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
                                             <Folder className="w-5 h-5 text-amber-600 fill-amber-200" />
                                         </div>
@@ -641,12 +811,25 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                         return (
                             <div
                                 key={file.id}
-                                className="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-emerald-300 hover:shadow-md transition flex flex-col justify-between group"
+                                className={`p-3.5 rounded-xl border transition flex flex-col justify-between group ${
+                                    selectedIds.has(file.id)
+                                        ? 'border-emerald-500 bg-emerald-50/30 shadow-xs'
+                                        : 'border-slate-200 bg-white hover:border-emerald-300 hover:shadow-md'
+                                }`}
                             >
                                 <div>
                                     <div className="flex items-start justify-between gap-2 mb-2">
-                                        <div className="w-9 h-9 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0">
-                                            {getFileIcon(file)}
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.has(file.id)}
+                                                onChange={() => toggleSelectItem(file.id)}
+                                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4 flex-shrink-0"
+                                                title="Select file"
+                                            />
+                                            <div className="w-9 h-9 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0">
+                                                {getFileIcon(file)}
+                                            </div>
                                         </div>
                                         {/* Icon-Only Action Buttons */}
                                         <div className="flex items-center gap-1">
@@ -660,12 +843,20 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                             </button>
                                             <button
                                                 type="button"
+                                                onClick={() => handleAttachFileToBot(file)}
+                                                className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition"
+                                                title="Attach to AI Bot"
+                                            >
+                                                <Bot className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                type="button"
                                                 onClick={() => handleImportToDocuments(file)}
-                                                disabled={isImporting}
+                                                disabled={isBatchImporting}
                                                 className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition disabled:opacity-40"
                                                 title="Import to My Documents"
                                             >
-                                                {isImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" /> : <FolderPlus className="w-3.5 h-3.5" />}
+                                                <FolderPlus className="w-3.5 h-3.5" />
                                             </button>
                                             <button
                                                 type="button"
@@ -706,7 +897,16 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                     <table className="w-full text-left border-collapse text-xs">
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
-                                <th className="py-2.5 px-4">Name</th>
+                                <th className="py-2.5 pl-4 pr-1 w-8">
+                                    <input
+                                        type="checkbox"
+                                        checked={files.length > 0 && selectedIds.size === files.length}
+                                        onChange={toggleSelectAll}
+                                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                        title="Select all"
+                                    />
+                                </th>
+                                <th className="py-2.5 px-3">Name</th>
                                 <th className="py-2.5 px-3">Size</th>
                                 <th className="py-2.5 px-3">Modified</th>
                                 <th className="py-2.5 px-4 text-right">Actions</th>
@@ -715,16 +915,24 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                         <tbody className="divide-y divide-slate-100">
                             {files.map(file => {
                                 const isFolder = file.isFolder || file.mimeType === 'application/vnd.google-apps.folder';
-                                const isImporting = importingId === file.id;
 
                                 if (isFolder) {
                                     return (
                                         <tr
                                             key={file.id}
                                             onClick={() => handleOpenFolder(file)}
-                                            className="hover:bg-amber-50/50 cursor-pointer transition"
+                                            className={`hover:bg-amber-50/50 cursor-pointer transition ${selectedIds.has(file.id) ? 'bg-amber-50/40' : ''}`}
                                         >
-                                            <td className="py-2.5 px-4 flex items-center gap-2.5 font-semibold text-slate-800">
+                                            <td className="py-2.5 pl-4 pr-1 w-8" onClick={(e) => e.stopPropagation()}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedIds.has(file.id)}
+                                                    onChange={() => toggleSelectItem(file.id)}
+                                                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                                    title="Select folder"
+                                                />
+                                            </td>
+                                            <td className="py-2.5 px-3 flex items-center gap-2.5 font-semibold text-slate-800">
                                                 <Folder className="w-4 h-4 text-amber-500 fill-amber-200 flex-shrink-0" />
                                                 <span className="truncate max-w-md">{file.name}</span>
                                             </td>
@@ -740,8 +948,17 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                 }
 
                                 return (
-                                    <tr key={file.id} className="hover:bg-slate-50/80 transition">
-                                        <td className="py-2.5 px-4">
+                                    <tr key={file.id} className={`hover:bg-slate-50/80 transition ${selectedIds.has(file.id) ? 'bg-emerald-50/30' : ''}`}>
+                                        <td className="py-2.5 pl-4 pr-1 w-8" onClick={(e) => e.stopPropagation()}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.has(file.id)}
+                                                onChange={() => toggleSelectItem(file.id)}
+                                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                                title="Select file"
+                                            />
+                                        </td>
+                                        <td className="py-2.5 px-3">
                                             <div className="flex items-center gap-2.5">
                                                 {getFileIcon(file)}
                                                 <span className="font-medium text-slate-800 truncate max-w-sm" title={file.name}>
@@ -768,12 +985,20 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                                                 </button>
                                                 <button
                                                     type="button"
+                                                    onClick={() => handleAttachFileToBot(file)}
+                                                    className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition"
+                                                    title="Attach to AI Bot"
+                                                >
+                                                    <Bot className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button
+                                                    type="button"
                                                     onClick={() => handleImportToDocuments(file)}
-                                                    disabled={isImporting}
+                                                    disabled={isBatchImporting}
                                                     className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition disabled:opacity-40"
                                                     title="Import to My Documents"
                                                 >
-                                                    {isImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" /> : <FolderPlus className="w-3.5 h-3.5" />}
+                                                    <FolderPlus className="w-3.5 h-3.5" />
                                                 </button>
                                                 <button
                                                     type="button"
@@ -804,58 +1029,138 @@ export default function GoogleDriveBrowser({ onImportSuccess, availableFolders =
                 </div>
             )}
 
-            {/* Preview Modal */}
+            {/* Floating Batch Action Bar */}
+            {selectedIds.size > 0 && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center gap-4 animate-in slide-in-from-bottom-5 duration-200 text-xs">
+                    <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-emerald-500 text-slate-950 font-bold flex items-center justify-center text-[11px]">
+                            {selectedIds.size}
+                        </span>
+                        <span className="font-semibold">
+                            {selectedIds.size === 1 ? '1 item' : `${selectedIds.size} items`} selected
+                        </span>
+                        <span className="text-slate-400 font-mono text-[11px]">
+                            ({formatBytes(selectedTotalBytes)})
+                        </span>
+                    </div>
+
+                    <div className="h-4 w-px bg-slate-700" />
+
+                    {/* Target Folder Selector */}
+                    {availableFolders.length > 0 && (
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400 hidden sm:inline">Import to:</span>
+                            <select
+                                value={selectedTargetFolderId}
+                                onChange={(e) => setSelectedTargetFolderId(e.target.value)}
+                                className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 max-w-[150px] truncate"
+                            >
+                                <option value="">(Root Documents)</option>
+                                {availableFolders.map(f => (
+                                    <option key={f.id} value={f.id}>{f.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    {/* Batch Actions */}
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => executeImport(selectedItems, selectedTargetFolderId)}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-xs"
+                        >
+                            <FolderPlus className="w-3.5 h-3.5" />
+                            <span>Import to Documents</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleAttachSelectedToBot}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition"
+                            title="Attach all selected files to AI Copilot"
+                        >
+                            <Bot className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Attach to Bot</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={clearSelection}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                            title="Clear selection"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Rich Media Preview Modal */}
             {previewFile && (
-                <div className="fixed inset-0 z-[100000] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden shadow-2xl border border-slate-200 flex flex-col">
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
-                            <div className="flex items-center gap-2 min-w-0">
-                                {getFileIcon(previewFile)}
-                                <div className="min-w-0">
-                                    <h4 className="text-sm font-bold text-slate-900 truncate" title={previewFile.name}>
-                                        {previewFile.name}
-                                    </h4>
-                                    <p className="text-[10px] text-slate-500">Google Drive Document Preview</p>
-                                </div>
+                <MediaPreviewModal
+                    file={previewFile}
+                    onClose={() => setPreviewFile(null)}
+                    onImport={(f) => executeImport([f], selectedTargetFolderId)}
+                    onAttachToBot={handleAttachFileToBot}
+                    onDownload={handleDownload}
+                />
+            )}
+
+            {/* Batch Import Progress & Logging Modal */}
+            <ImportProgressModal
+                isOpen={showProgressModal}
+                isImporting={isBatchImporting}
+                items={importQueue}
+                progress={importProgress}
+                currentIndex={importCurrentIndex}
+                onRetryFailed={handleRetryFailed}
+                onClose={() => {
+                    setShowProgressModal(false);
+                    fetchFiles();
+                    clearSelection();
+                }}
+                onViewDocuments={() => {
+                    setShowProgressModal(false);
+                    if (onImportSuccess) onImportSuccess();
+                }}
+            />
+
+            {/* Insufficient Storage Quota Warning Modal */}
+            {showQuotaAlert && quotaAlertInfo && (
+                <div className="fixed inset-0 z-[100001] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-rose-200 dark:border-rose-900 text-center">
+                        <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950 flex items-center justify-center text-rose-600 dark:text-rose-400 mx-auto mb-4">
+                            <AlertCircle className="w-7 h-7" />
+                        </div>
+                        <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">
+                            Storage Quota Insufficient
+                        </h3>
+                        <p className="text-xs text-slate-500 mb-4">
+                            You cannot import these items because your local storage quota will be exceeded.
+                        </p>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl text-xs space-y-1.5 text-left mb-5 font-mono">
+                            <div className="flex justify-between">
+                                <span className="text-slate-500">Selected Items Size:</span>
+                                <span className="font-bold text-rose-600">{formatBytes(quotaAlertInfo.requiredBytes)}</span>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                                <button
-                                    type="button"
-                                    onClick={() => handleImportToDocuments(previewFile)}
-                                    className="p-1.5 rounded-lg text-emerald-700 hover:bg-emerald-100 transition"
-                                    title="Import to My Documents"
-                                >
-                                    <FolderPlus className="w-4 h-4" />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => handleDownload(previewFile)}
-                                    className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition"
-                                    title="Download file"
-                                >
-                                    <Download className="w-4 h-4" />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setPreviewFile(null)}
-                                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition"
-                                    title="Close preview"
-                                >
-                                    <X className="w-4 h-4" />
-                                </button>
+                            <div className="flex justify-between">
+                                <span className="text-slate-500">Available Storage:</span>
+                                <span className="font-bold text-slate-700 dark:text-slate-300">{formatBytes(quotaAlertInfo.remainingBytes)}</span>
+                            </div>
+                            <div className="flex justify-between border-t border-slate-200 dark:border-slate-700 pt-1">
+                                <span className="text-slate-500">Total Quota:</span>
+                                <span>{quotaAlertInfo.quotaMb} MB</span>
                             </div>
                         </div>
-                        <div className="p-4 flex-1 overflow-y-auto bg-slate-50/50">
-                            {previewLoading ? (
-                                <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400">
-                                    <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
-                                    <span className="text-xs">Extracting text preview from Drive...</span>
-                                </div>
-                            ) : (
-                                <pre className="text-xs font-mono text-slate-800 whitespace-pre-wrap break-words bg-white p-4 rounded-xl border border-slate-200">
-                                    {previewContent}
-                                </pre>
-                            )}
+                        <div className="flex items-center justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowQuotaAlert(false)}
+                                className="w-full py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+                            >
+                                Dismiss
+                            </button>
                         </div>
                     </div>
                 </div>

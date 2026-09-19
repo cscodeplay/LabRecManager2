@@ -282,27 +282,38 @@ router.post('/upload', upload.single('file'), asyncHandler(async (req, res) => {
 
 /**
  * @route   POST /api/drive/import-to-documents
- * @desc    Import a Google Drive file into school's Document management repository
+/**
+ * Helper: Import a single Google Drive file to Documents repository with storage quota validation
  */
-router.post('/import-to-documents', asyncHandler(async (req, res) => {
-    const { fileId, folderId, name, category, description } = req.body;
-    const userId = req.user.id;
-    const schoolId = req.user.schoolId || null;
+async function importSingleDriveFile({ fileId, folderId, name, category, description, userId, schoolId }) {
+    const metadata = await googleDriveService.getFileMetadata(fileId);
 
-    if (!fileId) {
-        return res.status(400).json({ success: false, message: 'fileId is required' });
+    // Check user storage quota
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { storageQuotaMb: true, storageUsedBytes: true }
+    });
+    const quotaBytes = (user?.storageQuotaMb || 500) * 1024 * 1024;
+    const currentUsed = Number(user?.storageUsedBytes || 0);
+    const estimatedSize = metadata.size ? parseInt(metadata.size, 10) : 0;
+
+    if (estimatedSize > 0 && currentUsed + estimatedSize > quotaBytes) {
+        const quotaMb = Math.round(quotaBytes / (1024 * 1024));
+        const usedMb = Math.round(currentUsed / (1024 * 1024));
+        throw new Error(`Storage quota exceeded. Used ${usedMb} MB of ${quotaMb} MB limit.`);
     }
 
-    // 1. Fetch file metadata and buffer from Google Drive
-    const metadata = await googleDriveService.getFileMetadata(fileId);
     const buffer = await googleDriveService.downloadFileBuffer(fileId);
-
     const docName = name || metadata.name.replace(/\.[^.]+$/, '');
     const fileName = metadata.name || `${docName}.pdf`;
     const mimeType = metadata.mimeType || 'application/pdf';
     const fileSize = buffer.length;
 
-    // 2. Save locally in uploads folder for permanent access
+    if (currentUsed + fileSize > quotaBytes) {
+        throw new Error(`Storage quota exceeded for "${fileName}" (${(fileSize / (1024 * 1024)).toFixed(1)} MB)`);
+    }
+
+    // Save locally in uploads folder
     const uploadsDir = path.join(__dirname, '../../../uploads');
     if (!fs.existsSync(uploadsDir)) {
         try { fs.mkdirSync(uploadsDir, { recursive: true }); } catch (e) {}
@@ -314,11 +325,8 @@ router.post('/import-to-documents', asyncHandler(async (req, res) => {
     fs.writeFileSync(localFilePath, buffer);
 
     const fileUrl = `/uploads/${savedDiskName}`;
-
-    // Determine simplified fileType (pdf, doc, docx, csv, xlsx, txt, etc.)
     const ext = path.extname(fileName).toLowerCase().replace('.', '') || 'pdf';
 
-    // 3. Register record in PostgreSQL Document table
     const doc = await prisma.document.create({
         data: {
             schoolId,
@@ -339,10 +347,195 @@ router.post('/import-to-documents', asyncHandler(async (req, res) => {
         }
     });
 
-    res.status(201).json({
+    // Increment user's used storage
+    await prisma.user.update({
+        where: { id: userId },
+        data: { storageUsedBytes: currentUsed + fileSize }
+    });
+
+    return doc;
+}
+
+/**
+ * @route   POST /api/drive/import-to-documents
+ * @desc    Import a single Google Drive file into school's Document management repository
+ */
+router.post('/import-to-documents', asyncHandler(async (req, res) => {
+    const { fileId, folderId, name, category, description } = req.body;
+    const userId = req.user.id;
+    const schoolId = req.user.schoolId || null;
+
+    if (!fileId) {
+        return res.status(400).json({ success: false, message: 'fileId is required' });
+    }
+
+    try {
+        const doc = await importSingleDriveFile({
+            fileId,
+            folderId,
+            name,
+            category,
+            description,
+            userId,
+            schoolId
+        });
+
+        res.status(201).json({
+            success: true,
+            message: `Successfully imported "${doc.name}" into Documents`,
+            data: doc
+        });
+    } catch (err) {
+        res.status(400).json({
+            success: false,
+            message: err.message || 'Failed to import document'
+        });
+    }
+}));
+
+/**
+ * @route   POST /api/drive/import-batch
+ * @desc    Batch import multiple files and folders with real-time tracking
+ */
+router.post('/import-batch', asyncHandler(async (req, res) => {
+    const { items = [], targetFolderId = null } = req.body;
+    const userId = req.user.id;
+    const schoolId = req.user.schoolId || null;
+
+    if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ success: false, message: 'No items provided for import' });
+    }
+
+    const results = [];
+    let succeeded = 0;
+    let failed = 0;
+
+    for (const item of items) {
+        if (item.isFolder) {
+            try {
+                let localFolder = null;
+                if (schoolId) {
+                    localFolder = await prisma.documentFolder.create({
+                        data: {
+                            schoolId,
+                            createdById: userId,
+                            parentId: targetFolderId || null,
+                            name: item.name || 'Imported Folder'
+                        }
+                    });
+                }
+                const subTargetFolderId = localFolder ? localFolder.id : targetFolderId;
+
+                const folderStats = await googleDriveService.getFolderStats(item.id);
+                for (const subFile of folderStats.files) {
+                    try {
+                        const doc = await importSingleDriveFile({
+                            fileId: subFile.id,
+                            folderId: subTargetFolderId,
+                            name: subFile.name,
+                            userId,
+                            schoolId
+                        });
+                        results.push({
+                            id: subFile.id,
+                            name: subFile.name,
+                            status: 'success',
+                            size: doc.fileSize,
+                            documentId: doc.id
+                        });
+                        succeeded++;
+                    } catch (subErr) {
+                        results.push({
+                            id: subFile.id,
+                            name: subFile.name,
+                            status: 'failed',
+                            error: subErr.message
+                        });
+                        failed++;
+                    }
+                }
+            } catch (folderErr) {
+                results.push({
+                    id: item.id,
+                    name: item.name,
+                    status: 'failed',
+                    error: `Folder import failed: ${folderErr.message}`
+                });
+                failed++;
+            }
+        } else {
+            try {
+                const doc = await importSingleDriveFile({
+                    fileId: item.id,
+                    folderId: targetFolderId,
+                    name: item.name,
+                    userId,
+                    schoolId
+                });
+                results.push({
+                    id: item.id,
+                    name: item.name,
+                    status: 'success',
+                    size: doc.fileSize,
+                    documentId: doc.id
+                });
+                succeeded++;
+            } catch (fileErr) {
+                results.push({
+                    id: item.id,
+                    name: item.name,
+                    status: 'failed',
+                    error: fileErr.message
+                });
+                failed++;
+            }
+        }
+    }
+
+    res.json({
         success: true,
-        message: `Successfully imported "${docName}" into Documents`,
-        data: doc
+        summary: {
+            total: results.length,
+            succeeded,
+            failed
+        },
+        results
+    });
+}));
+
+/**
+ * @route   GET /api/drive/folder-tree/:id
+ * @desc    Get folder statistics (total files and byte size) for pre-import space checks
+ */
+router.get('/folder-tree/:id', asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const stats = await googleDriveService.getFolderStats(id);
+    res.json({
+        success: true,
+        data: stats
+    });
+}));
+
+/**
+ * @route   GET /api/drive/storage-check
+ * @desc    Check available user storage before starting imports
+ */
+router.get('/storage-check', asyncHandler(async (req, res) => {
+    const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { storageQuotaMb: true, storageUsedBytes: true }
+    });
+    const quotaBytes = (user?.storageQuotaMb || 500) * 1024 * 1024;
+    const currentUsed = Number(user?.storageUsedBytes || 0);
+    const remainingBytes = Math.max(0, quotaBytes - currentUsed);
+    res.json({
+        success: true,
+        data: {
+            quotaBytes,
+            usedBytes: currentUsed,
+            remainingBytes,
+            quotaMb: user?.storageQuotaMb || 500
+        }
     });
 }));
 

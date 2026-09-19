@@ -7046,6 +7046,96 @@ ${documentContext || message}
                 }
             }
 
+            // Spreadsheets (XLSX, XLS)
+            const isExcel = fileName.toLowerCase().match(/\.(xlsx|xls)$/) || mimeType.includes('spreadsheet') || mimeType.includes('excel');
+            if (isExcel) {
+                try {
+                    const xlsxPkg = require('xlsx');
+                    const workbook = xlsxPkg.read(buffer, { type: 'buffer' });
+                    let excelText = '';
+                    for (const sheetName of workbook.SheetNames) {
+                        const worksheet = workbook.Sheets[sheetName];
+                        const csv = xlsxPkg.utils.sheet_to_csv(worksheet);
+                        if (csv && csv.trim().length > 0) {
+                            excelText += `=== Sheet: ${sheetName} ===\n${csv}\n\n`;
+                        }
+                    }
+                    if (excelText.trim().length > 0) {
+                        this.docTextCache.set(cacheKey, excelText);
+                        return excelText;
+                    }
+                } catch (excelErr) {
+                    console.warn('[ChatBot] Excel extraction failed:', excelErr.message);
+                }
+            }
+
+            // Word Documents (DOCX)
+            const isDocx = fileName.toLowerCase().endsWith('.docx') || mimeType.includes('wordprocessingml.document');
+            if (isDocx) {
+                try {
+                    const JSZip = require('jszip');
+                    const zip = await JSZip.loadAsync(buffer);
+                    const docXmlFile = zip.file('word/document.xml');
+                    if (docXmlFile) {
+                        const xmlContent = await docXmlFile.async('text');
+                        const paragraphs = [];
+                        const pRegex = /<w:p(?:\s[^>]*)?>([\s\S]*?)<\/w:p>/g;
+                        let pMatch;
+                        while ((pMatch = pRegex.exec(xmlContent)) !== null) {
+                            const pXml = pMatch[1];
+                            const tMatches = pXml.match(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g) || [];
+                            const pText = tMatches
+                                .map(t => t.replace(/<[^>]+>/g, ''))
+                                .join('');
+                            if (pText.trim()) {
+                                paragraphs.push(pText.trim());
+                            }
+                        }
+                        const docxText = paragraphs.join('\n\n');
+                        if (docxText.trim().length > 0) {
+                            this.docTextCache.set(cacheKey, docxText);
+                            return docxText;
+                        }
+                    }
+                } catch (docxErr) {
+                    console.warn('[ChatBot] DOCX extraction failed:', docxErr.message);
+                }
+            }
+
+            // PowerPoint Presentations (PPTX)
+            const isPptx = fileName.toLowerCase().endsWith('.pptx') || mimeType.includes('presentationml.presentation');
+            if (isPptx) {
+                try {
+                    const JSZip = require('jszip');
+                    const zip = await JSZip.loadAsync(buffer);
+                    const slideFiles = Object.keys(zip.files).filter(f => f.match(/^ppt\/slides\/slide\d+\.xml$/i));
+                    slideFiles.sort((a, b) => {
+                        const numA = parseInt(a.match(/\d+/)?.[0] || '0', 10);
+                        const numB = parseInt(b.match(/\d+/)?.[0] || '0', 10);
+                        return numA - numB;
+                    });
+                    const slidesText = [];
+                    for (let i = 0; i < slideFiles.length; i++) {
+                        const sFile = zip.file(slideFiles[i]);
+                        if (sFile) {
+                            const sXml = await sFile.async('text');
+                            const tMatches = sXml.match(/<a:t>([^<]*)<\/a:t>/g) || [];
+                            const slideLines = tMatches.map(t => t.replace(/<[^>]+>/g, '').trim()).filter(Boolean);
+                            if (slideLines.length > 0) {
+                                slidesText.push(`--- Slide ${i + 1} ---\n${slideLines.join('\n')}`);
+                            }
+                        }
+                    }
+                    const pptxText = slidesText.join('\n\n');
+                    if (pptxText.trim().length > 0) {
+                        this.docTextCache.set(cacheKey, pptxText);
+                        return pptxText;
+                    }
+                } catch (pptxErr) {
+                    console.warn('[ChatBot] PPTX extraction failed:', pptxErr.message);
+                }
+            }
+
             const isPdf = mimeType.includes('application/pdf') || fileName.toLowerCase().endsWith('.pdf');
             if (isPdf) {
                 try {

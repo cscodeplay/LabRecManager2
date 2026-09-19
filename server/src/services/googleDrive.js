@@ -585,6 +585,39 @@ class GoogleDriveService {
         console.log(`[GoogleDrive] Folder created: ${name} (${res.data.id})`);
         return res.data;
     }
+
+    /**
+     * Recursively calculate total files and bytes inside a Google Drive folder
+     */
+    async getFolderStats(folderId) {
+        if (!this.drive) return { totalFiles: 0, totalBytes: 0, files: [] };
+        try {
+            const items = await this.listFiles({ folderId, pageSize: 100 });
+            let totalBytes = 0;
+            let fileList = [];
+
+            for (const item of items) {
+                if (item.isFolder) {
+                    const sub = await this.getFolderStats(item.id);
+                    totalBytes += sub.totalBytes;
+                    fileList = fileList.concat(sub.files);
+                } else {
+                    const sz = parseInt(item.size, 10) || 0;
+                    totalBytes += sz;
+                    fileList.push(item);
+                }
+            }
+
+            return {
+                totalFiles: fileList.length,
+                totalBytes,
+                files: fileList
+            };
+        } catch (err) {
+            console.warn(`[GoogleDrive] getFolderStats error for ${folderId}:`, err.message);
+            return { totalFiles: 0, totalBytes: 0, files: [] };
+        }
+    }
 }
 
 module.exports = new GoogleDriveService();

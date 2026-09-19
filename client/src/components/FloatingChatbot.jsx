@@ -8807,6 +8807,38 @@ export default function FloatingChatbot() {
         }
     }, [currentSessionId]);
 
+    // Listen for external file attachments (e.g. from Google Drive browser or Documents list)
+    useEffect(() => {
+        const handleAttachFileEvent = (e) => {
+            const { file, prompt } = e.detail || {};
+            if (!file) return;
+
+            setIsOpen(true);
+            const fn = file.fileName || file.name || 'document';
+            setSelectedFileRefs(prev => {
+                if (prev.some(f => (f.fileName || f.name || '').toLowerCase() === fn.toLowerCase())) {
+                    return prev;
+                }
+                return [...prev, {
+                    id: file.id,
+                    fileName: fn,
+                    fileType: file.fileType || file.mimeType || fn.split('.').pop() || 'pdf',
+                    driveFileId: file.driveFileId || file.id,
+                    isGoogleDrive: Boolean(file.isGoogleDrive || !file.url),
+                    webViewLink: file.webViewLink
+                }];
+            });
+
+            if (prompt) {
+                setInput(prompt);
+            }
+            toast.success(`Attached "${fn}" to AI Copilot`);
+        };
+
+        window.addEventListener('attach-to-bot', handleAttachFileEvent);
+        return () => window.removeEventListener('attach-to-bot', handleAttachFileEvent);
+    }, []);
+
     const loadSessions = async () => {
         try {
             const res = await api.get('/admin/chatbot/sessions');
